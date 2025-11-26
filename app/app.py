@@ -66,7 +66,6 @@ from app.security import init_security, limiter
 from app.tokens import issue_rs256_jwt
 from app.pof_routes import pof_bp
 from flask import make_response
-from pof_enhanced import integrate_pof_routes
 
 
 # ============================================================
@@ -798,7 +797,7 @@ def get_rpc_connection():
 # ============================================================================
 # POF ENHANCED SYSTEM - Initialized after get_rpc_connection is defined
 # ============================================================================
-pof_service = integrate_pof_routes(app, socketio, get_rpc_connection)
+# pof_service = integrate_pof_routes(app, socketio, get_rpc_connection)
 
 
 
