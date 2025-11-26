@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whale Leaderboard | HODLXXI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+            color: #00ff41;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 2px solid #00ff41;
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+            text-shadow: 0 0 20px #00ff41;
+        }
+
+        .header p {
+            color: #888;
+            font-size: 1.2rem;
+        }
+
+        .stats-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+
+        .stat-card {
+            background: rgba(0, 255, 65, 0.05);
+            border: 2px solid #00ff41;
+            border-radius: 10px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .stat-card .number {
+            font-size: 2.5rem;
+            color: #00ff41;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-card .label {
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        .leaderboard-table {
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #00ff41;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: rgba(0, 255, 65, 0.1);
+        }
+
+        thead th {
+            padding: 1.5rem 1rem;
+            text-align: left;
+            color: #00ff41;
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            border-bottom: 2px solid #00ff41;
+        }
+
+        tbody tr {
+            border-bottom: 1px solid #333;
+            transition: all 0.3s;
+        }
+
+        tbody tr:hover {
+            background: rgba(0, 255, 65, 0.05);
+        }
+
+        tbody td {
+            padding: 1.5rem 1rem;
+        }
+
+        .rank {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #888;
+            text-align: center;
+            width: 80px;
+        }
+
+        .rank.gold {
+            color: #FFD700;
+            text-shadow: 0 0 10px #FFD700;
+        }
+
+        .rank.silver {
+            color: #C0C0C0;
+            text-shadow: 0 0 10px #C0C0C0;
+        }
+
+        .rank.bronze {
+            color: #CD7F32;
+            text-shadow: 0 0 10px #CD7F32;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #00ff41, #00cc33);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: #000;
+        }
+
+        .user-name {
+            font-weight: bold;
+            color: #00ff41;
+        }
+
+        .whale-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: bold;
+        }
+
+        .whale-badge .emoji {
+            font-size: 1.5rem;
+        }
+
+        .verified-date {
+            color: #888;
+            font-size: 0.85rem;
+        }
+
+        .view-cert {
+            color: #00ff41;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border: 1px solid #00ff41;
+            border-radius: 5px;
+            display: inline-block;
+            transition: all 0.3s;
+            font-size: 0.85rem;
+        }
+
+        .view-cert:hover {
+            background: rgba(0, 255, 65, 0.1);
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+        }
+
+        .empty-state .icon {
+            font-size: 5rem;
+            margin-bottom: 1rem;
+            opacity: 0.3;
+        }
+
+        .empty-state p {
+            color: #888;
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+        }
+
+        .btn {
+            background: #00ff41;
+            color: #000;
+            border: none;
+            padding: 0.8rem 2rem;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 5px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+            text-transform: uppercase;
+        }
+
+        .btn:hover {
+            background: #00cc33;
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.5);
+            transform: translateY(-2px);
+        }
+
+        .filters {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #333;
+            color: #888;
+            padding: 0.5rem 1.5rem;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .filter-btn.active {
+            border-color: #00ff41;
+            color: #00ff41;
+            background: rgba(0, 255, 65, 0.1);
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            table {
+                font-size: 0.85rem;
+            }
+
+            thead th, tbody td {
+                padding: 1rem 0.5rem;
+            }
+
+            .user-avatar {
+                width: 30px;
+                height: 30px;
+            }
+
+            .rank {
+                font-size: 1.2rem;
+            }
+        }
+    </style>
+
+        @media (max-width: 768px) {
+            body { padding: 1rem; }
+            .container { max-width: 100%; }
+            h1 { font-size: 1.8rem; }
+            .leaderboard-item { padding: 1rem; flex-direction: column; text-align: center; }
+            .rank { margin-bottom: 0.5rem; }
+            .user-info { margin: 0.5rem 0; }
+            table { font-size: 0.85rem; }
+            td, th { padding: 0.5rem; }
+        }
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏆 Whale Leaderboard</h1>
+            <p>Top Bitcoin HODLers verified on HODLXXI</p>
+        </div>
+
+        <div class="stats-summary">
+            <div class="stat-card">
+                <div class="number">{{ total_count }}</div>
+                <div class="label">Verified Whales</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="number">{{ leaderboard|selectattr('tier.name', 'equalto', 'Blue Whale')|list|length }}</div>
+                <div class="label">Blue Whales</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="number">{{ leaderboard|selectattr('tier.name', 'equalto', 'Humpback')|list|length }}</div>
+                <div class="label">Humpbacks</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="number">{{ (leaderboard|selectattr('tier.name', 'in', ['Whale', 'Shark'])|list|length) }}</div>
+                <div class="label">Whales & Sharks</div>
+            </div>
+        </div>
+
+        {% if leaderboard|length > 0 %}
+        <div class="leaderboard-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="text-align: center;">Rank</th>
+                        <th>User</th>
+                        <th>Whale Tier</th>
+                        <th>Holdings</th>
+                        <th>Verified</th>
+                        <th style="text-align: center;">Certificate</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in leaderboard %}
+                    <tr>
+                        <td class="rank {% if loop.index == 1 %}gold{% elif loop.index == 2 %}silver{% elif loop.index == 3 %}bronze{% endif %}">
+                            {% if loop.index <= 3 %}
+                                {% if loop.index == 1 %}🥇{% elif loop.index == 2 %}🥈{% else %}🥉{% endif %}
+                            {% else %}
+                                #{{ loop.index }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="user-info">
+                                <div class="user-avatar">
+                                    {{ entry.user.username[:1]|upper if entry.user.username else entry.user.pubkey[:1]|upper }}
+                                </div>
+                                <span class="user-name">
+                                    {{ entry.user.username if entry.user.username else (entry.user.pubkey[:8] + '...') }}
+                                </span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="whale-badge" style="background: {{ entry.tier.color }}22; border: 2px solid {{ entry.tier.color }}; color: {{ entry.tier.color }};">
+                                <span class="emoji">{{ entry.tier.emoji }}</span>
+                                <span>{{ entry.tier.name }}</span>
+                            </div>
+                        </td>
+                        <td style="font-weight: bold; color: {{ entry.tier.color }};">
+                            {{ entry.formatted_amount }}
+                        </td>
+                        <td class="verified-date">
+                            {{ entry.verified_at.strftime('%b %d, %Y') }}
+                        </td>
+                        <td style="text-align: center;">
+                            <a href="/pof/certificate/{{ entry.certificate_id }}" class="view-cert">
+                                View Certificate
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="icon">🐋</div>
+            <p>No verified whales yet!</p>
+            <a href="/pof/verify" class="btn">Be the First to Verify</a>
+        </div>
+        {% endif %}
+
+        <div style="text-align: center; margin-top: 3rem; padding-top: 2rem; border-top: 1px solid #333;">
+            <a href="/pof/verify" class="btn">Verify Your Holdings</a>
+            <br><br>
+            <a href="/pof" style="color: #888; text-decoration: none;">← Back to Proof of Funds</a>
+        </div>
+    </div>
+
+    <script>
+        // Auto-refresh every 30 seconds to show new verifications
+        setTimeout(() => {
+            location.reload();
+        }, 30000);
+    </script>
+</body>
+</html>

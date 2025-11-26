@@ -1,0 +1,49 @@
+# Flask Framework
+Flask>=2.3.0
+flask-socketio>=5.3.0
+Flask-CORS>=4.0.0
+Flask-Limiter>=3.7.0
+
+# Bitcoin RPC
+python-bitcoinrpc>=1.0
+
+# Cryptocurrency Libraries
+bech32>=1.2.0
+base58>=2.1.1
+
+# QR Code Generation
+qrcode[pil]>=7.4.2
+Pillow>=10.0.0
+
+# HTTP Requests
+requests>=2.31.0
+
+# Environment Variables
+python-dotenv>=1.0.1
+
+# WebSocket Support
+python-socketio>=5.9.0
+python-engineio>=4.7.0
+
+# Production Server (optional, recommended for production)
+gunicorn>=21.2.0
+gevent>=23.9.0
+gevent-websocket>=0.10.1
+
+# Database (required for production)
+psycopg2-binary>=2.9.7  # PostgreSQL driver
+SQLAlchemy>=2.0.20  # ORM
+alembic>=1.12.0  # Database migrations
+redis>=5.0.0  # Redis client for caching and sessions
+
+# Security
+cryptography>=42.0.0
+PyJWT[crypto]>=2.9.0
+flask-talisman>=1.1.0
+
+# Observability
+prometheus-client>=0.16.0
+
+# Utilities
+python-dateutil>=2.8.2
+pytz>=2023.3

@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proof of Funds Verification | HODLXXI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+            color: #00ff41;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 2px solid #00ff41;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            text-shadow: 0 0 10px #00ff41;
+        }
+
+        .header p {
+            color: #888;
+            font-size: 1.1rem;
+        }
+
+        .verification-flow {
+            background: rgba(0, 255, 65, 0.05);
+            border: 2px solid #00ff41;
+            border-radius: 10px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .step {
+            margin-bottom: 2rem;
+            padding: 1.5rem;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 8px;
+            border-left: 4px solid #00ff41;
+        }
+
+        .step.inactive {
+            opacity: 0.5;
+            border-left-color: #333;
+        }
+
+        .step.active {
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.3);
+        }
+
+        .step-number {
+            display: inline-block;
+            background: #00ff41;
+            color: #000;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 30px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .step h3 {
+            display: inline-block;
+            margin-bottom: 1rem;
+        }
+
+        .step-content {
+            margin-top: 1rem;
+            padding-left: 40px;
+        }
+
+        textarea, input[type="text"] {
+            width: 100%;
+            min-height: 150px;
+            background: #000;
+            border: 1px solid #00ff41;
+            color: #00ff41;
+            padding: 1rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            border-radius: 5px;
+            resize: vertical;
+        }
+
+        input[type="text"] {
+            min-height: auto;
+            height: 40px;
+        }
+
+        textarea::placeholder, input::placeholder {
+            color: #555;
+        }
+
+        .privacy-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .privacy-option {
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid #333;
+            border-radius: 8px;
+            padding: 1rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .privacy-option:hover {
+            border-color: #00ff41;
+            transform: translateY(-2px);
+        }
+
+        .privacy-option.selected {
+            border-color: #00ff41;
+            background: rgba(0, 255, 65, 0.1);
+            box-shadow: 0 0 15px rgba(0, 255, 65, 0.2);
+        }
+
+        .privacy-option input[type="radio"] {
+            display: none;
+        }
+
+        .privacy-option h4 {
+            margin-bottom: 0.5rem;
+            color: #00ff41;
+        }
+
+        .privacy-option p {
+            color: #888;
+            font-size: 0.85rem;
+        }
+
+        .btn {
+            background: #00ff41;
+            color: #000;
+            border: none;
+            padding: 0.8rem 2rem;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 5px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            transition: all 0.3s;
+            display: inline-block;
+            text-transform: uppercase;
+        }
+
+        .btn:hover {
+            background: #00cc33;
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.5);
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            background: #333;
+            color: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            border: 2px solid #00ff41;
+            color: #00ff41;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(0, 255, 65, 0.1);
+        }
+
+        .whale-tiers {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .whale-tier {
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #333;
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .whale-tier .emoji {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .whale-tier .name {
+            font-weight: bold;
+            margin-bottom: 0.3rem;
+        }
+
+        .whale-tier .range {
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .spinner {
+            border: 4px solid #333;
+            border-top: 4px solid #00ff41;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .success-message {
+            background: rgba(0, 255, 65, 0.1);
+            border: 2px solid #00ff41;
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            margin-top: 2rem;
+        }
+
+        .success-message .whale-badge {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+
+        .success-message h2 {
+            margin-bottom: 1rem;
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 5px;
+            margin-bottom: 1rem;
+        }
+
+        .alert-info {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid #3B82F6;
+            color: #3B82F6;
+        }
+
+        .alert-error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid #EF4444;
+            color: #EF4444;
+        }
+
+        .alert-warning {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid #F59E0B;
+            color: #F59E0B;
+        }
+
+        .share-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin-top: 1.5rem;
+        }
+
+        .code-box {
+            background: #000;
+            border: 1px solid #00ff41;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+
+        .code-box pre {
+            margin: 0;
+            color: #00ff41;
+            font-size: 0.85rem;
+        }
+
+        .instruction-list {
+            color: #888;
+            padding-left: 1.5rem;
+            margin: 1rem 0;
+        }
+
+        .instruction-list li {
+            margin-bottom: 0.5rem;
+        }
+
+        /* Mobile Responsive Styles */
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem;
+            }
+
+            .container {
+                max-width: 100%;
+            }
+
+            .header h1 {
+                font-size: 1.8rem;
+            }
+
+            .header p {
+                font-size: 1rem;
+            }
+
+            .verification-flow {
+                padding: 1rem;
+            }
+
+            .step {
+                padding: 1rem;
+                margin-bottom: 1.5rem;
+            }
+
+            .step-content {
+                padding-left: 0;
+            }
+
+            .step-number {
+                display: block;
+                margin-bottom: 0.5rem;
+            }
+
+            .step h3 {
+                display: block;
+                font-size: 1.2rem;
+            }
+
+            textarea, input[type="text"] {
+                font-size: 14px;
+                min-height: 120px;
+            }
+
+            .privacy-controls {
+                grid-template-columns: 1fr;
+            }
+
+            .whale-tiers {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 0.5rem;
+            }
+
+            .whale-tier {
+                padding: 0.75rem;
+            }
+
+            .whale-tier .emoji {
+                font-size: 1.5rem;
+            }
+
+            .whale-tier .name {
+                font-size: 0.9rem;
+            }
+
+            .btn {
+                width: 100%;
+                padding: 1rem;
+                margin-bottom: 0.5rem;
+                font-size: 0.95rem;
+            }
+
+            .share-buttons {
+                flex-direction: column;
+            }
+
+            .share-buttons .btn {
+                width: 100%;
+            }
+
+            .alert {
+                padding: 0.75rem;
+                font-size: 0.9rem;
+            }
+
+            .success-message {
+                padding: 1.5rem;
+            }
+
+            .success-message .whale-badge {
+                font-size: 3rem;
+            }
+
+            .success-message h2 {
+                font-size: 1.5rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 1.5rem;
+            }
+
+            .whale-tiers {
+                grid-template-columns: 1fr;
+            }
+
+            .privacy-option {
+                padding: 0.75rem;
+            }
+
+            .privacy-option h4 {
+                font-size: 0.95rem;
+            }
+
+            .privacy-option p {
+                font-size: 0.75rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🐋 Proof of Funds</h1>
+            <p>Cryptographically prove your Bitcoin holdings using PSBT</p>
+        </div>
+
+        <div class="verification-flow">
+            <!-- Step 1: Get Challenge -->
+            <div class="step active" id="step1">
+                <span class="step-number">1</span>
+                <h3>Request Challenge</h3>
+                <div class="step-content">
+                    <p style="color: #888; margin-bottom: 1rem;">
+                        Enter a unique identifier (your name, pubkey, or any string)
+                    </p>
+                    <input type="text" id="pubkeyId" placeholder="your-identifier" value="">
+                    <div style="margin-top: 1rem;">
+                        <button class="btn" onclick="getChallenge()">Generate Challenge</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2: Choose Privacy Level -->
+            <div class="step inactive" id="step2">
+                <span class="step-number">2</span>
+                <h3>Choose Privacy Level</h3>
+                <div class="step-content">
+                    <p style="color: #888; margin-bottom: 1rem;">
+                        Control how your balance is displayed publicly
+                    </p>
+                    <div class="privacy-controls">
+                        <label class="privacy-option selected">
+                            <input type="radio" name="privacy" value="boolean" checked>
+                            <h4>🔒 Boolean</h4>
+                            <p>Only shows "Verified" - most private</p>
+                        </label>
+                        <label class="privacy-option">
+                            <input type="radio" name="privacy" value="threshold">
+                            <h4>🐋 Whale Tier</h4>
+                            <p>Shows tier: Shrimp, Crab, Whale, etc.</p>
+                        </label>
+                        <label class="privacy-option">
+                            <input type="radio" name="privacy" value="aggregate">
+                            <h4>📊 Aggregate</h4>
+                            <p>Shows rounded amount: ~10 BTC, ~100 BTC</p>
+                        </label>
+                        <label class="privacy-option">
+                            <input type="radio" name="privacy" value="exact">
+                            <h4>💯 Exact</h4>
+                            <p>Shows exact balance - full transparency</p>
+                        </label>
+                    </div>
+                    <div class="whale-tiers">
+                        {% for tier in whale_tiers %}
+                        <div class="whale-tier" style="border-color: {{ tier.color }};">
+                            <div class="emoji">{{ tier.emoji }}</div>
+                            <div class="name" style="color: {{ tier.color }};">{{ tier.name }}</div>
+                            <div class="range">
+                                {% if tier.max == 'inf' %}
+                                {{ tier.min }}+ BTC
+                                {% else %}
+                                {{ tier.min }}-{{ tier.max }} BTC
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 3: Create PSBT -->
+            <div class="step inactive" id="step3">
+                <span class="step-number">3</span>
+                <h3>Create & Sign PSBT</h3>
+                <div class="step-content">
+                    <div class="alert alert-info">
+                        <strong>Challenge:</strong>
+                        <pre id="challengeText" style="margin-top: 0.5rem; background: rgba(0,0,0,0.5); padding: 0.5rem; border-radius: 5px; overflow-x: auto;"></pre>
+                    </div>
+                    
+                    <div class="alert alert-warning" style="margin-top: 1rem;">
+                        <strong>⚡ Create a PSBT using Bitcoin Core:</strong>
+                        <div class="code-box" id="psbtInstructions"></div>
+                    </div>
+
+                    <p style="color: #888; margin: 1rem 0;">
+                        Paste your <strong>signed PSBT</strong> below:
+                    </p>
+                    <textarea id="psbtInput" placeholder="cHNidP8BA..."></textarea>
+                    
+                    <div style="margin-top: 1rem;">
+                        <button class="btn" onclick="submitPSBT()">Verify PSBT</button>
+                        <button class="btn btn-secondary" onclick="resetFlow()">Start Over</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 4: Results -->
+            <div class="step inactive" id="step4">
+                <div id="results"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentChallengeId = null;
+        let currentChallenge = null;
+
+        // Privacy option selection
+        document.querySelectorAll('.privacy-option').forEach(option => {
+            option.addEventListener('click', function() {
+                document.querySelectorAll('.privacy-option').forEach(opt => opt.classList.remove('selected'));
+                this.classList.add('selected');
+                this.querySelector('input').checked = true;
+            });
+        });
+
+        function showStep(stepNum) {
+            document.querySelectorAll('.step').forEach((step, index) => {
+                if (index + 1 === stepNum) {
+                    step.classList.remove('inactive');
+                    step.classList.add('active');
+                } else if (index + 1 < stepNum) {
+                    step.classList.remove('active', 'inactive');
+                } else {
+                    step.classList.remove('active');
+                    step.classList.add('inactive');
+                }
+            });
+        }
+
+        async function getChallenge() {
+            const pubkeyId = document.getElementById('pubkeyId').value.trim() || 'user-' + Date.now();
+            
+            try {
+                const response = await fetch('/api/playground/pof/challenge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pubkey: pubkeyId })
+                });
+
+                const data = await response.json();
+                
+                if (!data.ok) {
+                    alert('Error: ' + (data.error || data.message));
+                    return;
+                }
+
+                currentChallengeId = data.challenge_id;
+                currentChallenge = data.challenge;
+                
+                document.getElementById('challengeText').textContent = currentChallenge;
+                
+                // Convert challenge to hex for OP_RETURN
+                const challengeHex = Array.from(currentChallenge)
+                    .map(c => c.charCodeAt(0).toString(16).padStart(2, '0'))
+                    .join('');
+                
+                // Generate Bitcoin Core instructions
+                const instructions = `# 1. Get your UTXOs
+UTXOS=$(bitcoin-cli listunspent)
+
+# 2. Create unsigned PSBT with challenge as OP_RETURN
+PSBT=$(bitcoin-cli createpsbt "$(echo $UTXOS | jq '[.[] | {txid,vout}]')" \\
+  '[{"data":"${challengeHex}"}]')
+
+# 3. Sign the PSBT
+SIGNED=$(bitcoin-cli walletprocesspsbt "$PSBT")
+
+# 4. Extract the signed PSBT
+echo "$SIGNED" | jq -r .psbt
+
+# Copy the output and paste it below!`;
+
+                document.getElementById('psbtInstructions').innerHTML = `<pre>${instructions}</pre>`;
+
+                showStep(2);
+                showStep(3);
+
+            } catch (error) {
+                alert('Error generating challenge: ' + error.message);
+            }
+        }
+
+        async function submitPSBT() {
+            const psbt = document.getElementById('psbtInput').value.trim();
+            
+            if (!psbt) {
+                alert('Please provide a signed PSBT');
+                return;
+            }
+
+            if (!currentChallengeId) {
+                alert('No active challenge. Please start over.');
+                return;
+            }
+
+            const privacyLevel = document.querySelector('input[name="privacy"]:checked').value;
+
+            // Show loading
+            document.getElementById('results').innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Verifying cryptographic proof...</p>
+                </div>
+            `;
+            showStep(4);
+
+            try {
+                const response = await fetch('/api/playground/pof/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        challenge_id: currentChallengeId,
+                        psbt: psbt
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (!data.ok) {
+                    document.getElementById('results').innerHTML = `
+                        <div class="alert alert-error">
+                            <strong>Verification Failed:</strong> ${data.error || data.message}
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Determine whale tier
+                const totalBTC = data.total_btc || 0;
+                const tiers = [
+                    {name: 'Shrimp', min: 0, max: 0.1, emoji: '🦐', color: '#94A3B8'},
+                    {name: 'Crab', min: 0.1, max: 1, emoji: '🦀', color: '#F97316'},
+                    {name: 'Dolphin', min: 1, max: 10, emoji: '🐬', color: '#3B82F6'},
+                    {name: 'Shark', min: 10, max: 50, emoji: '🦈', color: '#8B5CF6'},
+                    {name: 'Whale', min: 50, max: 100, emoji: '🐋', color: '#EC4899'},
+                    {name: 'Humpback', min: 100, max: 1000, emoji: '🐳', color: '#F59E0B'},
+                    {name: 'Blue Whale', min: 1000, max: Infinity, emoji: '🌊', color: '#14B8A6'}
+                ];
+                
+                let tier = tiers[0];
+                for (let t of tiers) {
+                    if (totalBTC >= t.min && totalBTC < t.max) {
+                        tier = t;
+                        break;
+                    }
+                }
+
+                // Format amount based on privacy
+                let formattedAmount;
+                if (privacyLevel === 'boolean') {
+                    formattedAmount = "Verified ✓";
+                } else if (privacyLevel === 'threshold') {
+                    formattedAmount = `${tier.emoji} ${tier.name}`;
+                } else if (privacyLevel === 'aggregate') {
+                    const rounded = Math.round(totalBTC / 10) * 10;
+                    formattedAmount = `~${rounded} BTC`;
+                } else {
+                    formattedAmount = `${totalBTC.toFixed(8)} BTC`;
+                }
+
+                // Show success
+                document.getElementById('results').innerHTML = `
+                    <div class="success-message">
+                        <div class="whale-badge">${tier.emoji}</div>
+                        <h2 style="color: ${tier.color};">${tier.name} Status Achieved!</h2>
+                        <p style="color: #888; margin-bottom: 1rem;">
+                            Successfully verified ${data.unspent_count} UTXO${data.unspent_count > 1 ? 's' : ''}
+                        </p>
+                        <p style="font-size: 1.5rem; margin-bottom: 1rem;">
+                            ${formattedAmount}
+                        </p>
+                        <p style="color: #888; font-size: 0.9rem;">
+                            <strong>Proof ID:</strong> ${data.proof_id || 'N/A'}
+                        </p>
+                        <div class="share-buttons">
+                            <button class="btn" onclick="window.location.href='/pof/leaderboard'">
+                                See Leaderboard
+                            </button>
+                            <button class="btn btn-secondary" onclick="resetFlow()">
+                                Verify Another
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+            } catch (error) {
+                document.getElementById('results').innerHTML = `
+                    <div class="alert alert-error">
+                        <strong>Error:</strong> ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        function resetFlow() {
+            document.getElementById('pubkeyId').value = '';
+            document.getElementById('psbtInput').value = '';
+            currentChallengeId = null;
+            currentChallenge = null;
+            showStep(1);
+        }
+    </script>
+</body>
+</html>

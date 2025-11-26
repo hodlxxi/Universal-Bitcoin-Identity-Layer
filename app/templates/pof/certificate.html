@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ tier.emoji }} {{ tier.name }} Certificate | HODLXXI</title>
+    
+    <!-- Open Graph for social sharing -->
+    <meta property="og:title" content="{{ tier.emoji }} {{ tier.name }} - HODLXXI Proof of Funds">
+    <meta property="og:description" content="Verified Bitcoin holdings on HODLXXI - {{ formatted_amount }}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ cert_url }}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ tier.emoji }} {{ tier.name }} Status">
+    <meta name="twitter:description" content="Verified Bitcoin holdings on HODLXXI">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+            color: #00ff41;
+            min-height: 100vh;
+            padding: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .certificate-container {
+            max-width: 800px;
+            width: 100%;
+        }
+
+        .certificate {
+            background: linear-gradient(135deg, rgba(0, 0, 0, 0.9) 0%, rgba(26, 26, 46, 0.9) 100%);
+            border: 3px solid {{ tier.color }};
+            border-radius: 20px;
+            padding: 3rem;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 50px rgba(0, 255, 65, 0.3);
+        }
+
+        .certificate::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, {{ tier.color }}22 0%, transparent 70%);
+            animation: pulse 4s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.5; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+        }
+
+        .certificate-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        .certificate-header {
+            text-align: center;
+            margin-bottom: 2rem;
+            padding-bottom: 2rem;
+            border-bottom: 2px solid {{ tier.color }};
+        }
+
+        .whale-badge {
+            font-size: 6rem;
+            margin-bottom: 1rem;
+            filter: drop-shadow(0 0 20px {{ tier.color }});
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .certificate-title {
+            font-size: 2.5rem;
+            color: {{ tier.color }};
+            text-shadow: 0 0 20px {{ tier.color }};
+            margin-bottom: 0.5rem;
+        }
+
+        .certificate-subtitle {
+            color: #888;
+            font-size: 1.2rem;
+        }
+
+        .certificate-body {
+            text-align: center;
+            padding: 2rem 0;
+        }
+
+        .verified-label {
+            background: rgba(0, 255, 65, 0.1);
+            border: 2px solid #00ff41;
+            border-radius: 10px;
+            padding: 1rem 2rem;
+            display: inline-block;
+            margin-bottom: 2rem;
+        }
+
+        .verified-label .label {
+            color: #888;
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .verified-label .value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #00ff41;
+        }
+
+        .details-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }
+
+        .detail-item {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid #333;
+            border-radius: 10px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .detail-item .label {
+            color: #888;
+            font-size: 0.85rem;
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+        }
+
+        .detail-item .value {
+            font-size: 1.2rem;
+            color: #00ff41;
+            font-weight: bold;
+        }
+
+        .certificate-footer {
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 2px solid {{ tier.color }};
+            text-align: center;
+        }
+
+        .certificate-id {
+            color: #555;
+            font-size: 0.8rem;
+            font-family: monospace;
+            margin-bottom: 1rem;
+        }
+
+        .share-section {
+            margin-top: 2rem;
+        }
+
+        .share-section h3 {
+            margin-bottom: 1rem;
+            color: {{ tier.color }};
+        }
+
+        .share-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            background: #00ff41;
+            color: #000;
+            border: none;
+            padding: 0.8rem 2rem;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 5px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+            text-transform: uppercase;
+        }
+
+        .btn:hover {
+            background: #00cc33;
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.5);
+            transform: translateY(-2px);
+        }
+
+        .btn-twitter {
+            background: #1DA1F2;
+            color: white;
+        }
+
+        .btn-twitter:hover {
+            background: #1a8cd8;
+            box-shadow: 0 0 20px rgba(29, 161, 242, 0.5);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            border: 2px solid #00ff41;
+            color: #00ff41;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(0, 255, 65, 0.1);
+        }
+
+        .qr-code {
+            margin: 2rem 0;
+        }
+
+        .qr-code canvas {
+            border: 3px solid {{ tier.color }};
+            border-radius: 10px;
+            padding: 1rem;
+            background: white;
+        }
+
+        .verification-seal {
+            position: absolute;
+            top: 2rem;
+            right: 2rem;
+            background: rgba(0, 255, 65, 0.1);
+            border: 2px solid #00ff41;
+            border-radius: 50%;
+            width: 80px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            animation: rotate 20s linear infinite;
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .hodlxxi-logo {
+            text-align: center;
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 1px solid #333;
+        }
+
+        .hodlxxi-logo a {
+            color: #00ff41;
+            text-decoration: none;
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .hodlxxi-logo a:hover {
+            text-shadow: 0 0 10px #00ff41;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem;
+            }
+
+            .certificate {
+                padding: 2rem 1rem;
+            }
+
+            .certificate-title {
+                font-size: 1.8rem;
+            }
+
+            .whale-badge {
+                font-size: 4rem;
+            }
+
+            .details-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .verification-seal {
+                top: 1rem;
+                right: 1rem;
+                width: 60px;
+                height: 60px;
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+
+        @media (max-width: 768px) {
+            body { padding: 1rem; }
+            .certificate { padding: 1.5rem; margin: 1rem; }
+            h1 { font-size: 1.5rem; }
+            .whale-badge { font-size: 3rem; }
+            .btn { width: 100%; margin-bottom: 0.5rem; }
+        }
+</head>
+<body>
+    <div class="certificate-container">
+        <div class="certificate">
+            <div class="verification-seal" title="Cryptographically Verified">
+                ✓
+            </div>
+
+            <div class="certificate-content">
+                <div class="certificate-header">
+                    <div class="whale-badge">{{ tier.emoji }}</div>
+                    <h1 class="certificate-title">{{ tier.name }} STATUS</h1>
+                    <p class="certificate-subtitle">Bitcoin Proof of Funds Certificate</p>
+                </div>
+
+                <div class="certificate-body">
+                    <div class="verified-label">
+                        <div class="label">Verified Holdings</div>
+                        <div class="value">{{ formatted_amount }}</div>
+                    </div>
+
+                    <div class="details-grid">
+                        <div class="detail-item">
+                            <div class="label">Addresses Verified</div>
+                            <div class="value">{{ pof.address_count }}</div>
+                        </div>
+
+                        <div class="detail-item">
+                            <div class="label">Privacy Level</div>
+                            <div class="value">{{ pof.privacy_level|title }}</div>
+                        </div>
+
+                        <div class="detail-item">
+                            <div class="label">Verified On</div>
+                            <div class="value">{{ pof.verified_at.strftime('%Y-%m-%d') }}</div>
+                        </div>
+
+                        <div class="detail-item">
+                            <div class="label">User</div>
+                            <div class="value">{{ user.username or user.pubkey[:8] + '...' }}</div>
+                        </div>
+                    </div>
+
+                    <p style="color: #888; font-size: 0.9rem; margin: 2rem 0;">
+                        This certificate proves that the holder controlled the specified amount of Bitcoin
+                        at the time of verification through cryptographic signature verification.
+                    </p>
+                </div>
+
+                <div class="certificate-footer">
+                    <div class="certificate-id">
+                        Certificate ID: {{ pof.certificate_id }}
+                    </div>
+
+                    <!-- QR Code -->
+                    <div class="qr-code">
+                        <canvas id="qrcode"></canvas>
+                    </div>
+
+                    <div class="share-section">
+                        <h3>Share Your Achievement</h3>
+                        <div class="share-buttons">
+                            <a href="{{ twitter_url }}" target="_blank" class="btn btn-twitter">
+                                Tweet Your Status
+                            </a>
+                            <button class="btn btn-secondary" onclick="copyLink()">
+                                Copy Link
+                            </button>
+                            <a href="/pof/verify" class="btn">
+                                Verify Your Funds
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hodlxxi-logo">
+                    <a href="/">HODLXXI.COM</a>
+                    <p style="color: #555; font-size: 0.85rem; margin-top: 0.5rem;">
+                        Bitcoin Identity & Authentication Layer
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- QR Code Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script>
+        // Generate QR code
+        new QRCode(document.getElementById("qrcode"), {
+            text: "{{ cert_url }}",
+            width: 200,
+            height: 200,
+            colorDark: "#000000",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.H
+        });
+
+        function copyLink() {
+            const url = "{{ cert_url }}";
+            navigator.clipboard.writeText(url).then(() => {
+                alert('Certificate link copied to clipboard!');
+            }).catch(err => {
+                prompt('Copy this link:', url);
+            });
+        }
+    </script>
+</body>
+</html>
