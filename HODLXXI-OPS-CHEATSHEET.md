@@ -25,3 +25,4 @@ Current JWT mode: **HS256** (uses `JWT_SECRET` from `.env`)
   ├─ HODLXXI OAuth2 Live Demo.sh
   ├─ PRODUCTION VALIDATION.sh
   └─ HODLXXI-OPS-CHEATSHEET.md  # this file
+- Git push test from VPS on Wed Nov 26 18:11:51 UTC 2025
