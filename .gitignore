@@ -177,3 +177,10 @@ pof_attest.db
 # Python caches
 __pycache__/
 *.pyc
+
+# SQLite WAL/SHM files
+*.db-shm
+*.db-wal
+
+# Local PoF helper with real RPC creds (keep local only)
+pof_full_balance.sh
