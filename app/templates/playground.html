@@ -1,23 +1,21 @@
-{% raw %}
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>🎮 HODLXXI Playground - Test All Auth Methods</title>
-    
+
     <!-- React 18 -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
+
     <!-- QR Code -->
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-    
-    <!-- Socket.IO -->
+
+    <!-- Socket.IO (if you want real-time later; safe to keep) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.min.js"></script>
-    
+
     <style>
         :root {
             --bg: #0b0f10;
@@ -27,10 +25,11 @@
             --orange: #f7931a;
             --red: #ff3b30;
             --blue: #3b82f6;
+            --muted: #8a9da4;
         }
-        
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        
+
         body {
             background: var(--bg);
             color: var(--fg);
@@ -38,18 +37,18 @@
             min-height: 100vh;
             overflow-x: hidden;
         }
-        
+
         #matrix-bg {
             position: fixed;
             inset: 0;
             z-index: 0;
             pointer-events: none;
         }
-        
+
         @media (prefers-reduced-motion: reduce) {
             #matrix-bg { display: none !important; }
         }
-        
+
         #root {
             position: relative;
             z-index: 1;
@@ -57,7 +56,7 @@
             max-width: 1400px;
             margin: 0 auto;
         }
-        
+
         .header {
             background: rgba(17, 23, 26, 0.92);
             border: 1px solid #0f2a24;
@@ -66,21 +65,21 @@
             margin-bottom: 1.5rem;
             box-shadow: 0 0 10px rgba(0, 255, 136, 0.08);
         }
-        
+
         .header h1 {
             color: var(--accent);
             font-size: 2rem;
             margin-bottom: 0.5rem;
             text-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
         }
-        
+
         .header-info {
             display: flex;
             gap: 1rem;
             margin-top: 1rem;
             flex-wrap: wrap;
         }
-        
+
         .card {
             background: rgba(17, 23, 26, 0.92);
             border: 1px solid #0f2a24;
@@ -89,20 +88,20 @@
             margin-bottom: 1.5rem;
             box-shadow: 0 0 10px rgba(0, 255, 136, 0.08);
         }
-        
+
         .card h2 {
             color: var(--accent);
             margin-bottom: 1rem;
             font-size: 1.3rem;
         }
-        
+
         .tabs {
             display: flex;
             gap: 0.5rem;
             margin-bottom: 1.5rem;
             flex-wrap: wrap;
         }
-        
+
         .tab {
             background: #0e1516;
             border: 1px solid #184438;
@@ -114,19 +113,19 @@
             font-weight: 500;
             font-size: 0.9rem;
         }
-        
+
         .tab.active {
             background: var(--accent);
             color: #000;
             border-color: var(--accent);
             box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
         }
-        
+
         .tab:hover:not(.active) {
             border-color: var(--accent);
             background: rgba(0, 255, 136, 0.1);
         }
-        
+
         input, textarea, select {
             width: 100%;
             background: #0e1315;
@@ -138,13 +137,13 @@
             margin: 0.5rem 0;
             font-size: 0.9rem;
         }
-        
+
         input:focus, textarea:focus, select:focus {
             outline: none;
             border-color: var(--accent);
             box-shadow: 0 0 0 3px rgba(0, 255, 136, 0.2);
         }
-        
+
         button {
             background: var(--accent);
             color: #000;
@@ -156,29 +155,29 @@
             transition: all 0.3s;
             font-size: 0.95rem;
         }
-        
+
         button:hover {
             box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
             transform: translateY(-2px);
         }
-        
+
         button:disabled {
             opacity: 0.5;
             cursor: not-allowed;
             transform: none;
         }
-        
+
         button.secondary {
             background: transparent;
             border: 1px solid var(--accent);
             color: var(--accent);
         }
-        
+
         button.danger {
             background: var(--red);
             color: white;
         }
-        
+
         .result {
             background: #0e1315;
             border: 1px solid #255244;
@@ -190,18 +189,18 @@
             overflow-y: auto;
             margin-top: 1rem;
         }
-        
+
         .result.success {
             border-color: var(--accent);
             background: rgba(0, 255, 136, 0.05);
         }
-        
+
         .result.error {
             border-color: var(--red);
             background: rgba(255, 59, 48, 0.05);
             color: var(--red);
         }
-        
+
         .qr-container {
             display: flex;
             justify-content: center;
@@ -212,11 +211,11 @@
             border-radius: 12px;
             border: 2px solid var(--accent);
         }
-        
+
         .qr-container canvas {
             display: block;
         }
-        
+
         .status-badge {
             display: inline-block;
             padding: 0.35rem 0.85rem;
@@ -224,25 +223,25 @@
             font-size: 0.85rem;
             font-weight: 600;
         }
-        
+
         .status-badge.success {
             background: rgba(0, 255, 136, 0.2);
             color: var(--accent);
             border: 1px solid var(--accent);
         }
-        
+
         .status-badge.pending {
             background: rgba(247, 147, 26, 0.2);
             color: var(--orange);
             border: 1px solid var(--orange);
         }
-        
+
         .status-badge.error {
             background: rgba(255, 59, 48, 0.2);
             color: var(--red);
             border: 1px solid var(--red);
         }
-        
+
         .label {
             font-size: 0.875rem;
             color: var(--accent);
@@ -251,7 +250,7 @@
             margin-top: 1rem;
             margin-bottom: 0.25rem;
         }
-        
+
         .code-box {
             background: #0e1315;
             padding: 1rem;
@@ -261,18 +260,18 @@
             transition: all 0.3s;
             position: relative;
         }
-        
+
         .code-box:hover {
             background: rgba(0, 255, 136, 0.05);
             border-color: var(--accent);
         }
-        
+
         .code-box code {
             color: var(--accent);
             word-break: break-all;
             font-size: 0.85rem;
         }
-        
+
         .hint {
             background: rgba(247, 147, 26, 0.1);
             border-left: 3px solid var(--orange);
@@ -280,23 +279,23 @@
             border-radius: 6px;
             margin-top: 1rem;
         }
-        
+
         .hint-title {
             color: var(--orange);
             font-weight: 600;
             margin-bottom: 0.5rem;
         }
-        
+
         .hint ol, .hint ul {
             margin-left: 1.5rem;
             color: var(--muted);
             font-size: 0.875rem;
         }
-        
+
         .hint li {
             margin: 0.25rem 0;
         }
-        
+
         .spinner {
             display: inline-block;
             width: 1rem;
@@ -306,31 +305,30 @@
             border-radius: 50%;
             animation: spin 0.6s linear infinite;
         }
-        
+
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
-        
+
         @media (max-width: 768px) {
             #root {
                 padding: 1rem;
             }
-            
+
             .header h1 {
                 font-size: 1.5rem;
             }
-            
+
             .tabs {
                 flex-direction: column;
             }
-            
+
             .tab {
                 width: 100%;
                 text-align: center;
             }
         }
-        
-        /* Loading overlay */
+
         .loading-overlay {
             position: fixed;
             top: 0;
@@ -343,11 +341,11 @@
             justify-content: center;
             z-index: 9999;
         }
-        
+
         .loading-content {
             text-align: center;
         }
-        
+
         .loading-spinner {
             width: 3rem;
             height: 3rem;
@@ -361,8 +359,13 @@
 </head>
 <body>
     <canvas id="matrix-bg" aria-hidden="true"></canvas>
-    <div id="root"></div>
-    
+<div id="root"
+     data-logged-in="{{ logged_in_pubkey }}"
+     data-access-level="{{ access_level }}"
+     data-issuer="{{ issuer }}"
+     data-initial-tab="{{ initial_tab or 'legacy' }}">
+</div>
+
     <!-- Matrix Animation -->
     <script>
         (function() {
@@ -416,10 +419,10 @@
             }
 
             function onVis() {
-                if (document.hidden) { 
-                    if (raf) cancelAnimationFrame(raf), raf = null; 
-                } else { 
-                    if (!raf) raf = requestAnimationFrame(draw); 
+                if (document.hidden) {
+                    if (raf) cancelAnimationFrame(raf), raf = null;
+                } else {
+                    if (!raf) raf = requestAnimationFrame(draw);
                 }
             }
 
@@ -429,29 +432,39 @@
             raf = requestAnimationFrame(draw);
         })();
     </script>
-    
-    <!-- React App -->
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
-        
-        function PlaygroundApp() {
-            console.log("PlaygroundApp starting...");
-            const [activeTab, setActiveTab] = useState('legacy');
-            const [result, setResult] = useState(null);
-            const [loading, setLoading] = useState(false);
-            
-            const loggedIn = "";
-            const accessLevel = "limited";
-            const issuer = "https://hodlxxi.com";
-            
+
+<!-- React App -->
+<script type="text/babel">
+    {% raw %}
+    const { useState, useEffect, useRef } = React;
+
+    function PlaygroundApp() {
+        const rootEl = document.getElementById('root') || {};
+        const ds = rootEl.dataset || {};
+
+        const initialTab  = ds.initialTab  || 'legacy';
+        const loggedIn    = ds.loggedIn    || '';
+        const accessLevel = ds.accessLevel || 'guest';
+        const issuer      = ds.issuer      || '';
+
+        const [activeTab, setActiveTab] = useState(initialTab);
+        const [result, setResult] = useState(null);
+        const [loading, setLoading] = useState(false);
+        const [pofPubkey, setPofPubkey] = useState('');
+        const [challengeId, setChallengeId] = useState('');
+        const [challengeText, setChallengeText] = useState('');
+        const [psbt, setPsbt] = useState('');
+        const [privacyLevel, setPrivacyLevel] = useState('aggregate');
+        const [minSat, setMinSat] = useState('0');
+        const [pofStep, setPofStep] = useState(1);
             return (
                 <div>
                     <div className="header">
                         <h1>🎮 HODLXXI API Playground</h1>
-                        <p style="color: var(--muted); margin-bottom: 1rem">
+                        <p style={{color: 'var(--muted)', marginBottom: '1rem'}}>
                             Test all authentication methods, OAuth flows, and Bitcoin verification in real-time
                         </p>
-                        {loggedIn && loggedIn !== '' ? (
+                        {loggedIn && loggedIn !== "" ? (
                             <div className="header-info">
                                 <span className="status-badge success">
                                     Logged in: {loggedIn.slice(-8)}
@@ -468,66 +481,66 @@
                             </div>
                         )}
                     </div>
-                    
+
                     {loading && (
                         <div className="loading-overlay">
                             <div className="loading-content">
                                 <div className="loading-spinner"></div>
-                                <p style="color: var(--accent)">Processing...</p>
+                                <p style={{color: 'var(--accent)'}}>Processing...</p>
                             </div>
                         </div>
                     )}
-                    
+
                     <div className="card">
                         <div className="tabs">
-                            <button 
-                                className={{`tab ${activeTab === 'legacy' ? 'active' : ''}`}
+                            <button
+                                className={`tab ${activeTab === 'legacy' ? 'active' : ''}`}
                                 onClick={() => setActiveTab('legacy')}
                             >
                                 🔐 Legacy Signature
                             </button>
-                            <button 
-                                className={{`tab ${activeTab === 'api' ? 'active' : ''}`}
+                            <button
+                                className={`tab ${activeTab === 'api' ? 'active' : ''}`}
                                 onClick={() => setActiveTab('api')}
                             >
                                 ⚡ API Challenge
                             </button>
-                            <button 
-                                className={{`tab ${activeTab === 'lnurl' ? 'active' : ''}`}
+                            <button
+                                className={`tab ${activeTab === 'lnurl' ? 'active' : ''}`}
                                 onClick={() => setActiveTab('lnurl')}
                             >
                                 ⚡ LNURL-Auth
                             </button>
-                            <button 
-                                className={{`tab ${activeTab === 'oauth' ? 'active' : ''}`}
+                            <button
+                                className={`tab ${activeTab === 'oauth' ? 'active' : ''}`}
                                 onClick={() => setActiveTab('oauth')}
                             >
                                 🔑 OAuth Flow
                             </button>
-                            <button 
-                                className={{`tab ${activeTab === 'pof' ? 'active' : ''}`}
+                            <button
+                                className={`tab ${activeTab === 'pof' ? 'active' : ''}`}
                                 onClick={() => setActiveTab('pof')}
                             >
                                 💰 Proof of Funds
                             </button>
                         </div>
-                        
+
                         {activeTab === 'legacy' && <LegacyTab setResult={setResult} setLoading={setLoading} />}
                         {activeTab === 'api' && <APITab setResult={setResult} setLoading={setLoading} />}
                         {activeTab === 'lnurl' && <LNURLTab setResult={setResult} setLoading={setLoading} issuer={issuer} />}
                         {activeTab === 'oauth' && <OAuthTab setResult={setResult} setLoading={setLoading} issuer={issuer} />}
                         {activeTab === 'pof' && <PoFTab setResult={setResult} setLoading={setLoading} />}
                     </div>
-                    
+
                     {result && (
                         <div className="card">
                             <h2>📊 Result</h2>
-                            <div className={{`result ${result.error ? 'error' : 'success'}`}>
+                            <div className={`result ${result.error ? 'error' : 'success'}`}>
                                 <pre>{JSON.stringify(result, null, 2)}</pre>
                             </div>
-                            <button 
-                                className="secondary" 
-                                style="margin-top: 1rem"
+                            <button
+                                className="secondary"
+                                style={{marginTop: '1rem'}}
                                 onClick={() => setResult(null)}
                             >
                                 Clear Result
@@ -537,14 +550,12 @@
                 </div>
             );
         }
-        
-        // === TAB COMPONENTS ===
-        
+
         function LegacyTab({ setResult, setLoading }) {
             const [pubkey, setPubkey] = useState('');
             const [signature, setSignature] = useState('');
             const [challenge, setChallenge] = useState('Loading...');
-            
+
             useEffect(() => {
                 fetch('/login')
                     .then(r => r.text())
@@ -555,13 +566,13 @@
                     })
                     .catch(() => setChallenge('Error loading challenge'));
             }, []);
-            
+
             const handleVerify = async () => {
                 if (!pubkey || !signature) {
                     setResult({ error: 'Both pubkey and signature are required' });
                     return;
                 }
-                
+
                 setLoading(true);
                 try {
                     const res = await fetch('/verify_signature', {
@@ -571,7 +582,7 @@
                     });
                     const data = await res.json();
                     setResult(data);
-                    
+
                     if (data.verified) {
                         setTimeout(() => window.location.href = '/app', 2000);
                     }
@@ -581,38 +592,38 @@
                     setLoading(false);
                 }
             };
-            
+
             const copyChallenge = () => {
                 navigator.clipboard.writeText(challenge);
                 alert('Challenge copied to clipboard!');
             };
-            
+
             return (
                 <div>
                     <label className="label">Challenge (Sign this in your wallet)</label>
                     <div className="code-box" onClick={copyChallenge} title="Click to copy">
                         <code>{challenge}</code>
                     </div>
-                    
+
                     <label className="label">Public Key</label>
-                    <input 
+                    <input
                         value={pubkey}
                         onChange={(e) => setPubkey(e.target.value)}
                         placeholder="02... or 03... (66 hex chars)"
                     />
-                    
+
                     <label className="label">Signature (Base64)</label>
-                    <textarea 
+                    <textarea
                         value={signature}
                         onChange={(e) => setSignature(e.target.value)}
                         placeholder="Base64 signature from Electrum/Sparrow/Bitcoin Core"
                         rows="4"
                     />
-                    
-                    <button onClick={handleVerify} style="margin-top: 1rem">
-                        Verify & Login
+
+                    <button onClick={handleVerify} style={{marginTop: '1rem'}}>
+                        Verify &amp; Login
                     </button>
-                    
+
                     <div className="hint">
                         <div className="hint-title">How to sign:</div>
                         <ol>
@@ -626,126 +637,121 @@
                 </div>
             );
         }
-        
+
         function APITab({ setResult, setLoading }) {
             const [pubkey, setPubkey] = useState('');
             const [challengeId, setChallengeId] = useState('');
             const [challengeText, setChallengeText] = useState('');
             const [signature, setSignature] = useState('');
             const [step, setStep] = useState(1);
-            
-            const getChallenge = async () => {
-                if (!pubkey) {
-                    setResult({ error: 'Public key is required' });
-                    return;
-                }
-                
-                setLoading(true);
-                try {
-                    const res = await fetch('/api/challenge', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ pubkey })
-                    });
-                    const data = await res.json();
-                    
-                    if (data.challenge_id && data.challenge) {
-                        setChallengeId(data.challenge_id);
-                        setChallengeText(data.challenge);
-                        setStep(2);
-                        setResult(data);
-                    } else {
-                        setResult({ error: 'Invalid response from server' });
-                    }
-                } catch (err) {
-                    setResult({ error: err.message });
-                } finally {
-                    setLoading(false);
-                }
-            };
-            
-            const verify = async () => {
-                if (!signature) {
-                    setResult({ error: 'Signature is required' });
-                    return;
-                }
-                
-                setLoading(true);
-                try {
-                    const res = await fetch('/api/verify', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
-                            pubkey, 
-                            signature, 
-                            challenge_id: challengeId 
-                        })
-                    });
-                    const data = await res.json();
-                    setResult(data);
-                    
-                    if (data.verified) {
-                        setTimeout(() => window.location.href = '/app', 2000);
-                    }
-                } catch (err) {
-                    setResult({ error: err.message });
-                } finally {
-                    setLoading(false);
-                }
-            };
-            
-            const copyText = (text) => {
-                navigator.clipboard.writeText(text);
-                alert('Copied to clipboard!');
-            };
-            
+
+const getChallenge = async () => {
+    if (!pubkey) {
+        setResult({ error: 'Public key is required' });
+        return;
+    }
+
+    setLoading(true);
+    try {
+        const res = await fetch('/api/challenge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pubkey })
+        });
+        const data = await res.json();
+
+        if (data.challenge_id && data.challenge) {
+            setChallengeId(data.challenge_id);
+            setChallengeText(data.challenge);
+            setStep(2);
+            setResult(data);
+        } else {
+            setResult({ error: 'Invalid response from server' });
+        }
+    } catch (err) {
+        setResult({ error: err.message });
+    } finally {
+        setLoading(false);
+    }
+};
+
+const verify = async () => {
+    if (!signature) {
+        setResult({ error: 'Signature is required' });
+        return;
+    }
+
+    setLoading(true);
+    try {
+        const res = await fetch('/api/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                pubkey,
+                signature,
+                challenge_id: challengeId
+            })
+        });
+        const data = await res.json();
+        setResult(data);
+
+        if (data.verified) {
+            setTimeout(() => window.location.href = '/app', 2000);
+        }
+    } catch (err) {
+        setResult({ error: err.message });
+    } finally {
+        setLoading(false);
+    }
+};
+
             return (
                 <div>
-                    <div style="margin-bottom: 1rem">
+                    <div style={{marginBottom: '1rem'}}>
                         <span className="status-badge success">Step {step} of 2</span>
                     </div>
-                    
+
                     <label className="label">Public Key</label>
-                    <input 
+                    <input
                         value={pubkey}
                         onChange={(e) => setPubkey(e.target.value)}
                         placeholder="02... or npub..."
                         disabled={step === 2}
                     />
-                    
+
                     {step === 1 && (
-                        <button onClick={getChallenge} style="margin-top: 0.5rem">
+                        <button onClick={getChallenge} style={{marginTop: '0.5rem'}}>
                             Get Challenge
                         </button>
                     )}
-                    
+
                     {step === 2 && (
                         <>
                             <label className="label">Challenge (Click to copy)</label>
                             <div className="code-box" onClick={() => copyText(challengeText)}>
                                 <code>{challengeText}</code>
                             </div>
-                            
+
                             <label className="label">Challenge ID</label>
                             <input value={challengeId} readOnly />
-                            
+
                             <label className="label">Signature (Base64)</label>
-                            <textarea 
+                            <textarea
                                 value={signature}
                                 onChange={(e) => setSignature(e.target.value)}
                                 placeholder="Paste signature here"
                                 rows="4"
                             />
-                            
-                            <div style="display: flex; gap: 0.5rem; margin-top: 1rem">
-                                <button onClick={verify}>Verify & Login</button>
+
+                            <div style={{display: 'flex', gap: '0.5rem', marginTop: '1rem'}}>
+                                <button onClick={verify}>Verify &amp; Login</button>
                                 <button className="secondary" onClick={() => { setStep(1); setChallengeText(''); setSignature(''); }}>
                                     Start Over
                                 </button>
                             </div>
                         </>
                     )}
-                    
+
                     <div className="hint">
                         <div className="hint-title">API Authentication Flow:</div>
                         <ol>
@@ -758,14 +764,14 @@
                 </div>
             );
         }
-        
+
         function LNURLTab({ setResult, setLoading, issuer }) {
             const [lnurl, setLnurl] = useState('');
             const [sessionId, setSessionId] = useState('');
             const [polling, setPolling] = useState(false);
             const qrRef = useRef(null);
             const pollIntervalRef = useRef(null);
-            
+
             useEffect(() => {
                 return () => {
                     if (pollIntervalRef.current) {
@@ -773,7 +779,7 @@
                     }
                 };
             }, []);
-            
+
             const createSession = async () => {
                 setLoading(true);
                 try {
@@ -782,13 +788,12 @@
                         headers: { 'Content-Type': 'application/json' }
                     });
                     const data = await res.json();
-                    
+
                     if (data.lnurl && data.session_id) {
                         setLnurl(data.lnurl);
                         setSessionId(data.session_id);
                         setResult(data);
-                        
-                        // Generate QR
+
                         if (qrRef.current && window.QRCode) {
                             qrRef.current.innerHTML = '';
                             new QRCode(qrRef.current, {
@@ -799,19 +804,18 @@
                                 colorLight: '#ffffff'
                             });
                         }
-                        
-                        // Start polling
+
                         setPolling(true);
                         pollIntervalRef.current = setInterval(async () => {
                             try {
-                                const checkRes = await fetch((`/api/lnurl-auth/check/${data.session_id}`);
+                                const checkRes = await fetch(`/api/lnurl-auth/check/${data.session_id}`);
                                 const checkData = await checkRes.json();
-                                
+
                                 if (checkData.authenticated) {
                                     clearInterval(pollIntervalRef.current);
                                     setPolling(false);
-                                    setResult({ 
-                                        ...checkData, 
+                                    setResult({
+                                        ...checkData,
                                         message: '✓ Authentication successful!',
                                         success: true
                                     });
@@ -830,14 +834,14 @@
                     setLoading(false);
                 }
             };
-            
+
             const stopPolling = () => {
                 if (pollIntervalRef.current) {
                     clearInterval(pollIntervalRef.current);
                     setPolling(false);
                 }
             };
-            
+
             return (
                 <div>
                     {!lnurl ? (
@@ -849,23 +853,31 @@
                             <div className="qr-container">
                                 <div ref={qrRef}></div>
                             </div>
-                            
+
                             <label className="label">LNURL (Click to copy)</label>
-                            <div 
-                                className="code-box" 
+                            <div
+                                className="code-box"
                                 onClick={() => {
                                     navigator.clipboard.writeText(lnurl);
                                     alert('LNURL copied to clipboard!');
                                 }}
-                                style="font-size: 0.75rem; word-break: break-all"
+                                style={{fontSize: '0.75rem', wordBreak: 'break-all'}}
                             >
                                 <code>{lnurl}</code>
                             </div>
-                            
-                            <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap">
-                                <a 
-                                    href={{`lightning:${lnurl}`} 
-                                    style="display: inline-block; padding: 0.75rem 1.5rem; background: var(--orange); color: #fff; border-radius: 8px; text-decoration: none; font-weight: 600"
+
+                            <div style={{display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap'}}>
+                                <a
+                                    href={`lightning:${lnurl}`}
+                                    style={{
+                                        display: 'inline-block',
+                                        padding: '0.75rem 1.5rem',
+                                        background: 'var(--orange)',
+                                        color: '#fff',
+                                        borderRadius: '8px',
+                                        textDecoration: 'none',
+                                        fontWeight: 600
+                                    }}
                                 >
                                     Open in Wallet
                                 </a>
@@ -873,18 +885,18 @@
                                     {polling ? 'Stop Polling' : 'Stopped'}
                                 </button>
                             </div>
-                            
+
                             {polling && (
-                                <div style="margin-top: 1rem; text-align: center">
-                                    <span className="spinner" style="margin-right: 0.5rem"></span>
-                                    <span style="color: var(--muted)">
+                                <div style={{marginTop: '1rem', textAlign: 'center'}}>
+                                    <span className="spinner" style={{marginRight: '0.5rem'}}></span>
+                                    <span style={{color: 'var(--muted)'}}>
                                         Waiting for authentication... (Session: {sessionId.slice(0, 8)}...)
                                     </span>
                                 </div>
                             )}
                         </>
                     )}
-                    
+
                     <div className="hint">
                         <div className="hint-title">Compatible Wallets:</div>
                         <ul>
@@ -898,13 +910,13 @@
                 </div>
             );
         }
-        
+
         function OAuthTab({ setResult, setLoading, issuer }) {
             const [clientId, setClientId] = useState('');
             const [clientSecret, setClientSecret] = useState('');
             const [registeredClient, setRegisteredClient] = useState(null);
             const [showSecret, setShowSecret] = useState(false);
-            
+
             const registerClient = async () => {
                 setLoading(true);
                 try {
@@ -916,7 +928,7 @@
                         })
                     });
                     const data = await res.json();
-                    
+
                     if (data.client_id && data.client_secret) {
                         setRegisteredClient(data);
                         setClientId(data.client_id);
@@ -931,7 +943,7 @@
                     setLoading(false);
                 }
             };
-            
+
             const startOAuthFlow = () => {
                 const params = new URLSearchParams({
                     client_id: clientId,
@@ -943,7 +955,7 @@
                 const url = `/oauth/authorize?${params}`;
                 window.open(url, '_blank', 'width=600,height=800');
             };
-            
+
             return (
                 <div>
                     {!registeredClient ? (
@@ -951,12 +963,12 @@
                             <button onClick={registerClient}>
                                 Register New OAuth Client
                             </button>
-                            
+
                             <div className="hint">
                                 <div className="hint-title">What is OAuth2?</div>
-                                <p style="color: var(--muted); font-size: 0.875rem">
-                                    OAuth 2.0 is an authorization framework that enables applications to obtain 
-                                    limited access to user accounts. This playground lets you test the full 
+                                <p style={{color: 'var(--muted)', fontSize: '0.875rem'}}>
+                                    OAuth 2.0 is an authorization framework that enables applications to obtain
+                                    limited access to user accounts. This playground lets you test the full
                                     OAuth flow including client registration, authorization, and token exchange.
                                 </p>
                             </div>
@@ -967,30 +979,36 @@
                             <div className="code-box" onClick={() => navigator.clipboard.writeText(clientId)}>
                                 <code>{clientId}</code>
                             </div>
-                            
+
                             <label className="label">Client Secret (Save this securely!)</label>
-                            <div style="position: relative">
-                                <input 
+                            <div style={{position: 'relative'}}>
+                                <input
                                     type={showSecret ? 'text' : 'password'}
                                     value={clientSecret}
                                     readOnly
-                                    style="font-family: monospace"
+                                    style={{fontFamily: 'monospace'}}
                                 />
-                                <button 
+                                <button
                                     className="secondary"
-                                    style="position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%); padding: 0.5rem 1rem"
+                                    style={{
+                                        position: 'absolute',
+                                        right: '0.5rem',
+                                        top: '50%',
+                                        transform: 'translateY(-50%)',
+                                        padding: '0.5rem 1rem'
+                                    }}
                                     onClick={() => setShowSecret(!showSecret)}
                                 >
                                     {showSecret ? '🙈 Hide' : '👁️ Show'}
                                 </button>
                             </div>
-                            
-                            <div style="margin-top: 1rem">
+
+                            <div style={{marginTop: '1rem'}}>
                                 <button onClick={startOAuthFlow}>
                                     Start Authorization Flow
                                 </button>
                             </div>
-                            
+
                             <div className="hint">
                                 <div className="hint-title">Next Steps:</div>
                                 <ol>
@@ -1000,10 +1018,10 @@
                                     <li>Exchange code for access token at <code>/oauth/token</code></li>
                                 </ol>
                             </div>
-                            
-                            <div className="hint" style="margin-top: 1rem">
-                                <div className="hint-title">Token Exchange Example:</div>
-                                <pre style="background: #000; padding: 1rem; border-radius: 6px; overflow: auto">
+
+                            <div className="hint" style={{marginTop: '1rem', borderColor: 'var(--accent)'}}>
+                                <div className="hint-title" style={{color: 'var(--accent)'}}>Token Exchange Example:</div>
+                                <pre style={{background: '#000', padding: '1rem', borderRadius: '6px', overflow: 'auto'}}>
 {`curl -X POST ${issuer}/oauth/token \\
   -H "Content-Type: application/x-www-form-urlencoded" \\
   -d "grant_type=authorization_code" \\
@@ -1018,155 +1036,216 @@
                 </div>
             );
         }
-        
-        function PoFTab({ setResult, setLoading }) {
-            const [pubkey, setPubkey] = useState('');
-            const [challengeId, setChallengeId] = useState('');
-            const [challenge, setChallenge] = useState('');
-            const [psbt, setPsbt] = useState('');
-            const [step, setStep] = useState(1);
-            
-            const getChallenge = async () => {
-                if (!pubkey) {
-                    setResult({ error: 'Public key is required' });
-                    return;
-                }
-                
-                setLoading(true);
-                try {
-                    const res = await fetch('/api/pof/challenge', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ pubkey })
-                    });
-                    const data = await res.json();
-                    
-                    if (data.challenge_id && data.challenge) {
-                        setChallengeId(data.challenge_id);
-                        setChallenge(data.challenge);
-                        setStep(2);
-                        setResult(data);
-                    } else {
-                        setResult({ error: 'Failed to get challenge', details: data });
-                    }
-                } catch (err) {
-                    setResult({ error: err.message });
-                } finally {
-                    setLoading(false);
-                }
-            };
-            
-            const verifyPSBT = async () => {
-                if (!psbt) {
-                    setResult({ error: 'PSBT is required' });
-                    return;
-                }
-                
-                setLoading(true);
-                try {
-                    const res = await fetch('/api/playground/pof/verify', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            challenge_id: challengeId,
-                            psbt,
-                            privacy_level: 'aggregate',
-                            min_sat: 0
-                        })
-                    });
-                    const data = await res.json();
-                    setResult(data);
-                } catch (err) {
-                    setResult({ error: err.message });
-                } finally {
-                    setLoading(false);
-                }
-            };
-            
-            return (
-                <div>
-                    <div style="margin-bottom: 1rem">
-                        <span className="status-badge success">Step {step} of 2</span>
-                    </div>
-                    
-                    <label className="label">Public Key</label>
-                    <input 
-                        value={pubkey}
-                        onChange={(e) => setPubkey(e.target.value)}
-                        placeholder="02... or npub..."
-                        disabled={step === 2}
-                    />
-                    
-                    {step === 1 && (
-                        <button onClick={getChallenge} style="margin-top: 0.5rem">
-                            Get PoF Challenge
-                        </button>
-                    )}
-                    
-                    {step === 2 && (
-                        <>
-                            <label className="label">Challenge (Include in OP_RETURN)</label>
-                            <div 
-                                className="code-box" 
-                                onClick={() => {
-                                    navigator.clipboard.writeText(challenge);
-                                    alert('Challenge copied!');
-                                }}
-                            >
-                                <code>{challenge}</code>
-                            </div>
-                            
-                            <label className="label">PSBT (Base64)</label>
-                            <textarea 
-                                value={psbt}
-                                onChange={(e) => setPsbt(e.target.value)}
-                                placeholder="Paste PSBT here (must contain OP_RETURN with challenge)"
-                                rows="8"
-                            />
-                            
-                            <div style="display: flex; gap: 0.5rem; margin-top: 1rem">
-                                <button onClick={verifyPSBT}>Verify Proof</button>
-                                <button className="secondary" onClick={() => { setStep(1); setChallenge(''); setPsbt(''); }}>
-                                    Start Over
-                                </button>
-                            </div>
-                        </>
-                    )}
-                    
-                    <div className="hint">
-                        <div className="hint-title">🔐 How to create SIGNED PoF PSBT:</div>
-                        <ol>
-                            <li>Create a transaction with your UTXOs as inputs</li>
-                            <li>Add an OP_RETURN output containing the challenge string</li>
-                            <li><strong style="color: var(--orange)">⭐ SIGN the PSBT with your wallet</strong> (required for proof!)</li>
-                            <li><strong>DO NOT broadcast the transaction</strong></li>
-                            <li>Export signed PSBT as base64 format</li>
-                            <li>Paste the PSBT above and verify</li>
-                        </ol>
-                        <div style="margin-top: 0.75rem; padding: 0.75rem; background: rgba(255, 59, 48, 0.1); border-radius: 6px; border-left: 3px solid var(--red);">
-                            <strong style="color: var(--red)">⚠️ Important:</strong> Unsigned PSBTs will be rejected! 
-                            You must use <code style="color: var(--red)">walletprocesspsbt</code> or similar to sign the PSBT before submitting.
-                        </div>
-                    </div>
-                    
-                    <div className="hint" style="margin-top: 1rem; border-color: var(--accent)">
-                        <div className="hint-title" style="color: var(--accent)">Privacy Levels:</div>
-                        <ul>
-                            <li><strong>Boolean:</strong> Only yes/no (meets threshold?)</li>
-                            <li><strong>Threshold:</strong> True/false for specific amount</li>
-                            <li><strong>Aggregate:</strong> Exact total revealed (default)</li>
-                        </ul>
-                    </div>
-                </div>
-            );
+
+function PoFTab({ setResult, setLoading }) {
+    const [pofPubkey, setPofPubkey] = useState('');
+    const [challengeId, setChallengeId] = useState('');
+    const [challengeText, setChallengeText] = useState('');
+    const [psbt, setPsbt] = useState('');
+    const [privacyLevel, setPrivacyLevel] = useState('aggregate');
+    const [minSat, setMinSat] = useState('0');
+    const [pofStep, setPofStep] = useState(1);
+
+    // 1) Get PoF challenge from backend
+    const getPoFChallenge = async () => {
+        if (!pofPubkey) {
+            setResult({ error: 'Public key (or label) is required' });
+            return;
         }
 
-        // Render app
-        console.log("About to render React...");
+        setLoading(true);
+        try {
+            const res = await fetch('/api/playground/pof/challenge', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pubkey: pofPubkey })
+            });
+
+            // Handle non-JSON / 5xx gracefully
+            if (!res.ok) {
+                const raw = await res.text();
+                setResult({
+                    error: 'Non-JSON response from /api/playground/pof/challenge',
+                    status: res.status,
+                    raw: raw.slice(0, 400)
+                });
+                return;
+            }
+
+            const data = await res.json();
+
+            if (data.ok && data.challenge_id && data.challenge) {
+                setChallengeId(data.challenge_id);
+                setChallengeText(data.challenge);
+                setPofStep(2);
+                setResult({
+                    ...data,
+                    hint: 'Now build a PSBT that includes this string in an OP_RETURN'
+                });
+            } else {
+                setResult({ error: data.error || 'Invalid response from challenge endpoint' });
+            }
+        } catch (err) {
+            setResult({ error: err.message || String(err) });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // 2) Verify PSBT against challenge
+    const verifyPoFPSBT = async () => {
+    if (!challengeId) {
+        setResult({ error: 'Challenge ID is missing – create a challenge first.' });
+        return;
+    }
+    if (!psbt) {
+        setResult({ error: 'Paste a signed PSBT first.' });
+        return;
+    }
+
+    setLoading(true);
+    try {
+        const res = await fetch('/api/playground/pof/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                challenge_id: challengeId,
+                psbt,
+                privacy_level: privacyLevel || 'aggregate',
+                min_sat: Number(minSat) || 0
+            })
+        });
+
+        const text = await res.text();
+        let data = null;
+
+        try {
+            data = text ? JSON.parse(text) : null;
+        } catch {
+            // Not JSON → wrap raw
+            setResult({
+                error: `Non-JSON response from /api/playground/pof/verify`,
+                status: res.status,
+                raw: text
+            });
+            return;
+        }
+
+        // If status is not 2xx, still show server JSON as-is
+        if (!res.ok) {
+            setResult(data || {
+                error: `Server error from /api/playground/pof/verify`,
+                status: res.status
+            });
+            return;
+        }
+
+        // Success
+        setResult(data);
+    } catch (err) {
+        setResult({ error: err.message || String(err) });
+    } finally {
+        setLoading(false);
+    }
+};
+
+
+    return (
+        <div className="tab-panel">
+            <h2>💰 Proof of Funds (PSBT OP_RETURN demo)</h2>
+            <p className="muted">
+                2-step flow: 1) get challenge, 2) sign a PSBT that includes it in OP_RETURN and spends your UTXOs.
+            </p>
+
+            {/* Step 1: Get challenge */}
+            <div className="section">
+                <h3>Step 1 · Get Challenge</h3>
+                <label className="field-label">Your pubkey / label</label>
+                <input
+                    className="input"
+                    placeholder="playground-demo or your pubkey"
+                    value={pofPubkey}
+                    onChange={(e) => setPofPubkey(e.target.value)}
+                />
+                <button className="primary" onClick={getPoFChallenge}>
+                    🔐 Generate Challenge
+                </button>
+
+                {challengeId && (
+                    <div className="mt-2">
+                        <label className="field-label">Challenge ID</label>
+                        <input className="input" value={challengeId} readOnly />
+
+                        <label className="field-label">Challenge String (put this in OP_RETURN)</label>
+                        <div className="code-box" onClick={() => copyText(challengeText)}>
+                            <code>{challengeText}</code>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Step 2: Paste signed PSBT */}
+            <div className="section">
+                <h3>Step 2 · Paste Signed PSBT</h3>
+
+                <label className="field-label">PSBT (base64)</label>
+                <textarea
+                    className="textarea"
+                    rows={6}
+                    placeholder="Paste signed PSBT here"
+                    value={psbt}
+                    onChange={(e) => setPsbt(e.target.value)}
+                />
+
+                <div className="field-row">
+                    <div>
+                        <label className="field-label">Privacy level</label>
+                        <select
+                            className="input"
+                            value={privacyLevel}
+                            onChange={(e) => setPrivacyLevel(e.target.value)}
+                        >
+                            <option value="boolean">Boolean</option>
+                            <option value="threshold">Threshold</option>
+                            <option value="aggregate">Aggregate</option>
+                            <option value="exact">Exact</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="field-label">Min sats (optional)</label>
+                        <input
+                            className="input"
+                            type="number"
+                            value={minSat}
+                            onChange={(e) => setMinSat(e.target.value)}
+                        />
+                    </div>
+                </div>
+
+                <button className="primary" onClick={verifyPoFPSBT}>
+                    ✅ Verify PSBT Proof
+                </button>
+
+                <button
+                    className="secondary"
+                    style={{ marginLeft: '0.5rem' }}
+                    onClick={() => {
+                        setPofStep(1);
+                        setChallengeId('');
+                        setChallengeText('');
+                        setPsbt('');
+                        setResult(null);
+                    }}
+                >
+                    🔄 Reset PoF Demo
+                </button>
+            </div>
+        </div>
+    );
+}
+
         ReactDOM.createRoot(document.getElementById('root')).render(<PlaygroundApp />);
+    {% endraw %}
     </script>
 </body>
 </html>
-
-
-{% endraw %}

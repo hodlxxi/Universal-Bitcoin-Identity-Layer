@@ -61,10 +61,12 @@ from app.db_storage import (
     store_session,
 )
 from app.jwks import ensure_rsa_keypair
+from app.utils import get_rpc_connection
 from app.oidc import oidc_bp, validate_pkce
 from app.security import init_security, limiter
 from app.tokens import issue_rs256_jwt
 from app.pof_routes import pof_bp
+#from app.playground_routes import playground_bp   # <-- ADD THIS
 from flask import make_response
 
 
@@ -426,11 +428,20 @@ if JWT_KID:
     app.config["JWT_KID"] = JWT_KID
 
 init_security(app, CFG)
+
+# Blueprints
 app.register_blueprint(pof_bp)
 app.register_blueprint(oidc_bp)
+#app.register_blueprint(playground_bp)  
 
 OAUTH_PATH_PREFIXES = ("/oauth/", "/oauthx/")
-OAUTH_PUBLIC_PATHS = ("/oauth/register", "/oauth/authorize", "/oauth/token", "/oauthx/status", "/oauthx/docs")
+OAUTH_PUBLIC_PATHS = (
+    "/oauth/register",
+    "/oauth/authorize",
+    "/oauth/token",
+    "/oauthx/status",
+    "/oauthx/docs",
+)
 
 
 # Initialize storage and audit logging
@@ -10756,6 +10767,38 @@ logger.info("=" * 70)
 # END OF OIDC/OAuth2 SYSTEM
 # ============================================================================
 
+@app.route("/playground")
+def playground_page():
+    """Render the React playground shell."""
+    # Logged-in info from session (safe defaults)
+    try:
+        logged_in = session.get("logged_in_pubkey", "") or ""
+    except Exception:
+        logged_in = ""
+
+    try:
+        access_level = session.get("access_level", "limited") or "limited"
+    except Exception:
+        access_level = "limited"
+
+    # Issuer from CFG (which is a dict in your app)
+    try:
+        issuer = CFG.get("ISSUER", "") or ""
+    except Exception:
+        issuer = ""
+
+    initial_tab = request.args.get("tab", "legacy")
+
+    return render_template(
+        "playground.html",
+        logged_in_pubkey=logged_in,
+        access_level=access_level,
+        issuer=issuer,
+        initial_tab=initial_tab,
+    )
+
+
+
 
 def create_app():
     """Return the configured Flask application."""
@@ -11138,42 +11181,40 @@ def _hodlxxi_pof_bootstrap():
         return jsonify(ok=True, status=st)
 
 
-# _hodlxxi_pof_bootstrap()  # OLD - replaced by pof_enhanced
-
 # ============================================================================
 # PLAYGROUND POF - Public demo endpoints (no membership required)
 # ============================================================================
-
 @app.route('/api/playground/pof/challenge', methods=['POST'])
 def playground_pof_challenge():
     """Generate PoF challenge for playground demo (no auth required)"""
     try:
-        data = request.get_json() or {}
-        pubkey = data.get("pubkey", "playground-demo").strip()
-        
+        data = request.get_json(silent=True) or {}
+        pubkey = (data.get("pubkey") or "playground-demo").strip()
+
         # Generate challenge
-        import secrets, time
         cid = secrets.token_hex(8)
-        challenge = f"HODLXXI-PoF-DEMO:{cid}:{int(time.time())}"
-        
+        challenge = f"HODLXXI-PoF:{cid}:{int(time.time())}"
+
         # Store in Redis (5 min expiry for demo)
-        playground_redis.setex(
-            f'pg_pof:{cid}',
-            300,
-            json.dumps({
-                'pubkey': pubkey,
-                'challenge': challenge,
-                'created_at': int(time.time())
-            })
-        )
-        
+        if 'playground_redis' in globals() and playground_redis is not None:
+            playground_redis.setex(
+                f'pg_pof:{cid}',
+                300,
+                json.dumps({
+                    'pubkey': pubkey,
+                    'challenge': challenge,
+                    'created_at': int(time.time())
+                })
+            )
+
         return jsonify({
             'ok': True,
             'challenge_id': cid,
             'challenge': challenge,
-            'expires_in': 300
+            'expires_in': 300,
+            'pubkey': pubkey,
         })
-        
+
     except Exception as e:
         logger.error(f"Playground PoF challenge failed: {e}")
         return jsonify({'ok': False, 'error': str(e)}), 500
@@ -11181,221 +11222,110 @@ def playground_pof_challenge():
 
 @app.route('/api/playground/pof/verify', methods=['POST'])
 def playground_pof_verify():
-    """Verify SIGNED PSBT proof for playground demo"""
-    try:
-        data = request.get_json() or {}
-        challenge_id = data.get('challenge_id', '').strip()
-        psbt = data.get('psbt', '').strip()
-        
-        if not challenge_id or not psbt:
-            return jsonify({'ok': False, 'error': 'challenge_id and psbt required'}), 400
-        
-        # Get challenge from Redis
-        challenge_data = playground_redis.get(f'pg_pof:{challenge_id}')
-        if not challenge_data:
-            return jsonify({'ok': False, 'error': 'Challenge expired or invalid'}), 400
-        
-        challenge_info = json.loads(challenge_data)
-        challenge = challenge_info['challenge']
-        
-        # Verify PSBT using Bitcoin RPC
-        rpc = get_rpc_connection()
-        decoded = rpc.decodepsbt(psbt)
-        tx = decoded.get('tx', {})
-        vouts = tx.get('vout', [])
-        vins = tx.get('vin', [])
-        
-        # Check if OP_RETURN contains our challenge
-        has_challenge = False
-        for vout in vouts:
-            script_hex = vout.get('scriptPubKey', {}).get('hex', '')
-            if script_hex.startswith('6a'):  # OP_RETURN
-                try:
-                    op_return_data = bytes.fromhex(script_hex[2:])
-                    if challenge.encode() in op_return_data:
-                        has_challenge = True
-                        break
-                except:
-                    pass
-        
-        if not has_challenge:
-            return jsonify({
-                'ok': False,
-                'error': 'Challenge not found in OP_RETURN',
-                'hint': f'Add OP_RETURN with: {challenge}'
-            }), 400
-        
-        # ⭐ NEW: Verify PSBT has valid signatures
-        try:
-            finalized = rpc.finalizepsbt(psbt, False)  # Don't extract tx
-            is_complete = finalized.get('complete', False)
-            
-            if not is_complete:
-                return jsonify({
-                    'ok': False,
-                    'error': 'PSBT must be signed to prove ownership',
-                    'hint': 'Sign the PSBT with your wallet before submitting'
-                }), 400
-                
-        except Exception as e:
-            return jsonify({
-                'ok': False,
-                'error': f'Invalid PSBT signatures: {str(e)}'
-            }), 400
-        
-        # Calculate total value from unspent inputs
-        total_sat = 0
-        unspent_count = 0
-        
-        for vin in vins:
-            txid = vin.get('txid')
-            vout_n = vin.get('vout')
-            
-            if txid and vout_n is not None:
-                try:
-                    utxo = rpc.gettxout(txid, vout_n)
-                    if utxo:
-                        value_btc = float(utxo.get('value', 0))
-                        total_sat += int(value_btc * 100000000)
-                        unspent_count += 1
-                except:
-                    pass
-        
-        if total_sat <= 0:
-            return jsonify({'ok': False, 'error': 'No valid unspent inputs'}), 400
-        
-        # Generate proof ID
-        import secrets
-        proof_id = secrets.token_hex(8)
-        
-        # Store proof (optional - for tracking)
-        playground_redis.setex(
-            f'pg_pof_proof:{proof_id}',
-            3600,
-            json.dumps({
-                'challenge_id': challenge_id,
-                'total_sat': total_sat,
-                'unspent_count': unspent_count,
-                'verified_at': int(time.time())
-            })
-        )
-        
-        return jsonify({
-            'ok': True,
-            'message': 'Proof verified successfully!',
-            'proof_id': proof_id,
-            'total_sat': total_sat,
-            'total_btc': round(total_sat / 100000000, 8),
-            'unspent_count': unspent_count,
-            'note': 'Cryptographic signatures verified'
-        })
-        
-    except Exception as e:
-        logger.error(f"Playground PoF verify failed: {e}")
-        return jsonify({'ok': False, 'error': str(e)}), 500
-
-
-
-def playground_pof_verify():
     """Verify PSBT proof for playground demo"""
     try:
-        data = request.get_json() or {}
-        challenge_id = data.get('challenge_id', '').strip()
-        psbt = data.get('psbt', '').strip()
-        
+        data = request.get_json(silent=True) or {}
+        challenge_id = (data.get('challenge_id') or '').strip()
+        psbt = (data.get('psbt') or '').strip()
+        privacy_level = (data.get('privacy_level') or 'aggregate').strip()
+        min_sat_raw = data.get('min_sat') or 0
+
+        try:
+            min_sat = int(min_sat_raw)
+        except Exception:
+            min_sat = 0
+
         if not challenge_id or not psbt:
             return jsonify({'ok': False, 'error': 'challenge_id and psbt required'}), 400
-        
+
         # Get challenge from Redis
-        challenge_data = playground_redis.get(f'pg_pof:{challenge_id}')
+        if 'playground_redis' in globals() and playground_redis is not None:
+            challenge_data = playground_redis.get(f'pg_pof:{challenge_id}')
+        else:
+            challenge_data = None
+
         if not challenge_data:
             return jsonify({'ok': False, 'error': 'Challenge expired or invalid'}), 400
-        
+
         challenge_info = json.loads(challenge_data)
-        challenge = challenge_info['challenge']
-        
+        challenge = challenge_info.get('challenge', '')
+
         # Verify PSBT using Bitcoin RPC
         rpc = get_rpc_connection()
         decoded = rpc.decodepsbt(psbt)
         tx = decoded.get('tx', {})
         vouts = tx.get('vout', [])
         vins = tx.get('vin', [])
-        
-        # Check if OP_RETURN contains our challenge
+
+        # Check OP_RETURN contains our challenge *bytes*
         has_challenge = False
         for vout in vouts:
-            script_hex = vout.get('scriptPubKey', {}).get('hex', '')
-            if script_hex.startswith('6a'):  # OP_RETURN
+            spk = vout.get('scriptPubKey', {})
+            asm = spk.get('asm', '') or ''
+            parts = asm.split()
+
+            # Expect: "OP_RETURN <hexdata>"
+            if len(parts) >= 2 and parts[0] == 'OP_RETURN':
+                data_hex = parts[1]
                 try:
-                    op_return_data = bytes.fromhex(script_hex[2:])
-                    if challenge.encode() in op_return_data:
+                    data_bytes = bytes.fromhex(data_hex)
+                    if challenge and challenge.encode() in data_bytes:
                         has_challenge = True
                         break
-                except:
-                    pass
-        
-        if not has_challenge:
-            return jsonify({
-                'ok': False,
-                'error': 'Challenge not found in OP_RETURN',
-                'hint': f'Add OP_RETURN with: {challenge}'
-            }), 400
-        
-        # Calculate total value from unspent inputs
+                except Exception:
+                    continue
+
+        # Sum unspent inputs
         total_sat = 0
         unspent_count = 0
-        
         for vin in vins:
             txid = vin.get('txid')
             vout_n = vin.get('vout')
-            
-            if txid and vout_n is not None:
-                try:
-                    utxo = rpc.gettxout(txid, vout_n)
-                    if utxo:
-                        value_btc = float(utxo.get('value', 0))
-                        total_sat += int(value_btc * 100000000)
-                        unspent_count += 1
-                except:
-                    pass
-        
-        if total_sat == 0:
-            return jsonify({
-                'ok': False,
-                'error': 'No unspent inputs found',
-                'hint': 'Make sure your PSBT references unspent UTXOs'
-            }), 400
-        
-        # Success!
+            if not txid or vout_n is None:
+                continue
+            try:
+                utxo = rpc.gettxout(txid, vout_n)
+                if utxo:
+                    value_btc = float(utxo.get('value', 0))
+                    total_sat += int(value_btc * 100_000_000)
+                    unspent_count += 1
+            except Exception:
+                continue
+
+        if total_sat <= 0:
+            return jsonify({'ok': False, 'error': 'No valid unspent inputs'}), 400
+
         proof_id = secrets.token_hex(8)
-        playground_redis.setex(
-            f'pg_pof_result:{proof_id}',
-            3600,
-            json.dumps({
-                'challenge_id': challenge_id,
-                'total_sat': total_sat,
-                'unspent_count': unspent_count,
-                'verified_at': int(time.time())
-            })
-        )
-        
+
+        # Optional: store result in Redis for 1 hour
+        if 'playground_redis' in globals() and playground_redis is not None:
+            playground_redis.setex(
+                f'pg_pof_result:{proof_id}',
+                3600,
+                json.dumps({
+                    'challenge_id': challenge_id,
+                    'total_sat': total_sat,
+                    'unspent_count': unspent_count,
+                    'verified_at': int(time.time()),
+                    'privacy_level': privacy_level,
+                    'min_sat': min_sat,
+                })
+            )
+
         return jsonify({
             'ok': True,
+            'message': 'Proof verified successfully!',
             'proof_id': proof_id,
             'total_sat': total_sat,
-            'total_btc': total_sat / 100000000,
+            'total_btc': round(total_sat / 100_000_000, 8),
             'unspent_count': unspent_count,
-            'message': 'Proof verified successfully!',
-            'note': 'Demo: No addresses were revealed'
+            'privacy_level': privacy_level,
+            'min_sat': min_sat,
         })
-        
+
     except Exception as e:
         logger.error(f"Playground PoF verify failed: {e}")
-        return jsonify({'ok': False, 'error': str(e)}), 500
-
-# === End PoF block ===========================================================
-
-
+        return jsonify({'ok': False, 'error': f'internal error: {e}'}), 500
 
 
 # ---- playground runtime globals API (used by static/playground.html) ----
