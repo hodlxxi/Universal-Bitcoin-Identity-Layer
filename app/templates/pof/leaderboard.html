@@ -2,9 +2,21 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Whale Leaderboard | HODLXXI</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <style>
+        :root {
+            --bg: #0b0f10;
+            --panel: #11171a;
+            --fg: #e6f1ef;
+            --accent: #00ff88;
+            --orange: #f7931a;
+            --red: #ff3b30;
+            --blue: #3b82f6;
+            --muted: #8a9da4;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -12,68 +24,234 @@
         }
 
         body {
-            font-family: 'Courier New', monospace;
-            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
-            color: #00ff41;
+            background: var(--bg);
+            color: var(--fg);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
             min-height: 100vh;
-            padding: 2rem;
+            overflow-x: hidden;
+            text-rendering: optimizeLegibility;
         }
 
-        .container {
+        #matrix-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #matrix-bg {
+                display: none !important;
+            }
+        }
+
+        #root {
+            position: relative;
+            z-index: 1;
+            padding: 4.5rem 2rem 2rem;
             max-width: 1200px;
             margin: 0 auto;
         }
 
+        /* Top CTA bar (same family as playground) */
+        .top-cta {
+            position: sticky;
+            top: 0;
+            z-index: 12;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            padding: 0.45rem 0.75rem;
+            background: radial-gradient(
+                circle at top,
+                rgba(34, 197, 94, 0.16) 0,
+                rgba(3, 7, 18, 0.96) 45%,
+                rgba(3, 7, 18, 0.98) 100%
+            );
+            border-bottom: 1px solid rgba(0, 255, 136, 0.3);
+            box-shadow: 0 18px 35px rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(16px);
+        }
+
+        .top-cta-inner {
+            width: 100%;
+            max-width: 1200px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+        }
+
+        .top-cta-text {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.85rem;
+            color: #cbd5f5;
+        }
+
+        .top-cta-text strong {
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        .top-cta-pill {
+            padding: 0.18rem 0.6rem;
+            border-radius: 999px;
+            border: 1px solid rgba(0, 255, 136, 0.6);
+            background: rgba(6, 95, 70, 0.7);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #bbf7d0;
+        }
+
+        .top-cta-action {
+            white-space: nowrap;
+        }
+
+        button,
+        .btn {
+            background: var(--accent);
+            color: #000;
+            border: none;
+            padding: 0.8rem 1.8rem;
+            font-size: 0.95rem;
+            font-weight: 600;
+            border-radius: 999px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        button:hover,
+        .btn:hover {
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+            transform: translateY(-2px);
+        }
+
+        button:disabled,
+        .btn:disabled {
+            background: #374151;
+            color: #9ca3af;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(0, 255, 136, 0.08);
+        }
+
         .header {
             text-align: center;
-            margin-bottom: 3rem;
-            padding-bottom: 2rem;
-            border-bottom: 2px solid #00ff41;
+            margin-bottom: 2.5rem;
+            padding: 2rem 1.5rem 2.25rem;
+            border-radius: 14px;
+            background: rgba(17, 23, 26, 0.92);
+            border: 1px solid #0f2a24;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.08);
         }
 
         .header h1 {
-            font-size: 3rem;
+            font-size: 2.2rem;
             margin-bottom: 0.5rem;
-            text-shadow: 0 0 20px #00ff41;
+            color: var(--accent);
+            text-shadow: 0 0 18px rgba(0, 255, 136, 0.3);
         }
 
         .header p {
-            color: #888;
-            font-size: 1.2rem;
+            color: var(--muted);
+            font-size: 1rem;
+        }
+
+        .header-sub {
+            margin-top: 0.75rem;
+            font-size: 0.9rem;
+            color: var(--muted);
         }
 
         .stats-summary {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 3rem;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1.25rem;
+            margin-bottom: 2.5rem;
         }
 
         .stat-card {
-            background: rgba(0, 255, 65, 0.05);
-            border: 2px solid #00ff41;
-            border-radius: 10px;
-            padding: 1.5rem;
+            background: rgba(17, 23, 26, 0.92);
+            border-radius: 14px;
+            border: 1px solid #0f2a24;
+            padding: 1.4rem 1.2rem;
             text-align: center;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.06);
         }
 
         .stat-card .number {
-            font-size: 2.5rem;
-            color: #00ff41;
-            font-weight: bold;
-            margin-bottom: 0.5rem;
+            font-size: 2rem;
+            color: var(--accent);
+            font-weight: 700;
+            margin-bottom: 0.35rem;
         }
 
         .stat-card .label {
-            color: #888;
+            color: var(--muted);
             font-size: 0.9rem;
         }
 
-        .leaderboard-table {
-            background: rgba(0, 0, 0, 0.5);
-            border: 2px solid #00ff41;
-            border-radius: 10px;
+        .filters {
+            display: flex;
+            gap: 0.6rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            background: #020617;
+            border: 1px solid #1f2937;
+            color: var(--muted);
+            padding: 0.5rem 1.4rem;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: all 0.25s;
+            font-size: 0.85rem;
+        }
+
+        .filter-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .filter-btn.active {
+            border-color: var(--accent);
+            color: #000;
+            background: var(--accent);
+            box-shadow: 0 0 14px rgba(0, 255, 136, 0.3);
+        }
+
+        .leaderboard-wrap {
+            background: rgba(17, 23, 26, 0.92);
+            border-radius: 14px;
+            border: 1px solid #0f2a24;
             overflow: hidden;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.08);
+        }
+
+        .leaderboard-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #020617;
         }
 
         table {
@@ -82,38 +260,40 @@
         }
 
         thead {
-            background: rgba(0, 255, 65, 0.1);
+            background: rgba(0, 255, 136, 0.06);
         }
 
         thead th {
-            padding: 1.5rem 1rem;
+            padding: 1rem 0.9rem;
             text-align: left;
-            color: #00ff41;
-            font-weight: bold;
+            color: var(--accent);
+            font-weight: 600;
             text-transform: uppercase;
-            font-size: 0.9rem;
-            border-bottom: 2px solid #00ff41;
+            font-size: 0.75rem;
+            border-bottom: 1px solid #134e4a;
+            letter-spacing: 0.05em;
         }
 
         tbody tr {
-            border-bottom: 1px solid #333;
-            transition: all 0.3s;
+            border-bottom: 1px solid #1f2933;
+            transition: all 0.25s;
         }
 
         tbody tr:hover {
-            background: rgba(0, 255, 65, 0.05);
+            background: rgba(0, 255, 136, 0.04);
         }
 
         tbody td {
-            padding: 1.5rem 1rem;
+            padding: 1rem 0.9rem;
+            font-size: 0.9rem;
         }
 
         .rank {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: #888;
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #64748b;
             text-align: center;
-            width: 80px;
+            width: 70px;
         }
 
         .rank.gold {
@@ -134,257 +314,391 @@
         .user-info {
             display: flex;
             align-items: center;
-            gap: 1rem;
+            gap: 0.75rem;
         }
 
         .user-avatar {
-            width: 40px;
-            height: 40px;
+            width: 38px;
+            height: 38px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #00ff41, #00cc33);
+            background: radial-gradient(circle at 30% 10%, #f9fafb, #22c55e);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: bold;
-            color: #000;
+            font-weight: 700;
+            color: #020617;
+            font-size: 1rem;
+            box-shadow: 0 0 10px rgba(34, 197, 94, 0.4);
+        }
+
+        .user-meta {
+            display: flex;
+            flex-direction: column;
         }
 
         .user-name {
-            font-weight: bold;
-            color: #00ff41;
+            font-weight: 600;
+            color: var(--fg);
+            font-size: 0.95rem;
+        }
+
+        .user-id {
+            font-size: 0.8rem;
+            color: var(--muted);
         }
 
         .whale-badge {
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            font-weight: bold;
+            padding: 0.45rem 0.9rem;
+            border-radius: 999px;
+            font-weight: 600;
+            font-size: 0.86rem;
+            border: 1px solid rgba(148, 163, 184, 0.4);
+            background: rgba(15, 23, 42, 0.9);
         }
 
         .whale-badge .emoji {
-            font-size: 1.5rem;
+            font-size: 1.3rem;
         }
 
         .verified-date {
-            color: #888;
-            font-size: 0.85rem;
+            color: var(--muted);
+            font-size: 0.8rem;
         }
 
         .view-cert {
-            color: #00ff41;
+            color: var(--accent);
             text-decoration: none;
-            padding: 0.5rem 1rem;
-            border: 1px solid #00ff41;
-            border-radius: 5px;
-            display: inline-block;
-            transition: all 0.3s;
-            font-size: 0.85rem;
+            padding: 0.45rem 1rem;
+            border: 1px solid var(--accent);
+            border-radius: 999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.82rem;
+            transition: all 0.25s;
+            background: transparent;
         }
 
         .view-cert:hover {
-            background: rgba(0, 255, 65, 0.1);
-            box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+            background: rgba(0, 255, 136, 0.08);
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
         }
 
         .empty-state {
             text-align: center;
-            padding: 4rem 2rem;
+            padding: 4rem 1.5rem;
+            background: rgba(17, 23, 26, 0.92);
+            border-radius: 14px;
+            border: 1px solid #0f2a24;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.06);
         }
 
         .empty-state .icon {
-            font-size: 5rem;
+            font-size: 4rem;
             margin-bottom: 1rem;
-            opacity: 0.3;
+            opacity: 0.4;
+        }
+
+        .empty-state h2 {
+            font-size: 1.3rem;
+            margin-bottom: 0.4rem;
         }
 
         .empty-state p {
-            color: #888;
-            font-size: 1.2rem;
-            margin-bottom: 2rem;
+            color: var(--muted);
+            font-size: 0.98rem;
+            margin-bottom: 1.5rem;
         }
 
-        .btn {
-            background: #00ff41;
-            color: #000;
-            border: none;
-            padding: 0.8rem 2rem;
-            font-size: 1rem;
-            font-weight: bold;
-            border-radius: 5px;
-            cursor: pointer;
-            font-family: 'Courier New', monospace;
-            transition: all 0.3s;
+        .footer-actions {
+            text-align: center;
+            margin-top: 2.5rem;
+            padding-top: 1.75rem;
+            border-top: 1px solid #1f2933;
+        }
+
+        .footer-actions a.secondary-link {
+            color: var(--muted);
             text-decoration: none;
-            display: inline-block;
-            text-transform: uppercase;
+            font-size: 0.9rem;
         }
 
-        .btn:hover {
-            background: #00cc33;
-            box-shadow: 0 0 20px rgba(0, 255, 65, 0.5);
-            transform: translateY(-2px);
-        }
-
-        .filters {
-            display: flex;
-            gap: 1rem;
-            margin-bottom: 2rem;
-            flex-wrap: wrap;
-        }
-
-        .filter-btn {
-            background: rgba(0, 0, 0, 0.5);
-            border: 2px solid #333;
-            color: #888;
-            padding: 0.5rem 1.5rem;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .filter-btn.active {
-            border-color: #00ff41;
-            color: #00ff41;
-            background: rgba(0, 255, 65, 0.1);
+        .footer-actions a.secondary-link:hover {
+            color: var(--accent);
+            text-decoration: underline;
         }
 
         @media (max-width: 768px) {
+            #root {
+                padding: 3.5rem 1rem 1.5rem;
+            }
+
             .header h1 {
-                font-size: 2rem;
+                font-size: 1.8rem;
             }
 
-            table {
-                font-size: 0.85rem;
+            thead {
+                display: none;
             }
 
-            thead th, tbody td {
-                padding: 1rem 0.5rem;
+            table,
+            tbody,
+            tr,
+            td {
+                display: block;
+                width: 100%;
             }
 
-            .user-avatar {
-                width: 30px;
-                height: 30px;
+            tbody tr {
+                margin-bottom: 0.75rem;
+                border-radius: 12px;
+                overflow: hidden;
+            }
+
+            tbody td {
+                padding: 0.6rem 0.9rem;
             }
 
             .rank {
-                font-size: 1.2rem;
+                width: auto;
+                text-align: left;
+                margin-bottom: 0.25rem;
+            }
+
+            .user-info {
+                margin: 0.4rem 0;
+            }
+
+            .top-cta-inner {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .top-cta-action {
+                width: 100%;
+                text-align: center;
+            }
+
+            .btn,
+            button {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 1.6rem;
+            }
+
+            .stat-card .number {
+                font-size: 1.7rem;
             }
         }
     </style>
-
-        @media (max-width: 768px) {
-            body { padding: 1rem; }
-            .container { max-width: 100%; }
-            h1 { font-size: 1.8rem; }
-            .leaderboard-item { padding: 1rem; flex-direction: column; text-align: center; }
-            .rank { margin-bottom: 0.5rem; }
-            .user-info { margin: 0.5rem 0; }
-            table { font-size: 0.85rem; }
-            td, th { padding: 0.5rem; }
-        }
 </head>
 <body>
-    <div class="container">
+    <canvas id="matrix-bg" aria-hidden="true"></canvas>
+
+    <div class="top-cta">
+        <div class="top-cta-inner">
+            <div class="top-cta-text">
+                <span class="top-cta-pill">HODLXXI</span>
+                <span><strong>Whale Leaderboard</strong> · Verified Bitcoin HODLers</span>
+            </div>
+            <div class="top-cta-action">
+                <button class="btn btn-secondary" onclick="window.location.href='/playground'">
+                    Open Playground
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="root">
         <div class="header">
             <h1>🏆 Whale Leaderboard</h1>
-            <p>Top Bitcoin HODLers verified on HODLXXI</p>
+            <p>Top Bitcoin HODLers verified on HODLXXI Proof of Funds.</p>
+            <p class="header-sub">
+                Leaderboard refreshes automatically every 30 seconds.
+            </p>
         </div>
 
         <div class="stats-summary">
             <div class="stat-card">
-                <div class="number">{{ total_count }}</div>
+                <div class="number">0</div>
                 <div class="label">Verified Whales</div>
             </div>
 
             <div class="stat-card">
-                <div class="number">{{ leaderboard|selectattr('tier.name', 'equalto', 'Blue Whale')|list|length }}</div>
+                <div class="number">0</div>
                 <div class="label">Blue Whales</div>
             </div>
 
             <div class="stat-card">
-                <div class="number">{{ leaderboard|selectattr('tier.name', 'equalto', 'Humpback')|list|length }}</div>
+                <div class="number">0</div>
                 <div class="label">Humpbacks</div>
             </div>
 
             <div class="stat-card">
-                <div class="number">{{ (leaderboard|selectattr('tier.name', 'in', ['Whale', 'Shark'])|list|length) }}</div>
-                <div class="label">Whales & Sharks</div>
+                <div class="number">0</div>
+                <div class="label">Whales &amp; Sharks</div>
             </div>
         </div>
 
-        {% if leaderboard|length > 0 %}
-        <div class="leaderboard-table">
-            <table>
+        <!-- Filters row (visual only; hook into JS later if needed) -->
+        <div class="filters">
+            <button class="filter-btn active">All Tiers</button>
+            <button class="filter-btn">🐋 Whale &amp; Above</button>
+            <button class="filter-btn">🐳 Humpback &amp; 🌊 Blue</button>
+            <button class="filter-btn">Recent (24h)</button>
+        </div>
+
+        <!-- If you later have data, wrap table in this .leaderboard-wrap -->
+        <!-- Example skeleton: keep tbody for template engines / JS -->
+        <!--
+        <div class="leaderboard-wrap">
+            <table class="leaderboard-table">
                 <thead>
                     <tr>
-                        <th style="text-align: center;">Rank</th>
-                        <th>User</th>
-                        <th>Whale Tier</th>
-                        <th>Holdings</th>
+                        <th style="width: 70px;">Rank</th>
+                        <th>Holder</th>
+                        <th>Tier</th>
                         <th>Verified</th>
-                        <th style="text-align: center;">Certificate</th>
+                        <th style="text-align:right;">Certificate</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for entry in leaderboard %}
+                    {% for row in leaderboard %}
                     <tr>
-                        <td class="rank {% if loop.index == 1 %}gold{% elif loop.index == 2 %}silver{% elif loop.index == 3 %}bronze{% endif %}">
-                            {% if loop.index <= 3 %}
-                                {% if loop.index == 1 %}🥇{% elif loop.index == 2 %}🥈{% else %}🥉{% endif %}
-                            {% else %}
-                                #{{ loop.index }}
-                            {% endif %}
-                        </td>
+                        <td class="rank {{ row.rank_class }}">{{ row.rank_display }}</td>
                         <td>
                             <div class="user-info">
-                                <div class="user-avatar">
-                                    {{ entry.user.username[:1]|upper if entry.user.username else entry.user.pubkey[:1]|upper }}
+                                <div class="user-avatar">{{ row.initials }}</div>
+                                <div class="user-meta">
+                                    <div class="user-name">{{ row.display_name }}</div>
+                                    <div class="user-id">{{ row.public_hint }}</div>
                                 </div>
-                                <span class="user-name">
-                                    {{ entry.user.username if entry.user.username else (entry.user.pubkey[:8] + '...') }}
-                                </span>
                             </div>
                         </td>
                         <td>
-                            <div class="whale-badge" style="background: {{ entry.tier.color }}22; border: 2px solid {{ entry.tier.color }}; color: {{ entry.tier.color }};">
-                                <span class="emoji">{{ entry.tier.emoji }}</span>
-                                <span>{{ entry.tier.name }}</span>
-                            </div>
+                            <span class="whale-badge" style="border-color: {{ row.color }}; color: {{ row.color }};">
+                                <span class="emoji">{{ row.emoji }}</span>
+                                <span>{{ row.tier_name }}</span>
+                            </span>
                         </td>
-                        <td style="font-weight: bold; color: {{ entry.tier.color }};">
-                            {{ entry.formatted_amount }}
+                        <td>
+                            <span class="verified-date">{{ row.verified_at_human }}</span>
                         </td>
-                        <td class="verified-date">
-                            {{ entry.verified_at.strftime('%b %d, %Y') }}
-                        </td>
-                        <td style="text-align: center;">
-                            <a href="/pof/certificate/{{ entry.certificate_id }}" class="view-cert">
-                                View Certificate
-                            </a>
+                        <td style="text-align:right;">
+                            <a class="view-cert" href="{{ row.certificate_url }}">View Cert</a>
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
-        {% else %}
+        -->
+
+        <!-- Empty state (current behavior) -->
         <div class="empty-state">
             <div class="icon">🐋</div>
-            <p>No verified whales yet!</p>
+            <h2>No verified whales yet</h2>
+            <p>Be the first to anchor your Bitcoin holdings on-chain with a cryptographic Proof of Funds.</p>
             <a href="/pof/verify" class="btn">Be the First to Verify</a>
         </div>
-        {% endif %}
 
-        <div style="text-align: center; margin-top: 3rem; padding-top: 2rem; border-top: 1px solid #333;">
-            <a href="/pof/verify" class="btn">Verify Your Holdings</a>
-            <br><br>
-            <a href="/pof" style="color: #888; text-decoration: none;">← Back to Proof of Funds</a>
+        <div class="footer-actions">
+            <a href="/pof/verify" class="btn" style="margin-bottom: 0.9rem;">Verify Your Holdings</a>
+            <br>
+            <a href="/pof" class="secondary-link">← Back to Proof of Funds</a>
         </div>
     </div>
 
+    <!-- Matrix Background Animation (same as playground) -->
     <script>
+        (function () {
+            const canvas = document.getElementById('matrix-bg');
+            if (!canvas) return;
+
+            const ctx = canvas.getContext('2d');
+            const CHARS = ['0', '1'];
+            let width = 0, height = 0, particles = [], raf = null;
+
+            function resize() {
+                const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+                const cssW = window.innerWidth;
+                const cssH = window.innerHeight;
+
+                canvas.width = Math.floor(cssW * dpr);
+                canvas.height = Math.floor(cssH * dpr);
+                canvas.style.width = cssW + 'px';
+                canvas.style.height = cssH + 'px';
+
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.scale(dpr, dpr);
+
+                width = cssW;
+                height = cssH;
+                particles = [];
+
+                for (let i = 0; i < 400; i++) {
+                    particles.push({
+                        x: (Math.random() - 0.5) * width,
+                        y: (Math.random() - 0.5) * height,
+                        z: Math.random() * 800 + 100
+                    });
+                }
+
+                ctx.fillStyle = 'rgba(0,0,0,1)';
+                ctx.fillRect(0, 0, width, height);
+            }
+
+            function draw() {
+                ctx.fillStyle = 'rgba(0,0,0,0.25)';
+                ctx.fillRect(0, 0, width, height);
+                ctx.fillStyle = '#00ff88';
+
+                for (const p of particles) {
+                    const scale = 200 / p.z;
+                    const x2 = width / 2 + p.x * scale;
+                    const y2 = height / 2 + p.y * scale;
+                    const size = Math.max(8 * scale, 1);
+
+                    ctx.font = size + 'px monospace';
+                    ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
+
+                    p.z -= 5;
+                    if (p.z < 1) {
+                        p.x = (Math.random() - 0.5) * width;
+                        p.y = (Math.random() - 0.5) * height;
+                        p.z = 800;
+                    }
+                }
+
+                raf = requestAnimationFrame(draw);
+            }
+
+            function onVis() {
+                if (document.hidden) {
+                    if (raf) {
+                        cancelAnimationFrame(raf);
+                        raf = null;
+                    }
+                } else {
+                    if (!raf) raf = requestAnimationFrame(draw);
+                }
+            }
+
+            window.addEventListener('resize', resize);
+            document.addEventListener('visibilitychange', onVis);
+
+            resize();
+            raf = requestAnimationFrame(draw);
+        })();
+
         // Auto-refresh every 30 seconds to show new verifications
         setTimeout(() => {
             location.reload();

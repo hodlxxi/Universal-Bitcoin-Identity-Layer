@@ -17,6 +17,39 @@ from app.models import ProofOfFunds, User
 # Create blueprint
 pof_bp = Blueprint('pof', __name__, url_prefix='/pof')
 
+pof_api_bp = Blueprint('pof_api', __name__, url_prefix='/api/pof')
+
+@pof_api_bp.route('/stats')
+def pof_stats_api():
+    """
+    Minimal stub JSON stats endpoint.
+    Later we can wire it to ProofOfFunds; for now it just proves the route exists.
+    """
+    return jsonify({
+        "ok": True,
+        "stats": {
+            "total_attestations": 0,
+            "active_attestations": 0,
+            "unique_pubkeys": 0,
+            "biggest_proof_sat": 0,
+            "total_active_sat": 0,
+            "last_attestation_ts": None,
+        },
+    })
+
+
+@pof_api_bp.route('/leaderboard')
+def pof_leaderboard_api():
+    """
+    Minimal stub JSON leaderboard endpoint.
+    Later we can return real rows; for now just an empty list.
+    """
+    return jsonify({
+        "ok": True,
+        "leaderboard": [],
+    })
+
+
 def login_required(f):
     """Decorator to require authentication"""
     @wraps(f)
