@@ -25,8 +25,8 @@ black==23.12.1
 isort==5.13.2
 
 # Security
-bandit==1.7.6
-safety==2.3.5
+bandit==1.9.2
+safety==3.7.0
 
 # Git Hooks
 pre-commit==3.6.0
