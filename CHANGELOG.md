@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Production-ready configuration validation
 - Typed configuration surface with environment variable support
 - Comprehensive documentation suite
+- CI/CD pipeline with GitHub Actions (test, lint, security workflows)
+- Pre-commit hooks configuration for code quality
+- Docker Compose setup for local development environment
+- Makefile with common development tasks
+- GitHub issue and PR templates
+- Dependabot configuration for automated dependency updates
+- EditorConfig for consistent coding styles across editors
+- Code coverage configuration (.coveragerc)
 
 ### Changed
 - Refactored Flask application to use blueprint architecture
@@ -29,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated landing page to match developer preview state
 - Refreshed module and deployment guides
 - Enhanced root README with architecture overview
+- Renamed SECURITY_GUIDE.md to SECURITY.md (GitHub standard)
+- Removed backup files from version control
 
 ### Fixed
 - Various code quality issues and deprecation warnings

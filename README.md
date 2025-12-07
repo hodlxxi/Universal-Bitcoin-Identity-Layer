@@ -1,5 +1,12 @@
 # Universal Bitcoin Identity Layer
 
+[![Tests](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/workflows/Tests/badge.svg)](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/actions/workflows/test.yml)
+[![Lint](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/workflows/Lint/badge.svg)](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/actions/workflows/lint.yml)
+[![Security](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/workflows/Security/badge.svg)](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/actions/workflows/security.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 A production-focused Flask service that bridges OAuth2/OpenID Connect with Lightning Network authentication. The project couples hardened security defaults, Redis-backed rate limiting, RS256 JWT issuance, and Postgres persistence so Bitcoin-enabled applications can expose standards-compliant identity endpoints.
 
 ---
