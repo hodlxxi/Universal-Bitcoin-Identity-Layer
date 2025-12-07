@@ -1,7 +1,6 @@
 import hashlib
 import json
 import redis
-import redis
 import logging
 import os
 import re
@@ -66,7 +65,6 @@ from app.oidc import oidc_bp, validate_pkce
 from app.security import init_security, limiter
 from app.tokens import issue_rs256_jwt
 from app.pof_routes import pof_bp, pof_api_bp
-#from app.playground_routes import playground_bp   # <-- ADD THIS
 from flask import make_response
 
 
@@ -490,8 +488,7 @@ init_security(app, CFG)
 # Blueprints
 app.register_blueprint(pof_bp)
 app.register_blueprint(oidc_bp)
-app.register_blueprint(pof_api_bp)
-#app.register_blueprint(playground_bp)  
+app.register_blueprint(pof_api_bp)  
 
 OAUTH_PATH_PREFIXES = ("/oauth/", "/oauthx/")
 OAUTH_PUBLIC_PATHS = (
@@ -6721,7 +6718,6 @@ def root_redirect():
 import hashlib
 import json
 import redis
-import redis
 
 # =========================
 # COMPLETE OIDC/OAuth2 SYSTEM (append at EOF after your existing code)
@@ -10717,36 +10713,6 @@ def landing_page():
 # ROUTES: ADDITIONAL PAGES
 # ============================================================================
 
-
-
-# @app.route("/playground/", defaults={'path': ''})
-# @app.route("/playground/<path:path>")
-# def playground(path):
-#     playground_dir = 'static/playground'
-#     if path == '':
-#         resp = make_response(send_from_directory(playground_dir, 'index.html'))
-#     else:
-#         resp = make_response(send_from_directory(playground_dir, path))
-#     
-#     # FORCE override CSP for playground - remove any existing CSP
-#     if 'Content-Security-Policy' in resp.headers:
-#         del resp.headers['Content-Security-Policy']
-#     if 'Content-Security-Policy-Report-Only' in resp.headers:
-#         del resp.headers['Content-Security-Policy-Report-Only']    
-    # Set very permissive CSP
-    resp.headers['Content-Security-Policy'] = "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline';"
-    
-    return resp
-
-#@app.route("/playground", methods=["GET"])
-#def playground():
-            # Serve static playground to avoid Jinja parsing issues
- #   logged_in = session.get('logged_in_pubkey', '')
-  #  access_level = session.get('access_level', 'limited')
-
-    # Serve the prebuilt static HTML (bypass Jinja)
-   # return send_from_directory('static', 'playground.html')
-
 @app.route("/oauth/register", methods=["POST"])
 def oauth_register():
     """Register a new OAuth client"""
@@ -10860,7 +10826,6 @@ def apply_security_headers(response):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-  #  response.headers["Content-Security-Policy"] = "default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.tailwindcss.com; connect-src 'self' wss: ws: https: http:; font-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; frame-ancestors 'none'"
     return response
 
 # ============================================================================
