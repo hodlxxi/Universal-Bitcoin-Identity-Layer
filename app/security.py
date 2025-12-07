@@ -99,15 +99,18 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
 
     if cfg.get("RATE_LIMIT_ENABLED") is False:
         limiter = None
+        logger.info("Rate limiting disabled")
     else:
-        storage_uri = _build_redis_uri(cfg) if cfg.get("REDIS_URL") or cfg.get("REDIS_HOST") else "memory://"
+        # ALWAYS use memory:// storage for reliability
+        # Redis-based rate limiting can be added later if needed
         limiter = Limiter(
             key_func=get_remote_address,
             default_limits=[limit_default],
-            storage_uri=storage_uri or "memory://",
+            storage_uri="memory://",
             strategy="fixed-window",
         )
         limiter.init_app(app)
+        logger.info(f"Rate limiter initialized with memory:// storage (limit: {limit_default})")
 
     log_level = str(cfg.get("LOG_LEVEL", "INFO")).upper()
     level = getattr(logging, log_level, logging.INFO)

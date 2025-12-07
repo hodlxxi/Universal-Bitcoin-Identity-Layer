@@ -22,24 +22,87 @@ pof_api_bp = Blueprint('pof_api', __name__, url_prefix='/api/pof')
 @pof_api_bp.route('/stats')
 def pof_stats_api():
     """
-    Minimal stub JSON stats endpoint.
-    Later we can wire it to ProofOfFunds; for now it just proves the route exists.
+    Get aggregated Proof-of-Funds statistics with whale tier breakdown
     """
-    return jsonify({
-        "ok": True,
-        "stats": {
-            "total_attestations": 0,
-            "active_attestations": 0,
-            "unique_pubkeys": 0,
-            "biggest_proof_sat": 0,
-            "total_active_sat": 0,
-            "last_attestation_ts": None,
-        },
-    })
-
-
-@pof_api_bp.route('/leaderboard')
-def pof_leaderboard_api():
+    try:
+        from app.database import get_session
+        from sqlalchemy import text
+        
+        db_session = get_session()
+        
+        # Get overall stats
+        result = db_session.execute(text("""
+            SELECT 
+                COUNT(*) as total_users,
+                COUNT(CASE WHEN status = 'verified' THEN 1 END) as verified_users,
+                COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_users,
+                COALESCE(SUM(CASE WHEN status = 'verified' THEN total_btc ELSE 0 END), 0) as total_btc,
+                COALESCE(AVG(CASE WHEN status = 'verified' THEN total_btc END), 0) as avg_btc,
+                COUNT(CASE WHEN verified_at >= NOW() - INTERVAL '24 hours' THEN 1 END) as recent_24h,
+                COUNT(CASE WHEN verified_at >= NOW() - INTERVAL '7 days' THEN 1 END) as recent_7d
+            FROM proof_of_funds
+        """))
+        stats = result.fetchone()
+        
+        # Get all verified records for tier breakdown
+        result = db_session.execute(text("""
+            SELECT total_btc 
+            FROM proof_of_funds 
+            WHERE status = 'verified'
+            ORDER BY total_btc DESC
+        """))
+        verified_amounts = [row[0] for row in result.fetchall()]
+        
+        # Calculate tier distribution using WHALE_TIERS from this module
+        tier_distribution = {}
+        for tier in WHALE_TIERS:
+            count = sum(1 for btc in verified_amounts if tier['min'] <= float(btc) < tier['max'])
+            tier_distribution[tier['name']] = {
+                'count': count,
+                'emoji': tier['emoji'],
+                'color': tier['color'],
+                'min_btc': tier['min'],
+                'max_btc': tier['max'] if tier['max'] != float('inf') else None
+            }
+        
+        db_session.close()
+        
+        return jsonify({
+            'ok': True,
+            'timestamp': int(time.time()),
+            'total_stats': {
+                'total_users': stats[0],
+                'verified_users': stats[1],
+                'pending_users': stats[2],
+                'total_btc': float(stats[3]),
+                'average_btc': float(stats[4]) if stats[4] else 0.0,
+                'recent_24h': stats[5],
+                'recent_7d': stats[6]
+            },
+            'tier_distribution': tier_distribution,
+            'whale_tiers': WHALE_TIERS
+        })
+        
+    except Exception as e:
+        print(f"PoF stats error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'ok': False,
+            'error': 'Failed to fetch PoF statistics',
+            'timestamp': int(time.time()),
+            'total_stats': {
+                'total_users': 0,
+                'verified_users': 0,
+                'pending_users': 0,
+                'total_btc': 0.0,
+                'average_btc': 0.0,
+                'recent_24h': 0,
+                'recent_7d': 0
+            },
+            'tier_distribution': {},
+            'whale_tiers': []
+        }), 500
     """
     Minimal stub JSON leaderboard endpoint.
     Later we can return real rows; for now just an empty list.

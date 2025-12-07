@@ -1,4 +1,3 @@
-import base64
 import hashlib
 import json
 import redis
@@ -6,6 +5,7 @@ import redis
 import logging
 import os
 import re
+from flask import session, request
 import secrets
 import time
 import uuid
@@ -361,23 +361,62 @@ def decode_jwt(token: str, **kwargs):
 REGISTRY = CollectorRegistry()
 oauth_tokens_issued = Counter("oauth_tokens_issued_total", "Total tokens issued", registry=REGISTRY)
 
+class SafeRedis:
+    """Wrapper for Redis that gracefully handles connection failures"""
+    def __init__(self, redis_client):
+        self._redis = redis_client
+        self._is_available = redis_client is not None
+    
+    def _safe_call(self, method_name, *args, **kwargs):
+        if not self._is_available:
+            return None
+        try:
+            method = getattr(self._redis, method_name)
+            return method(*args, **kwargs)
+        except Exception as e:
+            logger.debug(f"Redis {method_name} failed: {e}")
+            self._is_available = False
+            return None
+    
+    def ping(self):
+        return self._safe_call('ping')
+    def get(self, key):
+        return self._safe_call('get', key)
+    def set(self, key, value, ex=None, px=None, nx=False, xx=False):
+        return self._safe_call('set', key, value, ex=ex, px=px, nx=nx, xx=xx)
+    def setex(self, key, time, value):
+        return self._safe_call('setex', key, time, value)
+    def delete(self, *keys):
+        return self._safe_call('delete', *keys)
+    def sadd(self, name, *values):
+        return self._safe_call('sadd', name, *values)
+    def smembers(self, name):
+        return self._safe_call('smembers', name) or set()
+    def __getattr__(self, name):
+        def method(*args, **kwargs):
+            return self._safe_call(name, *args, **kwargs)
+        return method
+
+
 try:
-    _redis = redis_client.Redis.from_url(REDIS_URL, decode_responses=True)
-    _redis.ping()
-except Exception as redis_err:
-    logger.warning(f"Redis unavailable, falling back to in-memory store: {redis_err}")
-    _redis = None
+    _redis_raw = redis_client.Redis.from_url(REDIS_URL, decode_responses=True)
+    _redis_raw.ping()
+    _redis = SafeRedis(_redis_raw)
+except Exception:
+    _redis = SafeRedis(None)
 
 
 # Redis client for playground (instance, not module)
+
 try:
     logger.info(f"Creating playground_redis with URL: {REDIS_URL[:50]}...")
-    playground_redis = redis_client.Redis.from_url(REDIS_URL, decode_responses=True)
-    logger.info(f"playground_redis connecting to: {REDIS_URL[:50]}...")
-    playground_redis.ping()
-    logger.info("playground_redis connected successfully!")
-except Exception:
-    logger.error("playground_redis failed to connect!")
+    _redis_raw2 = redis_client.Redis.from_url(REDIS_URL, decode_responses=True)
+    _redis_raw2.ping()
+    playground_redis = SafeRedis(_redis_raw2)
+    logger.info("✅ playground_redis with SafeRedis!")
+except Exception as e:
+    logger.error(f"playground_redis failed: {e}")
+    playground_redis = SafeRedis(None)
     logger.error("playground_redis failed to connect!")
     playground_redis = None
 
@@ -717,21 +756,54 @@ def rtc_hangup(data):
         logger.error(f"Error in rtc_hangup: {e}", exc_info=True)
 
 
+# --- Chat message helpers + events ---
+
+
+def _broadcast_chat_message(text: str):
+    """Shared logic to append to history and broadcast to all clients."""
+    pk = session.get("logged_in_pubkey")
+    if not pk:
+        logger.warning("Message received from unauthenticated user")
+        return
+
+    m = {"pubkey": pk, "text": str(text), "ts": time.time()}
+    CHAT_HISTORY.append(m)
+    purge_old_messages()
+
+    # Old clients listen to "message", new UI listens to both
+    socketio.emit("message", m)
+    socketio.emit("chat:message", m)
+
+
 @socketio.on("message")
 def handle_message(msg_text):
-    """Handle incoming chat messages"""
+    """Legacy handler for default Socket.IO 'message' event."""
     try:
-        pk = session.get("logged_in_pubkey")
-        if not pk:
-            logger.warning("Message received from unauthenticated user")
-            return
-
-        m = {"pubkey": pk, "text": str(msg_text), "ts": time.time()}
-        CHAT_HISTORY.append(m)
-        purge_old_messages()
-        socketio.emit("message", m)
+        _broadcast_chat_message(msg_text)
     except Exception as e:
         logger.error(f"Error handling message: {e}", exc_info=True)
+
+
+@socketio.on("chat:send")
+def handle_chat_send(data):
+    """
+    New handler for our front-end.
+
+    Client sends: socket.emit('chat:send', { text: 'hello' })
+    """
+    try:
+        # data can be dict or string; normalize to text
+        if isinstance(data, dict):
+            text = (data.get("text") or "").strip()
+        else:
+            text = str(data or "").strip()
+
+        if not text:
+            return
+
+        _broadcast_chat_message(text)
+    except Exception as e:
+        logger.error(f"Error handling chat:send: {e}", exc_info=True)
 
 
 app.config["SESSION_PERMANENT"] = True
@@ -1022,1717 +1094,1359 @@ def purge_old_messages():
 
 @app.route("/app")
 def chat():
-
     my_pubkey = session.get("logged_in_pubkey", "")
-
     online_users_list = list(ONLINE_USERS)
 
+    # Make sure only fresh messages are in memory (<= 45 seconds old)
     purge_old_messages()
 
     chat_html = r"""
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <!-- Keep all your existing head content exactly the same -->
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-    <title>HODLXXI Chat</title>
-    <!-- All your existing CSS stays the same -->
+    <meta charset="utf-8" />
+    <title>HODLXXI — Covenant Lounge</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <meta name="theme-color" content="#00ff88" />
+
+    <!-- Socket.IO -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.min.js"></script>
+
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --bg: #0b0f10;
+            --panel: #11171a;
+            --fg: #e6f1ef;
+            --accent: #00ff88;
+            --orange: #f7931a;
+            --red: #ff3b30;
+            --blue: #3b82f6;
+            --muted: #8a9da4;
+
+            --border-subtle: rgba(15, 23, 42, 0.7);
+            --border-strong: #0f2a24;
+
+            --spacing: 1rem;
+            --radius-lg: 16px;
+            --radius-pill: 999px;
+
+            --touch-target: 44px;
         }
 
-        /* --- Matrix background canvas --- */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+        }
+
+        body {
+            background: radial-gradient(circle at top, #020617 0, #020617 40%, #000 100%);
+            color: var(--fg);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Mono", Menlo, Consolas, monospace;
+            overflow: hidden;
+        }
+
         #matrix-bg {
             position: fixed;
             inset: 0;
-            z-index: 0;             /* behind content */
-            pointer-events: none;   /* clicks go through */
+            z-index: 0;
+            pointer-events: none;
         }
-        /* Put all UI above the matrix canvas */
-        body > *:not(#matrix-bg) { position: relative; z-index: 1; }
-        @media (prefers-reduced-motion: reduce) { #matrix-bg { display:none !important; } }
-        @media print { #matrix-bg { display:none !important; } }
+        body > *:not(#matrix-bg) {
+            position: relative;
+            z-index: 1;
+        }
 
-html, body {
-  height: 100%;
-}
+        .shell {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
-  background: #000;
-  color: #0f0;
-  /* Use dynamic viewport to avoid 100vh bugs on mobile */
-  height: 100dvh;
-  min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden; /* keep page from double-scrolling */
-}
+        /* Mobile layout tweaks */
+        @media (max-width: 768px) {
+            /* Allow the whole page to scroll on small screens */
+            body {
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+            }
 
-/* iOS fallback */
-@supports (-webkit-touch-callout: none) {
-  body { min-height: -webkit-fill-available; }
-}
+            .shell {
+                padding: 0.75rem;
+                min-height: 100%;
+                height: auto;
+            }
 
-        /* Header */
-        .header {
-            padding: 12px 16px;
-            border-bottom: 1px solid #333;
+            /* Stack chat and sidebar vertically instead of 2-column grid */
+            .layout {
+                display: flex;
+                flex-direction: column;
+                gap: 0.75rem;
+            }
+        }
+
+        .top-bar {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: #111;
-            flex-shrink: 0;
-            backdrop-filter: blur(2px);
+            gap: 0.75rem;
+        }
+
+        .top-left {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
         }
 
         .back-btn {
-            background: none;
-            border: 1px solid #0f0;
-            color: #0f0;
-            padding: 6px 12px;
-            border-radius: 4px;
-            font-size: 14px;
-            cursor: pointer;
-            text-decoration: none;
-            display: flex;
+            min-width: var(--touch-target);
+            height: var(--touch-target);
+            border-radius: 50%;
+            border: 1px solid var(--border-subtle);
+            background: radial-gradient(circle at 30% 0%, #1f2933 0, #020617 60%);
+            display: inline-flex;
             align-items: center;
-            gap: 4px;
+            justify-content: center;
+            color: var(--accent);
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0,255,136,0.25);
         }
 
-        .back-btn:active {
-            background: #0f0;
-            color: #000;
+        .back-btn span {
+            font-size: 1.4rem;
+            transform: translateX(-1px);
+        }
+
+        .title-block {
+            display: flex;
+            flex-direction: column;
+            gap: 0.1rem;
         }
 
         .title {
-            font-size: 16px;
-            font-weight: 500;
-            text-shadow: 0 0 8px rgba(0,255,0,.5);
+            font-size: clamp(1.1rem, 1.4vw, 1.3rem);
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--accent);
         }
 
-        .online-count {
-            font-size: 12px;
-            color: #88ff88;
+        .subtitle {
+            font-size: 0.8rem;
+            color: var(--muted);
         }
 
-        /* Online Users Bar */
-        .online-bar {
-            padding: 8px 16px;
-            background: rgba(10,10,10,0.85);
-            border-bottom: 1px solid #222;
-            flex-shrink: 0;
-            overflow-x: auto;
-            white-space: nowrap;
-            backdrop-filter: blur(2px);
+        .top-right {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.8rem;
+            color: var(--muted);
         }
 
-        .online-user {
-            display: inline-block;
-            padding: 4px 8px;
-            margin-right: 8px;
-            background: rgba(26,26,26,0.85);
-            border: 1px solid #333;
-            border-radius: 12px;
-            font-size: 12px;
-            cursor: pointer;
-            color: #0f0;
+        .online-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.3rem 0.7rem;
+            border-radius: var(--radius-pill);
+            border: 1px solid rgba(34,197,94,0.35);
+            background: radial-gradient(circle at 0 0, rgba(34,197,94,0.25), transparent 60%);
         }
 
-        .online-user:active {
-            background: #0f0;
-            color: #000;
+        .online-dot {
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 50%;
+            background: #22c55e;
+            box-shadow: 0 0 8px rgba(34,197,94,0.9);
         }
 
-
-        /* Presence roles */
-.online-user.role-full    { background:#ff8c1a; color:#121212; border-color:#ffb066; }
-.online-user.role-limited { background:#20c15b; color:#0b0f10; border-color:#2ae06b; }
-.online-user.role-pin     { background:#3b82f6; color:#ffffff; border-color:#60a5fa; }
-.online-user.role-random  { background:#ff3b30; color:#ffffff; border-color:#ff6b60; }
-
-
-
-        /* Messages Container */
-        .messages-container {
+        .layout {
             flex: 1;
-            overflow-y: auto;
-            padding: 0 16px;
+            min-height: 0;
+            display: grid;
+            grid-template-columns: minmax(0, 2.1fr) minmax(0, 1.3fr);
+            gap: 1rem;
+        }
+
+        @media (max-width: 960px) {
+            .layout {
+                grid-template-columns: minmax(0, 1.8fr) minmax(0, 1.6fr);
+            }
+        }
+
+        .panel {
+            position: relative;
+            background: radial-gradient(circle at 0 -20%, rgba(0,255,136,0.18), transparent 55%),
+                        radial-gradient(circle at 100% 120%, rgba(59,130,246,0.18), transparent 60%),
+                        linear-gradient(145deg, rgba(15,23,42,0.98), #020617 80%);
+            border-radius: var(--radius-lg);
+            border: 1px solid rgba(15,23,42,0.9);
+            box-shadow:
+                0 0 0 1px rgba(15,23,42,0.9),
+                0 0 25px rgba(0,255,136,0.1),
+                0 0 45px rgba(37,99,235,0.33);
+            padding: 0.9rem;
             display: flex;
             flex-direction: column;
-            gap: 8px;
-            padding-top: 16px;
-            padding-bottom: 16px;
+            gap: 0.75rem;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: var(--muted);
+            gap: 0.5rem;
+        }
+
+        .panel-title {
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            font-size: 0.7rem;
+            color: rgba(148,163,184,0.95);
+        }
+
+        .panel-badge {
+            border-radius: var(--radius-pill);
+            border: 1px solid rgba(148,163,184,0.45);
+            padding: 0.18rem 0.6rem;
+            font-size: 0.7rem;
+        }
+
+        .panel-body {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .messages-wrap {
+            flex: 1;
+            min-height: 0;
+            border-radius: 12px;
+            border: 1px solid rgba(15,23,42,0.9);
+            background:
+                radial-gradient(circle at 0 0, rgba(0,255,136,0.15), transparent 60%),
+                linear-gradient(180deg, rgba(15,23,42,0.85), rgba(2,6,23,0.95));
+            padding: 0.6rem;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message-list {
+            list-style: none;
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding-right: 0.3rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(148,163,184,0.7) transparent;
+        }
+
+        .message-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        .message-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .message-list::-webkit-scrollbar-thumb {
+            background: rgba(148,163,184,0.7);
+            border-radius: 999px;
         }
 
         .message {
-            max-width: 80%;
-            word-wrap: break-word;
-            line-height: 1.4;
-            animation: fadeIn .2s ease;
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(4px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        .message.fade-out {
-          animation: fadeOut .3s ease forwards;
-        }
-        @keyframes fadeOut {
-          to { opacity: 0; transform: translateY(-2px); }
+            position: relative;
+            display: inline-flex;
+            flex-direction: column;
+            max-width: min(85%, 520px);
+            border-radius: 12px;
+            padding: 0.45rem 0.6rem;
+            background: rgba(15,23,42,0.9);
+            border: 1px solid rgba(15,23,42,0.9);
+            box-shadow: 0 12px 18px rgba(15,23,42,0.85);
         }
 
-        .message.mine {
+        .message.me {
             align-self: flex-end;
-            text-align: right;
+            background: radial-gradient(circle at 0 0, rgba(0,255,136,0.18), transparent 75%);
+            border-color: rgba(34,197,94,0.5);
         }
 
-        .message.theirs {
-            align-self: flex-start;
+        .message-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.6rem;
+            font-size: 0.68rem;
+            color: var(--muted);
+            margin-bottom: 0.18rem;
         }
 
         .message-sender {
-            font-size: 11px;
-            color: #66cc66;
-            margin-bottom: 2px;
+            max-width: 70%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .message-text {
-            background: rgba(26,26,26,0.85);
-            padding: 8px 12px;
-            border-radius: 12px;
-            font-size: 14px;
-            border: 1px solid #333;
-            backdrop-filter: blur(2px);
+            font-size: 0.84rem;
+            line-height: 1.3;
+            word-break: break-word;
         }
 
-        .message.mine .message-text {
-            background: rgba(10,42,10,0.9);
-            border-color: #0f0;
-            box-shadow: 0 0 10px rgba(0,255,0,.12);
-        }
-
-        /* Input Area */
-        .input-area {
-            padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
-            border-top: 1px solid #333;
-            background: rgba(17,17,17,0.9);
+        .composer {
+            margin-top: 0.5rem;
             display: flex;
-            gap: 8px;
-            align-items: flex-end;
-            flex-shrink: 0;
-            backdrop-filter: blur(4px);
+            align-items: center;
+            gap: 0.5rem;
         }
 
-        .message-input {
+        .input-shell {
             flex: 1;
-            background: rgba(26,26,26,0.85);
-            border: 1px solid #333;
-            color: #0f0;
-            padding: 10px 12px;
-            border-radius: 20px;
-            font-size: 16px;
-            resize: none;
-            min-height: 40px;
-            max-height: 120px;
-            outline: none;
-            font-family: inherit;
+            border-radius: var(--radius-pill);
+            border: 1px solid rgba(15,23,42,0.9);
+            background: rgba(15,23,42,0.95);
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.25rem 0.65rem;
         }
 
-        .message-input:focus {
-            border-color: #0f0;
-            box-shadow: 0 0 0 3px rgba(0,255,0,.1);
+        .input-shell input {
+            border: none;
+            background: transparent;
+            color: var(--fg);
+            font-size: 0.88rem;
+            outline: none;
+            width: 100%;
+        }
+
+        .hint-pill {
+            font-size: 0.7rem;
+            padding: 0.12rem 0.45rem;
+            border-radius: 999px;
+            border: 1px dashed rgba(148,163,184,0.5);
+            color: rgba(148,163,184,0.9);
+            white-space: nowrap;
         }
 
         .send-btn {
-            background: #0f0;
-            color: #000;
-            border: none;
-            width: 40px;
-            height: 40px;
+            min-width: var(--touch-target);
+            height: var(--touch-target);
             border-radius: 50%;
+            border: none;
+            background: radial-gradient(circle at 20% 0, #22c55e 0, #15803d 40%, #052e16 100%);
+            color: #e5fdf2;
             cursor: pointer;
-            display: flex;
+            display: inline-flex;
             align-items: center;
             justify-content: center;
-            font-size: 16px;
-            flex-shrink: 0;
-            box-shadow: 0 0 12px rgba(0,255,0,.25);
+            font-size: 1.25rem;
+            box-shadow:
+                0 0 0 1px rgba(34,197,94,0.6),
+                0 0 22px rgba(34,197,94,0.8);
         }
 
         .send-btn:active {
-            background: #0a0;
+            transform: translateY(1px) scale(0.97);
         }
 
-        .send-btn:disabled {
-            background: #333;
-            color: #666;
-            cursor: not-allowed;
-            box-shadow: none;
+        .ephemeral {
+            font-size: 0.7rem;
+            color: var(--muted);
+            margin-top: 0.15rem;
         }
 
-        /* Mobile optimizations */
-        @media (max-width: 480px) {
-            .header { padding: 10px 12px; }
-            .title { font-size: 14px; }
-            .messages-container {
-                padding: 0 12px;
-                padding-top: 12px;
-                padding-bottom: 12px;
+        .ephemeral span {
+            color: var(--accent);
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .users-list-wrap {
+            flex: 1;
+            min-height: 0;
+            border-radius: 12px;
+            background: linear-gradient(160deg, rgba(15,23,42,0.92), #020617);
+            border: 1px solid rgba(15,23,42,0.9);
+            padding: 0.6rem;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .users-list {
+            list-style: none;
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding-right: 0.3rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(148,163,184,0.7) transparent;
+        }
+
+        .users-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .user-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            padding: 0.35rem 0.4rem;
+            border-radius: 10px;
+            background: radial-gradient(circle at 0 0, rgba(0,255,136,0.12), transparent 60%);
+            border: 1px solid rgba(15,23,42,0.9);
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .user-left {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            min-width: 0;
+        }
+
+        .user-dot {
+            width: 0.4rem;
+            height: 0.4rem;
+            border-radius: 50%;
+            box-shadow: 0 0 8px rgba(34,197,94,0.9);
+            background: #22c55e;
+        }
+
+        .user-name {
+            font-size: 0.78rem;
+            max-width: 150px;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            overflow: hidden;
+        }
+
+        .user-pubkey {
+            font-size: 0.64rem;
+            color: var(--muted);
+            opacity: 0.8;
+        }
+
+        .user-tag-me {
+            display: inline-flex;
+            padding: 0.1rem 0.4rem;
+            border-radius: 999px;
+            border: 1px solid rgba(148,163,184,0.7);
+            font-size: 0.64rem;
+            color: var(--muted);
+        }
+
+        .user-btn {
+            font-size: 0.9rem;
+            min-width: 30px;
+            height: 30px;
+            border-radius: 999px;
+            border: 1px solid rgba(148,163,184,0.6);
+            background: radial-gradient(circle at 0 0, rgba(148,163,184,0.18), transparent 65%);
+            color: var(--fg);
+            cursor: pointer;
+        }
+
+        .info-card {
+            font-size: 0.76rem;
+            padding: 0.6rem;
+            border-radius: 12px;
+            border: 1px dashed rgba(148,163,184,0.6);
+            background: radial-gradient(circle at 0 0, rgba(59,130,246,0.16), transparent 70%);
+            color: rgba(148,163,184,0.95);
+        }
+
+        .info-card strong {
+            color: var(--accent);
+        }
+
+        .info-card code {
+            font-family: "SF Mono", Menlo, Consolas, monospace;
+            font-size: 0.74rem;
+            background: rgba(15,23,42,0.95);
+            padding: 0.05rem 0.35rem;
+            border-radius: 999px;
+            border: 1px solid rgba(15,23,42,0.9);
+        }
+
+        /* Call panel */
+        .call-panel {
+            position: relative;
+            margin-top: 0.5rem;
+            border-radius: 12px;
+            border: 1px solid rgba(15,23,42,0.9);
+            background: radial-gradient(circle at 0 0, rgba(59,130,246,0.22), transparent 75%);
+            padding: 0.55rem;
+            display: grid;
+            grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr);
+            gap: 0.5rem;
+            align-items: center;
+            font-size: 0.8rem;
+        }
+
+        @media (max-width: 960px) {
+            .call-panel {
+                grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.3fr);
             }
-            .input-area { padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
-            .message { max-width: 90%; }
         }
 
-        /* Scrollbar styling */
-        .messages-container::-webkit-scrollbar { width: 3px; }
-        .messages-container::-webkit-scrollbar-track { background: transparent; }
-        .messages-container::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-        .online-bar::-webkit-scrollbar { height: 3px; }
-        .online-bar::-webkit-scrollbar-track { background: transparent; }
-        .online-bar::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-        /* === Call UI (neon) === */
-.call-overlay{position:fixed;inset:0;display:none;z-index:9999;align-items:center;justify-content:center;background:rgba(0,0,0,.85)}
-.call-stage{position:relative;width:min(96vw,1000px);height:min(75dvh,760px);border:1px solid #0f0;border-radius:16px;overflow:hidden;background:linear-gradient(180deg,#001a00,#000)}
-.remote-video,.local-video{background:#000}
-.remote-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.local-pip{position:absolute;right:16px;bottom:16px;width:min(42vw,240px);aspect-ratio:16/9;border:1px solid #0f0;border-radius:12px;overflow:hidden;cursor:grab;box-shadow:0 0 18px rgba(0,255,0,.15)}
-.local-pip.dragging{opacity:.9;cursor:grabbing}
-.local-video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
-.call-topbar{position:absolute;left:12px;right:12px;top:10px;display:flex;align-items:center;gap:10px;justify-content:space-between}
-.badge{display:inline-flex;align-items:center;gap:8px;background:rgba(0,40,0,.75);border:1px solid #0f0;border-radius:999px;padding:6px 10px;font:12px/1.2 monospace;color:#0f0;box-shadow:0 0 10px rgba(0,255,0,.12)}
-.status-dot{width:10px;height:10px;border-radius:50%;background:#666;box-shadow:0 0 6px #666}
-.status-dot.live{background:#0f0;box-shadow:0 0 10px #0f0}
-.quality{display:inline-flex;gap:3px}
-.quality i{width:6px;height:10px;background:#255;border:1px solid #0f0;opacity:.5}
-.quality i.on{background:#0f0;opacity:1}
-.timer{font:12px/1 monospace;color:#88ff88}
-.call-toolbar{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
-.btn-circle{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:1px solid #0f0;background:rgba(0,40,0,.85);color:#0f0;font-size:22px;cursor:pointer;box-shadow:0 0 12px rgba(0,255,0,.18)}
-.btn-circle:active{transform:scale(.98)}
-.btn-circle.active{background:#0f0;color:#000}
-.btn-circle.danger{border-color:#f33;color:#f55;background:rgba(40,0,0,.9);box-shadow:0 0 12px rgba(255,0,0,.18)}
-.small{font-size:11px;margin-top:4px;color:#88ff88;text-align:center}
-.sheet{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
-.card{background:rgba(10,30,10,.95);border:1px solid #0f0;border-radius:12px;padding:16px 14px;min-width:280px;box-shadow:0 0 24px rgba(0,255,0,.2)}
-.row{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:10px;flex-wrap:wrap}
-.btn{border:1px solid #0f0;background:rgba(0,40,0,.8);color:#0f0;padding:8px 12px;border-radius:10px;cursor:pointer}
-.btn.primary{background:#0f0;color:#000}
-.btn.ghost{background:transparent}
-.panel{position:absolute;right:12px;top:56px;background:rgba(0,20,0,.95);border:1px solid #0f0;border-radius:10px;padding:10px;display:none;min-width:220px}
-.panel label{font:12px/1.2 monospace;color:#88ff88;display:block;margin:6px 0 4px}
-.panel select{width:100%;background:#000;border:1px solid #0f0;color:#0f0;padding:6px;border-radius:8px}
-@media (max-width:480px){.btn-circle{width:52px;height:52px;font-size:20px}.local-pip{width:36vw}}
+        @media (max-width: 768px) {
+            .call-panel {
+                grid-template-columns: minmax(0, 1.2fr);
+                grid-auto-rows: auto;
+            }
+        }
 
+        .call-videos {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+            min-height: 110px;
+        }
 
+        .video-frame {
+            width: 100%;
+            max-width: 260px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(148,163,184,0.6);
+            background: #020617;
+            position: relative;
+        }
 
-/* === Enhancements: fade, fullscreen, safe-areas, polish === */
-.call-overlay.show { display: flex; }
+        .video-frame video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            background: #020617;
+        }
 
-.call-stage:fullscreen,
-.call-stage:-webkit-full-screen {
-  width: 100vw;
-  height: 100vh;
-  border: 0;
-  border-radius: 0;
-}
-.call-stage:fullscreen .remote-video,
-.call-stage:-webkit-full-screen .remote-video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
+        .video-label {
+            position: absolute;
+            inset-inline: 0.35rem;
+            bottom: 0.25rem;
+            font-size: 0.65rem;
+            color: rgba(226,232,240,0.9);
+            text-shadow: 0 0 10px rgba(15,23,42,0.9);
+        }
 
-.call-toolbar {
-  transition: opacity .35s ease, visibility .35s ease, transform .35s ease;
-  will-change: opacity, transform;
-}
-.call-toolbar.hidden {
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(10px);
-  pointer-events: none;
-}
+        .call-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+        }
 
-.call-stage {
-  padding-bottom: max(0px, env(safe-area-inset-bottom));
-  padding-top:    max(0px, env(safe-area-inset-top));
-}
-.call-toolbar { bottom: calc(12px + env(safe-area-inset-bottom)); }
-.call-topbar  { top:    calc(10px + env(safe-area-inset-top)); }
+        .call-status {
+            font-size: 0.8rem;
+            color: var(--muted);
+        }
 
-.local-pip { z-index: 3; }
-.call-topbar, .call-toolbar { z-index: 2; }
+        .call-status span {
+            color: var(--accent);
+        }
 
-.btn-circle:hover { box-shadow: 0 0 18px rgba(0,255,0,.28); }
+        .call-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            margin-top: 0.25rem;
+        }
 
-@media (prefers-reduced-motion: reduce) {
-  .call-toolbar { transition: none; }
-}
-@media (max-width: 360px) {
-  .call-toolbar { gap: 8px; }
-}
+        .btn {
+            border-radius: 999px;
+            border: 1px solid rgba(148,163,184,0.6);
+            background: rgba(15,23,42,0.95);
+            color: var(--fg);
+            font-size: 0.78rem;
+            padding: 0.24rem 0.65rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
 
+        .btn-danger {
+            border-color: rgba(239,68,68,0.7);
+            background: radial-gradient(circle at 0 0, rgba(239,68,68,0.18), transparent 70%);
+            color: #fecaca;
+        }
 
-/* === fade controls + fullscreen tweaks === */
-.call-toolbar{
-  transition: opacity .35s ease, visibility .35s ease, transform .35s ease;
-  will-change: opacity, transform;
-}
-.call-toolbar.hidden{
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(10px);
-  pointer-events: none;
-}
-.call-stage:fullscreen .call-toolbar,
-.call-stage:-webkit-full-screen .call-toolbar{
-  bottom: 10px;
-}
+        .btn-icon {
+            font-size: 0.9rem;
+        }
 
+        .call-panel.hidden {
+            opacity: 0.45;
+        }
 
+        .call-panel.hidden .btn-danger {
+            opacity: 0.3;
+            pointer-events: none;
+        }
 
+        .status-pill {
+            font-size: 0.7rem;
+            padding: 0.1rem 0.45rem;
+            border-radius: 999px;
+            border: 1px solid rgba(148,163,184,0.65);
+            color: rgba(148,163,184,0.9);
+        }
 
-    </style>
+    
+        /* Mobile column layout override (final) */
+        @media (max-width: 768px) {
+            body {
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .shell {
+                padding: 0.75rem;
+                min-height: 100%;
+                height: auto;
+            }
+
+            /* Stack Live flow · HODLXXI and Online presence vertically */
+            .layout {
+                display: flex;
+                flex-direction: column;
+                gap: 0.75rem;
+            }
+        }
+
+</style>
 </head>
-<body>
-    <!-- Matrix canvas -->
-    <canvas id="matrix-bg" aria-hidden="true"></canvas>
+<body data-my-pubkey="{{ my_pubkey|e }}">
+    <canvas id="matrix-bg"></canvas>
 
+    <main class="shell">
+        <header class="top-bar">
+            <div class="top-left">
+                <button class="back-btn" type="button" onclick="goHome('#explorer')">
+                    <span>home</span>
+                </button>
+                <div class="title-block">
+                    <div class="title">Covenant Lounge</div>
+                    <div class="subtitle">
+                        Encrypted presence chips, 45&nbsp;sec ephemeral whispers, tap-hold to video-call.
+                    </div>
+                </div>
+            </div>
+            <div class="top-right">
+                <div class="online-chip">
+                    <span class="online-dot"></span>
+                    <span><span id="onlineCount">{{ online_users|length }}</span> online</span>
+                </div>
+                <div id="room-status" class="status-pill">Connecting…</div>
+            </div>
+        </header>
 
-    <!-- Header -->
-    <div class="header">
-        <div class="title">The Matrix has you...follow e923</div>
-        <div class="online-count" id="onlineCount">{{ online_count }} online</div>
-    </div>
+        <section class="layout">
+            <!-- Chat panel -->
+            <section class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">Live flow &nbsp;·&nbsp; <span style="color:var(--accent)">HODLXXI</span></div>
+                    <div class="panel-badge">Messages self-erase after 45&nbsp;sec</div>
+                </div>
+                <div class="panel-body">
+                    <div class="messages-wrap">
+                        <ul id="messages" class="message-list">
+                            {% for m in history %}
+                            <li class="message{% if m.pubkey == my_pubkey %} me{% endif %}"
+                                data-ts="{{ m.ts|default(0) }}">
+                                <div class="message-meta">
+                                    <div class="message-sender">
+                                        {{ (m.pubkey or 'anon')[:12] }}…{{ (m.pubkey or '')[-6:] }}
+                                    </div>
+                                    <div class="message-timestamp">
+                                        {{ m.ts|datetimeformat if m.ts else '' }}
+                                    </div>
+                                </div>
+                                <div class="message-text">
+                                    {{ (m.text or '')|e }}
+                                </div>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
 
-    <!-- Online Users -->
-    <div class="online-bar" id="onlineBar"></div>
+                    <div class="composer">
+                        <div class="input-shell">
+                            <input id="chatInput"
+                                   type="text"
+                                   autocomplete="off"
+                                   placeholder="Type a whisper…" />
+                            <div class="hint-pill">@</div>
+                        </div>
+                        <button id="sendBtn" class="send-btn" type="button">➤</button>
+                    </div>
+                    <div class="ephemeral">
+                        Ephemeral mode: messages exist in memory for <span>45&nbsp;seconds</span>, then vanish.
+                    </div>
+                </div>
+            </section>
 
-    <!-- Messages -->
-    <div class="messages-container" id="messagesContainer"></div>
+            <!-- Right sidebar: users + call panel -->
+            <aside class="sidebar">
+                <section class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">Online presence</div>
+                        <div class="panel-badge">Tap = @mention · Long-press = call</div>
+                    </div>
+                    <div class="panel-body">
+                        <div class="users-list-wrap">
+                                        <ul id="userList" class="users-list">
+                {% for pk in online_users %}
+                <li class="user-item" data-pubkey="{{ pk|e }}">
+                    <div class="user-left">
+                        <span class="user-dot"></span>
+                        <div>
+                            <div class="user-name">
+                                {% set last4 = pk[-4:] %}
+                                {% if pk.startswith('guest') or pk|length < 20 %}
+                                    guest …{{ last4 }}
+                                {% elif pk == my_pubkey %}
+                                    you · …{{ last4 }}
+                                {% else %}
+                                    …{{ last4 }}
+                                {% endif %}
+                            </div>
+                            {% if pk == my_pubkey %}
+                                <div class="user-tag-me">you</div>
+                            {% else %}
+                                <div class="user-pubkey">…{{ pk[-4:] }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <button class="user-btn" type="button">@</button>
+                </li>
+                {% endfor %}
+            </ul>
+                        </div>
+                    </div>
+                </section>
 
-    <!-- Input -->
-    <div class="input-area">
-        <textarea
-            id="messageInput"
-            class="message-input"
-            placeholder="Type a message..."
-            rows="1"
-        ></textarea>
-        <button id="sendBtn" class="send-btn" disabled>→</button>
-    </div>
+                <section id="callPanel" class="call-panel hidden">
+                    <div class="call-videos">
+                        <div class="video-frame">
+                            <video id="remoteVideo" playsinline></video>
+                            <div class="video-label">Remote stream</div>
+                        </div>
+                        <div class="video-frame" style="max-width: 140px;">
+                            <video id="localVideo" muted playsinline></video>
+                            <div class="video-label">You</div>
+                        </div>
+                    </div>
+                    <div class="call-meta">
+                        <div id="callStatus" class="call-status">
+                            No active call — long-press any user chip to start.
+                        </div>
+                        <div class="call-buttons">
+                            <button id="hangupBtn" class="btn btn-danger" type="button">
+                                <span class="btn-icon">✕</span>
+                                Hang up
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            </aside>
+        </section>
+    </main>
 
-    <!-- Audio elements -->
-    <audio id="joinSound" preload="auto" playsinline>
-        <source src="{{ url_for('static', filename='sounds/join.mp3') }}" type="audio/mpeg">
-    </audio>
-    <audio id="messageSound" preload="auto" playsinline>
-        <source src="{{ url_for('static', filename='sounds/message.mp3') }}" type="audio/mpeg">
-    </audio>
-    <audio id="remoteLoginSound" preload="auto" playsinline>
-        <source src="{{ url_for('static', filename='sounds/login.mp3') }}" type="audio/mpeg">
-    </audio>
-
-<script>
-  const CHAT_HISTORY = {{ history | tojson | safe }};
-  const INITIAL_ONLINE = {{ online_users | tojson | safe }};
-  const MY_PUBKEY = "{{ my_pubkey }}";
-  const SPECIAL_NAMES = {{ special_names | tojson | safe }};
-  const ACCESS_LEVEL = "{{ access_level }}";   <!-- add this -->
-</script>
-
-
-
-<!-- put this FIRST -->
-<script>const FORCE_RELAY = {{ force_relay | tojson | safe }};</script>
-
-<script>
-// -------------- ICE CONFIG (hard-coded). Keep or replace with your fetch version --------------
-window.iceReady = fetch('/turn_credentials')
-  .then(r => r.json())
-  .then(servers => {
-    if (Array.isArray(servers)) {
-      window.pcBaseConfig = {
-        iceServers: servers,
-        iceTransportPolicy: (typeof FORCE_RELAY !== 'undefined' && FORCE_RELAY) ? 'relay' : 'all',
-        bundlePolicy: 'max-bundle',
-        rtcpMuxPolicy: 'require'
-      };
-    } else {
-      // fallback to STUN only if TURN misconfigured
-      window.pcBaseConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-    }
-  })
-  .catch(() => {
-    window.pcBaseConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-  });
-
-// ---------------------- STATE ----------------------
-let pc = null;
-let localStream = null;
-let currentVideoSender = null;
-let timerArmed = false;  // ⏱ startTimers guard
-
-
-// Helper to ensure local cam/mic
-async function ensureLocalMedia() {
-  if (localStream) return localStream;
-  localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-  document.getElementById('localVideo').srcObject = localStream;
-  return localStream;
-}
-
-// Make a new PeerConnection
-async function newPC() {
-  if (pc) { try { pc.close(); } catch (e) {} }
-  // If you use window.iceReady elsewhere, wait for it:
-  if (window.iceReady && typeof window.iceReady.then === 'function') {
-    try { await window.iceReady; } catch (e) { console.warn('iceReady failed:', e); }
-  }
-
-  pc = new RTCPeerConnection(window.pcBaseConfig);
-  console.log('[PC] created', window.pcBaseConfig);
-
-  // Remote media hookup (iOS/Safari safe)
-  pc.ontrack = (ev) => {
-    const remoteEl = document.getElementById('remoteVideo');
-    if (!remoteEl.srcObject) remoteEl.srcObject = new MediaStream();
-    remoteEl.srcObject.addTrack(ev.track);
-    Promise.resolve().then(() => remoteEl.play().catch(()=>{}));
-  };
-
-  // Add local tracks
-  currentVideoSender = null;
-  localStream.getTracks().forEach(t => {
-    const sender = pc.addTrack(t, localStream);
-    if (t.kind === 'video') currentVideoSender = sender;
-  });
-
-  // Optional: cap initial uplink bitrate for stability
-  try {
-    if (currentVideoSender) {
-      const p = currentVideoSender.getParameters() || {};
-      p.encodings = [{ maxBitrate: 600_000 }]; // ~600 kbps
-      await currentVideoSender.setParameters(p).catch(()=>{});
-    }
-  } catch {}
-
-  // ICE → signaling (serialize!)
-  pc.onicecandidate = (ev) => {
-    const c = ev.candidate;
-    if (!c) { console.log('[ICE] end of candidates'); return; }
-    const candidate = {
-      candidate: c.candidate,
-      sdpMid: c.sdpMid,
-      sdpMLineIndex: c.sdpMLineIndex,
-      usernameFragment: c.usernameFragment
-    };
-    if (currentPeer) {
-      socket.emit('rtc:ice', { to: currentPeer, from: MY_PUBKEY, candidate });
-      console.log('[EMIT] rtc:ice →', currentPeer, candidate);
-    }
-  };
-
-  // Diagnostics
-  pc.oniceconnectionstatechange = () => console.log('[ICE state]', pc.iceConnectionState);
-  pc.onconnectionstatechange   = () => console.log('[PC state]', pc.connectionState);
-  pc.onicegatheringstatechange = () => console.log('[ICE gathering]', pc.iceGatheringState);
-
-  return pc;
-}
-
-// ---------------------- CALL FLOW ----------------------
-async function startCall(targetPubkey) {
-  currentPeer = targetPubkey;
-  await ensureLocalMedia();
-  await newPC();
-
-  const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
-  await pc.setLocalDescription(offer);
-
-  socket.emit('rtc:offer', { to: currentPeer, from: MY_PUBKEY, offer });
-  console.log('[EMIT] rtc:offer →', currentPeer);
-}
-
-async function hangup() {
-  if (pc) { try { pc.close(); } catch {} }
-  pc = null;
-  currentPeer = null;
-}
-
-// ---------------------- SIGNALING HANDLERS ----------------------
-socket.on('rtc:offer', async ({ from, sdp }) => {
-  console.log('[RECV] rtc:offer ←', from);
-  currentPeer = from;
-  await ensureLocalMedia();
-  await newPC();
-
-  await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-  const answer = await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-  socket.emit('rtc:answer', { to: from, from: MY_PUBKEY, answer });
-  console.log('[EMIT] rtc:answer →', from);
-});
-
-socket.on('rtc:answer', async ({ from, sdp }) => {
-  console.log('[RECV] rtc:answer ←', from);
-  if (!pc) return;
-  await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-});
-
-socket.on('rtc:ice', async ({ from, candidate }) => {
-  if (!pc || !candidate) return;
-  try {
-    await pc.addIceCandidate(new RTCIceCandidate(candidate));
-    // console.log('[ADD] ICE from', from, candidate);
-  } catch (e) {
-    console.warn('addIceCandidate failed:', e);
-  }
-});
-
-// ---------------------- UI HOOKS (optional) ----------------------
-// Example buttons (create these in HTML if you want):
-// <button id="callBtn">Call</button> <button id="hangupBtn">Hang up</button>
-const callBtn   = document.getElementById('callBtn');
-const hangupBtn = document.getElementById('hangupBtn');
-if (callBtn)   callBtn.addEventListener('click', () => startCall(CHOSEN_PEER_PUBKEY));
-if (hangupBtn) hangupBtn.addEventListener('click', hangup);
-</script>
-
-
-
-
-
-
-
-<script src="//cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.min.js"></script>
-<script>
-  // Create ONE shared socket for the whole page.
-  // ChatApp will decide when to connect.
-  window.socket = io({ autoConnect: false });
-</script>
-
-<!-- If you are NOT dynamically fetching TURN creds elsewhere,
-     make iceReady a resolved promise so awaits won't break -->
-<script>
-  if (!window.iceReady || typeof window.iceReady.then !== 'function') {
-    window.iceReady = Promise.resolve();
-  }
-</script>
-
-
-
-
+    <!-- JS: Matrix background + chat + WebRTC -->
     <script>
-class ChatApp {
-  constructor() {
-    // ---- state ----
-    this.socket = window.socket;
-
-    // Map: pubkey -> role
-    this.onlineUsers = new Map(
-      (INITIAL_ONLINE || []).map(pk => [pk, this.classifyRole(pk)])
-    );
-
-    // show yourself immediately with correct role
-    if (MY_PUBKEY) {
-      const myRole = (ACCESS_LEVEL === 'full') ? 'full' : this.classifyRole(MY_PUBKEY);
-      this.onlineUsers.set(MY_PUBKEY, myRole);
-    }
-
-    this.audioUnlocked = false;
-
-    // ---- elements ----
-    this.elements = {
-      messagesContainer: document.getElementById('messagesContainer'),
-      messageInput:      document.getElementById('messageInput'),
-      sendBtn:           document.getElementById('sendBtn'),
-      onlineBar:         document.getElementById('onlineBar'),
-      onlineCount:       document.getElementById('onlineCount'),
-      joinSound:         document.getElementById('joinSound'),
-      messageSound:      document.getElementById('messageSound'),
-      remoteLoginSound:  document.getElementById('remoteLoginSound')
-    };
-
-    // 1) bind before connect
-    this.setupSocketListeners();
-
-    // reflect ourself as online when transport is up
-    this.socket.on('connect', () => {
-      if (MY_PUBKEY) {
-        const myRole = (ACCESS_LEVEL === 'full') ? 'full' : this.classifyRole(MY_PUBKEY);
-        this.onlineUsers.set(MY_PUBKEY, myRole);
-      }
-      this.renderOnlineUsers();
-      console.log('[socket] connected', this.socket.id);
-    });
-
-    // 2) UI init
-    this.init();
-
-    // 3) connect
-    this.socket.connect();
-  }
-
-  // ---- role detection on the frontend (fallback) ----
-  classifyRole(pk) {
-    if (!pk) return 'limited';
-    if (pk.startsWith('guest-')) return 'random';    // random guests
-    if (/^\d+$/.test(pk)) return 'pin';              // PIN users
-    return 'limited';                                // default unless server says 'full'
-  }
-
-  init() {
-    this.setupEventListeners();
-    this.renderOnlineUsers();
-    this.loadChatHistory();
-  }
-
-  setupEventListeners() {
-    // Send button
-    this.elements.sendBtn.addEventListener('click', () => this.sendMessage());
-
-    // Input handling
-    this.elements.messageInput.addEventListener('input', () => {
-      this.adjustInputHeight();
-      this.updateSendButton();
-    });
-    this.elements.messageInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        this.sendMessage();
-      }
-    });
-
-    // Audio unlock (play → pause once to satisfy mobile autoplay policies)
-    const unlockAudio = () => {
-      if (this.audioUnlocked) return;
-      [this.elements.joinSound, this.elements.messageSound, this.elements.remoteLoginSound].forEach(audio => {
-        audio.play().then(() => {
-          audio.pause();
-          audio.currentTime = 0;
-        }).catch(() => {});
-      });
-      this.audioUnlocked = true;
-    };
-    this.elements.sendBtn.addEventListener('click', unlockAudio, { once: true });
-    this.elements.messageInput.addEventListener('keydown', unlockAudio, { once: true });
-
-    // iOS keyboard scroll
-    window.addEventListener('resize', () => this.scrollToBottom());
-  }
-
-  setupSocketListeners() {
-    // avoid duplicate handlers on hot-reload
-    this.socket.off('user:joined');
-    this.socket.off('user:logged_in');
-    this.socket.off('user:left');
-    this.socket.off('message');
-
-    // presence join: string OR {pubkey, role}
-    this.socket.on('user:joined', (payload) => {
-      let pubkey, role;
-      if (typeof payload === 'string') {
-        pubkey = payload;
-        role   = this.classifyRole(pubkey);
-      } else {
-        pubkey = payload?.pubkey || payload?.id || '';
-        role   = payload?.role || this.classifyRole(pubkey);
-      }
-      if (!pubkey) return;
-
-      // if this is me and ACCESS_LEVEL is full, override to full (orange)
-      if (pubkey === MY_PUBKEY && ACCESS_LEVEL === 'full') role = 'full';
-
-      this.onlineUsers.set(pubkey, role);
-      this.renderOnlineUsers();
-
-      if (pubkey !== MY_PUBKEY && this.audioUnlocked) {
-        this.elements.joinSound.play().catch(() => {});
-      }
-    });
-
-    // presence leave: string OR {pubkey}
-    this.socket.on('user:left', (payload) => {
-      const pubkey = (typeof payload === 'string') ? payload
-                   : (payload && payload.pubkey) ? payload.pubkey
-                   : null;
-      if (!pubkey) return;
-      this.onlineUsers.delete(pubkey);
-      this.renderOnlineUsers();
-    });
-
-    // login ping sound (unchanged)
-    this.socket.on('user:logged_in', (pubkey) => {
-      if (pubkey !== MY_PUBKEY && this.audioUnlocked) {
-        const a = this.elements.remoteLoginSound;
-        a.loop = true; a.currentTime = 0;
-        a.play().catch(()=>{});
-        setTimeout(() => { a.pause(); a.currentTime = 0; a.loop = false; }, 6000);
-      }
-    });
-
-    // messages (unchanged)
-    this.socket.on('message', (message) => {
-      this.addMessage(message);
-      const from = (typeof message === "string") ? message.split(": ")[0]
-                : (message.pubkey || "unknown");
-      if (from !== MY_PUBKEY && this.audioUnlocked) {
-        this.elements.messageSound.play().catch(() => {});
-      }
-    });
-  }
-
-  adjustInputHeight() {
-    const input = this.elements.messageInput;
-    input.style.height = 'auto';
-    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
-  }
-
-  updateSendButton() {
-    const hasText = this.elements.messageInput.value.trim().length > 0;
-    this.elements.sendBtn.disabled = !hasText;
-  }
-
-  sendMessage() {
-    const text = this.elements.messageInput.value.trim();
-    if (!text) return;
-    this.socket.send(text); // server attaches pubkey from session
-    this.elements.messageInput.value = '';
-    this.adjustInputHeight();
-    this.updateSendButton();
-  }
-
-  addMessage(message) {
-    let pubkey, text, ts;
-    if (typeof message === "string") {
-      const [sender, ...rest] = message.split(": ");
-      pubkey = (sender || "unknown").trim();
-      text   = rest.join(": ") || "";
-      ts     = Date.now() / 1000;
-    } else {
-      pubkey = (message.pubkey || "unknown").toString().trim();
-      text   = (message.text ?? "").toString();
-      ts     = (typeof message.ts === "number") ? message.ts : (Date.now() / 1000);
-    }
-
-    const isMine = pubkey === MY_PUBKEY;
-    const label  = (window.SPECIAL_NAMES && SPECIAL_NAMES[pubkey]) || this.truncateKey(pubkey);
-
-    const wrap = document.createElement("div");
-    wrap.className = `message ${isMine ? "mine" : "theirs"}`;
-    wrap.innerHTML = `
-      <div class="message-sender">${label}</div>
-      <div class="message-text">${this.escapeHtml(text)}</div>
-    `;
-    this.elements.messagesContainer.appendChild(wrap);
-    this.scrollToBottom();
-
-    const now = Date.now() / 1000;
-    const EXPIRY = 45;
-    const remainingMs = Math.max(0, Math.floor((ts + EXPIRY - now) * 1000));
-    const fadeMs = Math.min(300, remainingMs);
-    setTimeout(() => { wrap.classList.add('fade-out'); }, Math.max(0, remainingMs - fadeMs));
-    setTimeout(() => { if (wrap.parentNode) wrap.remove(); }, remainingMs);
-  }
-
-  loadChatHistory() {
-    const now = Date.now() / 1000;
-    const EXPIRY = 45;
-    CHAT_HISTORY.forEach(m => {
-      const ts = (typeof m === "object" && typeof m.ts === "number") ? m.ts : now;
-      if ((now - ts) <= EXPIRY) this.addMessage(m);
-    });
-  }
-
-  renderOnlineUsers() {
-    this.elements.onlineBar.innerHTML = '';
-    this.elements.onlineCount.textContent = `${this.onlineUsers.size} online`;
-
-    for (const [pubkey, role] of this.onlineUsers.entries()) {
-      const userEl = document.createElement('div');
-      const label = SPECIAL_NAMES[pubkey] || this.truncateKey(pubkey);
-      userEl.className = `online-user role-${role || 'limited'}`;
-      userEl.dataset.pubkey = pubkey;
-      userEl.textContent = label;
-      this.elements.onlineBar.appendChild(userEl);
-    }
-  }
-
-  truncateKey(key) { return '…' + (key || '').slice(-4); }
-  escapeHtml(text) { const div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
-  scrollToBottom() { const el = this.elements.messagesContainer; el.scrollTop = el.scrollHeight; }
-}
-</script>
-
-
-
-
-<!-- Matrix background JS (new space-warp 0/1) -->
-<script>
-(() => {
-  const canvas = document.getElementById('matrix-bg');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-
-  // Particles flying toward the camera; glyph at each projected point
-  const CHARS = ['0','1'];
-  let width = 0, height = 0, particles = [], raf = null;
-
-  function resize() {
-    // DPR-aware sizing for crisper text, capped for perf
-    const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
-    const cssW = window.innerWidth, cssH = window.innerHeight;
-
-    canvas.width  = Math.floor(cssW * dpr);
-    canvas.height = Math.floor(cssH * dpr);
-    canvas.style.width  = cssW + 'px';
-    canvas.style.height = cssH + 'px';
-
-    ctx.setTransform(1,0,0,1,0,0);
-    ctx.scale(dpr, dpr);
-
-    width = cssW; height = cssH;
-
-    // Re-seed particles
-    particles = [];
-    for (let i = 0; i < 400; i++) {
-      particles.push({
-        x: (Math.random() - 0.5) * width,
-        y: (Math.random() - 0.5) * height,
-        z: Math.random() * 800 + 100
-      });
-    }
-
-    // Fresh clear
-    ctx.fillStyle = 'rgba(0,0,0,1)';
-    ctx.fillRect(0, 0, width, height);
-  }
-
-  function draw() {
-    // Motion trails
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.fillRect(0, 0, width, height);
-
-    ctx.fillStyle = '#00ff88';
-    for (const p of particles) {
-      const scale = 200 / p.z;
-      const x2 = width  / 2 + p.x * scale;
-      const y2 = height / 2 + p.y * scale;
-      const size = Math.max(8 * scale, 1);
-      ctx.font = size + 'px monospace';
-      ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
-
-      // Advance toward camera
-      p.z -= 5;
-      if (p.z < 1) {
-        p.x = (Math.random() - 0.5) * width;
-        p.y = (Math.random() - 0.5) * height;
-        p.z = 800;
-      }
-    }
-    raf = requestAnimationFrame(draw);
-  }
-
-  function onVis() {
-    if (document.hidden) { if (raf) cancelAnimationFrame(raf), raf = null; }
-    else { if (!raf) raf = requestAnimationFrame(draw); }
-  }
-
-  window.addEventListener('resize', resize);
-  document.addEventListener('visibilitychange', onVis);
-  resize();
-  raf = requestAnimationFrame(draw);
-})();
-</script>
-
-
-<script>
-  const HOME_URL = "{{ url_for('home') }}";
-</script>
-
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-  const app = new ChatApp();
-  window.chatApp = app;
-
-  const bar = document.getElementById('onlineBar');
-  if (!bar) return;
-
-  let pressTimer = null;
-  let longPressTriggered = false;
-
-  bar.addEventListener('mousedown', (e) => {
-    const chip = e.target.closest('.online-user');
-    if (!chip) return;
-    const pk = (chip.dataset.pubkey || '').trim();
-    if (!pk || pk === MY_PUBKEY) return;
-
-    longPressTriggered = false;
-    pressTimer = setTimeout(() => {
-      longPressTriggered = true;
-      if (window.startCall) window.startCall(pk);
-    }, 600); // hold for 600ms = call
-  });
-
-  bar.addEventListener('mouseup', (e) => {
-    clearTimeout(pressTimer);
-    const chip = e.target.closest('.online-user');
-    if (!chip) return;
-    const pk = (chip.dataset.pubkey || '').trim();
-    if (!pk || pk === MY_PUBKEY) return;
-
-    if (!longPressTriggered) {
-      // quick click → open covenant explorer
-      const url = `${location.origin}${HOME_URL}?pubkey=${encodeURIComponent(pk)}#explorer`;
-      window.open(url, '_blank', 'noopener');
-    }
-  });
-
-  bar.addEventListener('mouseleave', () => clearTimeout(pressTimer));
-  bar.addEventListener('touchstart', (e) => {
-    const chip = e.target.closest('.online-user');
-    if (!chip) return;
-    const pk = (chip.dataset.pubkey || '').trim();
-    if (!pk || pk === MY_PUBKEY) return;
-
-    longPressTriggered = false;
-    pressTimer = setTimeout(() => {
-      longPressTriggered = true;
-      if (window.startCall) window.startCall(pk);
-    }, 600);
-  });
-
-  bar.addEventListener('touchend', (e) => {
-    clearTimeout(pressTimer);
-    const chip = e.target.closest('.online-user');
-    if (!chip) return;
-    const pk = (chip.dataset.pubkey || '').trim();
-    if (!pk || pk === MY_PUBKEY) return;
-
-    if (!longPressTriggered) {
-      const url = `${location.origin}${HOME_URL}?pubkey=${encodeURIComponent(pk)}#explorer`;
-      window.open(url, '_blank', 'noopener');
-    }
-  });
-});
-
-</script>
-
-<!-- ★ Enhanced Call UI -->
-<div id="call-ui" class="call-overlay" aria-hidden="true">
-  <div class="call-stage">
-    <video id="remoteVideo" class="remote-video" autoplay playsinline></video>
-
-    <!-- top bar -->
-    <div class="call-topbar">
-      <div class="badge">
-        <span class="status-dot" id="callStatusDot"></span>
-        <span id="callTitle">Connecting…</span>
-      </div>
-      <div class="badge">
-        <span class="quality" id="qualityBars"><i></i><i></i><i></i><i></i><i></i></span>
-        <span class="timer" id="callTimer">00:00</span>
-      </div>
-    </div>
-
-    <!-- local PiP (draggable) -->
-    <div class="local-pip" id="pip">
-      <video id="localVideo" class="local-video" autoplay playsinline muted></video>
-    </div>
-
-    <!-- controls -->
-    <div class="call-toolbar">
-      <button id="muteBtn" class="btn-circle" title="Mute/Unmute">🎤</button>
-      <button id="camBtn" class="btn-circle" title="Camera On/Off">🎥</button>
-      <button id="shareBtn" class="btn-circle" title="Share Screen">🖥️</button>
-      <button id="flipBtn" class="btn-circle" title="Switch Camera">🔄</button>
-      <button id="settingsBtn" class="btn-circle" title="Devices">⚙️</button>
-      <button id="hangupBtn" class="btn-circle danger" title="Hang Up">⛔</button>
-    </div>
-    <div class="small">Tips: M = mute, V = video, S = share, H = hang up</div>
-
-    <!-- device panel -->
-    <div id="devicePanel" class="panel">
-      <label>Microphone</label>
-      <select id="micSelect"></select>
-      <label>Camera</label>
-      <select id="camSelect"></select>
-    </div>
-
-    <!-- incoming call sheet -->
-    <div id="incomingSheet" class="sheet">
-      <div class="card">
-        <div style="text-align:center;color:#0f0;font-family:monospace">
-          Incoming call from <b id="incomingName">…</b>
-        </div>
-        <div class="row">
-          <button id="acceptBtn" class="btn primary">Accept</button>
-          <button id="declineBtn" class="btn ghost">Decline</button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<audio id="ringSound" preload="auto" playsinline>
-  <source src="{{ url_for('static', filename='sounds/login.mp3') }}" type="audio/mpeg">
-</audio>
-
-
-
-
-<script>
-(() => {
-  const socket = window.socket;
-
-  // UI refs
-  const ui = {
-    root: document.getElementById('call-ui'),
-    remote: document.getElementById('remoteVideo'),
-    local:  document.getElementById('localVideo'),
-    pip:    document.getElementById('pip'),
-    dot:    document.getElementById('callStatusDot'),
-    title:  document.getElementById('callTitle'),
-    bars:   document.getElementById('qualityBars'),
-    timer:  document.getElementById('callTimer'),
-    sheet:  document.getElementById('incomingSheet'),
-    name:   document.getElementById('incomingName'),
-    ring:   document.getElementById('ringSound'),
-    panel:  document.getElementById('devicePanel'),
-    micSel: document.getElementById('micSelect'),
-    camSel: document.getElementById('camSelect'),
-
-    hang:   document.getElementById('hangupBtn'),
-    mute:   document.getElementById('muteBtn'),
-    cam:    document.getElementById('camBtn'),
-    share:  document.getElementById('shareBtn'),
-    flip:   document.getElementById('flipBtn'),
-    gear:   document.getElementById('settingsBtn'),
-    accept: document.getElementById('acceptBtn'),
-    decline:document.getElementById('declineBtn'),
-  };
-
-
-
-  let pc = null, localStream = null, screenStream = null, wakeLock = null;
-  let currentPeer = null, callState = 'idle', micMuted = false, camOff = false, statsTimer = null, callTimer = null;
-  let lastRxBytes = 0, lastRxTs = 0, chosenMic = null, chosenCam = null, currentVideoSender = null; let pendingIce = [];
-  let remoteDescSet = false;
-
-
-  // ---------- helpers ----------
-  const nameOf = (pk) => (window.SPECIAL_NAMES && SPECIAL_NAMES[pk]) || ('…' + (pk||'').slice(-4));
-  const setStatus = (txt, live=false) => {
-    ui.title.textContent = txt || '';
-    ui.dot.classList.toggle('live', !!live);
-  };
-  const fmt = (s) => {
-    s = Math.max(0, s|0);
-    const m = (s/60)|0, ss = (s%60)|0;
-    return `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
-  };
-  const qualityBars = (bps) => {
-    // Rough mapping: 0..2.5mbps
-    const bars = ui.bars.querySelectorAll('i');
-    const steps = [100_000, 300_000, 700_000, 1_200_000, 2_000_000];
-    bars.forEach((b,i)=> b.classList.toggle('on', bps >= steps[i]));
-  };
-  async function keepAwake(on) {
-    try {
-      if (on && 'wakeLock' in navigator) { wakeLock = await navigator.wakeLock.request('screen'); }
-      else if (wakeLock) { await wakeLock.release(); wakeLock = null; }
-    } catch {}
-  }
-
-
-
-
-// --- fullscreen + controls fade helpers ---
-async function goFullscreen() {
-  const el = document.querySelector('#call-ui .call-stage');
-  if (!el) return;
-  if (document.fullscreenElement) return;
-  try {
-    if (el.requestFullscreen) await el.requestFullscreen();
-    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen(); // iOS Safari
-  } catch {}
-}
-
-const stageEl   = document.querySelector('#call-ui .call-stage');
-const toolbarEl = document.querySelector('#call-ui .call-toolbar');
-let controlsTimer = null;
-let controlsActive = false;
-
-function controlsShow() {
-  if (!toolbarEl) return;
-  toolbarEl.classList.remove('hidden');
-}
-function controlsHide() {
-  if (!toolbarEl) return;
-  toolbarEl.classList.add('hidden');
-}
-function nudgeControls() {
-  if (!controlsActive || !toolbarEl) return;
-  controlsShow();
-  clearTimeout(controlsTimer);
-  controlsTimer = setTimeout(controlsHide, 2500); // hide after 2.5s idle
-}
-function controlsStart() {
-  controlsActive = true;
-  controlsShow();
-  nudgeControls();
-}
-function controlsStop() {
-  controlsActive = false;
-  clearTimeout(controlsTimer);
-  controlsShow(); // show again when ending
-}
-
-// reveal controls on any activity
-['mousemove','keydown','touchstart','click'].forEach(evt => {
-  stageEl?.addEventListener(evt, nudgeControls, { passive: true });
-});
-
-
-
-
-
-  function openUI(title){ ui.root.style.display='flex'; setStatus(title||'Calling…', false); }
-  function closeUI(){
-    ui.root.style.display='none'; ui.sheet.style.display='none';
-    ui.panel.style.display='none'; setStatus('', false); ui.timer.textContent='00:00';
-    qualityBars(0);
-  }
-
-  async function ensureMedia() {
-    const secure = (location.protocol === 'https:' || location.hostname === 'localhost');
-    if (!secure) throw new Error('Camera/mic requires HTTPS or localhost');
-    const audio = chosenMic ? {deviceId:{exact:chosenMic}} : true;
-    const video = chosenCam ? {deviceId:{exact:chosenCam}} : {facingMode:'user'};
-    if (!localStream) {
-      localStream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true, ...audio },
-        video
-      });
-      ui.local.srcObject = localStream;
-    }
-  }
-
-  async function listDevices() {
-    try {
-      const devs = await navigator.mediaDevices.enumerateDevices();
-      const mics = devs.filter(d=>d.kind==='audioinput');
-      const cams = devs.filter(d=>d.kind==='videoinput');
-      ui.micSel.innerHTML = mics.map(d=>`<option value="${d.deviceId}">${d.label||'Microphone'}</option>`).join('');
-      ui.camSel.innerHTML = cams.map(d=>`<option value="${d.deviceId}">${d.label||'Camera'}</option>`).join('');
-      if (chosenMic) ui.micSel.value = chosenMic;
-      if (chosenCam) ui.camSel.value = chosenCam;
-    } catch {}
-  }
-
-function newPC() {
-  if (!localStream) throw new Error('Missing local media');
-  if (pc) { try { pc.close(); } catch {} }
-
-  // reset timer arm for a fresh connection
-  timerArmed = false;
-
-  pc = new RTCPeerConnection(window.pcBaseConfig || {
-    iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }],
-    iceTransportPolicy: (typeof FORCE_RELAY !== 'undefined' && FORCE_RELAY) ? 'relay' : 'all',
-    bundlePolicy: 'max-bundle',
-    rtcpMuxPolicy: 'require'
-  });
-
-  // Remote media (Safari-safe)
-  pc.ontrack = (ev) => {
-    if (!ui.remote.srcObject) ui.remote.srcObject = new MediaStream();
-    ui.remote.srcObject.addTrack(ev.track);
-    Promise.resolve().then(() => ui.remote.play().catch(()=>{}));
-  };
-
-  // Local tracks
-  currentVideoSender = null;
-  localStream.getTracks().forEach(t => {
-    const sender = pc.addTrack(t, localStream);
-    if (t.kind === 'video') currentVideoSender = sender;
-  });
-
-  // (optional) cap initial bitrate for stability
-  try {
-    if (currentVideoSender) {
-      const p = currentVideoSender.getParameters() || {};
-      p.encodings = [{ maxBitrate: 600_000 }];
-      currentVideoSender.setParameters(p).catch(()=>{});
-    }
-  } catch {}
-
-  // ICE → signaling (serialize candidate object)
-  pc.onicecandidate = (ev) => {
-    const c = ev.candidate;
-    if (!c) { console.log('[ICE] end of candidates'); return; }
-    const payload = {
-      candidate: c.candidate,
-      sdpMid: c.sdpMid,
-      sdpMLineIndex: c.sdpMLineIndex,
-      usernameFragment: c.usernameFragment
-    };
-    if (currentPeer) {
-      socket.emit('rtc:ice', { to: currentPeer, from: MY_PUBKEY, candidate: payload });
-      console.log('[EMIT] ICE →', currentPeer, payload);
-    }
-  };
-
-  // Diagnostics + timer start on actual connection
-  pc.oniceconnectionstatechange = () => {
-    const s = pc.iceConnectionState;
-    if (s === 'checking') setStatus('Connecting…', false);
-    if (s === 'connected' || s === 'completed') setStatus('Live', true);
-    if (s === 'failed') setStatus('Connection failed', false);
-    if (s === 'disconnected') setStatus('Disconnected', false);
-  };
-
-  pc.onconnectionstatechange = () => {
-    if (!pc) return;
-    const s = pc.connectionState;
-
-    // ⏱ start duration timer exactly once when connected
-    if ((s === 'connected' || s === 'completed') && !timerArmed) {
-      startTimers();
-      timerArmed = true;
-      setStatus('Live', true);
-    }
-
-    if (['failed','disconnected','closed'].includes(s)) {
-      endCall(false);
-    }
-  };
-
-  pc.onicegatheringstatechange = () => console.log('[ICE gathering]', pc.iceGatheringState);
-  pc.onicecandidateerror = (e) => console.warn('ICE candidate error', e);
-
-  return pc;
-}
-
-
-window.newPC = newPC;
-
-
-  function startTimers() {
-    // call duration
-    let started = Date.now();
-    callTimer = setInterval(()=> ui.timer.textContent = fmt((Date.now()-started)/1000), 1000);
-    // stats → basic bitrate estimation
-    lastRxBytes = 0; lastRxTs = 0;
-    statsTimer = setInterval(async ()=>{
-      if (!pc) return;
-      try {
-        const stats = await pc.getStats();
-        let bytes = 0, ts = 0;
-        stats.forEach(r=>{
-          if (r.type === 'inbound-rtp' && r.kind === 'video' && !r.isRemote) {
-            bytes += r.bytesReceived || 0;
-            ts = Math.max(ts, r.timestamp||0);
-          }
-        });
-        if (lastRxBytes && lastRxTs && ts>lastRxTs) {
-          const bps = ((bytes-lastRxBytes)*8) / ((ts-lastRxTs)/1000);
-          qualityBars(bps);
+        const myPubkey = document.body.dataset.myPubkey || "";
+
+        // Matrix "space warp"
+        (() => {
+            const canvas = document.getElementById('matrix-bg');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const CHARS = ['0','1'];
+            let width = 0, height = 0, particles = [], raf = null;
+
+            function resize() {
+                const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+                const cssW = window.innerWidth;
+                const cssH = window.innerHeight;
+
+                canvas.width  = Math.floor(cssW * dpr);
+                canvas.height = Math.floor(cssH * dpr);
+                canvas.style.width  = cssW + 'px';
+                canvas.style.height = cssH + 'px';
+
+                ctx.setTransform(1,0,0,1,0,0);
+                ctx.scale(dpr, dpr);
+
+                width = cssW;
+                height = cssH;
+
+                particles = [];
+                for (let i = 0; i < 400; i++) {
+                    particles.push({
+                        x: (Math.random() - 0.5) * width,
+                        y: (Math.random() - 0.5) * height,
+                        z: Math.random() * 800 + 100
+                    });
+                }
+
+                ctx.fillStyle = 'rgba(0,0,0,1)';
+                ctx.fillRect(0, 0, width, height);
+            }
+
+            function draw() {
+                ctx.fillStyle = 'rgba(0,0,0,0.25)';
+                ctx.fillRect(0, 0, width, height);
+                ctx.fillStyle = '#00ff88';
+
+                for (const p of particles) {
+                    const scale = 200 / p.z;
+                    const x2 = width  / 2 + p.x * scale;
+                    const y2 = height / 2 + p.y * scale;
+                    const size = Math.max(8 * scale, 1);
+
+                    ctx.font = size + 'px monospace';
+                    ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
+
+                    p.z -= 5;
+                    if (p.z < 1) {
+                        p.x = (Math.random() - 0.5) * width;
+                        p.y = (Math.random() - 0.5) * height;
+                        p.z = 800;
+                    }
+                }
+
+                raf = requestAnimationFrame(draw);
+            }
+
+            function onVis() {
+                if (document.hidden) {
+                    if (raf) { cancelAnimationFrame(raf); raf = null; }
+                } else {
+                    if (!raf) raf = requestAnimationFrame(draw);
+                }
+            }
+
+            window.addEventListener('resize', resize);
+            document.addEventListener('visibilitychange', onVis);
+
+            resize();
+            raf = requestAnimationFrame(draw);
+        })();
+
+        function goHome(hash) {
+            const base = "{{ url_for('home') }}";
+            const url  = hash ? base + hash : base;
+            window.location.href = url;
         }
-        lastRxBytes = bytes; lastRxTs = ts;
-      } catch {}
-    }, 1500);
-  }
-
-  function stopTimers() {
-    if (callTimer) clearInterval(callTimer), callTimer=null;
-    if (statsTimer) clearInterval(statsTimer), statsTimer=null;
-  }
-
-  function callLive() { setStatus('Live', true); startTimers(); }
-
-  async function startCall(target) {
-  if (!target || target === MY_PUBKEY) return;
-  currentPeer = target;
-  await ensureMedia(); await listDevices();
-  openUI('Calling ' + nameOf(target)); await keepAwake(true);
-  await window.iceReady;
-  newPC();
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  socket.emit('rtc:offer', { to: target, from: MY_PUBKEY, offer });
-  callState = 'calling';
-}
-window.startCall = startCall;
-
-async function acceptCall(from, offer) {
-  currentPeer = from;
-  await ensureMedia(); await listDevices();
-  openUI('Answering ' + nameOf(from)); await keepAwake(true);
-  await window.iceReady;
-
-  newPC(); // create pc BEFORE setting RD
-  await pc.setRemoteDescription(new RTCSessionDescription(offer));
-  remoteDescSet = true;
-
-  // 🔽 Drain any queued ICE that arrived early
-  if (pendingIce.length) diag(`➡️ Draining ${pendingIce.length} queued ICE`);
-  for (const cand of pendingIce) {
-    try { await pc.addIceCandidate(new RTCIceCandidate(cand)); }
-    catch (e) { diag('addIceCandidate (drain) failed: ' + e); }
-  }
-  pendingIce = [];
-
-  const answer = await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-  socket.emit('rtc:answer', { to: from, from: MY_PUBKEY, answer });
-  callState = 'connected';
-}
-
-
-
-async function endCall(sendSignal = true) {
-  callState = 'idle';
-  try {
-    if (sendSignal && currentPeer) {
-      socket.emit('rtc:hangup', { to: currentPeer, from: MY_PUBKEY });
-    }
-  } catch {}
-
-  currentPeer = null;
-
-  // stop duration + stats timers and allow next call to arm again
-  stopTimers();
-  timerArmed = false;
-
-  await keepAwake(false);
-
-  if (pc) { try { pc.close(); } catch {} pc = null; }
-  if (ui.remote && ui.remote.srcObject) {
-    try { ui.remote.srcObject.getTracks().forEach(t => t.stop()); } catch {}
-    ui.remote.srcObject = null;
-  }
-  if (screenStream) {
-    try { screenStream.getTracks().forEach(t => t.stop()); } catch {}
-    screenStream = null;
-  }
-
-  // clear ICE state
-  pendingIce = [];
-  remoteDescSet = false;
-
-  controlsStop();
-  closeUI();
-}
-
-
-
-  // ---------- screen share ----------
-  async function toggleShare() {
-    if (!pc) return;
-    if (!screenStream) {
-      try {
-        screenStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:false });
-      } catch(e) { return; }
-      const track = screenStream.getVideoTracks()[0];
-      if (currentVideoSender && track) {
-        await currentVideoSender.replaceTrack(track);
-        ui.share.classList.add('active');
-        track.onended = async () => {
-          ui.share.classList.remove('active');
-          await restoreCameraTrack();
-        };
-      }
-    } else {
-      await restoreCameraTrack();
-    }
-  }
-  async function restoreCameraTrack() {
-    if (!localStream) return;
-    const cam = localStream.getVideoTracks()[0];
-    if (currentVideoSender && cam) await currentVideoSender.replaceTrack(cam);
-    if (screenStream) { try{screenStream.getTracks().forEach(t=>t.stop());}catch{} screenStream=null; }
-  }
-
-  // ---------- device switching ----------
-  async function switchCamera(nextId=null) {
-    if (!localStream) return;
-    const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');
-    if (!cams.length) return;
-    if (!nextId) {
-      const idx = Math.max(0, cams.findIndex(d=>d.deviceId===chosenCam));
-      nextId = cams[(idx+1)%cams.length].deviceId;
-    }
-    chosenCam = nextId;
-    const newStream = await navigator.mediaDevices.getUserMedia({ video:{deviceId:{exact:chosenCam}}, audio:false });
-    // replace local preview video track
-    const newTrack = newStream.getVideoTracks()[0];
-    const old = localStream.getVideoTracks()[0];
-    if (old) old.stop();
-    localStream.removeTrack(old);
-    localStream.addTrack(newTrack);
-    ui.local.srcObject = localStream;
-    if (currentVideoSender) await currentVideoSender.replaceTrack(newTrack);
-  }
-
-  async function applySelectedDevices() {
-    chosenMic = ui.micSel.value || null;
-    chosenCam = ui.camSel.value || null;
-    if (!localStream) return;
-    // mic
-    try {
-      const a = await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:chosenMic}}});
-      const newAudio = a.getAudioTracks()[0];
-      const oldAudio = localStream.getAudioTracks()[0];
-      if (oldAudio) oldAudio.stop();
-      localStream.removeTrack(oldAudio); localStream.addTrack(newAudio);
-      const sender = pc?.getSenders().find(s=>s.track && s.track.kind==='audio');
-      if (sender) await sender.replaceTrack(newAudio);
-    } catch{}
-    // cam handled by switchCamera
-    if (chosenCam) await switchCamera(chosenCam);
-  }
-
-  // ---------- UI wiring ----------
-
-
-
-
-
-
-
-
-  if (ui.hang) ui.hang.addEventListener('click', ()=> endCall(true));
-  if (ui.share) ui.share.addEventListener('click', toggleShare);
-  if (ui.mute) ui.mute.addEventListener('click', ()=>{
-    micMuted = !micMuted;
-    localStream?.getAudioTracks().forEach(t=>t.enabled = !micMuted);
-    ui.mute.classList.toggle('active', micMuted);
-  });
-  if (ui.cam) ui.cam.addEventListener('click', ()=>{
-    camOff = !camOff;
-    localStream?.getVideoTracks().forEach(t=>t.enabled = !camOff);
-    ui.cam.classList.toggle('active', camOff);
-  });
-  if (ui.flip) ui.flip.addEventListener('click', ()=> switchCamera());
-  if (ui.gear) ui.gear.addEventListener('click', async ()=>{
-    await listDevices();
-    ui.panel.style.display = ui.panel.style.display==='none' || !ui.panel.style.display ? 'block' : 'none';
-  });
-  if (ui.micSel) ui.micSel.addEventListener('change', applySelectedDevices);
-  if (ui.camSel) ui.camSel.addEventListener('change', applySelectedDevices);
-
-  // keyboard shortcuts
-  document.addEventListener('keydown', (e)=>{
-    if (ui.root.style.display!=='flex') return;
-    if (e.key==='m' || e.key==='M') ui.mute.click();
-    if (e.key==='v' || e.key==='V') ui.cam.click();
-    if (e.key==='s' || e.key==='S') ui.share.click();
-    if (e.key==='h' || e.key==='H') ui.hang.click();
-  });
-
-  // draggable PiP
-  (() => {
-    const el = ui.pip; if (!el) return;
-    let sx=0, sy=0, ox=0, oy=0, dragging=false;
-    const onDown=(e)=>{
-      dragging=true; el.classList.add('dragging');
-      const p = (e.touches?e.touches[0]:e);
-      sx = p.clientX; sy = p.clientY;
-      const rect = el.getBoundingClientRect();
-      ox = rect.left; oy = rect.top;
-      e.preventDefault();
-    };
-    const onMove=(e)=>{
-      if (!dragging) return;
-      const p = (e.touches?e.touches[0]:e);
-      const nx = ox + (p.clientX - sx);
-      const ny = oy + (p.clientY - sy);
-      el.style.left = nx+'px'; el.style.top = ny+'px'; el.style.right='auto'; el.style.bottom='auto';
-    };
-    const onUp=()=>{ dragging=false; el.classList.remove('dragging'); };
-    el.addEventListener('mousedown', onDown); window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
-    el.addEventListener('touchstart', onDown, {passive:false}); window.addEventListener('touchmove', onMove, {passive:false}); window.addEventListener('touchend', onUp);
-el.addEventListener('touchend', onUp, {passive:false});
-})();
-
-
-
-    // ---------- Online bar: click + long-press wiring ----------
-(function wireOnlineBar(){
-  const bar = document.getElementById('onlineBar');
-  if (!bar) { diag('⚠️ #onlineBar not found'); return; }
-
-  // Make chips clearly interactive + suppress iOS long-press callout
-  try {
-    bar.style.webkitUserSelect = 'none';
-    bar.style.userSelect = 'none';
-    bar.style.webkitTouchCallout = 'none';
-  } catch {}
-
-  let pressTimer = null;
-  let longPress = false;
-
-  const clearTimer = () => {
-    if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
-  };
-
-  const getChipPK = (e) => {
-    const chip = e.target.closest('.online-user');
-    if (!chip) return null;
-    const pk = (chip.dataset.pubkey || '').trim();
-    if (!pk || pk === MY_PUBKEY) return null;
-    return pk;
-  };
-
-  bar.addEventListener('pointerdown', (e) => {
-    const pk = getChipPK(e);
-    if (!pk) return;
-    if (e.pointerType === 'touch' || e.pointerType === 'pen') e.preventDefault();
-
-    longPress = false;
-    diag(`⬇️ chip down ${pk.slice(-6)}`);
-
-    pressTimer = setTimeout(() => {
-      longPress = true;
-      if (typeof window.startCall === 'function') {
-        diag(`📞 long-press → startCall(${pk.slice(-6)})`);
-        window.startCall(pk);
-      } else {
-        diag('❌ window.startCall missing');
-      }
-    }, 600); // hold to call
-  }, { passive: false });
-
-  bar.addEventListener('pointerup', (e) => {
-    const pk = getChipPK(e);
-    if (!pk) return;
-    diag(`⬆️ chip up ${pk.slice(-6)} (long=${longPress})`);
-
-    if (!longPress) {
-      const url = (typeof HOME_URL === 'string' && HOME_URL)
-        ? `${location.origin}${HOME_URL}?pubkey=${encodeURIComponent(pk)}#explorer`
-        : null;
-      if (url) window.open(url, '_blank', 'noopener');
-      else if (typeof window.startCall === 'function') window.startCall(pk);
-    }
-    clearTimer();
-  }, { passive: false });
-
-  bar.addEventListener('pointercancel', clearTimer, { passive: true });
-  bar.addEventListener('pointerleave', clearTimer, { passive: true });
-})();
-
-
-  // ---------- Socket signaling ----------
-  socket.on('rtc:offer', async ({from, offer}) => {
-    if (!from || from === MY_PUBKEY) return;
-    // show incoming sheet
-    ui.name.textContent = nameOf(from);
-    ui.root.style.display='flex';
-    ui.sheet.style.display='flex';
-    try { ui.ring.currentTime = 0; ui.ring.loop = true; ui.ring.play().catch(()=>{}); } catch {}
-    const accept = async ()=>{
-      ui.sheet.style.display='none';
-      try { ui.ring.pause(); ui.ring.currentTime = 0; ui.ring.loop = false; } catch {}
-      await goFullscreen();
-      await acceptCall(from, offer);
-      controlsStart();
-    };
-    const decline = ()=>{
-      try { ui.ring.pause(); ui.ring.currentTime = 0; ui.ring.loop = false; } catch {}
-      socket.emit('rtc:hangup', { to: from, from: MY_PUBKEY });
-      endCall(false);
-    };
-    ui.accept.onclick = accept;
-    ui.decline.onclick = decline;
-  });
-
-socket.on('rtc:answer', async ({from, answer}) => {
-  if (!answer) return;
-  if (!pc) return;
-  await pc.setRemoteDescription(new RTCSessionDescription(answer));
-  remoteDescSet = true;
-
-  if (pendingIce.length) diag(`➡️ Draining ${pendingIce.length} queued ICE`);
-  for (const cand of pendingIce) {
-    try { await pc.addIceCandidate(new RTCIceCandidate(cand)); }
-    catch (e) { diag('addIceCandidate (drain) failed: ' + e); }
-  }
-  pendingIce = [];
-
-  setStatus('Connected to ' + nameOf(from), true);
-  callState = 'connected';
-  controlsStart();
-});
-
-
-
-socket.on('rtc:ice', async ({candidate}) => {
-  // Validate candidate payload
-  if (!candidate || typeof candidate.candidate !== 'string') {
-    diag('⚠️ Dropping malformed ICE candidate');
-    return;
-  }
-
-  // Better type logging from SDP string (srflx/relay/host)
-  const typ = (candidate.candidate.match(/ typ (\w+)/) || [])[1] || 'n/a';
-  diag(`🧊 ICE candidate: ${typ}`);
-
-  // Queue until pc is created and remote description is set
-  if (!pc || !remoteDescSet) {
-    pendingIce.push(candidate);
-    diag(`⏳ Queued ICE (pc:${!!pc}, rd:${remoteDescSet})`);
-    return;
-  }
-
-  try {
-    await pc.addIceCandidate(new RTCIceCandidate(candidate));
-  } catch (err) {
-    diag('❌ addIceCandidate failed: ' + err);
-  }
-});
-
-
-
-
-
-  socket.on('rtc:hangup', () => endCall(false));
-
-})();
-</script>
-
-
-
-
-<script>
-// Remove the overlay if it exists
-(function(){
-  const el = document.getElementById('debugOverlay');
-  if (el) el.remove();
-
-  // Make diag a no-op so existing calls don’t break
-  window.diag = function(){};
-
-  // Ensure we use the unwrapped newPC
-  if (typeof newPC === 'function') window.newPC = newPC;
-})();
-</script>
 
-
-
-
-
-
+        function shortKey(pk) {
+            if (!pk) return "";
+            return pk.length > 18 ? pk.slice(0,10) + "…" + pk.slice(-6) : pk;
+        }
+
+        function mentionUser(pubkey) {
+            const input = document.getElementById('chatInput');
+            if (!input) return;
+            const prefix = input.value && !input.value.endsWith(' ') ? ' ' : '';
+            input.value = (input.value || '') + prefix + '@' + shortKey(pubkey) + ' ';
+            input.focus();
+        }
+
+                function openExplorerFor(pubkey) {
+            if (!pubkey) return;
+            if (pubkey.startsWith('guest')) return;
+            try {
+                localStorage.setItem('hodlxxi_explorer_target', pubkey);
+            } catch (e) {}
+            // Jump to Explorer section; Explorer JS can read localStorage
+            goHome('#explorer');
+        }
+
+
+        const messagesEl    = document.getElementById('messages');
+        const userListEl    = document.getElementById('userList');
+        const onlineCountEl = document.getElementById('onlineCount');
+        const statusEl      = document.getElementById('room-status');
+        const inputEl       = document.getElementById('chatInput');
+        const sendBtn       = document.getElementById('sendBtn');
+
+        const callPanelEl   = document.getElementById('callPanel');
+        const callStatusEl  = document.getElementById('callStatus');
+        const hangupBtn     = document.getElementById('hangupBtn');
+        const localVideo    = document.getElementById('localVideo');
+        const remoteVideo   = document.getElementById('remoteVideo');
+
+        function setStatus(text) {
+            if (statusEl) statusEl.textContent = text;
+        }
+
+        function setOnlineCount(n) {
+            if (onlineCountEl) onlineCountEl.textContent = n;
+        }
+
+        // 45 sec UI cleanup to match backend EXPIRY_SECONDS
+        const EXPIRY_SECONDS = 45;
+        function pruneOldMessagesUI() {
+            if (!messagesEl) return;
+            const now = Date.now() / 1000;
+            const items = messagesEl.querySelectorAll('.message');
+            items.forEach(li => {
+                const ts = parseFloat(li.dataset.ts || "0");
+                if (ts && (now - ts) > EXPIRY_SECONDS) {
+                    li.remove();
+                }
+            });
+        }
+        setInterval(pruneOldMessagesUI, 5000);
+
+        function renderMessage(msg) {
+            if (!messagesEl || !msg) return;
+            const li = document.createElement('li');
+            li.className = 'message';
+
+            const fromPk = msg.pubkey || msg.sender_pubkey || '';
+            if (fromPk && myPubkey && fromPk === myPubkey) {
+                li.classList.add('me');
+            }
+
+            const senderLabel = msg.label || msg.sender || (fromPk || 'anon');
+            const shortSender = senderLabel.length > 22
+                ? senderLabel.slice(0, 12) + '…' + senderLabel.slice(-6)
+                : senderLabel;
+
+            // Server ts is in seconds; fall back to "now"
+            const rawTs = msg.ts || msg.timestamp || msg.created_at || (Date.now() / 1000);
+            const timeStr = new Date(rawTs * 1000).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+
+            // Store timestamp on the DOM node for pruning
+            li.dataset.ts = String(rawTs);
+
+            li.innerHTML = `
+                <div class="message-meta">
+                    <div class="message-sender">${shortSender}</div>
+                    <div class="message-timestamp">${timeStr}</div>
+                </div>
+                <div class="message-text">${(msg.text || msg.body || '').replace(/</g, '&lt;')}</div>
+            `;
+
+            messagesEl.appendChild(li);
+
+            // Always auto-scroll to the newest message
+            requestAnimationFrame(() => {
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+            });
+        }
+
+
+        function extractPubkeys(payload) {
+            if (!payload) return [];
+            const arr = Array.isArray(payload)
+                ? payload
+                : (payload.users || payload.online_users || []);
+            return arr
+                .map(u => typeof u === 'string'
+                    ? u
+                    : (u && (u.pubkey || u.id)) || null
+                )
+                .filter(Boolean);
+        }
+
+                function renderUserList(users) {
+            if (!userListEl || !Array.isArray(users)) return;
+            userListEl.innerHTML = '';
+
+            users.forEach(pk => {
+                const li = document.createElement('li');
+                li.className = 'user-item';
+                li.dataset.pubkey = pk;
+
+                const isMe = myPubkey && pk === myPubkey;
+                const isGuest = pk.length < 20 || pk.startsWith('guest');
+                const last4 = pk.slice(-4);
+                let label;
+                if (isGuest) {
+                    label = 'guest …' + last4;
+                } else if (isMe) {
+                    label = 'you · …' + last4;
+                } else {
+                    label = '…' + last4;
+                }
+
+                li.innerHTML = `
+                    <div class="user-left">
+                        <span class="user-dot"></span>
+                        <div>
+                            <div class="user-name">
+                                ${label}
+                            </div>
+                            ${isMe
+                                ? '<div class="user-tag-me">you</div>'
+                                : '<div class="user-pubkey">…' + last4 + '</div>'}
+                        </div>
+                    </div>
+                    <button class="user-btn" type="button">@</button>
+                `;
+
+                const btn = li.querySelector('.user-btn');
+                if (btn) {
+                    btn.addEventListener('click', (ev) => {
+                        ev.stopPropagation();
+                        mentionUser(pk);
+                    });
+                }
+
+                // Long-press to call
+                let pressTimer = null;
+                let didLongPress = false;
+                const startPress = (ev) => {
+                    if (pk === myPubkey) return;
+                    if (pressTimer !== null) return;
+                    pressTimer = setTimeout(() => {
+                        pressTimer = null;
+                        didLongPress = true;
+                        startCall(pk);
+                        setTimeout(() => { didLongPress = false; }, 100);
+                    }, 700); // 0.7 sec long-press
+                };
+                const cancelPress = () => {
+                    if (pressTimer !== null) {
+                        clearTimeout(pressTimer);
+                        pressTimer = null;
+                    }
+                };
+
+                li.addEventListener('mousedown', startPress);
+                li.addEventListener('touchstart', startPress, { passive: true });
+                ['mouseup','mouseleave','touchend','touchcancel'].forEach(evName => {
+                    li.addEventListener(evName, cancelPress);
+                });
+
+                // Tap on real keys -> open Explorer with that pubkey
+                if (!isGuest) {
+                    li.addEventListener('click', (ev) => {
+                        if (didLongPress) return;  // avoid double-fire after long press
+                        openExplorerFor(pk);
+                    });
+                }
+
+                userListEl.appendChild(li);
+            });
+            setOnlineCount(users.length);
+        }
+
+
+        // --- Socket.IO wiring ---
+        const socket = io();
+
+        socket.on('connect', () => {
+            setStatus('Connected');
+        });
+
+        socket.on('disconnect', () => {
+            setStatus('Disconnected');
+        });
+
+        socket.on('chat:history', (payload) => {
+            if (!payload) return;
+            const msgs = payload.messages || payload;
+            if (!Array.isArray(msgs)) return;
+            messagesEl.innerHTML = '';
+            msgs.forEach(renderMessage);
+            // Make sure we end up at the bottom after loading history
+            requestAnimationFrame(() => {
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+            });
+            setStatus('History loaded');
+        });
+
+        socket.on('chat:message', (msg) => {
+            renderMessage(msg);
+        });
+
+
+        socket.on('online:list', (payload) => {
+            const users = extractPubkeys(payload);
+            renderUserList(users);
+        });
+
+        socket.on('user:list', (payload) => {
+            const users = extractPubkeys(payload);
+            renderUserList(users);
+        });
+
+        socket.on('user:joined', (payload) => {
+            const [pk] = extractPubkeys([payload]);
+            if (!pk || !userListEl) return;
+
+            const existing = Array.from(
+                userListEl.querySelectorAll('.user-item')
+            ).map(li => li.dataset.pubkey);
+
+            if (existing.includes(pk)) return;
+            renderUserList([...existing, pk]);
+        });
+
+        socket.on('user:left', (payload) => {
+            const [pk] = extractPubkeys([payload]);
+            if (!pk || !userListEl) return;
+
+            const li = userListEl.querySelector(`.user-item[data-pubkey="${pk}"]`);
+            if (li) li.remove();
+            setOnlineCount(userListEl.querySelectorAll('.user-item').length);
+        });
+
+        function sendMessage() {
+            if (!inputEl) return;
+            const text = inputEl.value.trim();
+            if (!text) return;
+            socket.emit('chat:send', { text });
+            inputEl.value = '';
+            inputEl.focus();
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+        inputEl.addEventListener('keydown', (evt) => {
+            if (evt.key === 'Enter' && !evt.shiftKey) {
+                evt.preventDefault();
+                sendMessage();
+            }
+        });
+
+        if (userListEl) {
+            setOnlineCount(userListEl.querySelectorAll('.user-item').length);
+        }
+
+        // --- WebRTC: video calls (uses rtc:* events and /turn_credentials) ---
+        let pc = null;
+        let localStream = null;
+        let currentPeer = null;
+        let iceServersCache = null;
+
+        function setCallUI(active, text) {
+            if (!callPanelEl || !callStatusEl) return;
+            if (active) {
+                callPanelEl.classList.remove('hidden');
+            } else {
+                callPanelEl.classList.add('hidden');
+            }
+            callStatusEl.textContent = text || (active ? 'In call…' : 'No active call — long-press any user chip to start.');
+        }
+
+        async function getIceServers() {
+            if (iceServersCache) return iceServersCache;
+            try {
+                const resp = await fetch('/turn_credentials');
+                if (resp.ok) {
+                    iceServersCache = await resp.json();
+                } else {
+                    iceServersCache = [];
+                }
+            } catch (err) {
+                console.warn('TURN/STUN fetch failed', err);
+                iceServersCache = [];
+            }
+            return iceServersCache;
+        }
+
+        async function ensureMedia() {
+            if (localStream) return localStream;
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+                localStream = stream;
+                if (localVideo) {
+                    localVideo.srcObject = stream;
+                    localVideo.muted = true;
+                    localVideo.play().catch(() => {});
+                }
+                return stream;
+            } catch (err) {
+                console.error('getUserMedia failed', err);
+                setCallUI(false, 'Camera/mic access denied.');
+                throw err;
+            }
+        }
+
+        async function createPeerConnection(targetPubkey) {
+            const iceServers = await getIceServers();
+            pc = new RTCPeerConnection({ iceServers });
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate && currentPeer) {
+                    socket.emit('rtc:ice', {
+                        to: currentPeer,
+                        from: myPubkey,
+                        candidate: event.candidate
+                    });
+                }
+            };
+
+            pc.ontrack = (event) => {
+                if (remoteVideo) {
+                    remoteVideo.srcObject = event.streams[0];
+                    remoteVideo.play().catch(() => {});
+                }
+            };
+
+            const stream = await ensureMedia();
+            stream.getTracks().forEach(t => pc.addTrack(t, stream));
+
+            currentPeer = targetPubkey;
+            setCallUI(true, 'Connecting to ' + shortKey(targetPubkey) + '…');
+            return pc;
+        }
+
+        async function startCall(targetPubkey) {
+            if (!myPubkey) {
+                setCallUI(false, 'Please log in to start a call.');
+                return;
+            }
+            if (!targetPubkey || targetPubkey === myPubkey) return;
+
+            try {
+                if (pc) {
+                    endCall(false);
+                }
+                const conn = await createPeerConnection(targetPubkey);
+                const offer = await conn.createOffer();
+                await conn.setLocalDescription(offer);
+
+                socket.emit('rtc:offer', {
+                    to: targetPubkey,
+                    from: myPubkey,
+                    offer
+                });
+                setCallUI(true, 'Calling ' + shortKey(targetPubkey) + '…');
+            } catch (err) {
+                console.error('startCall failed', err);
+                endCall(false);
+                setCallUI(false, 'Call failed to start.');
+            }
+        }
+
+        function endCall(sendSignal = true) {
+            if (pc) {
+                pc.getSenders().forEach(s => {
+                    try { s.track && s.track.stop(); } catch {}
+                });
+                try { pc.close(); } catch {}
+                pc = null;
+            }
+            if (localStream) {
+                localStream.getTracks().forEach(t => t.stop());
+                localStream = null;
+                if (localVideo) localVideo.srcObject = null;
+            }
+            if (remoteVideo) {
+                remoteVideo.srcObject = null;
+            }
+
+            if (sendSignal && currentPeer && myPubkey) {
+                socket.emit('rtc:hangup', {
+                    to: currentPeer,
+                    from: myPubkey
+                });
+            }
+
+            currentPeer = null;
+            setCallUI(false);
+        }
+
+        hangupBtn.addEventListener('click', () => {
+            endCall(true);
+        });
+
+        socket.on('rtc:offer', async (data) => {
+            try {
+                if (!data || data.to !== myPubkey) return;
+                const from = data.from;
+                if (!from || from === myPubkey) return;
+
+                if (pc) {
+                    endCall(false);
+                }
+
+                const conn = await createPeerConnection(from);
+                await conn.setRemoteDescription(new RTCSessionDescription(data.offer));
+                const answer = await conn.createAnswer();
+                await conn.setLocalDescription(answer);
+
+                socket.emit('rtc:answer', {
+                    to: from,
+                    from: myPubkey,
+                    answer
+                });
+
+                setCallUI(true, 'In call with ' + shortKey(from));
+            } catch (err) {
+                console.error('Error handling rtc:offer', err);
+                endCall(false);
+            }
+        });
+
+        socket.on('rtc:answer', async (data) => {
+            try {
+                if (!data || data.to !== myPubkey || !pc) return;
+                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+                setCallUI(true, 'In call with ' + shortKey(data.from || currentPeer || 'peer'));
+            } catch (err) {
+                console.error('Error handling rtc:answer', err);
+                endCall(false);
+            }
+        });
+
+        socket.on('rtc:ice', async (data) => {
+            try {
+                if (!data || data.to !== myPubkey || !pc || !data.candidate) return;
+                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            } catch (err) {
+                console.error('Error handling rtc:ice', err);
+            }
+        });
+
+        socket.on('rtc:hangup', (data) => {
+            if (!data || data.to !== myPubkey) return;
+            endCall(false);
+            setCallUI(false, 'Call ended by ' + shortKey(data.from || 'peer') + '.');
+        });
+        
+    </script>
 </body>
 </html>
-
     """
     return render_template_string(
         chat_html,
@@ -2796,479 +2510,1186 @@ def login():
 
     # Login page with dual Matrix backgrounds (toggle embedded inside panel)
     html = """
+
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>HODLXXI — Login</title>
+
   <style>
-    :root{ --bg:#0b0f10; --panel:#11171a; --fg:#e6f1ef; --accent:#00ff88; --muted:#86a3a1; }
-    *{ box-sizing:border-box; }
-    body{
-      margin:0; background:var(--bg); color:var(--fg);
-      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto;
-      min-height:100vh; display:flex; align-items:center; justify-content:center;
+    :root {
+      --bg: #0b0f10;
+      --panel: #11171a;
+      --fg: #e6f1ef;
+      --accent: #00ff88;
+      --orange: #f7931a;
+      --muted: #8a9da4;
+      --red: #ff3b30;
+      --blue: #3b82f6;
     }
 
-    /* Two Matrix canvases (rain & warp) sit behind all content */
-    .matrix-canvas{ position:fixed; inset:0; z-index:0; pointer-events:none; }
-    @media (prefers-reduced-motion: reduce){ .matrix-canvas{ display:none !important; } }
-    @media print{ .matrix-canvas{ display:none !important; } }
-    /* Ensure foreground stays above canvases */
-    body > *:not(.matrix-canvas){ position:relative; z-index:1; }
-
-    .wrap{ width:min(980px,96%); }
-    .card{
-      background:rgba(17,23,26,0.92); border:1px solid #0f2a24; border-radius:14px; padding:22px;
-      box-shadow:0 0 10px #003a2b, 0 0 20px rgba(0,255,136,0.08);
-      animation:pulse-glow 2.4s ease-in-out infinite;
-    }
-    @keyframes pulse-glow{
-      0%,100%{ box-shadow:0 0 10px #003a2b,0 0 20px rgba(0,255,136,0.08); }
-      50%{ box-shadow:0 0 18px #00664c,0 0 30px rgba(0,255,136,0.18); }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
     }
 
-    h1{ margin:0 0 14px; color:var(--accent); font-size:24px; }
-
-    /* Tabs row now also contains the embedded toggle button on the right */
-    .tabs-row{ display:flex; gap:12px; align-items:center; justify-content:space-between; margin:10px 0 16px; flex-wrap:wrap; }
-    .tabs{ display:flex; gap:8px; flex-wrap:wrap; }
-    .tab-btn{ border:1px solid #184438; background:#0e1516; color:var(--fg);
-              padding:8px 12px; border-radius:10px; cursor:pointer; }
-    .tab-btn.active{ outline:2px solid var(--accent); }
-
-    /* Embedded toggle (no fixed positioning) */
-    .matrix-toggle{
-      padding:8px 12px; border-radius:10px;
-      border:1px solid #184438; background:#0e1516; color:var(--fg);
-      font-weight:600; cursor:pointer;
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+      text-rendering: optimizeLegibility;
     }
-    .matrix-toggle:hover{ background:#12352d; }
 
-    .panel{ display:none; border-top:1px dashed #1f2a2a; padding-top:14px; }
-    .panel.active{ display:block; }
+    /* Matrix background (same family as leaderboard/playground) */
+    #matrix-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
 
-    label{ display:block; font-size:12px; color:var(--muted); margin-top:10px; }
-    input, textarea{ width:100%; padding:10px; margin-top:6px; background:#0e1315; color:#bfffe6;
-                     border:1px solid #255244; border-radius:8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    textarea{ min-height:100px; }
-    .row{ display:flex; gap:12px; flex-wrap:wrap; }
-    .row > *{ flex:1 1 280px; }
-    .actions{ display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; }
-    button{ padding:10px 14px; border-radius:10px; border:1px solid #1c5a4b;
-            background:#0b1513; color:#d6fff2; cursor:pointer; font-weight:600; }
-    button:hover{ background:#12352d; }
+    @media (prefers-reduced-motion: reduce) {
+      #matrix-bg {
+        display: none !important;
+      }
+    }
 
-    .challenge-box{ background:#111; border:1px dashed var(--accent); color:var(--accent);
-                    padding:10px; border-radius:8px; text-align:center; cursor:pointer; }
-    .status{ margin-top:10px; min-height:22px; }
-    .hint{ color:var(--muted); font-size:12px; }
-    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    /* Top CTA bar like Playground / Leaderboard */
+    .top-cta {
+      position: sticky;
+      top: 0;
+      z-index: 12;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      padding: 0.45rem 0.75rem;
+      background: radial-gradient(
+        circle at top,
+        rgba(34, 197, 94, 0.16) 0,
+        rgba(3, 7, 18, 0.96) 45%,
+        rgba(3, 7, 18, 0.98) 100%
+      );
+      border-bottom: 1px solid rgba(0, 255, 136, 0.3);
+      box-shadow: 0 18px 35px rgba(0, 0, 0, 0.9);
+      backdrop-filter: blur(16px);
+    }
+
+    .top-cta-inner {
+      width: 100%;
+      max-width: 1200px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .top-cta-text {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.85rem;
+      color: #cbd5f5;
+    }
+
+    .top-cta-text strong {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .top-cta-pill {
+      padding: 0.18rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid rgba(0, 255, 136, 0.6);
+      background: rgba(6, 95, 70, 0.7);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #bbf7d0;
+    }
+
+    .top-cta-action {
+      white-space: nowrap;
+    }
+
+    .btn,
+    button {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      padding: 0.8rem 1.8rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border-radius: 999px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.3s;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .btn:hover,
+    button:hover {
+      box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+      transform: translateY(-2px);
+    }
+
+    button:disabled,
+    .btn:disabled {
+      background: #374151;
+      color: #9ca3af;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(0, 255, 136, 0.08);
+    }
+
+    /* Main root container */
+    #root {
+      position: relative;
+      z-index: 1;
+      padding: 4.5rem 1.5rem 2rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    .login-card {
+      background: rgba(17, 23, 26, 0.92);
+      border-radius: 16px;
+      border: 1px solid #0f2a24;
+      box-shadow: 0 0 10px rgba(0, 255, 136, 0.08);
+      padding: 2rem 1.75rem 1.75rem;
+    }
+
+    .login-header {
+      margin-bottom: 1.5rem;
+    }
+
+    .login-header h1 {
+      font-size: 1.9rem;
+      margin-bottom: 0.4rem;
+      color: var(--accent);
+      text-shadow: 0 0 18px rgba(0, 255, 136, 0.3);
+    }
+
+    .login-header p {
+      font-size: 0.98rem;
+      color: var(--muted);
+    }
+
+    /* Tabs row (Legacy / API / Nostr) */
+    .tabs-row {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      justify-content: space-between;
+      margin: 1.1rem 0 1.2rem;
+      flex-wrap: wrap;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .tab-btn {
+      border-radius: 999px;
+      border: 1px solid #184438;
+      background: #020617;
+      color: var(--fg);
+      padding: 0.45rem 1.1rem;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .tab-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .tab-btn.active {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #000;
+      box-shadow: 0 0 14px rgba(0, 255, 136, 0.3);
+    }
+
+    /* Nostr / Matrix toggle area */
+    .tabs-right {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .nostr-btn {
+      background: #8b5cf6;
+      color: #fff;
+      border-radius: 999px;
+      padding: 0.45rem 1.1rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      transition: all 0.2s;
+    }
+
+    .nostr-btn:hover {
+      box-shadow: 0 0 18px rgba(139, 92, 246, 0.5);
+      transform: translateY(-1px);
+    }
+
+    .ln-btn {
+      background: #f97316;
+      color: #fff;
+      border-radius: 999px;
+      padding: 0.45rem 1.1rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      transition: all 0.2s;
+    }
+
+    .ln-btn:hover {
+      box-shadow: 0 0 18px rgba(248, 150, 30, 0.5);
+      transform: translateY(-1px);
+    }
+
+    .matrix-toggle {
+      border-radius: 999px;
+      border: 1px solid #184438;
+      background: #020617;
+      color: var(--fg);
+      padding: 0.45rem 1.1rem;
+      font-size: 0.85rem;
+      cursor: pointer;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    .matrix-toggle:hover {
+      background: #12352d;
+    }
+
+    /* Panels */
+    .panel {
+      display: none;
+      border-top: 1px solid #1f2933;
+      padding-top: 1rem;
+      margin-top: 0.4rem;
+    }
+
+    .panel.active {
+      display: block;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 0.86rem;
+      margin-bottom: 0.8rem;
+    }
+
+    .challenge-box {
+      background: #020617;
+      border: 1px dashed var(--accent);
+      color: var(--accent);
+      padding: 0.75rem 0.9rem;
+      border-radius: 10px;
+      text-align: center;
+      cursor: pointer;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.9rem;
+      margin-bottom: 0.9rem;
+    }
+
+    .row {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.75rem;
+    }
+
+    .row > .field {
+      flex: 1 1 260px;
+      min-width: 0;
+    }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 0.25rem;
+    }
+
+    input,
+    textarea {
+      width: 100%;
+      padding: 0.6rem 0.7rem;
+      border-radius: 10px;
+      border: 1px solid #255244;
+      background: #020617;
+      color: #bfffe6;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.85rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    }
+
+    input:focus,
+    textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px rgba(0, 255, 136, 0.4);
+      background: #020c13;
+    }
+
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+
+    .actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.4rem;
+      flex-wrap: wrap;
+    }
+
+    .actions button {
+      border-radius: 999px;
+      padding-inline: 1.3rem;
+    }
+
+    .actions .copy {
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+    }
+
+    .actions .copy:hover {
+      background: rgba(0, 255, 136, 0.08);
+    }
+
+    .status {
+      margin-top: 0.6rem;
+      min-height: 1.2rem;
+      font-size: 0.86rem;
+      color: var(--muted);
+    }
+
+    /* Guest login box */
+    .guest-login-panel {
+      margin-top: 1.8rem;
+      padding-top: 1.1rem;
+      border-top: 1px dashed #1f2933;
+    }
+
+    .guest-login-panel h2 {
+      font-size: 1rem;
+      margin-bottom: 0.4rem;
+      color: var(--accent);
+    }
+
+    .guest-login-panel p {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 0.6rem;
+    }
+
+    .guest-input {
+      width: 100%;
+      padding: 0.55rem 0.65rem;
+      border-radius: 999px;
+      border: 1px solid #255244;
+      background: #020617;
+      color: #bfffe6;
+      font-size: 0.85rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      margin-bottom: 0.5rem;
+    }
+
+    .guest-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px rgba(0, 255, 136, 0.4);
+      outline: none;
+    }
+
+    .guest-btn {
+      width: 100%;
+      justify-content: center;
+      border-radius: 999px;
+      padding-block: 0.7rem;
+    }
+
+    @media (max-width: 768px) {
+      #root {
+        padding: 3.5rem 1rem 1.5rem;
+      }
+
+      .login-card {
+        padding: 1.6rem 1.2rem 1.4rem;
+      }
+
+      .login-header h1 {
+        font-size: 1.6rem;
+      }
+
+      .top-cta-inner {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .top-cta-action {
+        width: 100%;
+        text-align: center;
+      }
+
+      .btn,
+      button {
+        width: auto;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .btn,
+      button {
+        width: 100%;
+        justify-content: center;
+      }
+
+      .tabs-row {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .tabs-right {
+        width: 100%;
+        justify-content: flex-start;
+      }
+    }
   </style>
 </head>
 <body>
+  <!-- Global matrix background -->
+  <canvas id="matrix-bg" aria-hidden="true"></canvas>
 
-<!-- Dual Matrix backgrounds behind the card -->
-<canvas id="matrix-warp" class="matrix-canvas" aria-hidden="true"></canvas>
-<canvas id="matrix-rain" class="matrix-canvas" style="display:none" aria-hidden="true"></canvas>
-
-<audio id="login-sound"
-       src="{{ url_for('static', filename='sounds/login.mp3') }}"
-       preload="auto" playsinline></audio>
-
-<div class="wrap"><div class="card">
-  <h1>*Log in with your actual key, we Verify Trust*</h1>
-
-  <!-- Tabs row WITH embedded toggle on the right -->
-  <div class="tabs-row">
-    <div class="tabs">
-      <button id="tabLegacy"  class="tab-btn active" onclick="showTab('legacy')">Legacy</button>
-      <button id="tabApi"     class="tab-btn"         onclick="showTab('api')">API</button>
-  <button onclick="loginWithNostr()"
-          style="background:#8b5cf6;color:#fff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:600;">
-    🟣 Nostr
-  </button>
+  <!-- Top CTA strip -->
+  <div class="top-cta">
+    <div class="top-cta-inner">
+      <div class="top-cta-text">
+        <span class="top-cta-pill">HODLXXI</span>
+        <span><strong>Bitcoin Key Login</strong> · Prove you are your keys.</span>
+      </div>
+      <div class="top-cta-action">
+        <button class="btn btn-secondary" onclick="window.location.href='/playground'">
+          Open Playground
+        </button>
+      </div>
     </div>
-    <button id="bgToggle" class="matrix-toggle" type="button" title="Toggle background">◒ Matrix</button>
   </div>
 
+  <!-- Optional login sound (triggered by app JS elsewhere) -->
+  <audio id="login-sound"
+         src="/static/sounds/login.mp3"
+         preload="auto" playsinline></audio>
 
+  <div id="root">
+    <div class="login-card">
+      <div class="login-header">
+        <h1>*Log in with your actual key, we Verify Trust*</h1>
+        <p>Use your Bitcoin key, Lightning wallet, Nostr identity, or guest access to explore HODLXXI.</p>
+      </div>
 
+      <!-- Tabs row -->
+      <div class="tabs-row">
+        <div class="tabs">
+          <button id="tabLegacy" class="tab-btn active" onclick="showTab('legacy')">
+            Legacy
+          </button>
+          <button id="tabApi" class="tab-btn" onclick="showTab('api')">
+            API
+          </button>
+          <button id="tabSpecial" class="tab-btn" onclick="showTab('special')">
+            Special
+          </button>
+        </div>
+        <div class="tabs-right">
+          <button class="nostr-btn" type="button" onclick="loginWithNostr()">
+            🟣 <span>Nostr</span>
+          </button>
+          <button class="ln-btn" type="button" onclick="loginWithLightning()">
+            ⚡ <span>Lightning</span>
+          </button>
+        </div>
+      </div>
 
-  <!-- Legacy -->
-  <div id="panelLegacy" class="panel active">
-    <p class="hint">Sign the challenge with your wallet, then paste the signature.</p>
-    <div class="challenge-box" id="legacyChallenge" title="Click to copy">{{ challenge }}</div>
-    <div class="row">
-      <div><label>Public key</label><input id="legacyPubkey" placeholder="02.. or 03.."/></div>
-      <div><label>Signature</label><textarea id="legacySignature" rows="4" placeholder="base64 signature"></textarea></div>
+      <!-- Legacy panel -->
+      <div id="panelLegacy" class="panel active">
+        <p class="hint">Sign the challenge with your wallet, then paste the signature.</p>
+        <div class="challenge-box" id="legacyChallenge" title="Click to copy">
+          {{ challenge }}
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="legacyPubkey">Public key</label>
+            <input id="legacyPubkey" placeholder="02.. or 03.." />
+          </div>
+          <div class="field">
+            <label for="legacySignature">Signature</label>
+            <textarea id="legacySignature" rows="4" placeholder="base64 signature"></textarea>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="copy" type="button" onclick="copyText('legacyChallenge')">
+            Copy challenge
+          </button>
+          <button type="button" onclick="legacyVerify()">
+            Verify &amp; Login
+          </button>
+        </div>
+
+        <div id="legacyStatus" class="status"></div>
+      </div>
+
+      <!-- API panel -->
+      <div id="panelApi" class="panel">
+        <p class="hint">Request a challenge via the API, sign it, and verify.</p>
+
+        <div class="row">
+          <div class="field">
+            <label for="apiPubkey">Public key</label>
+            <input id="apiPubkey" placeholder="02.. or 03.." />
+          </div>
+          <div class="field">
+            <label for="apiChallenge">Challenge</label>
+            <textarea id="apiChallenge" rows="3" readonly></textarea>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="button" onclick="getChallenge()">Get challenge</button>
+          <button class="copy" type="button" onclick="copyText('apiChallenge')">Copy</button>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="apiSignature">Signature</label>
+            <textarea id="apiSignature" rows="4" placeholder="base64 signature"></textarea>
+          </div>
+          <div class="field">
+            <label for="apiCid">Challenge ID</label>
+            <input id="apiCid" readonly />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="button" onclick="apiVerify()">Verify &amp; Login</button>
+        </div>
+
+        <div id="apiStatus" class="status"></div>
+      </div>
+
+      <!-- Special login panel -->
+      <div id="panelSpecial" class="panel">
+        <p class="hint">For special / host login via pre-agreed signature.</p>
+        <div class="row">
+          <div class="field">
+            <label for="specialSignature">Special signature</label>
+            <textarea id="specialSignature" rows="4" placeholder="Paste special signature"></textarea>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="button" onclick="specialLogin()">
+            Verify &amp; Login
+          </button>
+        </div>
+        <div id="specialStatus" class="status"></div>
+      </div>
+
+      <!-- Guest login -->
+      <div class="guest-login-panel">
+        <h2>Guest / PIN Login</h2>
+        <p>Use a shared PIN (if invited) or leave blank for a random guest session.</p>
+        <input
+          id="guestPin"
+          class="guest-input"
+          type="text"
+          placeholder="PIN or leave blank for guest"
+        />
+        <button type="button" class="btn guest-btn" onclick="guestLogin()">
+          Guest
+        </button>
+      </div>
     </div>
-    <div class="actions">
-      <button class="copy" onclick="copyText('legacyChallenge')">Copy challenge</button>
-      <button onclick="legacyVerify()">Verify &amp; Login</button>
-    </div>
-    <div id="legacyStatus" class="status"></div>
   </div>
 
-  <!-- API -->
-  <div id="panelApi" class="panel">
-    <p class="hint">Request + sign a challenge:</p>
-    <div class="row">
-      <div><label>Public key</label><input id="apiPubkey" placeholder="02.. or 03.."/></div>
-      <div><label>Challenge</label><textarea id="apiChallenge" rows="3" readonly></textarea></div>
+  <!-- QR modal reused from universal_login -->
+  <div id="qrModal" class="qr-modal" style="
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,.95);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:1000;
+  ">
+    <div class="qr-content" style="
+      background:white;
+      padding:2rem;
+      border-radius:16px;
+      text-align:center;
+      max-width:400px;
+      width:90%;
+    ">
+      <h2>Scan with Wallet</h2>
+      <div id="qrcode"></div>
+      <a id="openInWallet" href="#" target="_blank" rel="noopener">Open in wallet</a>
+      <div id="lnurlText" style="
+        margin-top:1rem;
+        padding:.75rem;
+        background:#f0f0f0;
+        border-radius:8px;
+        font-family:monospace;
+        font-size:.7rem;
+        word-break:break-all;
+        color:#333;
+      "></div>
+      <div id="countdown" style="color:#666;font-size:.85rem;margin-top:.5rem"></div>
+      <button onclick="closeQR()" style="
+        margin-top:1rem;
+        padding:.75rem 2rem;
+        background:#333;
+        color:white;
+        border:none;
+        border-radius:8px;
+        cursor:pointer;
+      ">Close</button>
     </div>
-    <div class="actions">
-      <button onclick="getChallenge()">Get challenge</button>
-      <button class="copy" onclick="copyText('apiChallenge')">Copy</button>
-    </div>
-    <div class="row">
-      <div><label>Signature</label><textarea id="apiSignature" rows="4" placeholder="base64 signature"></textarea></div>
-      <div><label>Challenge ID</label><input id="apiCid" readonly/></div>
-    </div>
-    <div class="actions"><button onclick="apiVerify()">Verify &amp; Login</button></div>
-    <div id="apiStatus" class="status"></div>
   </div>
+  <script src="/static/js/qrcode.min.js"></script>
 
-
-<div class="guest-login-panel">
-  <input id="guestPin" type="text" placeholder="PIN or leave blank for guest"
-         style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #0f2; background: #111; color: #0f2;">
-  <button onclick="guestLogin()"
-          style="margin-top:10px; width:100%; padding:10px; background:#0f2; color:#000; font-weight:bold; border:none; border-radius:4px;">
-    Guest
-  </button>
-
-
-<script>
-// Helper to respect ?next= parameter for post-login redirects
-function getRedirectUrl() {
-  const params = new URLSearchParams(window.location.search);
-  const next = params.get("next");
-  return next || "/app";
-}
-function showTab(which){
-  ['legacy','api','guest','special'].forEach(t=>{
-    const tab=document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1));
-    const panel=document.getElementById('panel'+t.charAt(0).toUpperCase()+t.slice(1));
-    if(tab&&panel){
-      tab.classList.toggle('active',t===which);
-      panel.classList.toggle('active',t===which);
+  <!-- Login logic (unchanged, just formatted) -->
+  <script>
+    // Helper to respect ?next= parameter for post-login redirects
+    function getRedirectUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const next = params.get("next");
+      return next || "/app";
     }
-  });
-}
-function copyText(id){
-  const el=document.getElementById(id);
-  const txt=(el.tagName==='TEXTAREA'||el.tagName==='INPUT')?el.value:el.textContent.trim();
-  navigator.clipboard.writeText(txt);
-}
 
-// Click to copy on the challenge card (visual feedback)
-const legacyEl=document.getElementById('legacyChallenge');
-legacyEl.addEventListener('click', ()=>{
-  const text=legacyEl.textContent.trim();
-  navigator.clipboard.writeText(text).then(()=>{
-    const orig=legacyEl.style.background;
-    legacyEl.style.background='#12352d';
-    setTimeout(()=>legacyEl.style.background=orig, 300);
-  });
-});
-
-// --- Flows ---
-async function legacyVerify(){
-  const pubkey=document.getElementById('legacyPubkey').value.trim();
-  const signature=document.getElementById('legacySignature').value.trim();
-  const challenge=document.getElementById('legacyChallenge').textContent.trim();
-  const st=document.getElementById('legacyStatus');
-  st.textContent='Verifying...';
-  try{
-    const r=await fetch('/verify_signature',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({pubkey,signature,challenge})});
-    const d=await r.json();
-    // NOTE: access_level in response is for UI hints only.
-    // DO NOT treat this as an authorization boundary.
-    // All actual authorization happens server-side via session validation.
-    if(r.ok&&d.verified){sessionStorage.setItem('playLoginSound','1'); window.location.href=getRedirectUrl();}
-    else{st.textContent=d.error||'Failed';}
-  }catch(e){st.textContent='Network error';}
-}
-async function getChallenge(){
-  const pubkey=document.getElementById('apiPubkey').value.trim();
-  const st=document.getElementById('apiStatus');
-  try{
-    const r=await fetch('/api/challenge',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({pubkey})});
-    const d=await r.json();
-    if(!r.ok) throw new Error(d.error||'Request failed');
-    document.getElementById('apiChallenge').value=d.challenge||'';
-    document.getElementById('apiCid').value=d.challenge_id||'';
-    st.textContent='Challenge ready';
-  }catch(e){st.textContent=e.message;}
-}
-async function apiVerify(){
-  const pubkey=document.getElementById('apiPubkey').value.trim();
-  const signature=document.getElementById('apiSignature').value.trim();
-  const cid=document.getElementById('apiCid').value.trim();
-  const st=document.getElementById('apiStatus');
-  try{
-    const r=await fetch('/api/verify',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({pubkey,signature,challenge_id:cid})});
-    const d=await r.json();
-    if(r.ok&&d.verified){sessionStorage.setItem('playLoginSound','1'); window.location.href=getRedirectUrl();}
-    else{st.textContent=d.error||'Failed';}
-  }catch(e){st.textContent='Network error';}
-}
-async function guestLogin() {
-  const pinInput = document.getElementById("guestPin");
-  const pin = (pinInput ? pinInput.value.trim() : "");
-
-  const res = await fetch("/guest_login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pin })
-  });
-
-  const data = await res.json();
-  if (!res.ok || !data.ok) {
-    alert(data.error || "Guest login failed");
-    return;
-  }
-
-  // ✅ Success — show confirmation and redirect
-  const label = data.label || "Guest";
-  console.log("Guest login successful:", label);
-  alert("Logged in as " + label);
-  window.location.href = getRedirectUrl(); // open chat directly
-}
-async function specialLogin(){
-  const sig=document.getElementById('specialSignature').value.trim();
-  const st=document.getElementById('specialStatus');
-  try{
-    const r=await fetch('/special_login',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({signature:sig})});
-    const d=await r.json();
-    if(r.ok&&d.verified){sessionStorage.setItem('playLoginSound','1'); window.location.href=getRedirectUrl();}
-    else{st.textContent=d.error||'Failed';}
-  }catch(e){st.textContent='Network error';}
-}
-</script>
-
-
-
-
-
-
-<!-- QR modal reused from universal_login -->
-<div id="qrModal" class="qr-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.95);display:none;
-     align-items:center;justify-content:center;z-index:1000">
-  <div class="qr-content" style="background:white;padding:2rem;border-radius:16px;text-align:center;max-width:400px;width:90%">
-    <h2>Scan with Wallet</h2>
-    <div id="qrcode"></div>
-    <a id="openInWallet" href="#" target="_blank" rel="noopener">Open in wallet</a>
-    <div id="lnurlText" style="margin-top:1rem;padding:.75rem;background:#f0f0f0;
-         border-radius:8px;font-family:monospace;font-size:.7rem;word-break:break-all;color:#333;"></div>
-    <div id="countdown" style="color:#666;font-size:.85rem;margin-top:.5rem"></div>
-    <button onclick="closeQR()" style="margin-top:1rem;padding:.75rem 2rem;background:#333;color:white;
-            border:none;border-radius:8px;cursor:pointer">Close</button>
-  </div>
-</div>
-<script src="/static/js/qrcode.min.js"></script>
-
-
-
-
-<!-- Matrix backgrounds (inline) + init/toggle embedded in panel) -->
-<script>
-/* --- Matrix: Warp --- */
-function startMatrixWarp(canvas){
-  if(!canvas) return ()=>{};
-  const ctx=canvas.getContext('2d');
-  const CHARS=['0','1'];
-  let width=0, height=0, particles=[], raf=null;
-
-  function resize(){
-    width=window.innerWidth; height=window.innerHeight;
-    canvas.width=width; canvas.height=height;
-    particles=[];
-    for(let i=0;i<400;i++){
-      particles.push({ x:(Math.random()-0.5)*width, y:(Math.random()-0.5)*height, z:Math.random()*800+100 });
+    function showTab(which) {
+      ["legacy", "api", "guest", "special"].forEach((t) => {
+        const tab = document.getElementById(
+          "tab" + t.charAt(0).toUpperCase() + t.slice(1)
+        );
+        const panel = document.getElementById(
+          "panel" + t.charAt(0).toUpperCase() + t.slice(1)
+        );
+        if (tab && panel) {
+          tab.classList.toggle("active", t === which);
+          panel.classList.toggle("active", t === which);
+        }
+      });
     }
-  }
-  function draw(){
-    ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fillRect(0,0,width,height);
-    ctx.fillStyle='#00ff88';
-    for(const p of particles){
-      const scale=200/p.z;
-      const x2=width/2 + p.x*scale;
-      const y2=height/2 + p.y*scale;
-      const size=Math.max(8*scale,1);
-      ctx.font=size+'px monospace';
-      ctx.fillText(CHARS[Math.random()>0.5?1:0], x2, y2);
-      p.z-=5;
-      if(p.z<1){ p.x=(Math.random()-0.5)*width; p.y=(Math.random()-0.5)*height; p.z=800; }
+
+    function copyText(id) {
+      const el = document.getElementById(id);
+      const txt =
+        el.tagName === "TEXTAREA" || el.tagName === "INPUT"
+          ? el.value
+          : el.textContent.trim();
+      navigator.clipboard.writeText(txt);
     }
-    raf=requestAnimationFrame(draw);
-  }
-  function onVis(){ if(document.hidden){ if(raf) cancelAnimationFrame(raf), raf=null; } else { if(!raf) raf=requestAnimationFrame(draw); } }
-  function onResize(){ resize(); }
 
-  window.addEventListener('resize', onResize);
-  document.addEventListener('visibilitychange', onVis);
-  resize(); raf=requestAnimationFrame(draw);
-  return function stop(){ if(raf) cancelAnimationFrame(raf), raf=null; window.removeEventListener('resize', onResize); document.removeEventListener('visibilitychange', onVis); };
-}
-
-/* --- Matrix: Rain --- */
-function startMatrixRain(canvas){
-  if(!canvas) return ()=>{};
-  const ctx=canvas.getContext('2d');
-  const CHARS='01';
-  let width=0, height=0, fontSize=16, cols=0, drops=[], speeds=[], raf=null;
-  const TRAIL_ALPHA=0.08, SPEED_MIN=0.5, SPEED_MAX=1.5, COLOR='#00ff88';
-
-  function ri(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
-
-  function resize(){
-    width=window.innerWidth; height=window.innerHeight;
-    canvas.width=width; canvas.height=height;
-    fontSize=Math.max(14, Math.min(24, Math.floor(width/80)));
-    ctx.font=fontSize+'px monospace'; ctx.textBaseline='top';
-    cols=Math.floor(width/fontSize);
-    drops=new Array(cols).fill(0).map(()=>ri(-20, height/fontSize));
-    speeds=new Array(cols).fill(0).map(()=>Math.random()*(SPEED_MAX-SPEED_MIN)+SPEED_MIN);
-  }
-  function draw(){
-    ctx.fillStyle='rgba(0,0,0,'+TRAIL_ALPHA+')'; ctx.fillRect(0,0,width,height);
-    ctx.fillStyle=COLOR;
-    for(let i=0;i<cols;i++){
-      const ch=CHARS.charAt((Math.random()*CHARS.length)|0);
-      const x=i*fontSize, y=drops[i]*fontSize;
-      ctx.fillText(ch,x,y);
-      drops[i]+=speeds[i];
-      if(y>height+ri(0,100)){ drops[i]=ri(-20,-5); speeds[i]=Math.random()*(SPEED_MAX-SPEED_MIN)+SPEED_MIN; }
+    // Click to copy on the challenge card (visual feedback)
+    const legacyEl = document.getElementById("legacyChallenge");
+    if (legacyEl) {
+      legacyEl.addEventListener("click", () => {
+        const text = legacyEl.textContent.trim();
+        navigator.clipboard.writeText(text).then(() => {
+          const orig = legacyEl.style.background;
+          legacyEl.style.background = "#12352d";
+          setTimeout(() => (legacyEl.style.background = orig), 300);
+        });
+      });
     }
-    raf=requestAnimationFrame(draw);
-  }
-  function onVis(){ if(document.hidden){ if(raf) cancelAnimationFrame(raf), raf=null; } else { if(!raf) raf=requestAnimationFrame(draw); } }
-  function onResize(){ resize(); }
 
-  window.addEventListener('resize', onResize);
-  document.addEventListener('visibilitychange', onVis);
-  resize(); raf=requestAnimationFrame(draw);
-  return function stop(){ if(raf) cancelAnimationFrame(raf), raf=null; window.removeEventListener('resize', onResize); document.removeEventListener('visibilitychange', onVis); };
-}
-
-/* --- Init + toggle (persisted in localStorage), button lives inside panel --- */
-(()=> {
-  const warpCanvas=document.getElementById('matrix-warp');
-  const rainCanvas=document.getElementById('matrix-rain');
-  const toggleBtn=document.getElementById('bgToggle');
-
-  let stopWarp=null, stopRain=null;
-
-  function setMode(mode){
-    localStorage.setItem('matrixMode', mode);
-    if(mode==='warp'){
-      rainCanvas.style.display='none';
-      warpCanvas.style.display='block';
-      if(stopRain){ stopRain(); stopRain=null; }
-      if(!stopWarp) stopWarp=startMatrixWarp(warpCanvas);
-    }else{
-      warpCanvas.style.display='none';
-      rainCanvas.style.display='block';
-      if(stopWarp){ stopWarp(); stopWarp=null; }
-      if(!stopRain) stopRain=startMatrixRain(rainCanvas);
+    // --- Flows ---
+    async function legacyVerify() {
+      const pubkey = document.getElementById("legacyPubkey").value.trim();
+      const signature = document
+        .getElementById("legacySignature")
+        .value.trim();
+      const challenge = document
+        .getElementById("legacyChallenge")
+        .textContent.trim();
+      const st = document.getElementById("legacyStatus");
+      st.textContent = "Verifying...";
+      try {
+        const r = await fetch("/verify_signature", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pubkey, signature, challenge }),
+        });
+        const d = await r.json();
+        // NOTE: access_level in response is for UI hints only.
+        // DO NOT treat this as an authorization boundary.
+        // All actual authorization happens server-side via session validation.
+        if (r.ok && d.verified) {
+          sessionStorage.setItem("playLoginSound", "1");
+          window.location.href = getRedirectUrl();
+        } else {
+          st.textContent = d.error || "Failed";
+        }
+      } catch (e) {
+        st.textContent = "Network error";
+      }
     }
-    toggleBtn.textContent = (mode==='warp') ? '◒' : '◒';
-  }
 
-  const saved = localStorage.getItem('matrixMode') || 'warp';
-  setMode(saved);
+    async function getChallenge() {
+      const pubkey = document.getElementById("apiPubkey").value.trim();
+      const st = document.getElementById("apiStatus");
+      try {
+        const r = await fetch("/api/challenge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pubkey }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || "Request failed");
+        document.getElementById("apiChallenge").value = d.challenge || "";
+        document.getElementById("apiCid").value = d.challenge_id || "";
+        st.textContent = "Challenge ready";
+      } catch (e) {
+        st.textContent = e.message;
+      }
+    }
 
-  toggleBtn.addEventListener('click', ()=>{
-    const next = (localStorage.getItem('matrixMode')==='warp') ? 'rain' : 'warp';
-    setMode(next);
-  });
+    async function apiVerify() {
+      const pubkey = document.getElementById("apiPubkey").value.trim();
+      const signature = document
+        .getElementById("apiSignature")
+        .value.trim();
+      const cid = document.getElementById("apiCid").value.trim();
+      const st = document.getElementById("apiStatus");
+      try {
+        const r = await fetch("/api/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pubkey, signature, challenge_id: cid }),
+        });
+        const d = await r.json();
+        if (r.ok && d.verified) {
+          sessionStorage.setItem("playLoginSound", "1");
+          window.location.href = getRedirectUrl();
+        } else {
+          st.textContent = d.error || "Failed";
+        }
+      } catch (e) {
+        st.textContent = "Network error";
+      }
+    }
 
-  window.addEventListener('beforeunload', ()=>{
-    if(stopWarp) stopWarp();
-    if(stopRain) stopRain();
-  });
-})();
-</script>
+    async function guestLogin() {
+      const pinInput = document.getElementById("guestPin");
+      const pin = pinInput ? pinInput.value.trim() : "";
 
+      const res = await fetch("/guest_login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin }),
+      });
 
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        alert(data.error || "Guest login failed");
+        return;
+      }
 
-<script>
-function urlToLnurl(url){
-  const CHARSET='qpzry9x8gf2tvdw0s3jn54khce6mua7l';
-  function polymod(v){const G=[0x3b6a57b2,0x26508e6d,0x1ea119fa,0x3d4233dd,0x2a1462b3];let chk=1;
-    for(const val of v){const top=chk>>>25;chk=((chk&0x1ffffff)<<5)^val;for(let i=0;i<5;i++)if((top>>>i)&1)chk^=G[i];}return chk;}
-  function hrpExpand(hrp){const ret=[];for(let i=0;i<hrp.length;i++)ret.push(hrp.charCodeAt(i)>>5);
-    ret.push(0);for(let i=0;i<hrp.length;i++)ret.push(hrp.charCodeAt(i)&31);return ret;}
-  function createChecksum(hrp,data){const values=hrpExpand(hrp).concat(data).concat([0,0,0,0,0,0]);
-    const mod=polymod(values)^1;const ret=[];for(let p=0;p<6;p++)ret.push((mod>>5*(5-p))&31);return ret;}
-  function convertBits(data,from,to){let acc=0,bits=0,ret=[],maxv=(1<<to)-1;for(const value of data){
-    acc=(acc<<from)|value;bits+=from;while(bits>=to){bits-=to;ret.push((acc>>bits)&maxv);}}if(bits>0)ret.push((acc<<(to-bits))&maxv);return ret;}
-  const bytes=new TextEncoder().encode(url);const data5=convertBits(Array.from(bytes),8,5);
-  const combined=data5.concat(createChecksum('lnurl',data5));let out='lnurl1';for(const d of combined)out+=CHARSET[d];return out.toUpperCase();
-}
+      const label = data.label || "Guest";
+      console.log("Guest login successful:", label);
+      alert("Logged in as " + label);
+      window.location.href = getRedirectUrl();
+    }
 
-function renderQR(el,text){
-  el.innerHTML='';
-  new QRCode(el,{text,width:256,height:256,colorDark:"#000",colorLight:"#fff"});
-}
+    async function specialLogin() {
+      const sig = document
+        .getElementById("specialSignature")
+        ?.value.trim();
+      const st = document.getElementById("specialStatus");
+      try {
+        const r = await fetch("/special_login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ signature: sig }),
+        });
+        const d = await r.json();
+        if (r.ok && d.verified) {
+          sessionStorage.setItem("playLoginSound", "1");
+          window.location.href = getRedirectUrl();
+        } else {
+          st.textContent = d.error || "Failed";
+        }
+      } catch (e) {
+        st.textContent = "Network error";
+      }
+    }
+  </script>
 
-let poll=null,expire=null;
-function startPolling(sid){
-  clearInterval(poll);
-  poll=setInterval(async()=>{
-    const r=await fetch(`/api/lnurl-auth/check/${sid}`);
-    const j=await r.json();
-    if(j.authenticated){clearInterval(poll);clearInterval(expire);
-      closeQR();alert('Lightning login success!');window.location.href=getRedirectUrl();}
-  },2000);
-}
-function startCountdown(s){
-  clearInterval(expire);
-  let r=s;const el=document.getElementById('countdown');
-  expire=setInterval(()=>{r--;el.textContent=`Expires in ${Math.floor(r/60)}:${(r%60).toString().padStart(2,'0')}`;
-    if(r<=0){clearInterval(poll);clearInterval(expire);closeQR();}},1000);
-}
-function closeQR(){document.getElementById('qrModal').style.display='none';}
+  <!-- LNURL auth + Nostr -->
+  <script>
+    function urlToLnurl(url) {
+      const CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+      function polymod(v) {
+        const G = [
+          0x3b6a57b2,
+          0x26508e6d,
+          0x1ea119fa,
+          0x3d4233dd,
+          0x2a1462b3,
+        ];
+        let chk = 1;
+        for (const val of v) {
+          const top = chk >>> 25;
+          chk = ((chk & 0x1ffffff) << 5) ^ val;
+          for (let i = 0; i < 5; i++)
+            if ((top >>> i) & 1) chk ^= G[i];
+        }
+        return chk;
+      }
+      function hrpExpand(hrp) {
+        const ret = [];
+        for (let i = 0; i < hrp.length; i++)
+          ret.push(hrp.charCodeAt(i) >> 5);
+        ret.push(0);
+        for (let i = 0; i < hrp.length; i++)
+          ret.push(hrp.charCodeAt(i) & 31);
+        return ret;
+      }
+      function createChecksum(hrp, data) {
+        const values = hrpExpand(hrp).concat(data).concat([0, 0, 0, 0, 0, 0]);
+        const mod = polymod(values) ^ 1;
+        const ret = [];
+        for (let p = 0; p < 6; p++)
+          ret.push((mod >> (5 * (5 - p))) & 31);
+        return ret;
+      }
+      function convertBits(data, from, to) {
+        let acc = 0,
+          bits = 0,
+          ret = [],
+          maxv = (1 << to) - 1;
+        for (const value of data) {
+          acc = (acc << from) | value;
+          bits += from;
+          while (bits >= to) {
+            bits -= to;
+            ret.push((acc >> bits) & maxv);
+          }
+        }
+        if (bits > 0) ret.push((acc << (to - bits)) & maxv);
+        return ret;
+      }
+      const bytes = new TextEncoder().encode(url);
+      const data5 = convertBits(Array.from(bytes), 8, 5);
+      const combined = data5.concat(createChecksum("lnurl", data5));
+      let out = "lnurl1";
+      for (const d of combined) out += CHARSET[d];
+      return out.toUpperCase();
+    }
 
-async function loginWithLightning(){
-  const res=await fetch('/api/lnurl-auth/create',{method:'POST'});
-  const j=await res.json();
-  const lnurl=urlToLnurl(j.callback_url);
-  renderQR(document.getElementById('qrcode'),lnurl);
-  document.getElementById('lnurlText').textContent=lnurl;
-  document.getElementById('openInWallet').href='lightning:'+lnurl;
-  document.getElementById('qrModal').style.display='flex';
-  startPolling(j.session_id);
-  startCountdown(j.expires_in);
-}
+    function renderQR(el, text) {
+      el.innerHTML = "";
+      new QRCode(el, {
+        text,
+        width: 256,
+        height: 256,
+        colorDark: "#000",
+        colorLight: "#fff",
+      });
+    }
 
-async function loginWithNostr(){
-  if(!window.nostr){alert('No Nostr extension found');return;}
-  const pubkey=await window.nostr.getPublicKey();
-  const r=await fetch('/api/challenge',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({pubkey,method:'nostr'})});
-  const d=await r.json();
-  const event={kind:22242,created_at:Math.floor(Date.now()/1000),
-      tags:[['challenge',d.challenge],['app','HODLXXI']],content:`HODLXXI Login: ${d.challenge}`};
-  const signed=await window.nostr.signEvent(event);
-  const vr=await fetch('/api/verify',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({challenge_id:d.challenge_id,pubkey,signature:signed.sig})});
-  const j2=await vr.json();
-  if(j2.verified){alert('Nostr login success!');window.location.href=getRedirectUrl();}
-  else alert('Verification failed');
-}
-</script>
+    let poll = null,
+      expire = null;
 
+    function startPolling(sid) {
+      clearInterval(poll);
+      poll = setInterval(async () => {
+        const r = await fetch(`/api/lnurl-auth/check/${sid}`);
+        const j = await r.json();
+        if (j.authenticated) {
+          clearInterval(poll);
+          clearInterval(expire);
+          closeQR();
+          alert("Lightning login success!");
+          window.location.href = getRedirectUrl();
+        }
+      }, 2000);
+    }
 
+    function startCountdown(s) {
+      clearInterval(expire);
+      let r = s;
+      const el = document.getElementById("countdown");
+      expire = setInterval(() => {
+        r--;
+        el.textContent = `Expires in ${Math.floor(r / 60)}:${(
+          r % 60
+        )
+          .toString()
+          .padStart(2, "0")}`;
+        if (r <= 0) {
+          clearInterval(poll);
+          clearInterval(expire);
+          closeQR();
+        }
+      }, 1000);
+    }
+
+    function closeQR() {
+      document.getElementById("qrModal").style.display = "none";
+    }
+
+    async function loginWithLightning() {
+      const modal     = document.getElementById("qrModal");
+      const qrBox     = document.getElementById("qrcode");
+      const lnurlBox  = document.getElementById("lnurlText");
+      const countdown = document.getElementById("countdown");
+
+      try {
+        // Show modal immediately with loading state
+        if (qrBox) qrBox.innerHTML = "";
+        if (lnurlBox) lnurlBox.textContent = "Requesting Lightning login…";
+        if (countdown) countdown.textContent = "";
+        if (modal) modal.style.display = "flex";
+
+        const res = await fetch("/api/lnurl-auth/create", {
+          method: "POST",
+        });
+
+        if (!res.ok) {
+          const txt = await res.text().catch(() => "");
+          console.error("LNURL-auth create failed:", res.status, txt);
+          alert("Lightning login init failed: " + res.status);
+          if (modal) modal.style.display = "none";
+          return;
+        }
+
+        let j;
+        try {
+          j = await res.json();
+        } catch (e) {
+          console.error("LNURL-auth JSON parse error:", e);
+          alert("Lightning login error: invalid server response");
+          if (modal) modal.style.display = "none";
+          return;
+        }
+
+        if (!j || !j.callback_url) {
+          console.error("LNURL-auth missing callback_url:", j);
+          alert("Lightning login error: missing callback_url");
+          if (modal) modal.style.display = "none";
+          return;
+        }
+
+        const lnurl = urlToLnurl(j.callback_url);
+
+        if (qrBox && typeof QRCode !== "undefined") {
+          renderQR(qrBox, lnurl);
+        } else if (lnurlBox) {
+          // Fallback: show lnurl text only
+          lnurlBox.textContent = lnurl;
+        }
+
+        if (lnurlBox) lnurlBox.textContent = lnurl;
+        const openEl = document.getElementById("openInWallet");
+        if (openEl) openEl.href = "lightning:" + lnurl;
+
+        startPolling(j.session_id);
+        startCountdown(j.expires_in || 300);
+      } catch (e) {
+        console.error("Lightning login error:", e);
+        alert("Lightning login error: " + e);
+        if (modal) modal.style.display = "none";
+      }
+    }
+
+    async function loginWithNostr() {
+      if (!window.nostr) {
+        alert("No Nostr extension found");
+        return;
+      }
+      const pubkey = await window.nostr.getPublicKey();
+      const r = await fetch("/api/challenge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pubkey, method: "nostr" }),
+      });
+      const d = await r.json();
+      const event = {
+        kind: 22242,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ["challenge", d.challenge],
+          ["app", "HODLXXI"],
+        ],
+        content: `HODLXXI Login: ${d.challenge}`,
+      };
+      const signed = await window.nostr.signEvent(event);
+      const vr = await fetch("/api/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challenge_id: d.challenge_id,
+          pubkey,
+          signature: signed.sig,
+        }),
+      });
+      const j2 = await vr.json();
+      if (j2.verified) {
+        alert("Nostr login success!");
+        window.location.href = getRedirectUrl();
+      } else alert("Verification failed");
+    }
+  </script>
+
+  <!-- Matrix background animation (same as leaderboard/playground) -->
+  <script>
+    (function () {
+      const canvas = document.getElementById("matrix-bg");
+      if (!canvas) return;
+
+      const ctx = canvas.getContext("2d");
+      const CHARS = ["0", "1"];
+      let width = 0,
+        height = 0,
+        particles = [],
+        raf = null;
+
+      function resize() {
+        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+        const cssW = window.innerWidth;
+        const cssH = window.innerHeight;
+
+        canvas.width = Math.floor(cssW * dpr);
+        canvas.height = Math.floor(cssH * dpr);
+        canvas.style.width = cssW + "px";
+        canvas.style.height = cssH + "px";
+
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+
+        width = cssW;
+        height = cssH;
+        particles = [];
+
+        for (let i = 0; i < 400; i++) {
+          particles.push({
+            x: (Math.random() - 0.5) * width,
+            y: (Math.random() - 0.5) * height,
+            z: Math.random() * 800 + 100,
+          });
+        }
+
+        ctx.fillStyle = "rgba(0,0,0,1)";
+        ctx.fillRect(0, 0, width, height);
+      }
+
+      function draw() {
+        ctx.fillStyle = "rgba(0,0,0,0.25)";
+        ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = "#00ff88";
+
+        for (const p of particles) {
+          const scale = 200 / p.z;
+          const x2 = width / 2 + p.x * scale;
+          const y2 = height / 2 + p.y * scale;
+          const size = Math.max(8 * scale, 1);
+
+          ctx.font = size + "px monospace";
+          ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
+
+          p.z -= 5;
+          if (p.z < 1) {
+            p.x = (Math.random() - 0.5) * width;
+            p.y = (Math.random() - 0.5) * height;
+            p.z = 800;
+          }
+        }
+
+        raf = requestAnimationFrame(draw);
+      }
+
+      function onVis() {
+        if (document.hidden) {
+          if (raf) {
+            cancelAnimationFrame(raf);
+            raf = null;
+          }
+        } else {
+          if (!raf) raf = requestAnimationFrame(draw);
+        }
+      }
+
+      window.addEventListener("resize", resize);
+      document.addEventListener("visibilitychange", onVis);
+
+      resize();
+      raf = requestAnimationFrame(draw);
+    })();
+
+    // Optional: simple toggle that just flips a flag in localStorage (you can
+    // later wire it to warp/rain variants if you want)
+    (function () {
+      const btn = document.getElementById("bgToggle");
+      if (!btn) return;
+
+      function updateLabel() {
+        const mode = localStorage.getItem("matrixMode") || "warp";
+        btn.textContent = mode === "warp" ? "◒ Matrix" : "◒ Matrix";
+      }
+
+      updateLabel();
+      btn.addEventListener("click", () => {
+        const current = localStorage.getItem("matrixMode") || "warp";
+        const next = current === "warp" ? "rain" : "warp";
+        localStorage.setItem("matrixMode", next);
+        updateLabel();
+        // Visual mode is still the same effect; you can swap implementations later if needed.
+      });
+    })();
+  </script>
 </body>
 </html>
+
 """
     return render_template_string(
         html,
@@ -3395,41 +3816,29 @@ def verify_signature():
 
 @app.route("/guest_login", methods=["POST"])
 def guest_login():
-    """Guest or PIN login:
-    - With PIN: use PIN itself as unique identity (presence/chat/call)
-    - Without PIN: random temporary guest ID
-    - Reuse session if already logged in
-    """
+    """Guest or PIN login with clear identity separation"""
+    import hashlib
     data = request.get_json(silent=True) or {}
     pin = (data.get("pin") or "").strip()
-
-    # If user already has a session, resume it
     if session.get("logged_in_pubkey"):
-        logger.info("guest_login: Resume session for %s", session.get('guest_label'))
-        return jsonify(ok=True, label=session.get("guest_label"))
-
+        return jsonify({"ok": True, "label": session.get("guest_label")})
     if pin:
-        # ✅ PIN as full identity
         label = GUEST_PINS.get(pin)
         if not label:
-            return jsonify(error="Invalid PIN"), 403
-
-        session["logged_in_pubkey"] = pin  # 🔸 use PIN as identity key
-        session["logged_in_privkey"] = None  # no privkey needed
-        session["guest_label"] = f"Guest-{pin}"
-        logger.info("guest_login: PIN %s logged in as Guest-%s", pin, pin)
-
-    else:
-        # Random guest identity
-        rand_id = uuid.uuid4().hex[:6]
-        session["logged_in_pubkey"] = f"guest-{rand_id}"
+            return jsonify({"error": "Invalid PIN"}), 403
+        guest_id = f"guest-pin-{hashlib.sha256(pin.encode()).hexdigest()[:16]}"
+        session["logged_in_pubkey"] = guest_id
         session["logged_in_privkey"] = None
-        session["guest_label"] = f"Guest-Random-{rand_id}"
-        logger.info("guest_login: Random guest logged in as Guest-Random-%s", rand_id)
-
-    session["login_method"] = "guest"
+        session["guest_label"] = label
+        session["login_method"] = "pin"
+    else:
+        rand_id = uuid.uuid4().hex[:12]
+        session["logged_in_pubkey"] = f"guest-random-{rand_id}"
+        session["logged_in_privkey"] = None
+        session["guest_label"] = f"Guest-{rand_id[:6]}"
+        session["login_method"] = "random_guest"
     session.permanent = True
-    return jsonify(ok=True, label=session["guest_label"])
+    return jsonify({"ok": True, "label": session["guest_label"]})
 
 
 # ---- Special Login ----
@@ -3774,27 +4183,39 @@ def home_page():
     initial_pubkey = request.args.get("pubkey", "")
 
     html = r"""
+
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Bitcoin Node Viewer</title>
+    <meta charset="utf-8">
+    <title>HODLXXI — Covenant Explorer & Onboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#00ff00">
+    <meta name="theme-color" content="#00ff88">
+
     <!-- QR library for scanning -->
     <script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
+
     <style>
-    .hidden { display: none !important; }
+        .hidden { display: none !important; }
 
         :root {
-            --neon-green: #00ff00;
-            --neon-blue: #00bfff;
-            --dark-bg: #0a0a0a;
-            --panel-bg: #141414;
-            --border-color: #333;
-            --text-color: #e0e0e0;
-            --accent-color: #00ff88;
+            --bg: #0b0f10;
+            --panel: #11171a;
+            --fg: #e6f1ef;
+            --accent: #00ff88;
+            --orange: #f7931a;
+            --red: #ff3b30;
+            --blue: #3b82f6;
+            --muted: #8a9da4;
+
+            /* legacy names mapped to new palette */
+            --neon-green: var(--accent);
+            --neon-blue: var(--blue);
+            --dark-bg: #020617;
+            --border-color: #0f2a24;
+            --text-color: var(--fg);
             --spacing-unit: 1rem;
             --touch-target: 44px;
         }
@@ -3803,14 +4224,22 @@ def home_page():
         #matrix-bg {
             position: fixed;
             inset: 0;
-            z-index: 0;             /* behind content */
-            pointer-events: none;   /* clicks go through */
+            z-index: 0;
+            pointer-events: none;
         }
-        /* Ensure content sits above canvas */
-        body > *:not(#matrix-bg) { position: relative; z-index: 1; }
-        /* Respect reduced motion & printing */
-        @media (prefers-reduced-motion: reduce) { #matrix-bg { display: none !important; } }
-        @media print { #matrix-bg { display: none !important; } }
+
+        body > *:not(#matrix-bg) {
+            position: relative;
+            z-index: 1;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #matrix-bg { display: none !important; }
+        }
+
+        @media print {
+            #matrix-bg { display: none !important; }
+        }
 
         * {
             box-sizing: border-box;
@@ -3820,133 +4249,167 @@ def home_page():
         }
 
         body {
-            margin: 0; /* edge-to-edge canvas */
-            background: linear-gradient(135deg, var(--dark-bg) 0%, #0f0f0f 50%, var(--dark-bg) 100%);
+            margin: 0;
+            background: radial-gradient(circle at top, rgba(0, 255, 136, 0.12) 0, var(--bg) 55%, #020617 100%);
             color: var(--text-color);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
             line-height: 1.5;
             min-height: 100vh;
             font-size: 16px;
             overflow-x: hidden;
+            text-rendering: optimizeLegibility;
         }
 
         .container {
-            max-width: 100%;
+            max-width: 1200px;
             margin: 0 auto;
-            padding: var(--spacing-unit);
+            padding: 4.5rem 1.25rem 2rem;
         }
 
-        /* Header */
+        /* Header / Manifest block */
         .header {
             text-align: center;
             margin-bottom: calc(var(--spacing-unit) * 1.5);
-            padding: var(--spacing-unit) 0;
         }
 
-        h1 {
-            color: var(--neon-green);
-            font-size: clamp(1.5rem, 5vw, 2.5rem);
+        .app-title {
+            margin: 0 0 0.5rem;
+            font-size: clamp(1.6rem, 6vw, 2.3rem);
+            letter-spacing: 0.16em;
             text-transform: uppercase;
-            letter-spacing: 0.1em;
-            text-shadow: 0 0 20px var(--neon-green);
-            margin-bottom: var(--spacing-unit);
-            animation: glow 2s ease-in-out infinite alternate;
-            word-break: break-word;
+            color: var(--accent);
+            text-shadow: 0 0 18px rgba(0,255,136,0.4);
         }
 
-        @keyframes glow {
-            from { text-shadow: 0 0 15px var(--neon-green); }
-            to { text-shadow: 0 0 25px var(--neon-green), 0 0 35px var(--neon-green); }
-        }
-
-        /* Navigation */
-        .nav-bar {
-            display: flex;
-            justify-content: center;
-            gap: var(--spacing-unit);
-            margin-bottom: calc(var(--spacing-unit) * 1.5);
-            flex-wrap: wrap;
-        }
-
-        .nav-btn {
-            background: transparent;
-            color: var(--neon-blue);
-            border: 2px solid var(--neon-blue);
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            font-family: inherit;
-            font-size: 0.9rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
+        .home-link {
+            color: var(--accent);
             text-decoration: none;
+            cursor: pointer;
             display: inline-block;
-            min-height: var(--touch-target);
-            min-width: 120px;
-            text-align: center;
-            touch-action: manipulation;
         }
 
-        .nav-btn:hover, .nav-btn:active {
-            background: var(--neon-blue);
-            color: var(--dark-bg);
-            box-shadow: 0 0 15px var(--neon-blue);
+        .home-link:hover,
+        .home-link:focus {
+            text-decoration: underline;
+            outline: none;
+            text-shadow: 0 0 25px rgba(0,255,136,0.8);
+        }
+
+        .manifesto-panel {
+            margin-top: 0.75rem;
+            border-radius: 14px;
+            background: rgba(17, 23, 26, 0.92);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 0 12px rgba(0,255,136,0.12);
+            padding: 1.2rem 1rem;
+        }
+
+        .manifesto-text {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.78rem;
+            line-height: 1.7;
+            color: var(--muted);
+            text-align: left;
+        }
+
+        .manifesto-text a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .manifesto-text a:hover {
+            text-decoration: underline;
+        }
+
+        /* Top icon nav (Explorer / Onboard / Chat / Exit) */
+        .manifesto-actions {
+            margin-top: 1rem;
+            text-align: center;
+        }
+
+        .manifesto-actions-inner {
+            display: inline-flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-icon {
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(148, 163, 184, 0.6);
+            color: var(--fg);
+            font-size: 0.85rem;
+            padding: 0.35rem 0.9rem;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 32px;
+        }
+
+        .btn-icon:hover,
+        .btn-icon:active {
+            background: rgba(0, 255, 136, 0.1);
+            color: var(--accent);
+            box-shadow: 0 0 14px rgba(0,255,136,0.3);
             transform: translateY(-1px);
         }
 
-        /* Main Grid Layout */
+        .btn-icon.exit {
+            border-color: rgba(248, 113, 113, 0.8);
+            color: #fecaca;
+        }
+
+        .btn-icon.exit:hover {
+            background: rgba(248, 113, 113, 0.16);
+            color: #fee2e2;
+        }
+
+        /* Main grid – single column but centered */
         .main-grid {
             display: grid;
             grid-template-columns: 1fr;
             gap: var(--spacing-unit);
+            margin-top: calc(var(--spacing-unit) * 1.5);
             margin-bottom: calc(var(--spacing-unit) * 1.5);
+            max-width: 1100px;
+            margin-inline: auto;
         }
 
-@media (min-width: 768px) {
-  :root { --spacing-unit: 1.5rem; }
+        @media (min-width: 768px) {
+            :root { --spacing-unit: 1.5rem; }
+        }
 
-  /* Keep ONE column on desktop, just give it room and center it */
-  .main-grid {
-    grid-template-columns: 1fr;           /* 🔁 force single column */
-    gap: calc(var(--spacing-unit) * 1.5);
-    max-width: 1100px;                    /* similar width to RPC area */
-    margin-inline: auto;                  /* center the stack */
-  }
-
-  .container {
-    max-width: none;                      /* let .main-grid control width */
-    padding: var(--spacing-unit);
-  }
-}
-
-
-        /* Panel Styles */
+        /* Panels */
         .panel {
-            background: var(--panel-bg);
+            background: rgba(17, 23, 26, 0.92);
             border: 1px solid var(--border-color);
-            border-radius: 12px;
+            border-radius: 14px;
             padding: var(--spacing-unit);
-            box-shadow: 0 4px 15px rgba(0, 255, 0, 0.1);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+            transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
             overflow: hidden;
         }
 
         .panel:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 255, 0, 0.15);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(0,255,136,0.16);
+            border-color: rgba(0,255,136,0.35);
         }
 
         .panel h2 {
-            color: var(--accent-color);
+            color: var(--accent);
             font-size: clamp(1rem, 4vw, 1.3rem);
             margin-bottom: var(--spacing-unit);
             text-align: center;
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            word-break: break-word;
         }
 
-
-        /* Form Elements */
+        /* Form elements */
         .form-group {
             margin-bottom: var(--spacing-unit);
         }
@@ -3954,145 +4417,123 @@ def home_page():
         .form-group label {
             display: block;
             margin-bottom: 0.5rem;
-            color: var(--accent-color);
+            color: var(--accent);
             font-weight: 600;
             font-size: 0.9rem;
         }
 
-        input, textarea {
+        input,
+        textarea {
             width: 100%;
-            background: rgba(0, 0, 0, 0.4);
+            background: rgba(3, 7, 18, 0.92);
             color: var(--text-color);
-            border: 2px solid var(--border-color);
-            border-radius: 8px;
-            padding: 0.75rem;
+            border: 1px solid rgba(15, 23, 42, 0.9);
+            border-radius: 10px;
+            padding: 0.75rem 0.85rem;
             font-family: inherit;
-            font-size: 16px; /* Prevents zoom on iOS */
-            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+            font-size: 16px;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
             min-height: var(--touch-target);
             -webkit-appearance: none;
             appearance: none;
         }
 
-        input:focus, textarea:focus {
+        input:focus,
+        textarea:focus {
             outline: none;
-            border-color: var(--neon-green);
-            box-shadow: 0 0 0 3px rgba(0, 255, 0, 0.2);
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(0,255,136,0.25);
+            background: rgba(3, 7, 18, 0.98);
         }
 
         textarea {
             resize: vertical;
             min-height: 120px;
-            font-family: 'Courier New', monospace;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
         }
 
-        /* Button Styles */
+        /* Primary buttons */
         .btn {
             width: 100%;
-            background: transparent;
-            color: var(--neon-green);
-            border: 2px solid var(--neon-green);
-            padding: 0.75rem 1rem;
-            border-radius: 8px;
+            background: var(--accent);
+            color: #000;
+            border: none;
+            padding: 0.8rem 1rem;
+            border-radius: 999px;
             font-family: inherit;
-            font-size: 1rem;
-            font-weight: 600;
-            text-transform: uppercase;
+            font-size: 0.95rem;
+            font-weight: 700;
             letter-spacing: 0.05em;
+            text-transform: uppercase;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.25s ease;
             margin-top: 0.5rem;
             min-height: var(--touch-target);
             touch-action: manipulation;
-            -webkit-appearance: none;
-            appearance: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }
 
-        .btn:hover, .btn:active {
-            background: var(--neon-green);
-            color: var(--dark-bg);
-            box-shadow: 0 0 15px var(--neon-green);
+        .btn:hover,
+        .btn:active {
+            box-shadow: 0 0 20px rgba(0,255,136,0.4);
             transform: translateY(-1px);
         }
 
         .btn-secondary {
-            border-color: var(--neon-blue);
-            color: var(--neon-blue);
+            background: transparent;
+            border: 1px solid var(--accent);
+            color: var(--accent);
         }
 
-        .btn-secondary:hover, .btn-secondary:active {
-            background: var(--neon-blue);
-            color: var(--dark-bg);
-            box-shadow: 0 0 15px var(--neon-blue);
+        .btn-secondary:hover,
+        .btn-secondary:active {
+            background: rgba(0,255,136,0.09);
+            color: var(--fg);
         }
 
-        /* Minimal icon-like buttons */
-.btn-icon {
-  background: transparent;
-  border: none;
-  color: #0f0;
-  font-size: 14px;        /* smaller text/icon */
-  padding: 6px 10px;      /* smaller tap target */
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
-}
-
-.btn-icon:hover,
-.btn-icon:active {
-  background: rgba(0, 255, 0, 0.1); /* subtle glow background */
-  color: #00ff88;
-}
-
-.btn-icon.exit {
-  color: #f66; /* exit = redish accent */
-}
-.btn-icon.exit:hover {
-  background: rgba(255, 0, 0, 0.1);
-  color: #ff8888;
-}
-
-
-        /* Balance Summary */
+        /* Balance summary */
         .balance-summary {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 1rem;
+            padding: 0.9rem 1rem;
             margin: var(--spacing-unit) 0;
-            background: rgba(0, 255, 0, 0.05);
-            border: 1px dashed var(--neon-green);
-            border-radius: 8px;
+            background: rgba(16, 185, 129, 0.04);
+            border: 1px dashed rgba(16, 185, 129, 0.8);
+            border-radius: 999px;
             text-align: center;
             flex-wrap: wrap;
-            gap: 0.5rem;
+            gap: 0.75rem;
         }
 
         .balance-item {
             flex: 1;
-            min-width: 120px;
+            min-width: 140px;
         }
 
         .balance-label {
-            font-size: 0.8rem;
-            opacity: 0.8;
+            font-size: 0.78rem;
+            opacity: 0.85;
             display: block;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
         }
 
         .balance-value {
             font-size: clamp(1rem, 3vw, 1.2rem);
-            font-weight: bold;
+            font-weight: 700;
             margin-top: 0.25rem;
             word-break: break-all;
         }
 
-        .balance-in { color: var(--neon-green); }
-        .balance-out { color: var(--neon-blue); }
+        .balance-in { color: var(--accent); }
+        .balance-out { color: var(--blue); }
 
-        /* Loading Animation */
         .loading {
             text-align: center;
-            color: var(--neon-green);
+            color: var(--accent);
             padding: var(--spacing-unit);
             display: none;
         }
@@ -4106,94 +4547,94 @@ def home_page():
             50% { opacity: 0.5; }
         }
 
-        /* Contract Display */
+        /* Covenant boxes */
         .contracts-container {
             margin-top: var(--spacing-unit);
         }
 
-        .panel,
         .contract-box {
-            background-color: rgba(0, 0, 0, 0.8);
-            border: 1px solid #00ff00;
+            background: rgba(2, 6, 23, 0.9);
+            border: 1px solid rgba(148, 163, 184, 0.5);
             border-radius: 12px;
-            padding: var(--spacing-unit);
-            box-shadow: 0 0 15px #00ff00;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-       }
-
-        .contract-box {
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: var(--spacing-unit);
+            padding: 0.85rem 0.9rem;
             margin-bottom: var(--spacing-unit);
-            transition: border-color 0.3s ease;
+            transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
             overflow: hidden;
         }
 
         .contract-box.input-role {
-            border-color: var(--neon-green);
-            background: rgba(0, 255, 0, 0.05);
+            border-color: rgba(34, 197, 94, 0.9);
+            box-shadow: 0 0 16px rgba(16, 185, 129, 0.2);
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(2, 6, 23, 0.96));
         }
 
         .contract-box.output-role {
-            border-color: var(--neon-blue);
-            background: rgba(0, 191, 255, 0.05);
+            border-color: rgba(56, 189, 248, 0.9);
+            box-shadow: 0 0 16px rgba(56, 189, 248, 0.18);
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.14), rgba(2, 6, 23, 0.96));
         }
 
         .contract-box pre {
-          background: transparent;
-          padding: 0.25rem 0;
-          border-radius: 0;
-          box-shadow: none;
-          border: 0;
-          overflow-x: auto;
-          font-size: clamp(0.7rem, 2.5vw, 0.85rem);
-          margin: 0.25rem 0;
-          word-break: break-all;
-          white-space: pre-wrap;
+            background: transparent;
+            padding: 0.25rem 0;
+            border-radius: 0;
+            box-shadow: none;
+            border: 0;
+            overflow-x: auto;
+            font-size: clamp(0.7rem, 2.5vw, 0.85rem);
+            margin: 0.25rem 0;
+            word-break: break-all;
+            white-space: pre-wrap;
         }
 
-/* Lock the page when scanner is open */
-.body-locked {
-  height: 100dvh;
-  overflow: hidden;
-  position: relative;
-}
+        .nostr-info {
+            font-size: 0.8rem;
+            color: var(--muted);
+        }
 
-/* Scanner modal covers the whole screen */
-.qr-modal {
-  position: fixed;
-  inset: 0;
-  display: none; /* set to flex when open */
-  align-items: center;
-  justify-content: center;
-  z-index: 99999;
-  background: rgba(0,0,0,0.95);
-  padding: env(safe-area-inset-top) 1rem env(safe-area-inset-bottom);
-  -webkit-backdrop-filter: blur(2px);
-  backdrop-filter: blur(2px);
-}
+        /* QR modal */
+        .body-locked {
+            height: 100dvh;
+            overflow: hidden;
+            position: relative;
+        }
 
-/* Video takes the full viewport */
-.qr-video {
-  width: 100vw;
-  height: 100vh;
-  object-fit: cover;
-  border-radius: 0;
-}
+        .qr-modal {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 99999;
+            background: rgba(0, 0, 0, 0.95);
+            padding: env(safe-area-inset-top) 1rem env(safe-area-inset-bottom);
+            -webkit-backdrop-filter: blur(2px);
+            backdrop-filter: blur(2px);
+        }
 
-/* Close button */
-.qr-close {
-  position: fixed;
-  top: max(12px, env(safe-area-inset-top));
-  right: max(12px, env(safe-area-inset-right));
-  z-index: 100000;
-}
+        .qr-video {
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            border-radius: 0;
+        }
 
-        /* RPC Section */
+        .qr-close {
+            position: fixed;
+            top: max(12px, env(safe-area-inset-top));
+            right: max(12px, env(safe-area-inset-right));
+            z-index: 100000;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(148, 163, 184, 0.8);
+            color: var(--fg);
+            padding: 0.4rem 0.8rem;
+            border-radius: 999px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+
+        /* RPC section */
         .rpc-section {
-            grid-column: 1 / -1;
             margin-top: var(--spacing-unit);
         }
 
@@ -4213,11 +4654,11 @@ def home_page():
         }
 
         .rpc-response {
-            background: rgba(0, 0, 0, 0.5);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: var(--spacing-unit);
-            font-size: clamp(0.7rem, 2.5vw, 0.8rem);
+            background: rgba(2, 6, 23, 0.95);
+            border: 1px solid rgba(30, 64, 175, 0.6);
+            border-radius: 10px;
+            padding: 0.9rem;
+            font-size: clamp(0.7rem, 2.5vw, 0.82rem);
             white-space: pre-wrap;
             overflow-x: auto;
             max-height: 400px;
@@ -4225,20 +4666,7 @@ def home_page():
             word-break: break-all;
         }
 
-        /* QR Codes Display */
-.qr-codes img {
-  image-rendering: pixelated; /* keeps sharp edges */
-  max-width: 360px;           /* good on screen */
-  width: 2.5in;               /* good on paper */
-  height: 2.5in;
-}
-
-/* Print settings */
-@media print {
-  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  figure { break-inside: avoid; page-break-inside: avoid; }
-  .qr-codes img { width: 2.5in; height: 2.5in; }
-}
+        /* QR code grid */
         .qr-codes {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -4253,53 +4681,49 @@ def home_page():
         }
 
         .qr-codes img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(0, 255, 0, 0.2);
+            image-rendering: pixelated;
+            max-width: 360px;
+            width: 2.5in;
+            height: 2.5in;
+            border-radius: 10px;
+            box-shadow: 0 0 18px rgba(0,255,136,0.32);
+            border: 1px solid rgba(15, 23, 42, 0.9);
         }
 
         .qr-codes figcaption {
-            color: var(--accent-color);
+            color: var(--accent);
             font-size: clamp(0.7rem, 2.5vw, 0.8rem);
             margin-top: 0.5rem;
-            font-weight: bold;
+            font-weight: 600;
             word-break: break-word;
         }
 
-        /* Clickable elements */
-        .clickable-pubkey {
-            cursor: pointer;
-            text-decoration: underline;
-            transition: color 0.2s ease;
-            touch-action: manipulation;
-        }
-
-        .clickable-pubkey:hover, .clickable-pubkey:active {
-            color: var(--neon-blue);
-        }
-
-        /* Mobile-specific improvements */
-        @media (max-width: 767px) {
-            .nav-bar {
-                flex-direction: column;
-                align-items: stretch;
-                gap: 0.75rem;
+        @media print {
+            body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
             }
 
-            .nav-btn {
-                width: 100%;
-                justify-content: center;
+            figure {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+
+            .qr-codes img {
+                width: 2.5in;
+                height: 2.5in;
+            }
+        }
+
+        /* Mobile-specific tweaks */
+        @media (max-width: 767px) {
+            .container {
+                padding: 3.5rem 1rem 1.5rem;
             }
 
             .balance-summary {
                 flex-direction: column;
-                text-align: center;
-            }
-
-            .balance-item {
-                width: 100%;
-                margin-bottom: 0.5rem;
+                border-radius: 14px;
             }
 
             .rpc-buttons {
@@ -4310,48 +4734,39 @@ def home_page():
                 grid-template-columns: 1fr;
             }
 
-            button, .btn, .nav-btn, input, textarea {
+            button,
+            .btn,
+            .btn-icon,
+            input,
+            textarea {
                 min-height: var(--touch-target);
             }
         }
 
-        /* Landscape phone adjustments */
         @media (max-height: 500px) and (orientation: landscape) {
-            h1 {
+            .header {
+                margin-bottom: 1rem;
+            }
+
+            .app-title {
                 font-size: 1.5rem;
                 margin-bottom: 0.5rem;
             }
-
-            .header {
-                margin-bottom: 1rem;
-                padding: 0.5rem 0;
-            }
-
-            .nav-bar {
-                margin-bottom: 1rem;
-            }
         }
 
-        /* iOS Safari specific fixes */
+        /* iOS Safari adjustments */
         @supports (-webkit-touch-callout: none) {
             .container {
                 padding-bottom: calc(var(--spacing-unit) + env(safe-area-inset-bottom));
             }
 
-            input, textarea {
-                font-size: 16px; /* Prevents zoom */
+            input,
+            textarea {
+                font-size: 16px;
             }
         }
 
-        /* Footer */
-        .footer {
-            text-align: center;
-            margin-top: calc(var(--spacing-unit) * 2);
-            padding: var(--spacing-unit);
-            border-top: 1px solid var(--border-color);
-        }
-
-        /* Accessibility improvements */
+        /* Accessibility / reduced motion */
         @media (prefers-reduced-motion: reduce) {
             * {
                 animation-duration: 0.01ms !important;
@@ -4360,35 +4775,20 @@ def home_page():
             }
         }
 
-        /* High contrast mode support */
         @media (prefers-contrast: high) {
             :root {
                 --border-color: #666;
-                --panel-bg: #000;
+                --panel: #000;
             }
 
             .panel {
                 border-width: 2px;
             }
         }
-
-        .app-title { margin: 0 0 var(--spacing-unit); }
-.home-link {
-  color: var(--neon-green);
-  text-decoration: none;
-  cursor: pointer;
-  display: inline-block;
-  text-shadow: 0 0 20px var(--neon-green);
-}
-.home-link:hover,
-.home-link:focus {
-  text-decoration: underline;
-  outline: none;
-  text-shadow: 0 0 25px var(--neon-green), 0 0 35px var(--neon-green);
-}
     </style>
 </head>
-<body>
+
+<body data-access-level="{{ access_level }}">
     <!-- Matrix canvas -->
     <canvas id="matrix-bg" aria-hidden="true"></canvas>
 
@@ -4400,872 +4800,949 @@ def home_page():
     </div>
 
     <div class="container">
-        <!-- Header -->
+        <!-- Header & manifesto -->
         <div class="header">
-<h1 class="app-title">
-  <a class="home-link" href="{{ url_for('home') }}">HODLXXI</a>
-</h1>
+            <h1 class="app-title">
+                <a class="home-link" href="{{ url_for('home') }}">HODLXXI</a>
+            </h1>
 
-
-                <div class="manifesto-actions" style="margin-top:1rem; text-align:center;">
-      <div style="display:inline-flex; gap:12px; flex-wrap:wrap; align-items:center; justify-content:center;">
-        <button id="btnExplorer" class="btn-icon">🔍 </button>
-        <button id="btnOnboard"  class="btn-icon">🔧 </button>
-        <button id="btnChat"     class="btn-icon">💬 </button>
-        <button id="btnExit"     class="btn-icon exit">🚪 </button>
-      </div>
-    </div>
-
-
-        <!-- Main Content Grid -->
-<div class="main-grid">
-  <div class="panel" id="homePanel">
-    <h2 style="font-size:0.7rem; line-height:1.2; color:#00ff00; font-family:monospace; font-weight:800;">
-      <a href="https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer.git" target="_blank" style="color:#00ff00; text-decoration:none;">
-This is a Game Theory and Mathematics–driven Design Framework for decentralized financial support networks, leveraging Bitcoin smart contracts and integrating Nostr for social trust. It fosters a system where mutual care, financial incentives, and social responsibility are embedded in every transaction—aiming to create financially stable and independent communities. Beyond technological advancements, this framework envisions a reimagined form of human cooperation and economic interaction, promoting transparency and equity. It merges technology with human values, challenging traditional notions of trust and community in the digital age. It also raises philosophical questions about the role of technology in enhancing human capabilities, governance, and social structures. Ultimately, success depends on both technological feasibility and ethical foundations, advocating a balanced integration of innovation and tradition to shape future societal evolution. This crypto-centric platform is built as a robust, scalable model of decentralized trust by embedding financial cooperation directly in cryptographic agreements. It uses a Bitcoin full node as its backbone, leveraging descriptor-based wallets and script covenants to enforce long-term, trust-based contracts. The system eliminates centralized intermediaries in favor of immutable, transparent blockchain agreements. Here, cooperation is mathematically reinforced, transparency is the default, and power flows back to individuals. Built on math, guided by ethics, designed for generations. Let’s make covenants great again!!!
-    </a>
-    </h2>
-
-
-  </div>
-</div>
-
-
-
-
-<div class="panel hidden" id="explorerPanel">
-  <h2>🔍 Explorer</h2>
-
-  <div class="form-group">
-    <label for="pubKey">Enter Hex or NOSTR Key</label>
-    <input type="text" id="pubKey" placeholder="Compressed Pub/NOSTR key"
-           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
-  </div>
-
-  <button class="btn" onclick="handleCovenants()">Who Is</button>
-
-  <div class="balance-summary" id="balance-summary">
-    <div class="balance-item">
-      <span class="balance-label">Incoming</span>
-      <div class="balance-value balance-in" id="input-balance">$0</div>
-    </div>
-    <div class="balance-item">
-      <span class="balance-label">Outgoing</span>
-      <div class="balance-value balance-out" id="output-balance">$0</div>
-    </div>
-  </div>
-
-  <div id="loading" class="loading">
-    <p class="loading-text">Processing... Please wait...</p>
-  </div>
-
-  <div id="contracts-container" class="contracts-container"></div>
-</div>
-
-
-<div class="panel hidden" id="onboardPanel">
-  <h2>🔧 Converter & Decoder</h2>
-
-  <div class="form-group">
-    <label for="initialScript">Raw Script</label>
-    <textarea id="initialScript" placeholder="Enter your script…"
-              autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
-  </div>
-
-  <div class="form-group">
-    <label for="newPubKey1">Public Key (Who you care about)</label>
-    <input type="text" id="newPubKey1" placeholder="Enter public key"
-           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
-  </div>
-
-  <div class="form-group">
-    <label for="newPubKey2">Public Key (Who cares about you)</label>
-    <input type="text" id="newPubKey2" placeholder="Enter public key"
-           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
-  </div>
-
-  <button class="btn" onclick="handleUpdateScript()">Verify Witness</button>
-
-  <div class="form-group">
-    <label>New P2WSH Script:</label>
-    <div id="updatedScript" class="contract-box" contenteditable="true"></div>
-  </div>
-
-  <h3 style="color: var(--accent-color); margin: var(--spacing-unit) 0;">Decoded Results:</h3>
-  <pre id="decodedWitness" class="rpc-response"></pre>
-
-  <div id="qr-codes" class="qr-codes"></div>
-</div>
-
-
-        <!-- RPC Full Node Section (conditional) -->
-        <!-- This section would be conditionally rendered based on access_level -->
-    </div>
-
-            {% if access_level == 'full' %}
-            <!-- RPC Full Node Section -->
-            <div class="panel rpc-section">
-                <h2>⚡ RPC  Node</h2>
-
-                <!-- Import Descriptor Panel -->
-                <div class="panel" style="margin-bottom: var(--spacing-unit);">
-                    <h2> Import Covenant Descriptor</h2>
-                    <div class="form-group">
-                        <textarea id="descriptorInput" placeholder="Paste descriptor here raw(...)checksum"></textarea>
-                    </div>
-                    <button class="btn" onclick="handleImportDescriptor()">Import</button>
-                    <div id="importResult" class="rpc-response" style="margin-top: var(--spacing-unit);"></div>
-                </div>
-
-                <!-- Set Labels Panel -->
-                <div class="panel" style="margin-bottom: var(--spacing-unit);">
-                    <h2> Set Checking Labels</h2>
-                    <div class="form-group">
-                        <input type="text" id="zpubInput" placeholder="Enter your zpub"/>
-                    </div>
-                    <div class="form-group">
-                        <input type="text" id="labelInput" placeholder="Enter label"/>
-                    </div>
-                    <button class="btn" onclick="handleSetLabels()">Label</button>
-                    <div id="setLabelsResult" class="rpc-response" style="margin-top: var(--spacing-unit);"></div>
-                </div>
-
-                <!-- RPC Commands -->
-                <div class="rpc-buttons">
-                    <button class="btn btn-secondary" onclick="callRPC('listreceivedbyaddress')">Received by Address</button>
-                    <button class="btn btn-secondary" onclick="callRPC('listtransactions')">Transactions</button>
-                    <button class="btn btn-secondary" onclick="callRPC('listdescriptors')">Descriptors</button>
-                    <button class="btn btn-secondary" onclick="callRPC('listunspent')">Unspent</button>
-                    <button class="btn btn-secondary" onclick="callRPC('listlabels')">Labels</button>
-                    <button class="btn btn-secondary" onclick="callRPC('getwalletinfo')">Wallet Info</button>
-                    <button class="btn btn-secondary" onclick="callRPC('rescanblockchain')">Rescan</button>
-                    <button class="btn btn-secondary" onclick="callRPC('listaddressgroupings')">Groupings</button>
-                    <button class="btn btn-secondary" onclick="callRPC('listreceivedbylabel')">Received by Label</button>
-                    <button class="btn btn-secondary" onclick="exportDescriptors()">Export Descriptors</button>
-                    <button class="btn btn-secondary" onclick="exportWallet()">Export Wallet</button>
-                </div>
-
-                <pre id="rpcResponse" class="rpc-response"></pre>
+            <div class="manifesto-panel">
+                <p class="manifesto-text">
+                    <a href="https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer.git" target="_blank" rel="noopener">
+                        This is a Game Theory and Mathematics–driven Design Framework for decentralized financial support
+                        networks, leveraging Bitcoin smart contracts and integrating Nostr for social trust. It fosters a system
+                        where mutual care, financial incentives, and social responsibility are embedded in every
+                        transaction—aiming to create financially stable and independent communities. Beyond technological
+                        advancements, this framework envisions a reimagined form of human cooperation and economic interaction,
+                        promoting transparency and equity. It merges technology with human values, challenging traditional
+                        notions of trust and community in the digital age. It also raises philosophical questions about the role
+                        of technology in enhancing human capabilities, governance, and social structures. Ultimately, success
+                        depends on both technological feasibility and ethical foundations, advocating a balanced integration of
+                        innovation and tradition to shape future societal evolution. This crypto-centric platform is built as a
+                        robust, scalable model of decentralized trust by embedding financial cooperation directly in
+                        cryptographic agreements. It uses a Bitcoin full node as its backbone, leveraging descriptor-based
+                        wallets and script covenants to enforce long-term, trust-based contracts. The system eliminates
+                        centralized intermediaries in favor of immutable, transparent blockchain agreements. Here, cooperation is
+                        mathematically reinforced, transparency is the default, and power flows back to individuals. Built on
+                        math, guided by ethics, designed for generations. Let’s make covenants great again!!!
+                    </a>
+                </p>
             </div>
-            {% endif %}
+
+            <div class="manifesto-actions">
+                <div class="manifesto-actions-inner">
+                    <button id="btnExplorer" class="btn-icon">🔍 Explorer</button>
+                    <button id="btnOnboard"  class="btn-icon">🔧 Onboard</button>
+                    <button id="btnChat"     class="btn-icon">💬 Chat</button>
+                    <button id="btnExit"     class="btn-icon exit">🚪 Exit</button>
+                </div>
+            </div>
         </div>
 
+        <!-- Main grid: home text panel -->
+        <div class="main-grid">
+            <div class="panel" id="homePanel">
+                <h2>Welcome to the Covenant Viewer</h2>
+                <p style="font-size:0.9rem;color:var(--muted);margin-top:0.2rem;text-align:center;">
+                    Start with <strong>Explorer</strong> to see who is locked in covenants, or open
+                    <strong>Converter &amp; Decoder</strong> to verify scripts and generate QR packs.
+                </p>
+            </div>
+        </div>
 
-        <!-- All JavaScript remains the same -->
-<script>
-// cache the most recent covenant script hex we saw
-window.lastScriptHex = window.lastScriptHex || null;
+        <!-- Explorer Panel -->
+        <div class="panel hidden" id="explorerPanel">
+            <h2>🔍 Explorer</h2>
 
-// ▶️ QR-scan plumbing
-let scanning = false;
-let currentStream = null;
+            <div class="form-group">
+                <label for="pubKey">Enter Hex or NOSTR Key</label>
+                <input
+                    type="text"
+                    id="pubKey"
+                    placeholder="Compressed Pub/NOSTR key"
+                    autocomplete="off"
+                    autocorrect="off"
+                    autocapitalize="off"
+                    spellcheck="false"
+                />
+            </div>
 
-  async function startScan(inputElem, onResult) {
-    // Secure context check
-    const secure = location.protocol === 'https:' || location.hostname === 'localhost';
-    if (!secure || !navigator.mediaDevices?.getUserMedia) {
-      alert('Camera only works on HTTPS or localhost.');
-      return;
-    }
+            <button class="btn" onclick="handleCovenants()">Who Is</button>
 
-    const modal  = document.getElementById('qr-modal');
-    const video  = document.getElementById('qr-video');
-    const canvas = document.getElementById('qr-canvas');
-    const ctx    = canvas.getContext('2d');
+            <div class="balance-summary" id="balance-summary">
+                <div class="balance-item">
+                    <span class="balance-label">Incoming</span>
+                    <div class="balance-value balance-in" id="input-balance">$0</div>
+                </div>
+                <div class="balance-item">
+                    <span class="balance-label">Outgoing</span>
+                    <div class="balance-value balance-out" id="output-balance">$0</div>
+                </div>
+            </div>
 
-    // Show modal full screen and lock page scroll
-    document.body.classList.add('body-locked');
-    modal.style.display = 'flex';
-    requestAnimationFrame(() => window.scrollTo(0,0)); // jump viewport up
+            <div id="loading" class="loading">
+                <p class="loading-text">Processing... Please wait...</p>
+            </div>
 
-    // iOS PWA flags
-    video.setAttribute('playsinline', 'true');
-    video.muted = true;
+            <div id="contracts-container" class="contracts-container"></div>
+        </div>
 
-    try {
-      currentStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
-        audio: false
-      });
-    } catch (e) {
-      modal.style.display = 'none';
-      document.body.classList.remove('body-locked');
-      alert('Camera blocked. Check HTTPS and iOS Settings → Safari → Camera.');
-      return;
-    }
+        <!-- Onboard Panel -->
+        <div class="panel hidden" id="onboardPanel">
+            <h2>🔧 Converter &amp; Decoder</h2>
 
-    video.srcObject = currentStream;
-    await video.play().catch(()=>{});
-    scanning = true;
+            <div class="form-group">
+                <label for="initialScript">Raw Script</label>
+                <textarea
+                    id="initialScript"
+                    placeholder="Enter your script…"
+                    autocomplete="off"
+                    autocorrect="off"
+                    autocapitalize="off"
+                    spellcheck="false"
+                ></textarea>
+            </div>
 
-    // One definitive stopScan that closes over currentStream
-    window.stopScan = function stopScan() {
-      scanning = false;
-      try { currentStream?.getTracks().forEach(t => t.stop()); } catch {}
-      currentStream = null;
-      video.srcObject = null;
-      modal.style.display = 'none';
-      document.body.classList.remove('body-locked');
-    };
+            <div class="form-group">
+                <label for="newPubKey1">Public Key (Who you care about)</label>
+                <input
+                    type="text"
+                    id="newPubKey1"
+                    placeholder="Enter public key"
+                    autocomplete="off"
+                    autocorrect="off"
+                    autocapitalize="off"
+                    spellcheck="false"
+                />
+            </div>
 
-    (function tick(){
-      if (!scanning) return;
-      if (video.readyState >= video.HAVE_CURRENT_DATA) {
-        canvas.width  = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        try {
-          const img  = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
-          if (code && code.data) {
-            stopScan();
-            inputElem.value = code.data;
-            if (typeof onResult === 'function') onResult();
-            return;
-          }
-        } catch {}
-      }
-      requestAnimationFrame(tick);
-    })();
-  }
+            <div class="form-group">
+                <label for="newPubKey2">Public Key (Who cares about you)</label>
+                <input
+                    type="text"
+                    id="newPubKey2"
+                    placeholder="Enter public key"
+                    autocomplete="off"
+                    autocorrect="off"
+                    autocapitalize="off"
+                    spellcheck="false"
+                />
+            </div>
 
-  // ▶️ Wrappers for your actions:
-  function handleCovenants() {
-    const inp = document.getElementById('pubKey');
-    if (!inp.value.trim()) startScan(inp, verifyAndListContracts);
-    else                    verifyAndListContracts();
-  }
+            <button class="btn" onclick="handleUpdateScript()">Verify Witness</button>
 
-  function handleUpdateScript() {
-    const inp = document.getElementById('initialScript');
-    if (!inp.value.trim()) startScan(inp, updateScript);
-    else                    updateScript();
-  }
+            <div class="form-group">
+                <label>New P2WSH Script:</label>
+                <div id="updatedScript" class="contract-box" contenteditable="true"></div>
+            </div>
 
-  function handleImportDescriptor() {
-    const inp = document.getElementById('descriptorInput');
-    if (!inp.value.trim()) startScan(inp, importDescriptor);
-    else                    importDescriptor();
-  }
+            <h3 style="color: var(--accent); margin: var(--spacing-unit) 0; text-align:center;">Decoded Results:</h3>
+            <pre id="decodedWitness" class="rpc-response"></pre>
 
-  function handleSetLabels() {
-    const zpubInp  = document.getElementById('zpubInput');
-    const labelInp = document.getElementById('labelInput');
+            <div id="qr-codes" class="qr-codes"></div>
+        </div>
 
-    if (!zpubInp.value.trim()) {
-      startScan(zpubInp, setLabelsFromZpub);
-      return;
-    }
-    if (!labelInp.value.trim()) {
-      alert('Please enter a label for your zpub.');
-      labelInp.focus();
-      return;
-    }
-    setLabelsFromZpub();
-  }
+        {% if access_level == 'full' %}
+        <!-- RPC Full Node Section -->
+        <div class="panel rpc-section">
+            <h2>⚡ RPC Node</h2>
 
-        // Audio setup for navigation
+            <!-- Import Descriptor Panel -->
+            <div class="panel" style="margin-bottom: var(--spacing-unit);">
+                <h2>Import Covenant Descriptor</h2>
+                <div class="form-group">
+                    <textarea id="descriptorInput" placeholder="Paste descriptor here raw(...)checksum"></textarea>
+                </div>
+                <button class="btn" onclick="handleImportDescriptor()">Import</button>
+                <div id="importResult" class="rpc-response" style="margin-top: var(--spacing-unit);"></div>
+            </div>
+
+            <!-- Set Labels Panel -->
+            <div class="panel" style="margin-bottom: var(--spacing-unit);">
+                <h2>Set Checking Labels</h2>
+                <div class="form-group">
+                    <input type="text" id="zpubInput" placeholder="Enter your zpub" />
+                </div>
+                <div class="form-group">
+                    <input type="text" id="labelInput" placeholder="Enter label" />
+                </div>
+                <button class="btn" onclick="handleSetLabels()">Label</button>
+                <div id="setLabelsResult" class="rpc-response" style="margin-top: var(--spacing-unit);"></div>
+            </div>
+
+            <!-- RPC Commands -->
+            <div class="rpc-buttons">
+                <button class="btn btn-secondary" onclick="callRPC('listreceivedbyaddress')">Received by Address</button>
+                <button class="btn btn-secondary" onclick="callRPC('listtransactions')">Transactions</button>
+                <button class="btn btn-secondary" onclick="callRPC('listdescriptors')">Descriptors</button>
+                <button class="btn btn-secondary" onclick="callRPC('listunspent')">Unspent</button>
+                <button class="btn btn-secondary" onclick="callRPC('listlabels')">Labels</button>
+                <button class="btn btn-secondary" onclick="callRPC('getwalletinfo')">Wallet Info</button>
+                <button class="btn btn-secondary" onclick="callRPC('rescanblockchain')">Rescan</button>
+                <button class="btn btn-secondary" onclick="callRPC('listaddressgroupings')">Groupings</button>
+                <button class="btn btn-secondary" onclick="callRPC('listreceivedbylabel')">Received by Label</button>
+                <button class="btn btn-secondary" onclick="exportDescriptors()">Export Descriptors</button>
+                <button class="btn btn-secondary" onclick="exportWallet()">Export Wallet</button>
+            </div>
+
+            <pre id="rpcResponse" class="rpc-response"></pre>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- JS: logic same as before, with small fixes & palette alignment -->
+    <script>
+        // global: cache most recent covenant hex
+        window.lastScriptHex = window.lastScriptHex || null;
+        const accessLevel = document.body.dataset.accessLevel || 'limited';
+
+        // QR scanner
+        let scanning = false;
+        let currentStream = null;
+
+        async function startScan(inputElem, onResult) {
+            const secure = location.protocol === 'https:' || location.hostname === 'localhost';
+            if (!secure || !navigator.mediaDevices?.getUserMedia) {
+                alert('Camera only works on HTTPS or localhost.');
+                return;
+            }
+
+            const modal  = document.getElementById('qr-modal');
+            const video  = document.getElementById('qr-video');
+            const canvas = document.getElementById('qr-canvas');
+            const ctx    = canvas.getContext('2d');
+
+            document.body.classList.add('body-locked');
+            modal.style.display = 'flex';
+            requestAnimationFrame(() => window.scrollTo(0,0));
+
+            video.setAttribute('playsinline', 'true');
+            video.muted = true;
+
+            try {
+                currentStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { ideal: 'environment' } },
+                    audio: false
+                });
+            } catch (e) {
+                modal.style.display = 'none';
+                document.body.classList.remove('body-locked');
+                alert('Camera blocked. Check HTTPS and iOS Settings → Safari → Camera.');
+                return;
+            }
+
+            video.srcObject = currentStream;
+            await video.play().catch(()=>{});
+            scanning = true;
+
+            window.stopScan = function stopScan() {
+                scanning = false;
+                try { currentStream?.getTracks().forEach(t => t.stop()); } catch {}
+                currentStream = null;
+                video.srcObject = null;
+                modal.style.display = 'none';
+                document.body.classList.remove('body-locked');
+            };
+
+            (function tick() {
+                if (!scanning) return;
+                if (video.readyState >= video.HAVE_CURRENT_DATA) {
+                    canvas.width  = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    try {
+                        const img  = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+                        if (code && code.data) {
+                            stopScan();
+                            inputElem.value = code.data;
+                            if (typeof onResult === 'function') onResult();
+                            return;
+                        }
+                    } catch {}
+                }
+                requestAnimationFrame(tick);
+            })();
+        }
+
+        function handleCovenants() {
+            const inp = document.getElementById('pubKey');
+            if (!inp.value.trim()) startScan(inp, verifyAndListContracts);
+            else verifyAndListContracts();
+        }
+
+        function handleUpdateScript() {
+            const inp = document.getElementById('initialScript');
+            if (!inp.value.trim()) startScan(inp, updateScript);
+            else updateScript();
+        }
+
+        function handleImportDescriptor() {
+            const inp = document.getElementById('descriptorInput');
+            if (!inp || !inp.value.trim()) {
+                if (inp) startScan(inp, importDescriptor);
+                return;
+            }
+            importDescriptor();
+        }
+
+        function handleSetLabels() {
+            const zpubInp  = document.getElementById('zpubInput');
+            const labelInp = document.getElementById('labelInput');
+
+            if (!zpubInp.value.trim()) {
+                startScan(zpubInp, setLabelsFromZpub);
+                return;
+            }
+            if (!labelInp.value.trim()) {
+                alert('Please enter a label for your zpub.');
+                labelInp.focus();
+                return;
+            }
+            setLabelsFromZpub();
+        }
+
         const chatSound = new Audio('{{ url_for("static", filename="sounds/login.mp3") }}');
         chatSound.preload = 'auto';
         chatSound.playsInline = true;
 
-
-        // All other existing JavaScript functions remain unchanged
         function callRPC(cmd, param) {
-          let url = `/rpc/${cmd}`;
-          if (param !== undefined && param !== '') {
-            url += `?p=${encodeURIComponent(param)}`;
-          }
-          document.getElementById('rpcResponse').textContent = '⏳ sending…';
-          fetch(url)
-            .then(r => r.json())
-            .then(json => {
-              document.getElementById('rpcResponse').textContent = JSON.stringify(json, null, 2);
-            })
-            .catch(e => {
-              document.getElementById('rpcResponse').textContent = 'Error: ' + e;
-            });
+            let url = `/rpc/${cmd}`;
+            if (param !== undefined && param !== '') {
+                url += `?p=${encodeURIComponent(param)}`;
+            }
+            const out = document.getElementById('rpcResponse');
+            if (out) out.textContent = '⏳ sending…';
+            fetch(url)
+                .then(r => r.json())
+                .then(json => {
+                    if (out) out.textContent = JSON.stringify(json, null, 2);
+                })
+                .catch(e => {
+                    if (out) out.textContent = 'Error: ' + e;
+                });
         }
 
         function showLoading() {
-          document.getElementById('loading').style.display = 'block';
-          document.getElementById('contracts-container').innerHTML = '';
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('contracts-container').innerHTML = '';
         }
 
         function hideLoading() {
-          document.getElementById('loading').style.display = 'none';
+            document.getElementById('loading').style.display = 'none';
         }
 
-function verifyAndListContracts(clickedPubKey = null) {
-  const pubKey = clickedPubKey || document.getElementById('pubKey').value.trim();
-  if (!pubKey) {
-    alert('Please enter a public key');
-    return;
-  }
-  // Validate public key format: Nostr npub or hex
-  const isNpub = pubKey.startsWith("npub") && pubKey.length >= 10;
-  const isHex = /^[0-9a-fA-F]{66,130}$/.test(pubKey);
-  if (!isNpub && !isHex) {
-    alert('Invalid public key format. Please enter a Nostr npub or hex public key.');
-    return;
-  }
-  showLoading();
-  fetch(`/verify_pubkey_and_list?pubkey=${encodeURIComponent(pubKey)}`)
-    .then(r => r.json())
-    .then(data => {
-      hideLoading();
-      if (!data.valid) {
-        alert(data.error || "No descriptor found matching the public key.");
-        return;
-      }
+        function verifyAndListContracts(clickedPubKey = null) {
+            let pubKey = clickedPubKey || document.getElementById('pubKey').value.trim();
+            if (!pubKey) {
+                alert('Please enter a public key');
+                return;
+            }
 
-// Sort: 1) counterparty online first, 2) then by total USD (desc)
-const sorted = data.descriptors.slice().sort((a, b) => {
-  const aOnline = !!a.counterparty_online;
-  const bOnline = !!b.counterparty_online;
-  if (aOnline !== bOnline) return aOnline ? -1 : 1;
+            const isNpub    = pubKey.startsWith("npub") && pubKey.length >= 10;
+            const isHexFull = /^[0-9a-fA-F]{66,130}$/.test(pubKey);
+            const isHex32   = /^[0-9a-fA-F]{64}$/.test(pubKey);
 
-  const totalA = (parseFloat(a.saving_balance_usd) || 0) + (parseFloat(a.checking_balance_usd) || 0);
-  const totalB = (parseFloat(b.saving_balance_usd) || 0) + (parseFloat(b.checking_balance_usd) || 0);
-  return totalB - totalA;
-});
+            // If we got a bare 32-byte hex (no 02/03 prefix),
+            // normalize to a compressed-style key with 0x02 prefix.
+            if (!isNpub && !isHexFull && isHex32) {
+                pubKey = "02" + pubKey;
+            }
 
-      const container = document.getElementById('contracts-container');
-      container.innerHTML = '';
+            const isHexFinal = /^[0-9a-fA-F]{66,130}$/.test(pubKey);
+            if (!isNpub && !isHexFinal) {
+                alert('Invalid public key format. Please enter a Nostr npub or hex public key.');
+                return;
+            }
 
-      let inputTotal = 0;
-      let outputTotal = 0;
+            showLoading();
+            fetch(`/verify_pubkey_and_list?pubkey=${encodeURIComponent(pubKey)}`)
+                .then(r => r.json())
+                .then(data => {
+                    hideLoading();
+                    if (!data.valid) {
+                        alert(data.error || "No descriptor found matching the public key.");
+                        return;
+                    }
 
-      const entered   = pubKey.trim();
-      const isNpub    = entered.startsWith('npub');
-      const enteredLC = entered.toLowerCase();
+                    const sorted = data.descriptors.slice().sort((a, b) => {
+                        const aOnline = !!a.counterparty_online;
+                        const bOnline = !!b.counterparty_online;
+                        if (aOnline !== bOnline) return aOnline ? -1 : 1;
 
-      sorted.forEach(descriptor => {
-        const save  = parseFloat(descriptor.saving_balance_usd) || 0;
-        const check = parseFloat(descriptor.checking_balance_usd) || 0;
-        const total = save + check;
+                        const totalA = (parseFloat(a.saving_balance_usd) || 0) + (parseFloat(a.checking_balance_usd) || 0);
+                        const totalB = (parseFloat(b.saving_balance_usd) || 0) + (parseFloat(b.checking_balance_usd) || 0);
+                        return totalB - totalA;
+                    });
 
-        const ifHex  = descriptor.op_if_pub   ? descriptor.op_if_pub.toLowerCase()    : null;
-        const elHex  = descriptor.op_else_pub ? descriptor.op_else_pub.toLowerCase()  : null;
-        const ifNpub = descriptor.op_if_npub  || null;   // requires backend to send these
-        const elNpub = descriptor.op_else_npub|| null;
+                    const container = document.getElementById('contracts-container');
+                    container.innerHTML = '';
 
-        let role = null;
-        if (isNpub) {
-          if (ifNpub && ifNpub === entered)        role = 'input';
-          else if (elNpub && elNpub === entered)   role = 'output';
-          // fallback if backend doesn't provide *_npub fields:
-          else if (!ifNpub && !elNpub && descriptor.nostr_npub === entered) {
-            role = 'input';
-          }
-        } else {
-          if (ifHex && ifHex === enteredLC)        role = 'input';
-          else if (elHex && elHex === enteredLC)   role = 'output';
+                    let inputTotal = 0;
+                    let outputTotal = 0;
+
+                    const entered   = pubKey.trim();
+                    const isEnteredNpub = entered.startsWith('npub');
+                    const enteredLC = entered.toLowerCase();
+
+                    sorted.forEach(descriptor => {
+                        const save  = parseFloat(descriptor.saving_balance_usd) || 0;
+                        const check = parseFloat(descriptor.checking_balance_usd) || 0;
+                        const total = save + check;
+
+                        const ifHex  = descriptor.op_if_pub   ? descriptor.op_if_pub.toLowerCase()    : null;
+                        const elHex  = descriptor.op_else_pub ? descriptor.op_else_pub.toLowerCase()  : null;
+                        const ifNpub = descriptor.op_if_npub  || null;
+                        const elNpub = descriptor.op_else_npub|| null;
+
+                        let role = null;
+                        if (isEnteredNpub) {
+                            if (ifNpub && ifNpub === entered)        role = 'input';
+                            else if (elNpub && elNpub === entered)   role = 'output';
+                            else if (!ifNpub && !elNpub && descriptor.nostr_npub === entered) {
+                                role = 'input';
+                            }
+                        } else {
+                            if (ifHex && ifHex === enteredLC)        role = 'input';
+                            else if (elHex && elHex === enteredLC)   role = 'output';
+                        }
+
+                        if (role === 'input')  inputTotal  += total;
+                        if (role === 'output') outputTotal += total;
+
+                        const box = document.createElement('div');
+                        box.className = 'contract-box';
+                        if (role) box.classList.add(role + '-role');
+
+                        let nostrSection = '';
+                        if (descriptor.nostr_npub) {
+                            if (accessLevel === "full") {
+                                nostrSection = `
+                                  <div class="nostr-info" style="text-align:center;margin:0.5rem 0;">
+                                    <strong>Nostr:</strong><br>
+                                    <a href="https://advancednostrsearch.vercel.app/?npub=${descriptor.nostr_npub}"
+                                       target="_blank"
+                                       style="color:var(--neon-blue); text-decoration:none; display:inline-block; margin-top:0.25rem;">
+                                       ${descriptor.nostr_npub_truncated}
+                                    </a>
+                                  </div>`;
+                            } else {
+                                nostrSection = `
+                                  <div class="nostr-info" style="text-align:center;margin:0.5rem 0;">
+                                    <strong>Nostr:</strong><br>${descriptor.nostr_npub_truncated}
+                                  </div>`;
+                            }
+                        }
+
+                        const counterpartyOnline = descriptor.counterparty_online;
+                        let counterpartyNote = '';
+                        if (counterpartyOnline && descriptor.counterparty_pubkey) {
+                            counterpartyNote = `
+                              <div style="text-align:center; color:lime; font-size:0.8rem; margin-top:0.25rem;">
+                                🟢 online
+                              </div>`;
+                        }
+
+                        const deeplink = (accessLevel === "full" && (descriptor.onboard_link || descriptor.raw_script))
+                            ? (descriptor.onboard_link || `#onboard?raw=${encodeURIComponent(descriptor.raw_script)}&autoverify=1`)
+                            : null;
+
+                        const imgTag = descriptor.qr_code
+                            ? `<img src="data:image/png;base64,${descriptor.qr_code}" alt="Address QR"
+                                     style="max-width:180px;border:1px solid #111827;border-radius:8px;box-shadow:0 0 10px rgba(0,255,0,.15);" />`
+                            : '';
+
+                        const addrQR = descriptor.qr_code
+                            ? `<div style="text-align:center;margin:.5rem 0;">
+                                 ${
+                                   deeplink
+                                     ? `<a href="${deeplink}"
+                                           class="qr-link"
+                                           title="Open in Converter & Decoder"
+                                           data-raw="${descriptor.raw_script || ''}"
+                                           onclick="return jumpOnboard(this.dataset.raw)">${imgTag}</a>`
+                                     : imgTag
+                                 }
+                               </div>`
+                            : '';
+
+                        box.innerHTML = `
+                            <pre><strong>!</strong> ${descriptor.raw}</pre>
+                            <div style="text-align:center; margin:0.5rem 0;">
+                                <pre><strong>Address:</strong> ${descriptor.truncated_address}</pre>
+                            </div>
+                            <div style="text-align:center;"><strong>HEX</strong> ${descriptor.script_hex}</div>
+                            ${addrQR}
+                            ${counterpartyNote}
+                            ${nostrSection}
+                            <div style="text-align:center; margin-top:1rem;">
+                                <div style="display:inline-block;">
+                                    <strong>Save:</strong> $${descriptor.saving_balance_usd}
+                                    &nbsp;&nbsp;
+                                    <strong>Check:</strong> $${descriptor.checking_balance_usd}
+                                </div>
+                            </div>`;
+
+                        container.appendChild(box);
+                    });
+
+                    document.getElementById('input-balance').innerText  = '$' + inputTotal.toFixed(2);
+                    document.getElementById('output-balance').innerText = '$' + outputTotal.toFixed(2);
+                })
+                .catch(err => {
+                    hideLoading();
+                    console.error(err);
+                    alert("Error verifying public key. Please try again.");
+                });
         }
-        if (role === 'input')  inputTotal  += total;
-        if (role === 'output') outputTotal += total;
-
-
-        const box = document.createElement('div');
-        box.className = 'contract-box';
-        if (role) box.classList.add(role + '-role');
-
-let nostrSection = '';
-if (descriptor.nostr_npub) {
-  const accessLevel = "{{ access_level }}";  // injected by Flask
-  if (accessLevel === "full") {
-    nostrSection = `
-      <div class="nostr-info" style="margin:0.5rem 0; text-align:center;">
-        <strong>Nostr:</strong><br>
-        <a href="https://advancednostrsearch.vercel.app/?npub=${descriptor.nostr_npub}"
-           target="_blank"
-           style="color:var(--neon-blue); text-decoration:none; display:inline-block; margin-top:0.25rem;">
-           ${descriptor.nostr_npub_truncated}
-        </a>
-      </div>`;
-  } else {
-    nostrSection = `
-      <div class="nostr-info" style="margin:0.5rem 0; text-align:center;">
-        <strong>Nostr:</strong><br>${descriptor.nostr_npub_truncated}
-      </div>`;
-  }
-}
-
-const counterpartyOnline = descriptor.counterparty_online;
-const counterparty = descriptor.counterparty_pubkey;
-
-let counterpartyNote = '';
-if (counterpartyOnline && counterparty) {
-  counterpartyNote = `
-    <div style="text-align:center; color:lime; font-size:0.8rem; margin-top:0.25rem;">
-      🟢online
-    </div>`;
-}
-
-// Either injected by Jinja into a <script> block:
-const accessLevel = "{{ access_level | default('limited') }}";
-
-// (Alternative if you prefer data-attr on <body>):
-// <body data-access-level="{{ access_level }}">
-// const accessLevel = document.body.dataset.accessLevel || 'limited';
-
-const deeplink = (accessLevel === "full" && (descriptor.onboard_link || descriptor.raw_script))
-  ? (descriptor.onboard_link || `#onboard?raw=${encodeURIComponent(descriptor.raw_script)}&autoverify=1`)
-  : null;
-
-const imgTag = descriptor.qr_code
-  ? `<img src="data:image/png;base64,${descriptor.qr_code}" alt="Address QR"
-       style="max-width:180px;border:1px solid #333;border-radius:8px;box-shadow:0 0 10px rgba(0,255,0,.15);" />`
-  : '';
-
-const addrQR = descriptor.qr_code
-  ? `<div style="text-align:center;margin:.5rem 0;">
-       ${
-         deeplink
-           ? `<a href="${deeplink}"
-                 class="qr-link"
-                 title="Open in Converter & Decoder"
-                 data-raw="${descriptor.raw_script || ''}"
-                 onclick="return jumpOnboard(this.dataset.raw)">${imgTag}</a>`
-           : imgTag
-       }
-     </div>`
-  : '';
-
-
-
-box.innerHTML = `
-<pre><strong>!</strong> ${descriptor.raw}</pre>
-<div style="text-align:center; margin:0.5rem 0;"><pre><strong>Address:</strong> ${descriptor.truncated_address}</pre></div>
-<div style="text-align:center;"><strong>HEX</strong> ${descriptor.script_hex}</div>
-${addrQR}
-${counterpartyNote}
-${nostrSection}
-<div style="text-align:center; margin-top:1rem;"><div style="display:inline-block;"><strong>Save:</strong> $${descriptor.saving_balance_usd}  <strong>Check:</strong> $${descriptor.checking_balance_usd}</div></div>`;
-
-        container.appendChild(box);
-      });
-
-      // Update totals
-      document.getElementById('input-balance').innerText  = '$' + inputTotal.toFixed(2);
-      document.getElementById('output-balance').innerText = '$' + outputTotal.toFixed(2);
-    })
-    .catch(err => {
-      hideLoading();
-      console.error(err);
-      alert("Error verifying public key. Please try again.");
-    });
-}
 
         function handlePubKeyClick(pubKey) {
-          verifyAndListContracts(pubKey);
+            verifyAndListContracts(pubKey);
         }
 
-function updateScript() {
-  const tpl = document.getElementById('initialScript').value;
-  const baked = [...tpl.matchAll(/b17521([0-9A-Fa-f]{66})/g)].map(m=>m[1]);
-  let k1 = document.getElementById('newPubKey1').value.trim() || baked[0] || '';
-  let k2 = document.getElementById('newPubKey2').value.trim() || baked[1] || '';
+        function updateScript() {
+            const tpl = document.getElementById('initialScript').value;
+            const baked = [...tpl.matchAll(/b17521([0-9A-Fa-f]{66})/g)].map(m=>m[1]);
+            let k1 = document.getElementById('newPubKey1').value.trim() || baked[0] || '';
+            let k2 = document.getElementById('newPubKey2').value.trim() || baked[1] || '';
 
-  function valid(key) {
-    return /^(npub[0-9A-Za-z]+)$/.test(key) || /^[0-9A-Fa-f]{66,130}$/.test(key);
-  }
+            function valid(key) {
+                return /^(npub[0-9A-Za-z]+)$/.test(key) || /^[0-9A-Fa-f]{66,130}$/.test(key);
+            }
 
-  if (k1 && !valid(k1)) { alert("Invalid OP_IF key"); return; }
-  if (k2 && !valid(k2)) { alert("Invalid OP_ELSE key"); return; }
+            if (k1 && !valid(k1)) { alert("Invalid OP_IF key"); return; }
+            if (k2 && !valid(k2)) { alert("Invalid OP_ELSE key"); return; }
 
-  // Build raw script to send
-  let rawScript = tpl;
-  if (baked[0] && k1) rawScript = rawScript.replace(baked[0], k1);
-  if (baked[1] && k2) rawScript = rawScript.replace(baked[1], k2);
+            let rawScript = tpl;
+            if (baked[0] && k1) rawScript = rawScript.replace(baked[0], k1);
+            if (baked[1] && k2) rawScript = rawScript.replace(baked[1], k2);
 
-  // Pretty display version
-  let displayScript = tpl;
-  if (baked[0] && k1) displayScript = displayScript.replace(baked[0], `<span style="color:var(--neon-blue);">${k1}</span>`);
-  if (baked[1] && k2) displayScript = displayScript.replace(baked[1], `<span style="color:var(--neon-green);">${k2}</span>`);
-  document.getElementById('updatedScript').innerHTML = displayScript;
+            let displayScript = tpl;
+            if (baked[0] && k1) displayScript = displayScript.replace(baked[0], `<span style="color:var(--neon-blue);">${k1}</span>`);
+            if (baked[1] && k2) displayScript = displayScript.replace(baked[1], `<span style="color:var(--neon-green);">${k2}</span>`);
+            document.getElementById('updatedScript').innerHTML = displayScript;
 
-  // Decode server-side
-  fetch('/decode_raw_script', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-    body: JSON.stringify({
-      raw_script: rawScript,
-      label_hint: (document.getElementById('labelInput')?.value || '').trim() || null
-    })
-  })
-  .then(async (r) => {
-    const ct = r.headers.get('content-type') || '';
-    const text = await r.text();
-    return ct.includes('application/json') ? JSON.parse(text) : { error: text || `${r.status} ${r.statusText}` };
-  })
-  .then(d => {
-    const out = document.getElementById('decodedWitness');
-    out.textContent = d.error ? `Error: ${d.error}` : JSON.stringify(d.decoded, null, 2);
+            fetch('/decode_raw_script', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({
+                    raw_script: rawScript,
+                    label_hint: (document.getElementById('labelInput')?.value || '').trim() || null
+                })
+            })
+            .then(async (r) => {
+                const ct = r.headers.get('content-type') || '';
+                const text = await r.text();
+                return ct.includes('application/json') ? JSON.parse(text) : { error: text || `${r.status} ${r.statusText}` };
+            })
+            .then(d => {
+                const out = document.getElementById('decodedWitness');
+                out.textContent = d.error ? `Error: ${d.error}` : JSON.stringify(d.decoded, null, 2);
 
-    const qrContainer = document.getElementById('qr-codes');
-    qrContainer.innerHTML = '';
+                const qrContainer = document.getElementById('qr-codes');
+                qrContainer.innerHTML = '';
 
-    if (d && d.script_hex) window.lastScriptHex = d.script_hex;
+                if (d && d.script_hex) window.lastScriptHex = d.script_hex;
 
-    // ⚠️ This guard was missing; without it, d.qr access can throw, and an extra } remained
-    if (!d.error && d.qr) {
-      function makeQR(label, b64) {
-        if (!b64) return '';
-        return `
-          <figure>
-            <img src="data:image/png;base64,${b64}" alt="${label} QR"/>
-            <figcaption>${label}</figcaption>
-          </figure>`;
-      }
+                if (!d.error && d.qr) {
+                    function makeQR(label, b64) {
+                        if (!b64) return '';
+                        return `
+                          <figure>
+                            <img src="data:image/png;base64,${b64}" alt="${label} QR"/>
+                            <figcaption>${label}</figcaption>
+                          </figure>`;
+                    }
 
-      // Core 4 QR codes:
-      qrContainer.innerHTML =
-        makeQR('Receiver Pubkey', d.qr.pubkey_if) +
-        makeQR('Giver Pubkey', d.qr.pubkey_else) +
-        makeQR('Raw Script (hex)', d.qr.raw_script_hex) +
-        makeQR('HODL Address', d.qr.segwit_address);
+                    qrContainer.innerHTML =
+                        makeQR('Receiver Pubkey', d.qr.pubkey_if) +
+                        makeQR('Giver Pubkey', d.qr.pubkey_else) +
+                        makeQR('Raw Script (hex)', d.qr.raw_script_hex) +
+                        makeQR('HODL Address', d.qr.segwit_address);
 
-      // 5th QR (first unused address)
-      if (d.qr.first_unused_addr) {
-        qrContainer.innerHTML += makeQR('First Unused Address', d.qr.first_unused_addr);
-      } else {
-        const warning = d.warning || 'No unused address found. Label your zpub in "Set Checking Labels" to enable detection.';
-        qrContainer.innerHTML += `
-          <div style="text-align:center; color: var(--neon-green); margin-top: 0;">
-            <strong style="color: red;">Warning:</strong> ${warning}
-          </div>`;
-      }
+                    if (d.qr.first_unused_addr) {
+                        qrContainer.innerHTML += makeQR('First Unused Address', d.qr.first_unused_addr);
+                    } else {
+                        const warning = d.warning || 'No unused address found. Label your zpub in "Set Checking Labels" to enable detection.';
+                        qrContainer.innerHTML += `
+                          <div style="text-align:center; color: var(--accent); margin-top: 0;">
+                            <strong style="color: var(--red);">Warning:</strong> ${warning}
+                          </div>`;
+                    }
 
-      // Optional: descriptor QR
-      if (d.qr.full_descriptor) {
-        qrContainer.innerHTML += makeQR('Descriptor (checksummed)', d.qr.full_descriptor);
-      }
-    } // ← this closing brace balances the guard above
-  })
-  .catch(e => {
-    document.getElementById('decodedWitness').textContent = `Error: ${e}`;
-  });
-}
+                    if (d.qr.full_descriptor) {
+                        qrContainer.innerHTML += makeQR('Descriptor (checksummed)', d.qr.full_descriptor);
+                    }
+                }
+            })
+            .catch(e => {
+                document.getElementById('decodedWitness').textContent = `Error: ${e}`;
+            });
+        }
 
+        function jumpOnboard(rawHex) {
+            try {
+                ['homePanel','explorerPanel','onboardPanel'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (!el) return;
+                    el.classList.toggle('hidden', id !== 'onboardPanel');
+                });
 
-function jumpOnboard(rawHex) {
-  try {
-    // Show the Converter & Decoder panel
-    ['homePanel','explorerPanel','onboardPanel'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.classList.toggle('hidden', id !== 'onboardPanel');
-    });
+                const ta = document.getElementById('initialScript');
+                if (ta) ta.value = rawHex || '';
 
-    // Prefill raw script
-    const ta = document.getElementById('initialScript');
-    if (ta) ta.value = rawHex || '';
+                if (location.hash !== '#onboard') location.hash = 'onboard';
 
-    // Normalize hash so any old router logic also lands on onboard
-    if (location.hash !== '#onboard') location.hash = 'onboard';
-
-    // Auto-run Verify Witness
-    setTimeout(() => { try { handleUpdateScript(); } catch (e) { console.error(e); } }, 0);
-  } catch (e) {
-    console.error('jumpOnboard error:', e);
-  }
-  return false; // prevent the <a> default navigation
-}
+                setTimeout(() => {
+                    try { handleUpdateScript(); } catch (e) { console.error(e); }
+                }, 0);
+            } catch (e) {
+                console.error('jumpOnboard error:', e);
+            }
+            return false;
+        }
 
         function importDescriptor() {
-  const input = document.getElementById("descriptorInput").value.trim();
-  if (!input) { alert("Please enter a descriptor."); return; }
+            const inputEl = document.getElementById("descriptorInput");
+            if (!inputEl) return;
+            const input = inputEl.value.trim();
+            if (!input) { alert("Please enter a descriptor."); return; }
 
-  fetch('/import_descriptor', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ descriptor: input })
-  })
-  .then(r => r.json())
-  .then(async data => {
-    const out = document.getElementById("importResult");
-    if (data.script_hex) window.lastScriptHex = data.script_hex;
+            fetch('/import_descriptor', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ descriptor: input })
+            })
+            .then(r => r.json())
+            .then(async data => {
+                const out = document.getElementById("importResult");
+                if (data.script_hex) window.lastScriptHex = data.script_hex;
+                if (out) out.innerHTML = "Imported ✔️<br><small>script_hex: " + (data.script_hex || "n/a") + "</small>";
 
+                if (data.raw_hex) {
+                    const res = await fetch('/decode_raw_script', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ raw_script: data.raw_hex })
+                    }).then(r => r.json()).catch(()=>null);
 
-    // Show a short success line
-    out.innerHTML = "Imported ✔️<br><small>script_hex: " + (data.script_hex || "n/a") + "</small>";
+                    if (res && res.qr) {
+                        const qrContainer = document.getElementById('qr-codes');
+                        const label = (t,b64) => (b64
+                            ? `<figure><img src="data:image/png;base64,${b64}"><figcaption>${t}</figcaption></figure>`
+                            : ""
+                        );
+                        qrContainer.innerHTML =
+                            label('Receiver Pubkey', res.qr.pubkey_if) +
+                            label('Giver Pubkey',    res.qr.pubkey_else) +
+                            label('Raw Script (hex)',res.qr.raw_script_hex) +
+                            label('HODL Address',    res.qr.segwit_address) +
+                            (res.qr.first_unused_addr
+                                ? label('First Unused Address', res.qr.first_unused_addr)
+                                : `<div style="text-align:center;color:var(--accent)">
+                                     <strong style="color:var(--red)">Warning:</strong> ${res.warning||'No unused address yet.'}
+                                   </div>`);
+                    }
+                }
+            })
+            .catch(err => {
+                const out = document.getElementById("importResult");
+                if (out) out.innerHTML = "Error: " + err;
+            });
+        }
 
-    // If backend told us the raw hex, immediately render the 5 QRs
-    if (data.raw_hex) {
-      const res = await fetch('/decode_raw_script', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ raw_script: data.raw_hex })
-      }).then(r => r.json()).catch(()=>null);
+        function setLabelsFromZpub() {
+            const zpub  = document.getElementById("zpubInput")?.value.trim();
+            const label = document.getElementById("labelInput")?.value.trim();
 
-      if (res && res.qr) {
-        const qrContainer = document.getElementById('qr-codes');
-        const label = (t,b64) => (b64?`<figure><img src="data:image/png;base64,${b64}"><figcaption>${t}</figcaption></figure>`:"");
-        qrContainer.innerHTML =
-          label('Receiver Pubkey', res.qr.pubkey_if) +
-          label('Giver Pubkey',    res.qr.pubkey_else) +
-          label('Raw Script (hex)',res.qr.raw_script_hex) +
-          label('HODL Address',    res.qr.segwit_address) +
-          (res.qr.first_unused_addr ? label('First Unused Address', res.qr.first_unused_addr)
-                                    : `<div style="text-align:center;color:var(--neon-green)"><strong style="color:red">Warning:</strong> ${res.warning||'No unused address yet.'}</div>`);
-      }
-    }
-  })
-  .catch(err => {
-    document.getElementById("importResult").innerHTML = "Error: " + err;
-  });
-}
+            if (!zpub) {
+                alert("zpub is required.");
+                return;
+            }
 
-function setLabelsFromZpub() {
-  const zpub  = document.getElementById("zpubInput").value.trim();
-  const label = document.getElementById("labelInput").value.trim(); // optional now
+            const body = { zpub };
+            if (label) body.label = label;
+            if (window.lastScriptHex) body.script_hex = window.lastScriptHex;
 
-  if (!zpub) {
-    alert("zpub is required.");
-    return;
-  }
+            fetch('/set_labels_from_zpub', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify(body)
+            })
+            .then(async (r) => {
+                const ct   = r.headers.get('content-type') || '';
+                const text = await r.text();
+                let data;
+                try {
+                    data = ct.includes('application/json') ? JSON.parse(text) : { error: text };
+                } catch (e) {
+                    data = { error: text || e.message };
+                }
+                if (!r.ok || data.error) {
+                    throw new Error(data.error || `${r.status} ${r.statusText}`);
+                }
+                return data;
+            })
+            .then((data) => {
+                if (data.script_hex) window.lastScriptHex = data.script_hex;
 
-  // Build request body
-  const body = { zpub };
-  if (label) body.label = label;                    // keep for display/back-compat
-  if (window.lastScriptHex) body.script_hex = window.lastScriptHex; // ✅ send if known
+                let msg = "";
+                msg += `<div><strong>Script HEX:</strong> ${data.script_hex || '(unknown)'}</div>`;
+                if (data.descriptor) {
+                    msg += "<strong>Imported Descriptor:</strong><br><pre>" + data.descriptor + "</pre><br>";
+                }
+                if (data.labeled_addresses) {
+                    msg += "<strong>Labeled Addresses:</strong><ul style='padding-left:1em;'>";
+                    data.labeled_addresses.forEach(entry => {
+                        const obj  = (typeof entry === 'object') ? entry : { address: entry };
+                        const idx  = (obj.index !== undefined) ? `[${obj.index}] ` : "";
+                        const addr = obj.address || "";
+                        const b64  = obj.qr || obj.qr_base64 || null;
+                        const src  = b64 ? (b64.startsWith("data:") ? b64 : `data:image/png;base64,${b64}`) : null;
+                        const lab  = obj.label ? `<br><small>${obj.label}</small>` : "";
+                        msg += `<li>${idx}${addr}${lab}${
+                          src ? `<br><img src="${src}" alt="QR for ${addr}" style="max-width:140px;border:1px solid #333;border-radius:6px;margin-top:4px;" />` : ""
+                        }</li>`;
+                    });
+                    msg += "</ul>";
+                } else if (data.addresses) {
+                    msg += "<strong>Addresses:</strong><ul style='padding-left:1em;'>";
+                    data.addresses.forEach(addr => { msg += `<li>${addr}</li>`; });
+                    msg += "</ul>";
+                }
+                if (!msg && data.success) msg = "Operation successful.";
+                const out = document.getElementById("setLabelsResult");
+                if (out) out.innerHTML = msg || "No specific results to display.";
+            })
+            .catch(err => {
+                const out = document.getElementById("setLabelsResult");
+                if (out) out.innerHTML = "Error: " + err.message;
+            });
+        }
 
-  fetch('/set_labels_from_zpub', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    },
-    credentials: 'same-origin',
-    body: JSON.stringify(body)
-  })
-  .then(async (r) => {
-    const ct   = r.headers.get('content-type') || '';
-    const text = await r.text();
-    let data;
-    try {
-      data = ct.includes('application/json') ? JSON.parse(text) : { error: text };
-    } catch (e) {
-      data = { error: text || e.message };
-    }
-    if (!r.ok || data.error) {
-      throw new Error(data.error || `${r.status} ${r.statusText}`);
-    }
-    return data;
-  })
-  .then((data) => {
-    // cache script_hex returned by backend for future calls
-    if (data.script_hex) window.lastScriptHex = data.script_hex;
+        function exportDescriptors() {
+            fetch('/export_descriptors')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) { alert(data.error); return; }
+                    const txt  = data.descriptors.map(d => `"${d}"`).join(',');
+                    const blob = new Blob([txt], { type: 'text/plain' });
+                    const url  = URL.createObjectURL(blob);
+                    const a    = document.createElement('a');
+                    a.href = url; a.download = 'descriptors.txt';
+                    document.body.appendChild(a); a.click(); a.remove();
+                    URL.revokeObjectURL(url);
+                })
+                .catch(err => alert('Export failed: ' + err));
+        }
 
-    let msg = "";
-    msg += `<div><strong>Script HEX:</strong> ${data.script_hex || '(unknown)'}</div>`;
-    if (data.descriptor) {
-      msg += "<strong>Imported Descriptor:</strong><br><pre>" + data.descriptor + "</pre><br>";
-    }
-    if (data.labeled_addresses) {
-      msg += "<strong>Labeled Addresses:</strong><ul style='padding-left:1em;'>";
-      data.labeled_addresses.forEach(entry => {
-        const obj  = (typeof entry === 'object') ? entry : { address: entry };
-        const idx  = (obj.index !== undefined) ? `[${obj.index}] ` : "";
-        const addr = obj.address || "";
-        const b64  = obj.qr || obj.qr_base64 || null;
-        const src  = b64 ? (b64.startsWith("data:") ? b64 : `data:image/png;base64,${b64}`) : null;
-        const lab  = obj.label ? `<br><small>${obj.label}</small>` : "";
-        msg += `<li>${idx}${addr}${lab}${
-          src ? `<br><img src="${src}" alt="QR for ${addr}" style="max-width:140px;border:1px solid #333;border-radius:6px;margin-top:4px;" />` : ""
-        }</li>`;
-      });
-      msg += "</ul>";
-    } else if (data.addresses) {
-      msg += "<strong>Addresses:</strong><ul style='padding-left:1em;'>";
-      data.addresses.forEach(addr => { msg += `<li>${addr}</li>`; });
-      msg += "</ul>";
-    }
-    if (!msg && data.success) msg = "Operation successful.";
-    document.getElementById("setLabelsResult").innerHTML = msg || "No specific results to display.";
-  })
-  .catch(err => {
-    document.getElementById("setLabelsResult").innerHTML = "Error: " + err.message;
-  });
-} // ← end setLabelsFromZpub()
+        function exportWallet() {
+            window.location.href = '/export_wallet';
+        }
 
-
-
-
-
-function exportDescriptors() {
-  fetch('/export_descriptors')
-    .then(res => res.json())
-    .then(data => {
-      if (data.error) { alert(data.error); return; }
-      const txt  = data.descriptors.map(d => `"${d}"`).join(',');
-      const blob = new Blob([txt], { type: 'text/plain' });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href = url; a.download = 'descriptors.txt';
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
-    })
-    .catch(err => alert('Export failed: ' + err));
-}
-
-function exportWallet() {
-  window.location.href = '/export_wallet';
-}
-
-
-        // Initialize with pubkey from URL if present
+        // Initial pubkey from URL
         document.addEventListener('DOMContentLoaded', () => {
-          const initialPk = "{{ initial_pubkey }}";
-          if (initialPk) {
-            verifyAndListContracts(initialPk);
-          }
+            const initialPk = "{{ initial_pubkey }}";
+            if (initialPk) {
+                verifyAndListContracts(initialPk);
+            }
         });
-        </script>
 
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-  if (sessionStorage.getItem('playLoginSound') === '1') {
-    sessionStorage.removeItem('playLoginSound');
-    const a = new Audio('/static/sounds/login.mp3');
-    a.loop = true;
-    a.play().catch(()=>{});
-    setTimeout(() => { a.pause(); a.remove(); }, 6000);
-  }
-});
-</script>
+        // Login sound on entry from login page
+        document.addEventListener('DOMContentLoaded', () => {
+            if (sessionStorage.getItem('playLoginSound') === '1') {
+                sessionStorage.removeItem('playLoginSound');
+                const a = new Audio('/static/sounds/login.mp3');
+                a.loop = true;
+                a.play().catch(()=>{});
+                setTimeout(() => { a.pause(); a.remove(); }, 6000);
+            }
+        });
 
-<!-- Matrix background JS (new space-warp 0/1) -->
-<script>
-(() => {
-  const canvas = document.getElementById('matrix-bg');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
+        // Matrix background (warp)
+        (() => {
+            const canvas = document.getElementById('matrix-bg');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
 
-  // Particles flying toward the camera; glyph at each projected point
-  const CHARS = ['0','1'];
-  let width = 0, height = 0, particles = [], raf = null;
+            const CHARS = ['0','1'];
+            let width = 0, height = 0, particles = [], raf = null;
 
-  function resize() {
-    // DPR-aware sizing for crisper text, capped for perf
-    const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
-    const cssW = window.innerWidth, cssH = window.innerHeight;
+            function resize() {
+                const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+                const cssW = window.innerWidth;
+                const cssH = window.innerHeight;
 
-    canvas.width  = Math.floor(cssW * dpr);
-    canvas.height = Math.floor(cssH * dpr);
-    canvas.style.width  = cssW + 'px';
-    canvas.style.height = cssH + 'px';
+                canvas.width  = Math.floor(cssW * dpr);
+                canvas.height = Math.floor(cssH * dpr);
+                canvas.style.width  = cssW + 'px';
+                canvas.style.height = cssH + 'px';
 
-    ctx.setTransform(1,0,0,1,0,0);
-    ctx.scale(dpr, dpr);
+                ctx.setTransform(1,0,0,1,0,0);
+                ctx.scale(dpr, dpr);
 
-    width = cssW; height = cssH;
+                width = cssW;
+                height = cssH;
 
-    // Re-seed particles
-    particles = [];
-    for (let i = 0; i < 400; i++) {
-      particles.push({
-        x: (Math.random() - 0.5) * width,
-        y: (Math.random() - 0.5) * height,
-        z: Math.random() * 800 + 100
-      });
-    }
+                particles = [];
+                for (let i = 0; i < 400; i++) {
+                    particles.push({
+                        x: (Math.random() - 0.5) * width,
+                        y: (Math.random() - 0.5) * height,
+                        z: Math.random() * 800 + 100
+                    });
+                }
 
-    // Fresh clear
-    ctx.fillStyle = 'rgba(0,0,0,1)';
-    ctx.fillRect(0, 0, width, height);
-  }
+                ctx.fillStyle = 'rgba(0,0,0,1)';
+                ctx.fillRect(0, 0, width, height);
+            }
 
-  function draw() {
-    // Motion trails
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.fillRect(0, 0, width, height);
+            function draw() {
+                ctx.fillStyle = 'rgba(0,0,0,0.25)';
+                ctx.fillRect(0, 0, width, height);
+                ctx.fillStyle = '#00ff88';
 
-    ctx.fillStyle = '#00ff88';
-    for (const p of particles) {
-      const scale = 200 / p.z;
-      const x2 = width  / 2 + p.x * scale;
-      const y2 = height / 2 + p.y * scale;
-      const size = Math.max(8 * scale, 1);
-      ctx.font = size + 'px monospace';
-      ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
+                for (const p of particles) {
+                    const scale = 200 / p.z;
+                    const x2 = width  / 2 + p.x * scale;
+                    const y2 = height / 2 + p.y * scale;
+                    const size = Math.max(8 * scale, 1);
 
-      // Advance toward camera
-      p.z -= 5;
-      if (p.z < 1) {
-        p.x = (Math.random() - 0.5) * width;
-        p.y = (Math.random() - 0.5) * height;
-        p.z = 800;
-      }
-    }
-    raf = requestAnimationFrame(draw);
-  }
+                    ctx.font = size + 'px monospace';
+                    ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
 
-  function onVis() {
-    if (document.hidden) { if (raf) cancelAnimationFrame(raf), raf = null; }
-    else { if (!raf) raf = requestAnimationFrame(draw); }
-  }
+                    p.z -= 5;
+                    if (p.z < 1) {
+                        p.x = (Math.random() - 0.5) * width;
+                        p.y = (Math.random() - 0.5) * height;
+                        p.z = 800;
+                    }
+                }
 
-  window.addEventListener('resize', resize);
-  document.addEventListener('visibilitychange', onVis);
-  resize();
-  raf = requestAnimationFrame(draw);
-})();
-</script>
+                raf = requestAnimationFrame(draw);
+            }
 
+            function onVis() {
+                if (document.hidden) {
+                    if (raf) { cancelAnimationFrame(raf); raf = null; }
+                } else {
+                    if (!raf) raf = requestAnimationFrame(draw);
+                }
+            }
 
+            window.addEventListener('resize', resize);
+            document.addEventListener('visibilitychange', onVis);
 
+            resize();
+            raf = requestAnimationFrame(draw);
+        })();
 
+        // Small nav helpers for the top icon row
+        function openPanel(which) {
+            const url = `${location.origin}${location.pathname}#${which}`;
+            window.open(url, '_blank', 'noopener,noreferrer');
+        }
 
-</script>
+        document.getElementById('btnExplorer').addEventListener('click', () => openPanel('explorer'));
+        document.getElementById('btnOnboard') .addEventListener('click', () => openPanel('onboard'));
+        document.getElementById('btnChat')    .addEventListener('click', () => {
+            window.open("{{ url_for('chat') }}", '_blank', 'noopener,noreferrer');
+        });
+        document.getElementById('btnExit')    .addEventListener('click', () => {
+            window.location.href = "{{ url_for('logout') }}";
+        });
 
-<script>
-  // open same route in a new tab with a hash
-  function openPanel(which) {
-    const url = `${location.origin}${location.pathname}#${which}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
-  }
+        function switchPanelByHash() {
+            const h = (location.hash || '').slice(1);
+            const showId =
+                  h === 'explorer' ? 'explorerPanel'
+                : h === 'onboard'  ? 'onboardPanel'
+                : 'homePanel';
 
-  // Button wiring (manifest buttons)
-  document.getElementById('btnExplorer').addEventListener('click', () => openPanel('explorer'));
-  document.getElementById('btnOnboard') .addEventListener('click', () => openPanel('onboard'));
-  document.getElementById('btnChat')    .addEventListener('click', () => {
-    window.open("{{ url_for('chat') }}", '_blank', 'noopener,noreferrer');
-  });
-  document.getElementById('btnExit')    .addEventListener('click', () => {
-    window.location.href = "{{ url_for('logout') }}";
-  });
+            ['homePanel','explorerPanel','onboardPanel'].forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.classList.toggle('hidden', id !== showId);
+            });
 
-  // Show only the correct panel by hash
-  function switchPanelByHash() {
-    const h = (location.hash || '').slice(1);
-    const showId =
-      h === 'explorer' ? 'explorerPanel' :
-      h === 'onboard'  ? 'onboardPanel'  :
-                         'homePanel';
+            const rpc = document.querySelector('.rpc-section');
+            if (rpc) rpc.classList.toggle('hidden', showId === 'homePanel');
 
-    // Toggle the main panels
-    ['homePanel','explorerPanel','onboardPanel'].forEach(id => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.classList.toggle('hidden', id !== showId);
-    });
+            window.scrollTo({ top: 0 });
+        }
 
-    // Optionally hide the RPC section on the home screen
-    const rpc = document.querySelector('.rpc-section');
-    if (rpc) rpc.classList.toggle('hidden', showId === 'homePanel');
+        window.addEventListener('hashchange', switchPanelByHash);
+        document.addEventListener('DOMContentLoaded', switchPanelByHash);
 
-    window.scrollTo({ top: 0 });
-  }
+        function maskDeepLinkedKeyForLimited() {
+            try {
+                // Only mask for non-full users
+                if (typeof accessLevel !== 'undefined' && accessLevel === 'full') return;
 
-  // Run once on load and again if the user changes the hash manually
-  window.addEventListener('hashchange', switchPanelByHash);
-  document.addEventListener('DOMContentLoaded', switchPanelByHash);
-</script>
+                const hash = window.location.hash || '';
+                if (!hash || hash.indexOf('#explorer') !== 0) return;
 
+                let target = null;
+                try {
+                    target = localStorage.getItem('hodlxxi_explorer_target') || null;
+                } catch (e) {
+                    target = null;
+                }
+                if (!target) return;
 
-    </body>
-    </html>
+                const inp = document.getElementById('pubKey');
+                if (!inp) return;
+
+                const last4 = target.slice(-4);
+                inp.value = '…' + last4;
+            } catch (e) {
+                if (window.console && console.warn) {
+                    console.warn('maskDeepLinkedKeyForLimited failed', e);
+                }
+            }
+        }
+
+        // Run after all other DOMContentLoaded handlers (including deep-link loader)
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(maskDeepLinkedKeyForLimited, 0);
+        });
+
+        function autoLoadExplorerFromDeepLink() {
+            try {
+                const hash = window.location.hash || '';
+                // Only act on /home#explorer
+                if (!hash || hash.indexOf('#explorer') !== 0) return;
+
+                let target = null;
+                try {
+                    target = localStorage.getItem('hodlxxi_explorer_target') || null;
+                } catch (e) {
+                    target = null;
+                }
+                if (!target) return;
+
+                // Put the pubkey into the Explorer input
+                const inp = document.getElementById('pubKey');
+                if (inp) inp.value = target;
+
+                // Run the covenant lookup immediately
+                verifyAndListContracts(target);
+            } catch (err) {
+                if (window.console && console.warn) {
+                    console.warn('Explorer deep-link failed', err);
+                }
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', autoLoadExplorerFromDeepLink);
+    </script>
+</body>
+</html>
+
     """
     logger.debug("home → access_level=%s", access_level)
     return render_template_string(html, access_level=access_level, initial_pubkey=initial_pubkey)
@@ -8087,12 +8564,11 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
         <div class="nav-content">
             <div class="logo">⚡ KeyAuth Protocol ⚡</div>
             <ul class="nav-links">
-                <li><a href="#capabilities">Capabilities</a></li>
-                <li><a href="#use-cases">Use Cases</a></li>
-                <li><a href="#developer">Developer</a></li>
-                <li><a href="#how-it-works">How It Works</a></li>
-                <li><a href="#features">Features</a></li>
-            </ul>
+    <li><a href="/playground">Playground</a></li>
+    <li><a href="/pof/">Proof of Funds</a></li>
+    <li><a href="/pof/leaderboard">Whale Leaderboard</a></li>
+    <li><a href="/login">Login</a></li>
+</ul>
             <a href="#contact" class="cta-button">Get Started</a>
         </div>
     </nav>
@@ -11476,12 +11952,7 @@ def playground_stats():
         })
 
 
-@app.route('/api/playground/activity', methods=['GET'])
-@app.route('/api/playground/activity', methods=['GET'])
-def playground_activity():
-    """Get recent playground activity"""
-    try:
-        logger.info("Fetching activity from Redis...")
+
         activities = []
         recent = playground_redis.zrevrange('pg_activity', 0, 9)
         logger.info(f"Got {len(recent)} items from Redis")

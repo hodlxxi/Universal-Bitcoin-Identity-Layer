@@ -1239,12 +1239,11 @@ def index():
         <div class="nav-content">
             <div class="logo">⚡ KeyAuth Protocol</div>
             <ul class="nav-links">
-                <li><a href="#capabilities">Capabilities</a></li>
-                <li><a href="#use-cases">Use Cases</a></li>
-                <li><a href="#developer">Developer</a></li>
-                <li><a href="#how-it-works">How It Works</a></li>
-                <li><a href="#features">Features</a></li>
-            </ul>
+    <li><a href="/playground">Playground</a></li>
+    <li><a href="/pof/">Proof of Funds</a></li>
+    <li><a href="/pof/leaderboard">Whale Leaderboard</a></li>
+    <li><a href="/login">Login</a></li>
+</ul>
             <a href="#contact" class="cta-button">Get Started</a>
         </div>
     </nav>
