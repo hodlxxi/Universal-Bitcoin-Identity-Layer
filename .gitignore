@@ -18,7 +18,8 @@ build/
 *.backup-*
 *.bak
 *.bak-*
-*.pre-*
+*.pre-*.backup
+*.pre-*.bak
 **/app.py.before*
 **/app.py.current-*
 **/app.py.from-*
