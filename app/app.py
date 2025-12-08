@@ -279,6 +279,39 @@ WALLET = os.getenv("RPC_WALLET", "")
 
 SOCKETIO_CORS = os.getenv("SOCKETIO_CORS", "*")
 
+
+def _resolve_socketio_async_mode(preferred: str | None = None) -> str:
+    """Return a supported async_mode for Flask-SocketIO.
+
+    If the requested mode is unavailable (e.g., eventlet not installed),
+    gracefully fall back to the safe threading backend to avoid runtime
+    initialization errors during tests or local development.
+    """
+
+    preferred_mode = (preferred or "").strip() or "eventlet"
+    valid_modes = {"eventlet", "gevent", "gevent_uwsgi", "threading"}
+
+    if preferred_mode not in valid_modes:
+        logger.warning("Invalid SOCKETIO_ASYNC_MODE '%s', defaulting to threading", preferred_mode)
+        return "threading"
+
+    if preferred_mode == "threading":
+        return preferred_mode
+
+    try:
+        module_name = preferred_mode if preferred_mode != "gevent_uwsgi" else "gevent"
+        __import__(module_name)
+        return preferred_mode
+    except ImportError:
+        logger.warning(
+            "SOCKETIO_ASYNC_MODE '%s' requested but dependency missing; using threading",
+            preferred_mode,
+        )
+        return "threading"
+
+
+SOCKETIO_ASYNC_MODE = _resolve_socketio_async_mode(os.getenv("SOCKETIO_ASYNC_MODE"))
+
 # (optional) env-driven guest/specials if you want:
 GUEST_PUBKEY = os.getenv("GUEST_PUBKEY", "").strip()
 GUEST_PRIVKEY = os.getenv("GUEST_PRIVKEY", "").strip()
@@ -491,7 +524,7 @@ init_security(app, CFG)
 app.register_blueprint(pof_bp)
 app.register_blueprint(oidc_bp)
 app.register_blueprint(pof_api_bp)
-#app.register_blueprint(playground_bp)  
+#app.register_blueprint(playground_bp)
 
 OAUTH_PATH_PREFIXES = ("/oauth/", "/oauthx/")
 OAUTH_PUBLIC_PATHS = (
@@ -513,10 +546,12 @@ except Exception as e:
 
 app.secret_key = FLASK_SECRET_KEY
 
+logger.info("SocketIO async mode resolved to %s", SOCKETIO_ASYNC_MODE)
+
 socketio = SocketIO(
-    app, 
+    app,
     cors_allowed_origins=SOCKETIO_CORS,
-    async_mode='eventlet',
+    async_mode=SOCKETIO_ASYNC_MODE,
     logger=True,
     engineio_logger=True
 )
