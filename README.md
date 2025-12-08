@@ -79,6 +79,7 @@ See [`TESTING.md`](TESTING.md) for pytest, mypy, and linting guidance.
 - `RATE_LIMIT_ENABLED` / `RATE_LIMIT_DEFAULT` for limiter tuning.
 - `DATABASE_URL` or discrete `DB_*` variables for SQLAlchemy.
 - `REDIS_URL`/`REDIS_*` for rate limiting and challenge/session TTL handling.
+- `SOCKETIO_ASYNC_MODE` to pick a compatible backend (defaults to `eventlet` when available, otherwise falls back to `threading`).
 - `FORCE_HTTPS`, `SECURE_COOKIES`, and `CSRF_ENABLED` for deployment hardening.
 
 Run `python -m app.config` (or import `validate_config`) inside your deployment pipeline to fail fast on insecure production settings.
