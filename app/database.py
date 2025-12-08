@@ -4,14 +4,6 @@ Database connection and session management for HODLXXI.
 Production-grade PostgreSQL and Redis connections with pooling.
 """
 
-from flask import g
-import sqlite3  # or your actual DB engine
-
-def get_db():
-    if 'db' not in g:
-        g.db = sqlite3.connect('/srv/ubid/ubid.db')  # or your actual DB path
-    return g.db
-
 import logging
 import os
 from contextlib import contextmanager

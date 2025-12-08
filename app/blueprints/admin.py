@@ -70,10 +70,11 @@ def health():
 
         # Check database connectivity
         try:
-            from app.database import get_db
-            db = get_db()
-            db.execute("SELECT 1")
-            health_status["components"]["database"] = {"status": "connected"}
+            from app.database import check_database_health
+            db_health = check_database_health()
+            health_status["components"]["database"] = db_health
+            if db_health["status"] != "healthy":
+                health_status["status"] = "degraded"
         except Exception as e:
             logger.warning(f"Database health check failed: {e}")
             health_status["components"]["database"] = {
@@ -84,11 +85,9 @@ def health():
 
         # Check Redis connectivity (optional)
         try:
-            from app.database import get_redis
-            redis = get_redis()
-            if redis:
-                redis.ping()
-                health_status["components"]["redis"] = {"status": "connected"}
+            from app.database import check_redis_health
+            redis_health = check_redis_health()
+            health_status["components"]["redis"] = redis_health
         except Exception as e:
             logger.info(f"Redis not available: {e}")
             health_status["components"]["redis"] = {"status": "optional_unavailable"}
@@ -125,10 +124,12 @@ def readiness():
     """
     try:
         # Check critical dependencies
-        from app.database import get_db
-        db = get_db()
-        db.execute("SELECT 1")
-        return jsonify({"status": "ready"}), 200
+        from app.database import check_database_health
+        db_health = check_database_health()
+        if db_health["status"] == "healthy":
+            return jsonify({"status": "ready"}), 200
+        else:
+            return jsonify({"status": "not_ready", "error": db_health.get("error", "Database unhealthy")}), 503
     except Exception as e:
         logger.warning(f"Readiness check failed: {e}")
         return jsonify({"status": "not_ready", "error": str(e)}), 503
