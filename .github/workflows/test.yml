@@ -63,7 +63,7 @@ jobs:
         JWT_SECRET_KEY: test-jwt-secret-key-for-ci
       run: |
         # Initialize database
-        python -c "from app.models import db, init_db; init_db('$DATABASE_URL')"
+        python -c "from app.database import init_all; init_all(create_tables=True)"
 
     - name: Run unit tests
       env:
