@@ -5,15 +5,19 @@ This is a basic implementation that logs to Python's logging system.
 For production, integrate with structured logging (JSON) and log aggregation systems.
 """
 
+import json
 import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
 _logger = logging.getLogger("audit")
+_audit_logger = None  # Will be initialized by init_audit_logger
 
 
 def init_audit_logger():
     """Initialize the audit logger."""
+    global _audit_logger
+
     _logger.setLevel(logging.INFO)
 
     # Add console handler if not already present
@@ -22,13 +26,19 @@ def init_audit_logger():
         handler.setFormatter(logging.Formatter("%(asctime)s - AUDIT - %(levelname)s - %(message)s"))
         _logger.addHandler(handler)
 
+    _audit_logger = AuditLogger()
+
     _logger.info("Audit logger initialized (basic implementation)")
     _logger.warning("⚠️  Basic audit logging active. For production, use structured logging and SIEM integration.")
 
 
 def get_audit_logger():
     """Get the audit logger instance."""
-    return _logger
+    global _audit_logger
+
+    if _audit_logger is None:
+        init_audit_logger()
+    return _audit_logger
 
 
 class AuditLogger:
@@ -43,8 +53,14 @@ class AuditLogger:
     - Log retention policies
     """
 
-    def __init__(self):
-        self.logger = _logger
+    def __init__(self, logger: Optional[logging.Logger] = None):
+        self.logger = logger or _logger
+
+    def log_event(self, event: str, **details: Any) -> None:
+        """Generic structured audit event."""
+
+        payload = {"event": event, **details, "timestamp": datetime.utcnow().isoformat()}
+        self.logger.info(json.dumps(payload))
 
     def log_auth_attempt(self, user_id: str, method: str, success: bool, ip_address: Optional[str] = None):
         """Log authentication attempt."""

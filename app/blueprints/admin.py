@@ -11,7 +11,7 @@ from typing import Dict, Any
 from flask import Blueprint, Response, current_app, jsonify
 from prometheus_client import CollectorRegistry, Counter, Gauge, generate_latest
 
-from app.utils import get_rpc_connection
+from app import utils
 
 logger = logging.getLogger(__name__)
 
@@ -50,16 +50,16 @@ def health():
         }
 
         # Check Bitcoin RPC connectivity
-        try:
-            rpc = get_rpc_connection()
-            blockchain_info = rpc.getblockchaininfo()
-            health_status["components"]["bitcoin_rpc"] = {
-                "status": "connected",
-                "chain": blockchain_info.get("chain"),
-                "blocks": blockchain_info.get("blocks"),
-                "headers": blockchain_info.get("headers"),
-                "verification_progress": blockchain_info.get("verificationprogress")
-            }
+    try:
+        rpc = utils.get_rpc_connection()
+        blockchain_info = rpc.getblockchaininfo()
+        health_status["components"]["bitcoin_rpc"] = {
+            "status": "connected",
+            "chain": blockchain_info.get("chain"),
+            "blocks": blockchain_info.get("blocks"),
+            "headers": blockchain_info.get("headers"),
+            "verification_progress": blockchain_info.get("verificationprogress")
+        }
         except Exception as e:
             logger.warning(f"Bitcoin RPC health check failed: {e}")
             health_status["components"]["bitcoin_rpc"] = {
@@ -154,7 +154,7 @@ def metrics_json():
 
         # Add Bitcoin RPC metrics if available
         try:
-            rpc = get_rpc_connection()
+        rpc = utils.get_rpc_connection()
             blockchain_info = rpc.getblockchaininfo()
             mempool_info = rpc.getmempoolinfo()
 

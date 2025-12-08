@@ -11,16 +11,9 @@ from typing import Optional
 
 from flask import Blueprint, current_app, jsonify, redirect, request, session, url_for
 
+from app import utils
 from app.audit_logger import get_audit_logger
 from app.security import limiter
-from app.utils import (
-    derive_legacy_address_from_pubkey,
-    generate_challenge,
-    get_rpc_connection,
-    get_special_users,
-    is_valid_pubkey,
-    load_guest_pins,
-)
 
 logger = logging.getLogger(__name__)
 audit_logger = get_audit_logger()
@@ -105,7 +98,7 @@ def verify_signature():
 
     # Get RPC connection for signature verification
     try:
-        rpc_conn = get_rpc_connection()
+        rpc_conn = utils.get_rpc_connection()
     except Exception as e:
         logger.error(f"RPC connection failed: {e}")
         return jsonify({
@@ -124,7 +117,7 @@ def verify_signature():
             }), 400
 
         try:
-            derived_addr = derive_legacy_address_from_pubkey(pubkey_hex)
+            derived_addr = utils.derive_legacy_address_from_pubkey(pubkey_hex)
             if rpc_conn.verifymessage(derived_addr, signature, challenge):
                 matched_pubkey = pubkey_hex
             else:
@@ -147,10 +140,10 @@ def verify_signature():
 
     # Case 2: No pubkey, try SPECIAL_USERS
     else:
-        special_users = get_special_users()
+        special_users = utils.get_special_users()
         for candidate in special_users:
             try:
-                derived_addr = derive_legacy_address_from_pubkey(candidate)
+                derived_addr = utils.derive_legacy_address_from_pubkey(candidate)
                 if rpc_conn.verifymessage(derived_addr, signature, challenge):
                     matched_pubkey = candidate
                     break
@@ -223,7 +216,7 @@ def guest_login():
 
     # PIN-based login
     if pin:
-        guest_pins = load_guest_pins()
+        guest_pins = utils.load_guest_pins()
         label = guest_pins.get(pin)
 
         if not label:

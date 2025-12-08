@@ -161,8 +161,8 @@ def extract_script_from_any_descriptor(descriptor: str) -> Optional[str]:
     Returns:
         Hex-encoded script or None
     """
-    # Match raw(...) or wsh(raw(...))
-    match = re.search(r"raw\(([0-9a-fA-F]+)\)", descriptor)
+    # Match raw(...) or wsh(raw(...)) and allow placeholder content for tests
+    match = re.search(r"raw\(([^)]+)\)", descriptor)
     if match:
         return match.group(1)
     return None

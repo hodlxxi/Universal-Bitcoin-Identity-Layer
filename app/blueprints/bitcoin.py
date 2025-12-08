@@ -10,9 +10,9 @@ from typing import Any, Dict
 
 from flask import Blueprint, current_app, jsonify, request
 
+from app import utils
 from app.audit_logger import get_audit_logger
 from app.security import limiter
-from app.utils import get_rpc_connection, is_valid_pubkey
 
 logger = logging.getLogger(__name__)
 audit_logger = get_audit_logger()
@@ -58,7 +58,7 @@ def rpc_command(cmd: str):
         return jsonify({"error": f"Command '{cmd}' not allowed"}), 403
 
     try:
-        rpc = get_rpc_connection()
+        rpc = utils.get_rpc_connection()
         result = getattr(rpc, cmd)()
 
         audit_logger.log_event(
@@ -97,7 +97,7 @@ def verify_proof_of_funds():
         return jsonify({"error": "Missing psbt or challenge"}), 400
 
     try:
-        rpc = get_rpc_connection()
+        rpc = utils.get_rpc_connection()
 
         # Decode PSBT
         decoded = rpc.decodepsbt(psbt)
@@ -163,7 +163,7 @@ def decode_raw_script():
         return jsonify({"error": "Missing script parameter"}), 400
 
     try:
-        rpc = get_rpc_connection()
+        rpc = utils.get_rpc_connection()
         decoded = rpc.decodescript(script)
         return jsonify(decoded)
 
@@ -182,7 +182,7 @@ def list_descriptors():
         JSON with wallet descriptors
     """
     try:
-        rpc = get_rpc_connection()
+        rpc = utils.get_rpc_connection()
         descriptors = rpc.listdescriptors()
 
         # Filter sensitive information in production

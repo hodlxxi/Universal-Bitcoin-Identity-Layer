@@ -129,6 +129,7 @@ def store_oauth_client(client_id: str, client_data: Dict) -> None:
         else:
             # Create new client
             init_data = client_data.copy()
+            init_data.pop("client_id", None)  # Avoid passing duplicate client_id
             if "meta_data" in init_data and "metadata" not in init_data:
                 init_data["metadata"] = init_data.pop("meta_data")
             if "metadata" in init_data:

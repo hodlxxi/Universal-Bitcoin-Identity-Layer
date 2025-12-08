@@ -97,8 +97,21 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
     if not limit_default:
         limit_default = "100/hour"
 
+    class NoOpLimiter:
+        def limit(self, *args, **kwargs):
+            def decorator(func):
+                return func
+
+            return decorator
+
+        def init_app(self, app):
+            return None
+
+    if cfg.get("TESTING"):
+        cfg["RATE_LIMIT_ENABLED"] = False
+
     if cfg.get("RATE_LIMIT_ENABLED") is False:
-        limiter = None
+        limiter = NoOpLimiter()
         logger.info("Rate limiting disabled")
     else:
         # ALWAYS use memory:// storage for reliability
