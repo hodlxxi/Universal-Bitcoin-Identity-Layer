@@ -22,7 +22,7 @@ flake8==6.1.0
 pylint==4.0.4
 mypy==1.7.1
 black==23.12.1
-isort==5.13.2
+isort==7.0.0
 
 # Security
 bandit==1.9.2
