@@ -34,7 +34,13 @@ def _b64u(data: bytes) -> str:
 
 
 def _generate_kid() -> str:
-    return str(int(time.time()))
+    """Return a high-resolution timestamp-based kid.
+
+    Using nanoseconds avoids collisions when rotations happen within the
+    same second (e.g., tests that force immediate rotation).
+    """
+
+    return str(time.time_ns())
 
 
 def _public_key_to_jwk(private_key: rsa.RSAPrivateKey, kid: str) -> Dict[str, Any]:
@@ -80,14 +86,37 @@ def _load_or_generate_key(priv_path: str) -> Tuple[rsa.RSAPrivateKey, bytes]:
     return private_key, pem_bytes
 
 
-def _get_key_age_days(kid: str) -> int:
-    """Calculate key age in days from kid (Unix timestamp)."""
+def _normalize_kid_timestamp(kid: str) -> Optional[float]:
+    """Convert a kid to seconds since epoch.
+
+    Supports kid values stored as seconds, milliseconds, microseconds, or
+    nanoseconds to preserve backwards compatibility while ensuring new
+    high-resolution identifiers remain usable for age calculations.
+    """
+
     try:
         created_at = int(kid)
-        age_seconds = time.time() - created_at
-        return int(age_seconds / 86400)
     except (ValueError, TypeError):
+        return None
+
+    # Detect sub-second precision by magnitude
+    if created_at > 1e18:  # nanoseconds
+        return created_at / 1e9
+    if created_at > 1e15:  # microseconds
+        return created_at / 1e6
+    if created_at > 1e12:  # milliseconds
+        return created_at / 1e3
+    return float(created_at)
+
+
+def _get_key_age_days(kid: str) -> float:
+    """Calculate key age in days from kid (Unix timestamp)."""
+    created_at = _normalize_kid_timestamp(kid)
+    if created_at is None:
         return 0
+
+    age_seconds = time.time() - created_at
+    return age_seconds / 86400
 
 
 def _should_rotate_key(kid: str, rotation_days: int = 90) -> bool:

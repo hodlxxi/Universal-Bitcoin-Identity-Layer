@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:13-alpine
+    container_name: hodlxxi-postgres
+    environment:
+      POSTGRES_DB: hodlxxi
+      POSTGRES_USER: hodlxxi
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-hodlxxi_dev_password}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hodlxxi"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:6-alpine
+    container_name: hodlxxi-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  bitcoin:
+    image: ruimarinho/bitcoin-core:24
+    container_name: hodlxxi-bitcoin
+    command:
+      - -regtest
+      - -server
+      - -rpcuser=${RPC_USER:-bitcoinrpc}
+      - -rpcpassword=${RPC_PASSWORD:-bitcoinrpc_password}
+      - -rpcallowip=0.0.0.0/0
+      - -rpcbind=0.0.0.0
+      - -fallbackfee=0.00001
+      - -txindex=1
+    ports:
+      - "${RPC_PORT:-18443}:18443"
+    volumes:
+      - bitcoin_data:/home/bitcoin/.bitcoin
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "-regtest", "-rpcuser=${RPC_USER:-bitcoinrpc}", "-rpcpassword=${RPC_PASSWORD:-bitcoinrpc_password}", "getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hodlxxi-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      bitcoin:
+        condition: service_healthy
+    environment:
+      - FLASK_ENV=${FLASK_ENV:-development}
+      - FLASK_DEBUG=${FLASK_DEBUG:-true}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-dev-secret-key-change-in-production}
+      - DATABASE_URL=postgresql://hodlxxi:${DB_PASSWORD:-hodlxxi_dev_password}@postgres:5432/hodlxxi
+      - REDIS_URL=redis://redis:6379/0
+      - RPC_HOST=bitcoin
+      - RPC_PORT=18443
+      - RPC_USER=${RPC_USER:-bitcoinrpc}
+      - RPC_PASSWORD=${RPC_PASSWORD:-bitcoinrpc_password}
+      - JWT_SECRET=${JWT_SECRET:-dev-jwt-secret-change-in-production}
+      - LNURL_BASE_URL=http://localhost:5000
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    ports:
+      - "${APP_PORT:-5000}:5000"
+    volumes:
+      - ./app:/app/app
+      - ./logs:/app/logs
+      - ./keys:/app/keys
+    command: gunicorn -k gevent -w 1 --bind 0.0.0.0:5000 --reload wsgi:app
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  bitcoin_data:
