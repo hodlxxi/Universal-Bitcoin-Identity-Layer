@@ -38,3 +38,37 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Database files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# Backups and temporary directories
+backups/
+*_backup/
+*.backup/
+cleanup_graveyard*/
+
+# Private keys and secrets (CRITICAL)
+jwks/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Logs and diagnostics
+*.log
+logs/
+__pycache__/
+
+# Environment files
+.env
+.env.*
+!.env.example
