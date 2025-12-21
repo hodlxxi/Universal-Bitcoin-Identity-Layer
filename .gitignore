@@ -73,3 +73,18 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# HODLXXI timestamped backups (common pattern: *.bak.YYYY-..)
+*.bak.*
+*.backup_*
+**/*.bak.*
+**/*.backup_*
+**/app.py.bak.*
+**/app.py.backup_*
+
+# generated diagnostics / local exports
+endpoint_map.txt
+endpoint_test_results.txt
+
+# runtime secrets/keys
+keys/
