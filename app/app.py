@@ -8,6 +8,7 @@ import re
 from flask import session, request
 import secrets
 import time
+from flask import jsonify, render_template
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -66,6 +67,7 @@ from app.oidc import oidc_bp, validate_pkce
 from app.security import init_security, limiter
 from app.tokens import issue_rs256_jwt
 from app.pof_routes import pof_bp, pof_api_bp
+from app.dev_routes import dev_bp
 #from app.playground_routes import playground_bp   # <-- ADD THIS
 from flask import make_response
 
@@ -315,14 +317,11 @@ SOCKETIO_ASYNC_MODE = _resolve_socketio_async_mode(os.getenv("SOCKETIO_ASYNC_MOD
 # (optional) env-driven guest/specials if you want:
 GUEST_PUBKEY = os.getenv("GUEST_PUBKEY", "").strip()
 GUEST_PRIVKEY = os.getenv("GUEST_PRIVKEY", "").strip()
-GUEST2_PUBKEY = os.getenv("GUEST2_PUBKEY", "").strip()
 GUEST2_PRIVKEY = os.getenv("GUEST2_PRIVKEY", "").strip()
 
 SPECIAL_NAMES = {}
 if GUEST_PUBKEY:
     SPECIAL_NAMES[GUEST_PUBKEY] = "Alice"
-if GUEST2_PUBKEY:
-    SPECIAL_NAMES[GUEST2_PUBKEY] = "Bob"
 
 SPECIAL_USERS = [x.strip() for x in os.getenv("SPECIAL_USERS", "").split(",") if x.strip()]
 # === JWT / JWKS / Redis / Limiter setup ===
@@ -498,6 +497,36 @@ ACTIVE_SOCKETS: Dict[str, str] = {}
 ONLINE_USERS: Set[str] = set()
 CHAT_HISTORY: List[Dict[str, any]] = []
 
+# ============================================================================
+# GROUP VIDEO CALLS (up to 4 participants)
+# ============================================================================
+
+# Room management: room_id -> {pubkeys: set, created_at: timestamp}
+CALL_ROOMS: Dict[str, Dict[str, any]] = {}
+MAX_ROOM_SIZE = 4
+
+
+def cleanup_old_rooms():
+    """Remove rooms older than 1 hour with no participants"""
+    now = time.time()
+    to_remove = []
+    for room_id, room_data in list(CALL_ROOMS.items()):
+        age = now - room_data.get("created_at", now)
+        if age > 3600 and len(room_data.get("pubkeys", set())) == 0:
+            to_remove.append(room_id)
+    for room_id in to_remove:
+        CALL_ROOMS.pop(room_id, None)
+    if to_remove:
+        logger.info(f"Cleaned up {len(to_remove)} old empty rooms")
+
+
+def get_room_participants(room_id: str) -> list:
+    """Get list of pubkeys currently in a room"""
+    room = CALL_ROOMS.get(room_id)
+    if not room:
+        return []
+    return list(room.get("pubkeys", set()))
+
 
 FORCE_RELAY = os.getenv("FORCE_RELAY", "false").lower() in ("1", "true", "yes", "on")
 logger.info(f"FORCE_RELAY = {FORCE_RELAY}")
@@ -510,6 +539,34 @@ def truncate_key(key: str, head: int = 6, tail: int = 4) -> str:
 
 
 app = Flask(__name__)
+
+@app.route("/screensaver")
+def screensaver():
+    return render_template("screensaver.html")
+
+
+@app.route("/api/public/status")
+def api_public_status():
+    import time
+    now = int(time.time())
+    iso = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(now))
+
+    height = None
+    err = None
+
+    try:
+        rpc = get_rpc_connection()
+        height = rpc.getblockcount()
+    except Exception as e:
+        err = str(e)
+
+    return jsonify({
+        "server_time_epoch": now,
+        "server_time_utc": iso,
+        "block_height": height,
+        "error": err,
+    })
+
 
 # Redis client
 # Redis client for sessions
@@ -524,6 +581,7 @@ init_security(app, CFG)
 app.register_blueprint(pof_bp)
 app.register_blueprint(oidc_bp)
 app.register_blueprint(pof_api_bp)
+app.register_blueprint(dev_bp, url_prefix="/dev")
 #app.register_blueprint(playground_bp)
 
 OAUTH_PATH_PREFIXES = ("/oauth/", "/oauthx/")
@@ -550,6 +608,9 @@ logger.info("SocketIO async mode resolved to %s", SOCKETIO_ASYNC_MODE)
 
 socketio = SocketIO(
     app,
+    ping_interval=25,
+    ping_timeout=60,
+
     cors_allowed_origins=SOCKETIO_CORS,
     async_mode=SOCKETIO_ASYNC_MODE,
     logger=True,
@@ -791,8 +852,204 @@ def rtc_hangup(data):
         logger.error(f"Error in rtc_hangup: {e}", exc_info=True)
 
 
+
+
+# --- Group Video Call Handlers (rooms + generic signaling) ---
+
+
+@socketio.on("rtc:join_room")
+def rtc_join_room(data):
+    """
+    Join a call room. data = {"room_id": str}
+    - Creates the room if needed
+    - Enforces MAX_ROOM_SIZE
+    - Sends existing peers to the joiner via "rtc:room_peers"
+    - Notifies others via "rtc:peer_joined"
+    - For direct-* rooms, auto-sends an invite to the other pubkey
+    """
+    from flask_socketio import emit, join_room as flask_join_room
+    from flask import request
+
+    try:
+        pubkey = session.get("logged_in_pubkey")
+        if not pubkey:
+            emit("rtc:error", {"error": "Not authenticated"})
+            return
+
+        room_id = (data or {}).get("room_id")
+        if not room_id:
+            emit("rtc:error", {"error": "No room_id provided"})
+            return
+
+        # Create room if needed
+        if room_id not in CALL_ROOMS:
+            CALL_ROOMS[room_id] = {"pubkeys": set(), "created_at": time.time()}
+
+        room = CALL_ROOMS[room_id]
+
+        # Capacity check
+        if len(room["pubkeys"]) >= MAX_ROOM_SIZE and pubkey not in room["pubkeys"]:
+            emit("rtc:error", {"error": "Room is full (max 4 participants)"})
+            logger.warning(f"Room {room_id} is full, rejected {pubkey[:8]}")
+            return
+
+        # Add user to room
+        room["pubkeys"].add(pubkey)
+        flask_join_room(room_id)
+
+        # Current peers (excluding the joiner)
+        current_peers = [p for p in room["pubkeys"] if p != pubkey]
+
+        logger.info(
+            f"User {truncate_key(pubkey)} joined room {room_id}. "
+            f"Participants: {len(room['pubkeys'])}"
+        )
+
+        # Send the room peer list ONLY to the joiner
+        emit(
+            "rtc:room_peers",
+            {"room_id": room_id, "peers": current_peers},
+            room=request.sid,
+        )
+
+        # Notify others that a peer joined
+        emit(
+            "rtc:peer_joined",
+            {"room_id": room_id, "pubkey": pubkey},
+            room=room_id,
+            include_self=False,
+        )
+
+        # Auto-invite for direct-* (2-party) calls
+        if room_id.startswith("direct-") and len(room["pubkeys"]) == 1:
+            # Look for another online pubkey whose full value is embedded in room_id.
+            other_pubkey = None
+            for candidate in set(ACTIVE_SOCKETS.values()):
+                if candidate != pubkey and candidate in room_id:
+                    other_pubkey = candidate
+                    break
+
+            if other_pubkey:
+                logger.info(
+                    f"Auto-inviting {truncate_key(other_pubkey)} to join {room_id}"
+                )
+                payload = {"room_id": room_id, "from": pubkey}
+                for sid in sids_for_pubkey(other_pubkey):
+                    emit("rtc:call_invite", payload, room=sid)
+
+    except Exception as e:
+        logger.error(f"Error in rtc_join_room: {e}", exc_info=True)
+        emit("rtc:error", {"error": "Failed to join room"})
+
+
+@socketio.on("rtc:leave_room")
+def rtc_leave_room(data):
+    """Leave a call room. data = {"room_id": str}"""
+    from flask_socketio import emit, leave_room as flask_leave_room
+    from flask import request
+
+    try:
+        pubkey = session.get("logged_in_pubkey")
+        if not pubkey:
+            return
+
+        room_id = (data or {}).get("room_id")
+        if not room_id:
+            return
+
+        room = CALL_ROOMS.get(room_id)
+        if not room:
+            return
+
+        if pubkey in room["pubkeys"]:
+            room["pubkeys"].remove(pubkey)
+
+        flask_leave_room(room_id)
+        logger.info(f"User {truncate_key(pubkey)} left room {room_id}")
+
+        emit(
+            "rtc:peer_left",
+            {"room_id": room_id, "pubkey": pubkey},
+            room=room_id,
+            include_self=False,
+        )
+
+        # If room is empty, mark for cleanup
+        if not room["pubkeys"]:
+            room["created_at"] = time.time()
+            cleanup_old_rooms()
+
+    except Exception as e:
+        logger.error(f"Error in rtc_leave_room: {e}", exc_info=True)
+
+
+@socketio.on("rtc:signal")
+def rtc_signal(data):
+    """
+    Generic WebRTC signaling for group calls.
+    data = {
+      "room_id": str,
+      "to": remote_pubkey,
+      "type": "offer"|"answer"|"ice",
+      "payload": {...}
+    }
+    """
+    from flask_socketio import emit
+
+    try:
+        pubkey = session.get("logged_in_pubkey")
+        if not pubkey:
+            emit("rtc:error", {"error": "Not authenticated"})
+            return
+
+        room_id = (data or {}).get("room_id")
+        target_pubkey = (data or {}).get("to")
+        signal_type = (data or {}).get("type")
+        payload = (data or {}).get("payload")
+
+        if not room_id or not target_pubkey or not signal_type:
+            emit("rtc:error", {"error": "Invalid signal payload"})
+            return
+
+        room = CALL_ROOMS.get(room_id)
+        if not room or pubkey not in room["pubkeys"]:
+            emit("rtc:error", {"error": "Not in this room"})
+            return
+
+        if target_pubkey not in room["pubkeys"]:
+            emit("rtc:error", {"error": "Target not in this room"})
+            return
+
+        outbound = {
+            "room_id": room_id,
+            "from": pubkey,
+            "type": signal_type,
+            "payload": payload,
+        }
+
+        for sid in sids_for_pubkey(target_pubkey):
+            emit("rtc:signal", outbound, room=sid)
+
+    except Exception as e:
+        logger.error(f"Error in rtc_signal: {e}", exc_info=True)
+        emit("rtc:error", {"error": "Signaling failed"})
+
+
 # --- Chat message helpers + events ---
 
+
+@socketio.on("rtc:invite")
+def rtc_invite(data):
+    """Forward call invitation to specific user"""
+    from flask_socketio import emit
+    to_pubkey = data.get("to")
+    room_id = data.get("room_id")
+    from_pubkey = session.get("logged_in_pubkey")
+    if not to_pubkey or not room_id or not from_pubkey:
+        return
+    # Use sids_for_pubkey like other handlers
+    for sid in sids_for_pubkey(to_pubkey):
+        emit("rtc:invite", {"room_id": room_id, "from": from_pubkey, "from_name": from_pubkey[-8:]}, room=sid)
 
 def _broadcast_chat_message(text: str):
     """Shared logic to append to history and broadcast to all clients."""
@@ -1029,7 +1286,7 @@ def check_auth():
         "logout",
         "verify_signature",
         "guest_login",
-        "guest_login2",
+
         "static",
         "convert_wif",
         "decode_raw_script",
@@ -1139,1349 +1396,1610 @@ def chat():
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="utf-8" />
-    <title>HODLXXI — Covenant Lounge</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-    <meta name="theme-color" content="#00ff88" />
-
-    <!-- Socket.IO -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.min.js"></script>
-
-    <style>
-        :root {
-            --bg: #0b0f10;
-            --panel: #11171a;
-            --fg: #e6f1ef;
-            --accent: #00ff88;
-            --orange: #f7931a;
-            --red: #ff3b30;
-            --blue: #3b82f6;
-            --muted: #8a9da4;
-
-            --border-subtle: rgba(15, 23, 42, 0.7);
-            --border-strong: #0f2a24;
-
-            --spacing: 1rem;
-            --radius-lg: 16px;
-            --radius-pill: 999px;
-
-            --touch-target: 44px;
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        html, body {
-            width: 100%;
-            height: 100%;
-        }
-
-        body {
-            background: radial-gradient(circle at top, #020617 0, #020617 40%, #000 100%);
-            color: var(--fg);
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Mono", Menlo, Consolas, monospace;
-            overflow: hidden;
-        }
-
-        #matrix-bg {
-            position: fixed;
-            inset: 0;
-            z-index: 0;
-            pointer-events: none;
-        }
-        body > *:not(#matrix-bg) {
-            position: relative;
-            z-index: 1;
-        }
-
-        .shell {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            padding: 1.5rem;
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-        }
-
-        /* Mobile layout tweaks */
-        @media (max-width: 768px) {
-            /* Allow the whole page to scroll on small screens */
-            body {
-                overflow-y: auto;
-                -webkit-overflow-scrolling: touch;
-            }
-
-            .shell {
-                padding: 0.75rem;
-                min-height: 100%;
-                height: auto;
-            }
-
-            /* Stack chat and sidebar vertically instead of 2-column grid */
-            .layout {
-                display: flex;
-                flex-direction: column;
-                gap: 0.75rem;
-            }
-        }
-
-        .top-bar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.75rem;
-        }
-
-        .top-left {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-
-        .back-btn {
-            min-width: var(--touch-target);
-            height: var(--touch-target);
-            border-radius: 50%;
-            border: 1px solid var(--border-subtle);
-            background: radial-gradient(circle at 30% 0%, #1f2933 0, #020617 60%);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--accent);
-            cursor: pointer;
-            box-shadow: 0 0 10px rgba(0,255,136,0.25);
-        }
-
-        .back-btn span {
-            font-size: 1.4rem;
-            transform: translateX(-1px);
-        }
-
-        .title-block {
-            display: flex;
-            flex-direction: column;
-            gap: 0.1rem;
-        }
-
-        .title {
-            font-size: clamp(1.1rem, 1.4vw, 1.3rem);
-            letter-spacing: 0.06em;
-            text-transform: uppercase;
-            color: var(--accent);
-        }
-
-        .subtitle {
-            font-size: 0.8rem;
-            color: var(--muted);
-        }
-
-        .top-right {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            font-size: 0.8rem;
-            color: var(--muted);
-        }
-
-        .online-chip {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.35rem;
-            padding: 0.3rem 0.7rem;
-            border-radius: var(--radius-pill);
-            border: 1px solid rgba(34,197,94,0.35);
-            background: radial-gradient(circle at 0 0, rgba(34,197,94,0.25), transparent 60%);
-        }
-
-        .online-dot {
-            width: 0.5rem;
-            height: 0.5rem;
-            border-radius: 50%;
-            background: #22c55e;
-            box-shadow: 0 0 8px rgba(34,197,94,0.9);
-        }
-
-        .layout {
-            flex: 1;
-            min-height: 0;
-            display: grid;
-            grid-template-columns: minmax(0, 2.1fr) minmax(0, 1.3fr);
-            gap: 1rem;
-        }
-
-        @media (max-width: 960px) {
-            .layout {
-                grid-template-columns: minmax(0, 1.8fr) minmax(0, 1.6fr);
-            }
-        }
-
-        .panel {
-            position: relative;
-            background: radial-gradient(circle at 0 -20%, rgba(0,255,136,0.18), transparent 55%),
-                        radial-gradient(circle at 100% 120%, rgba(59,130,246,0.18), transparent 60%),
-                        linear-gradient(145deg, rgba(15,23,42,0.98), #020617 80%);
-            border-radius: var(--radius-lg);
-            border: 1px solid rgba(15,23,42,0.9);
-            box-shadow:
-                0 0 0 1px rgba(15,23,42,0.9),
-                0 0 25px rgba(0,255,136,0.1),
-                0 0 45px rgba(37,99,235,0.33);
-            padding: 0.9rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-            overflow: hidden;
-        }
-
-        .panel-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            font-size: 0.8rem;
-            color: var(--muted);
-            gap: 0.5rem;
-        }
-
-        .panel-title {
-            text-transform: uppercase;
-            letter-spacing: 0.12em;
-            font-size: 0.7rem;
-            color: rgba(148,163,184,0.95);
-        }
-
-        .panel-badge {
-            border-radius: var(--radius-pill);
-            border: 1px solid rgba(148,163,184,0.45);
-            padding: 0.18rem 0.6rem;
-            font-size: 0.7rem;
-        }
-
-        .panel-body {
-            flex: 1;
-            min-height: 0;
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
-
-        .messages-wrap {
-            flex: 1;
-            min-height: 0;
-            border-radius: 12px;
-            border: 1px solid rgba(15,23,42,0.9);
-            background:
-                radial-gradient(circle at 0 0, rgba(0,255,136,0.15), transparent 60%),
-                linear-gradient(180deg, rgba(15,23,42,0.85), rgba(2,6,23,0.95));
-            padding: 0.6rem;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .message-list {
-            list-style: none;
-            flex: 1;
-            min-height: 0;
-            overflow-y: auto;
-            padding-right: 0.3rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.45rem;
-            scrollbar-width: thin;
-            scrollbar-color: rgba(148,163,184,0.7) transparent;
-        }
-
-        .message-list::-webkit-scrollbar {
-            width: 6px;
-        }
-        .message-list::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        .message-list::-webkit-scrollbar-thumb {
-            background: rgba(148,163,184,0.7);
-            border-radius: 999px;
-        }
-
-        .message {
-            position: relative;
-            display: inline-flex;
-            flex-direction: column;
-            max-width: min(85%, 520px);
-            border-radius: 12px;
-            padding: 0.45rem 0.6rem;
-            background: rgba(15,23,42,0.9);
-            border: 1px solid rgba(15,23,42,0.9);
-            box-shadow: 0 12px 18px rgba(15,23,42,0.85);
-        }
-
-        .message.me {
-            align-self: flex-end;
-            background: radial-gradient(circle at 0 0, rgba(0,255,136,0.18), transparent 75%);
-            border-color: rgba(34,197,94,0.5);
-        }
-
-        .message-meta {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.6rem;
-            font-size: 0.68rem;
-            color: var(--muted);
-            margin-bottom: 0.18rem;
-        }
-
-        .message-sender {
-            max-width: 70%;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .message-text {
-            font-size: 0.84rem;
-            line-height: 1.3;
-            word-break: break-word;
-        }
-
-        .composer {
-            margin-top: 0.5rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .input-shell {
-            flex: 1;
-            border-radius: var(--radius-pill);
-            border: 1px solid rgba(15,23,42,0.9);
-            background: rgba(15,23,42,0.95);
-            display: flex;
-            align-items: center;
-            gap: 0.45rem;
-            padding: 0.25rem 0.65rem;
-        }
-
-        .input-shell input {
-            border: none;
-            background: transparent;
-            color: var(--fg);
-            font-size: 0.88rem;
-            outline: none;
-            width: 100%;
-        }
-
-        .hint-pill {
-            font-size: 0.7rem;
-            padding: 0.12rem 0.45rem;
-            border-radius: 999px;
-            border: 1px dashed rgba(148,163,184,0.5);
-            color: rgba(148,163,184,0.9);
-            white-space: nowrap;
-        }
-
-        .send-btn {
-            min-width: var(--touch-target);
-            height: var(--touch-target);
-            border-radius: 50%;
-            border: none;
-            background: radial-gradient(circle at 20% 0, #22c55e 0, #15803d 40%, #052e16 100%);
-            color: #e5fdf2;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.25rem;
-            box-shadow:
-                0 0 0 1px rgba(34,197,94,0.6),
-                0 0 22px rgba(34,197,94,0.8);
-        }
-
-        .send-btn:active {
-            transform: translateY(1px) scale(0.97);
-        }
-
-        .ephemeral {
-            font-size: 0.7rem;
-            color: var(--muted);
-            margin-top: 0.15rem;
-        }
-
-        .ephemeral span {
-            color: var(--accent);
-        }
-
-        .sidebar {
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
-
-        .users-list-wrap {
-            flex: 1;
-            min-height: 0;
-            border-radius: 12px;
-            background: linear-gradient(160deg, rgba(15,23,42,0.92), #020617);
-            border: 1px solid rgba(15,23,42,0.9);
-            padding: 0.6rem;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .users-list {
-            list-style: none;
-            flex: 1;
-            min-height: 0;
-            overflow-y: auto;
-            padding-right: 0.3rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.4rem;
-            scrollbar-width: thin;
-            scrollbar-color: rgba(148,163,184,0.7) transparent;
-        }
-
-        .users-list::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        .user-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.5rem;
-            padding: 0.35rem 0.4rem;
-            border-radius: 10px;
-            background: radial-gradient(circle at 0 0, rgba(0,255,136,0.12), transparent 60%);
-            border: 1px solid rgba(15,23,42,0.9);
-            cursor: pointer;
-            user-select: none;
-            -webkit-user-select: none;
-        }
-
-        .user-left {
-            display: flex;
-            align-items: center;
-            gap: 0.45rem;
-            min-width: 0;
-        }
-
-        .user-dot {
-            width: 0.4rem;
-            height: 0.4rem;
-            border-radius: 50%;
-            box-shadow: 0 0 8px rgba(34,197,94,0.9);
-            background: #22c55e;
-        }
-
-        .user-name {
-            font-size: 0.78rem;
-            max-width: 150px;
-            white-space: nowrap;
-            text-overflow: ellipsis;
-            overflow: hidden;
-        }
-
-        .user-pubkey {
-            font-size: 0.64rem;
-            color: var(--muted);
-            opacity: 0.8;
-        }
-
-        .user-tag-me {
-            display: inline-flex;
-            padding: 0.1rem 0.4rem;
-            border-radius: 999px;
-            border: 1px solid rgba(148,163,184,0.7);
-            font-size: 0.64rem;
-            color: var(--muted);
-        }
-
-        .user-btn {
-            font-size: 0.9rem;
-            min-width: 30px;
-            height: 30px;
-            border-radius: 999px;
-            border: 1px solid rgba(148,163,184,0.6);
-            background: radial-gradient(circle at 0 0, rgba(148,163,184,0.18), transparent 65%);
-            color: var(--fg);
-            cursor: pointer;
-        }
-
-        .info-card {
-            font-size: 0.76rem;
-            padding: 0.6rem;
-            border-radius: 12px;
-            border: 1px dashed rgba(148,163,184,0.6);
-            background: radial-gradient(circle at 0 0, rgba(59,130,246,0.16), transparent 70%);
-            color: rgba(148,163,184,0.95);
-        }
-
-        .info-card strong {
-            color: var(--accent);
-        }
-
-        .info-card code {
-            font-family: "SF Mono", Menlo, Consolas, monospace;
-            font-size: 0.74rem;
-            background: rgba(15,23,42,0.95);
-            padding: 0.05rem 0.35rem;
-            border-radius: 999px;
-            border: 1px solid rgba(15,23,42,0.9);
-        }
-
-        /* Call panel */
-        .call-panel {
-            position: relative;
-            margin-top: 0.5rem;
-            border-radius: 12px;
-            border: 1px solid rgba(15,23,42,0.9);
-            background: radial-gradient(circle at 0 0, rgba(59,130,246,0.22), transparent 75%);
-            padding: 0.55rem;
-            display: grid;
-            grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr);
-            gap: 0.5rem;
-            align-items: center;
-            font-size: 0.8rem;
-        }
-
-        @media (max-width: 960px) {
-            .call-panel {
-                grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.3fr);
-            }
-        }
-
-        @media (max-width: 768px) {
-            .call-panel {
-                grid-template-columns: minmax(0, 1.2fr);
-                grid-auto-rows: auto;
-            }
-        }
-
-        .call-videos {
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.4rem;
-            min-height: 110px;
-        }
-
-        .video-frame {
-            width: 100%;
-            max-width: 260px;
-            border-radius: 12px;
-            overflow: hidden;
-            border: 1px solid rgba(148,163,184,0.6);
-            background: #020617;
-            position: relative;
-        }
-
-        .video-frame video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            background: #020617;
-        }
-
-        .video-label {
-            position: absolute;
-            inset-inline: 0.35rem;
-            bottom: 0.25rem;
-            font-size: 0.65rem;
-            color: rgba(226,232,240,0.9);
-            text-shadow: 0 0 10px rgba(15,23,42,0.9);
-        }
-
-        .call-meta {
-            display: flex;
-            flex-direction: column;
-            gap: 0.3rem;
-        }
-
-        .call-status {
-            font-size: 0.8rem;
-            color: var(--muted);
-        }
-
-        .call-status span {
-            color: var(--accent);
-        }
-
-        .call-buttons {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.35rem;
-            margin-top: 0.25rem;
-        }
-
-        .btn {
-            border-radius: 999px;
-            border: 1px solid rgba(148,163,184,0.6);
-            background: rgba(15,23,42,0.95);
-            color: var(--fg);
-            font-size: 0.78rem;
-            padding: 0.24rem 0.65rem;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.3rem;
-        }
-
-        .btn-danger {
-            border-color: rgba(239,68,68,0.7);
-            background: radial-gradient(circle at 0 0, rgba(239,68,68,0.18), transparent 70%);
-            color: #fecaca;
-        }
-
-        .btn-icon {
-            font-size: 0.9rem;
-        }
-
-        .call-panel.hidden {
-            opacity: 0.45;
-        }
-
-        .call-panel.hidden .btn-danger {
-            opacity: 0.3;
-            pointer-events: none;
-        }
-
-        .status-pill {
-            font-size: 0.7rem;
-            padding: 0.1rem 0.45rem;
-            border-radius: 999px;
-            border: 1px solid rgba(148,163,184,0.65);
-            color: rgba(148,163,184,0.9);
-        }
-
-    
-        /* Mobile column layout override (final) */
-        @media (max-width: 768px) {
-            body {
-                overflow-y: auto;
-                -webkit-overflow-scrolling: touch;
-            }
-
-            .shell {
-                padding: 0.75rem;
-                min-height: 100%;
-                height: auto;
-            }
-
-            /* Stack Live flow · HODLXXI and Online presence vertically */
-            .layout {
-                display: flex;
-                flex-direction: column;
-                gap: 0.75rem;
-            }
-        }
+  <meta charset="utf-8" />
+  <title>HODLXXI — Covenant Lounge</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#00ff88" />
+
+  <!-- Socket.IO -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #000;
+      --fg: #e6f1ef;
+      --accent: #00ff88;
+      --red: #ff3b30;
+      --blue: #3b82f6;
+      --muted: #8a9da4;
+
+      --stroke: rgba(255,255,255,.08);
+      --glass: rgba(8,12,10,.22);
+
+      --radius-lg: 16px;
+      --radius-pill: 999px;
+      --touch: 44px;
+
+      --mono: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+
+    * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color: transparent; }
+    html, body { width:100%; height:100%; background:var(--bg); color:var(--fg); overflow:hidden; }
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Mono", Menlo, Consolas, monospace; }
+
+    /* Matrix canvas */
+    #matrix-bg { position:fixed; inset:0; z-index:0; pointer-events:none; }
+    body > *:not(#matrix-bg){ position:relative; z-index:1; }
+
+    .shell{
+      width:100%;
+      height:100%;
+      padding: 1.25rem;
+      display:flex;
+      flex-direction:column;
+      gap: 0.9rem;
+    }
+
+
+
+    .top-bar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:0.75rem;
+    }
+    .top-left{ display:flex; align-items:center; gap:0.75rem; }
+
+    .back-btn{
+      min-width:var(--touch);
+      height:var(--touch);
+      border-radius:50%;
+      border:1px solid var(--stroke);
+      background: rgba(0,0,0,.25);
+      color: var(--accent);
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      box-shadow: 0 0 14px rgba(0,255,136,.18);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 0 10px;
+    }
+
+    .title-block{ display:flex; flex-direction:column; gap:0.1rem; }
+    .title{
+      font-size: clamp(1.05rem, 1.4vw, 1.25rem);
+      letter-spacing:.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .subtitle{ font-size:0.8rem; color:var(--muted); }
+
+    .top-right{
+      display:flex;
+      align-items:center;
+      gap:0.65rem;
+      font-size:0.8rem;
+      color:var(--muted);
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+
+    .online-chip{
+      display:inline-flex;
+      align-items:center;
+      gap:0.35rem;
+      padding:0.3rem 0.7rem;
+      border-radius:var(--radius-pill);
+      border:1px solid rgba(34,197,94,0.35);
+      background: radial-gradient(circle at 0 0, rgba(34,197,94,0.20), transparent 65%);
+      font-family: var(--mono);
+    }
+    .online-dot{
+      width:0.5rem; height:0.5rem; border-radius:50%;
+      background:#22c55e;
+      box-shadow:0 0 8px rgba(34,197,94,.9);
+    }
+    .status-pill{
+      font-family: var(--mono);
+      font-size:0.72rem;
+      padding:0.12rem 0.55rem;
+      border-radius:999px;
+      border:1px solid rgba(148,163,184,0.55);
+      background: rgba(0,0,0,.22);
+      color: rgba(148,163,184,0.95);
+    }
+
+    .layout{
+      flex:1;
+      min-height:0;
+      display:grid;
+      grid-template-columns: minmax(0, 2.1fr) minmax(0, 1.3fr);
+      gap: 0.9rem;
+    }
+
+    .panel{
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--stroke);
+      background: var(--glass);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 10px 40px rgba(0,0,0,.45);
+      padding: 0.9rem;
+      display:flex;
+      flex-direction:column;
+      gap:0.75rem;
+      min-height:0;
+      overflow:hidden;
+    }
+
+    .panel-header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:0.5rem;
+      font-size:0.78rem;
+      color:var(--muted);
+      font-family: var(--mono);
+    }
+    .panel-title{
+      text-transform:uppercase;
+      letter-spacing:0.12em;
+      font-size:0.7rem;
+      color: rgba(255,59,48,.88);
+      text-shadow: 0 0 6px rgba(255,59,48,.18);
+    }
+    .panel-badge{
+      border-radius:var(--radius-pill);
+      border:1px solid rgba(148,163,184,0.45);
+      padding:0.18rem 0.6rem;
+      font-size:0.7rem;
+      white-space:nowrap;
+    }
+
+    .panel-body{ flex:1; min-height:0; display:flex; flex-direction:column; gap:0.75rem; }
+
+    .messages-wrap{
+      flex:1; min-height:0;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(0,0,0,.22);
+      padding: 0.6rem;
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+    }
+    .message-list{
+      list-style:none;
+      flex:1;
+      min-height:0;
+      overflow-y:auto;
+      padding-right:0.3rem;
+      display:flex;
+      flex-direction:column;
+      gap:0.45rem;
+      scrollbar-width:thin;
+      scrollbar-color: rgba(148,163,184,0.7) transparent;
+    }
+    .message-list::-webkit-scrollbar{ width:6px; }
+    .message-list::-webkit-scrollbar-thumb{ background: rgba(148,163,184,0.7); border-radius:999px; }
+
+    .message{
+      align-self:flex-start;
+      max-width:min(85%, 520px);
+      border-radius:12px;
+      padding:0.45rem 0.6rem;
+      background: rgba(15,23,42,0.75);
+      border:1px solid rgba(255,255,255,.06);
+      box-shadow: 0 10px 18px rgba(0,0,0,.45);
+    }
+    .message.me{
+      align-self:flex-end;
+      border-color: rgba(34,197,94,0.45);
+      box-shadow: 0 0 0 1px rgba(34,197,94,0.08) inset, 0 10px 18px rgba(0,0,0,.45);
+    }
+
+    .message-meta{
+      display:flex;
+      justify-content:space-between;
+      gap:0.6rem;
+      font-size:0.68rem;
+      color: var(--muted);
+      margin-bottom: 0.18rem;
+      font-family: var(--mono);
+    }
+    .message-sender{ max-width:70%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .message-text{ font-size:0.86rem; line-height:1.3; word-break:break-word; }
+
+    .composer{
+      display:flex;
+      align-items:center;
+      gap:0.5rem;
+      margin-top:0.1rem;
+    }
+    .input-shell{
+      flex:1;
+      border-radius: var(--radius-pill);
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(0,0,0,.22);
+      display:flex;
+      align-items:center;
+      gap:0.45rem;
+      padding:0.28rem 0.7rem;
+    }
+    .input-shell input{
+      width:100%;
+      border:none;
+      outline:none;
+      background:transparent;
+      color:var(--fg);
+      font-size:0.9rem;
+    }
+    .hint-pill{
+      font-family: var(--mono);
+      font-size:0.72rem;
+      padding:0.12rem 0.45rem;
+      border-radius:999px;
+      border: 1px dashed rgba(148,163,184,0.5);
+      color: rgba(148,163,184,0.9);
+      white-space:nowrap;
+    }
+    .send-btn{
+      min-width:var(--touch);
+      height:var(--touch);
+      border-radius:50%;
+      border:none;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      font-size:1.25rem;
+      color:#e5fdf2;
+      background: radial-gradient(circle at 20% 0, #22c55e 0, #15803d 45%, #052e16 100%);
+      box-shadow: 0 0 0 1px rgba(34,197,94,0.55), 0 0 22px rgba(34,197,94,0.55);
+    }
+    .send-btn:active{ transform: translateY(1px) scale(0.98); }
+
+    .ephemeral{
+      font-family: var(--mono);
+      font-size:0.72rem;
+      color: var(--muted);
+    }
+    .ephemeral span{ color: var(--accent); }
+
+    /* Sidebar */
+    .sidebar{ display:flex; flex-direction:column; gap:0.75rem; min-height:0; }
+
+    .users-list-wrap{
+      flex:1; min-height:0;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.08);
+      background: rgba(0,0,0,.22);
+      padding:0.6rem;
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+    }
+    .users-list{
+      list-style:none;
+      flex:1; min-height:0;
+      overflow-y:auto;
+      padding-right:0.3rem;
+      display:flex;
+      flex-direction:column;
+      gap:0.4rem;
+    }
+    .user-item{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:0.5rem;
+      padding:0.35rem 0.45rem;
+      border-radius:10px;
+      border:1px solid rgba(255,255,255,.06);
+      background: rgba(0,0,0,.20);
+      cursor:pointer;
+      user-select:none;
+      -webkit-user-select:none;
+    }
+    .user-left{ display:flex; align-items:center; gap:0.45rem; min-width:0; }
+    .user-dot{
+      width:0.42rem; height:0.42rem; border-radius:50%;
+      background:#22c55e;
+      box-shadow:0 0 8px rgba(34,197,94,.85);
+      flex:0 0 auto;
+    }
+    .user-name{ font-size:0.8rem; max-width:170px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .user-sub{ font-size:0.66rem; color:var(--muted); opacity:.9; font-family: var(--mono); }
+    .user-tag{
+      display:inline-flex;
+      padding:0.08rem 0.4rem;
+      border-radius:999px;
+      border:1px solid rgba(148,163,184,0.55);
+      font-size:0.64rem;
+      color: rgba(148,163,184,0.95);
+      font-family: var(--mono);
+      margin-top: 2px;
+      width: fit-content;
+    }
+    .user-btn{
+      font-size:0.9rem;
+      min-width:30px; height:30px;
+      border-radius:999px;
+      border:1px solid rgba(148,163,184,0.5);
+      background: rgba(0,0,0,.18);
+      color: var(--fg);
+      cursor:pointer;
+      flex:0 0 auto;
+    }
+
+    /* Group call panel */
+    .group-call-panel{
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.08);
+      background: rgba(0,0,0,.22);
+      padding:0.6rem;
+      overflow:hidden;
+    }
+    .group-call-panel.hidden{ display:none; }
+
+    .call-header{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:0.6rem;
+      flex-wrap:wrap;
+      margin-bottom:0.6rem;
+    }
+    .call-status{
+      font-family: var(--mono);
+      font-size:0.78rem;
+      color: var(--muted);
+    }
+    .call-controls{
+      display:flex;
+      flex-wrap:wrap;
+      gap:0.35rem;
+    }
+    .ctrl-btn{
+      font-family: var(--mono);
+      font-size:0.75rem;
+      padding:0.35rem 0.7rem;
+      border-radius:999px;
+      border:1px solid rgba(148,163,184,0.5);
+      background: rgba(0,0,0,.18);
+      color: var(--fg);
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      gap:0.3rem;
+      transition: all .15s ease;
+    }
+    .ctrl-btn:hover{ border-color: rgba(0,255,136,.35); }
+    .ctrl-btn.active{
+      border-color: rgba(239,68,68,0.6);
+      background: rgba(239,68,68,0.12);
+      color: #fecaca;
+    }
+    .ctrl-btn.ctrl-danger{
+      border-color: rgba(239,68,68,0.7);
+      background: rgba(239,68,68,0.12);
+      color: #fecaca;
+    }
+
+    .call-grid{
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap:0.5rem;
+    }
+    @media (min-width: 600px){
+      .call-grid{ grid-template-columns: repeat(2, 1fr); }
+    }
+    .video-tile{
+      position:relative;
+      width:100%;
+      aspect-ratio: 4/3;
+      border-radius:10px;
+      overflow:hidden;
+      border:1px solid rgba(148,163,184,0.45);
+      background:#020617;
+    }
+    .video-tile.local-tile{ border-color: rgba(59,130,246,0.55); }
+    .video-tile video{ width:100%; height:100%; object-fit:cover; background:#020617; }
+    .video-label{
+      position:absolute;
+      left:0.5rem; right:0.5rem; bottom:0.5rem;
+      font-family: var(--mono);
+      font-size:0.7rem;
+      color: rgba(226,232,240,0.95);
+      background: rgba(0,0,0,0.45);
+      padding:0.2rem 0.4rem;
+      border-radius:6px;
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .floating-call-btn{
+      position:fixed;
+      bottom: 18px;
+      right: 18px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: 2px solid var(--accent);
+      background: rgba(0,0,0,.28);
+      color: var(--accent);
+      font-size: 1.35rem;
+      cursor:pointer;
+      box-shadow: 0 0 18px rgba(59,130,246,0.22), 0 0 18px rgba(0,255,136,0.18);
+      z-index: 1000;
+    }
+
+@media (max-width: 768px){
+  html, body { overflow-y:auto !important; -webkit-overflow-scrolling:touch; }
+  .shell { padding: 0.75rem; height:auto; min-height:100%; }
+
+  .layout{
+    display:flex !important;
+    flex-direction:column !important;
+    gap:0.75rem !important;
+  }
+
+  .chat-panel { order: 1; }
+  .sidebar    { order: 2; }
+
+  /* ✅ make chat area actually usable in portrait */
+  .chat-panel{
+    flex: 1 1 auto !important;
+    min-height: 62vh !important;
+  }
+
+  .chat-panel .panel-body{
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+  }
+
+  .chat-panel .messages-wrap{
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow:hidden;
+  }
+
+  /* remove fixed vh; let it fill remaining height */
+  .chat-panel .message-list{
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow-y:auto !important;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  /* ✅ shrink presence list so chat wins vertical space */
+  .presence-panel .users-list-wrap{
+    max-height: 22vh !important;
+    overflow:auto;
+  }
+
+  /* ✅ iOS safe area so composer isn't hidden behind home bar */
+  .composer{
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
+  }
+
+  /* ✅ ensure online list is actually visible on mobile */
+  .sidebar{
+    flex: 0 0 auto !important;
+    min-height: 180px !important;
+  }
+
+  .presence-panel{
+    min-height: 180px !important;
+  }
+
+  .presence-panel .panel-body{
+    min-height: 120px !important;
+  }
+
+  .presence-panel .users-list-wrap{
+    height: 180px !important;
+    max-height: 30vh !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+}
+  .sidebar    { order: 2; }
+
+  .chat-panel .messages-wrap{
+    flex:1 !important;
+    min-height:0 !important;
+    overflow:hidden;
+  }
+
+  .chat-panel .message-list{
+    height: 55vh !important;
+    max-height: 60vh !important;
+    overflow-y:auto !important;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  .presence-panel .users-list-wrap{
+    height: 24vh;
+    max-height: 28vh;
+    overflow:auto;
+  }
+}
+  .sidebar    { order: 2; }
+
+  .chat-panel .messages-wrap{
+    height: 60vh;
+    max-height: 65vh;
+    overflow:auto;
+  }
+
+  .presence-panel .users-list-wrap{
+    height: 24vh;
+    max-height: 28vh;
+    overflow:auto;
+  }
+}
+
+  
+/* LOGIN_MODAL_MOBILE_CSS: make LN modal readable on phones */
+#lnurlText{
+  display:block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.25;
+  opacity: 0.95;
+  word-break: break-all;
+  max-height: 10.5em;
+  overflow:auto;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,255,0,0.25);
+  background: rgba(0,0,0,0.35);
+}
+
+#countdown{
+  display:block;
+  margin-top: 8px;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+@media (max-width: 768px){
+  /* ensure modal content stacks nicely */
+  #qrModal .modal-content, #qrModal .modal-inner, #qrModal .qr-wrap{
+    width: min(92vw, 520px) !important;
+    max-height: 86vh !important;
+    overflow: auto !important;
+  }
+  #qrcode{
+    display:flex;
+    justify-content:center;
+    padding: 8px 0 4px;
+  }
+  #lnurlText{
+    font-size: 13px;
+  }
+}
+
+
+/* LOGIN_LANDSCAPE_QR_FIX: stable modal + prevent bg tap stealing */
+#matrix-bg, #matrix-canvas, canvas#matrix-bg, canvas#matrix-canvas,
+#matrix-bg *, #matrix-canvas *, .matrix-bg, .matrix-bg *{
+  pointer-events: none !important;
+}
+
+/* Make sure actual UI is tappable above background layers */
+.pill, .pill *, button, a, .btn, .toolbar, .shell, .panel, .main, .content {
+  pointer-events: auto;
+}
+
+/* QR Modal always above everything */
+#qrModal{
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 999999 !important;
+}
+
+/* iPad / tablet landscape: modal should fit and show QR + text + timer */
+@media (max-width: 1024px) and (orientation: landscape){
+  #qrModal{
+    padding: 10px !important;
+  }
+
+  /* allow scrolling if height is tight */
+  #qrModal *{
+    max-height: none;
+  }
+
+  /* make QR smaller so it doesn't get clipped */
+  #qrcode img, #qrcode canvas{
+    width: 220px !important;
+    height: 220px !important;
+  }
+
+  #lnurlText{
+    max-height: 7.5em !important;
+  }
+}
+
+
+/* LOGIN_MODAL_LAYOUT_V3 */
+
+/* Keep matrix background behind everything */
+#matrix-bg, #matrix-canvas, canvas#matrix-bg, canvas#matrix-canvas,
+#matrix-bg *, #matrix-canvas * {
+  pointer-events: none !important;
+  z-index: 0 !important;
+}
+
+/* Ensure main UI sits above background */
+.shell, .main, .content, .panel, .toolbar, .login-wrap, .auth-row, .pillbar {
+  position: relative;
+  z-index: 10;
+}
+
+/* QR modal always on top */
+#qrModal{
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 999999 !important;
+}
+
+/* Make modal content scroll if height is tight */
+#qrModal{
+  overflow: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Improve readability of lnurl text (keep your neon vibe) */
+#lnurlText{
+  display:block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  word-break: break-all;
+  overflow:auto;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,255,0,0.25);
+  background: rgba(0,0,0,0.35);
+}
+
+/* iPad / tablet LANDSCAPE: show QR + text side-by-side */
+@media (orientation: landscape) and (max-height: 600px){
+  /* Try multiple container names so it works with your current markup */
+  #qrModal > div,
+  #qrModal .modal-content,
+  #qrModal .modal-inner,
+  #qrModal .qr-wrap{
+    display: grid !important;
+    grid-template-columns: 260px 1fr !important;
+    gap: 12px !important;
+    align-items: start !important;
+    width: min(96vw, 980px) !important;
+    margin: 10px auto !important;
+    max-height: 86vh !important;
+    overflow: auto !important;
+  }
+
+  #qrcode{ grid-column: 1 !important; display:flex; justify-content:center; }
+  #lnurlText{ grid-column: 2 !important; max-height: 9em !important; }
+  #countdown{ grid-column: 2 !important; margin-top: 8px !important; }
+  #qrcode img, #qrcode canvas { width: 240px !important; height: 240px !important; }
+}
+
+/* Phones portrait: keep it stacked, readable */
+@media (max-width: 768px){
+  #qrcode{ display:flex; justify-content:center; padding: 8px 0 4px; }
+  #lnurlText{ font-size: 13px; max-height: 11em; }
+  #countdown{ font-size: 13px; opacity: .9; }
+}
+
+
+/* QR_MODAL_LANDSCAPE_V1: iPad/tablet landscape QR modal layout */
+@media (orientation: landscape) and (max-width: 1024px){
+  /* assume first inner wrapper holds qrcode + lnurlText + countdown */
+  #qrModal > div{
+    width: min(96vw, 980px) !important;
+    max-height: 86vh !important;
+    overflow: auto !important;
+    display: grid !important;
+    grid-template-columns: 260px 1fr !important;
+    grid-auto-rows: min-content !important;
+    gap: 12px !important;
+    align-items: start !important;
+    margin: 10px auto !important;
+  }
+
+  #qrcode{ grid-column: 1 !important; display:flex !important; justify-content:center !important; }
+  #lnurlText{ grid-column: 2 !important; max-height: 8.5em !important; }
+  #countdown{ grid-column: 2 !important; margin-top: 8px !important; }
+
+  #qrcode img, #qrcode canvas{
+    width: 240px !important;
+    height: 240px !important;
+  }
+}
+
+
+/* QR_MODAL_WRAPPER_V3 */
+#qrCard.qr-card{
+  width: min(92vw, 520px);
+  max-height: 86vh;
+  overflow: auto;
+  margin: 10px auto;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(0,255,0,0.25);
+  background: rgba(0,0,0,0.55);
+  box-shadow: 0 0 18px rgba(0,255,0,0.12);
+}
+
+@media (orientation: landscape) and (max-width: 1024px){
+  #qrCard.qr-card{
+    width: min(96vw, 980px);
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+  #qrcode{ grid-column: 1; display:flex; justify-content:center; }
+  #lnurlText{ grid-column: 2; max-height: 8.5em; }
+  #countdown{ grid-column: 2; margin-top: 8px; }
+  #qrcode img, #qrcode canvas{ width: 240px !important; height: 240px !important; }
+}
+
+
+/* LOGIN_QR_LAYOUT_V4 */
+
+/* Never let the matrix/bg steal taps */
+#matrix-bg, #matrix-canvas, canvas#matrix-bg, canvas#matrix-canvas,
+#matrix-bg *, #matrix-canvas *, canvas {
+  pointer-events: none !important;
+}
+
+/* Make sure login controls are above background */
+.shell, .main, .content, .panel, .toolbar, .login-wrap, .auth-row, .pillbar, .pill, button {
+  position: relative;
+  z-index: 10;
+}
+
+/* Modal always on top */
+#qrModal{
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 999999 !important;
+  overflow: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Our wrapper card */
+#qrCard{
+  width: min(92vw, 520px);
+  max-height: 86vh;
+  overflow: auto;
+  margin: 10px auto;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(0,255,0,0.25);
+  background: rgba(0,0,0,0.55);
+  box-shadow: 0 0 18px rgba(0,255,0,0.12);
+}
+
+/* Text + timer look good on phones */
+#lnurlText{
+  display:block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.25;
+  opacity: 0.95;
+  word-break: break-all;
+  max-height: 11em;
+  overflow:auto;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,255,0,0.25);
+  background: rgba(0,0,0,0.35);
+}
+#countdown{
+  display:block;
+  margin-top: 8px;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+/* iPad/tablet LANDSCAPE: QR left, text+timer right */
+@media (orientation: landscape) and (max-width: 1024px){
+  #qrCard{
+    width: min(96vw, 980px);
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+  #qrcode{ grid-column: 1; display:flex; justify-content:center; padding: 8px 0 4px; }
+  #lnurlText{ grid-column: 2; max-height: 8.5em; }
+  #countdown{ grid-column: 2; }
+  #qrcode img, #qrcode canvas{ width: 240px !important; height: 240px !important; }
+}
+
+
+
+/* LOGIN_QR_COSMETIC_POLISH_V1 */
+/* Cosmetic only: spacing, readability, consistent card + better landscape behavior */
+
+#qrModal{
+  /* nicer overlay */
+  background: rgba(0,0,0,0.70) !important;
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+}
+
+/* The modal “card” */
+#qrCard, #qrCard.qr-card{
+  border-radius: 18px !important;
+  padding: 14px !important;
+  border: 1px solid rgba(0,255,0,0.28) !important;
+  box-shadow:
+    0 0 26px rgba(0,255,0,0.14),
+    inset 0 0 0 1px rgba(0,255,0,0.08) !important;
+}
+
+/* QR block */
+#qrcode{
+  padding: 10px 0 6px !important;
+}
+#qrcode img, #qrcode canvas{
+  border-radius: 12px !important;
+  box-shadow: 0 0 18px rgba(0,255,0,0.12) !important;
+}
+
+/* LNURL text box */
+#lnurlText{
+  font-size: 13px !important;
+  letter-spacing: 0.15px;
+  scrollbar-width: thin;
+}
+
+/* Countdown: centered + tabular digits (cleaner timer look) */
+#countdown{
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.25px;
+  padding: 2px 0 0;
+}
+
+/* Buttons/links inside the modal: consistent tap target + spacing */
+#qrModal a, #qrModal button{
+  min-height: 44px; /* iOS recommended */
+  border-radius: 14px;
+}
+#qrModal a{
+  text-decoration: none;
+}
+#qrModal .qr-card a,
+#qrModal .qr-card button{
+  width: 100%;
+  margin-top: 10px;
+}
+
+/* Open-in-wallet link: make it look intentional */
+#openInWallet{
+  display:block;
+  text-align:center;
+  opacity: 0.95;
+  padding: 6px 0 2px;
+}
+
+/* Small phones: tighten spacing */
+@media (max-width: 420px){
+  #qrCard, #qrCard.qr-card{ padding: 12px !important; }
+  #lnurlText{ font-size: 12.5px !important; max-height: 10.5em !important; }
+}
+
+/* iPad / landscape with limited height: keep everything visible */
+@media (orientation: landscape) and (max-height: 700px){
+  #qrCard, #qrCard.qr-card{
+    width: min(96vw, 980px) !important;
+    display: grid !important;
+    grid-template-columns: 220px 1fr !important;
+    gap: 12px !important;
+    align-items: start !important;
+  }
+  #qrcode{ grid-column: 1 !important; }
+  #lnurlText{ grid-column: 2 !important; max-height: 7.5em !important; }
+  #countdown{ grid-column: 2 !important; }
+  #qrcode img, #qrcode canvas{ width: 200px !important; height: 200px !important; }
+}
 
 </style>
 </head>
-<body data-my-pubkey="{{ my_pubkey|e }}">
-    <canvas id="matrix-bg"></canvas>
 
-    <main class="shell">
-        <header class="top-bar">
-            <div class="top-left">
-                <button class="back-btn" type="button" onclick="goHome('#explorer')">
-                    <span>home</span>
-                </button>
-                <div class="title-block">
-                    <div class="title">Covenant Lounge</div>
-                    <div class="subtitle">
-                        Encrypted presence chips, 45&nbsp;sec ephemeral whispers, tap-hold to video-call.
-                    </div>
+<body
+  data-my-pubkey="{{ my_pubkey|e }}"
+  data-access-level="{{ access_level|e }}"
+>
+  <canvas id="matrix-bg"></canvas>
+
+  <!-- expose SPECIAL_NAMES to JS -->
+  <script id="specialNames" type="application/json">{{ special_names|tojson }}</script>
+
+  <main class="shell">
+    <header class="top-bar">
+      <div class="top-left">
+        <button class="back-btn" type="button" onclick="goHome('#explorer')">home</button>
+        <div class="title-block">
+          <div class="title">Covenant Lounge</div>
+          <div class="subtitle">Presence chips · 45s whispers · tap-hold to call</div>
+        </div>
+      </div>
+      <div class="top-right">
+        <div class="online-chip">
+          <span class="online-dot"></span>
+          <span><span id="onlineCount">{{ online_users|length }}</span> online</span>
+        </div>
+        <div id="room-status" class="status-pill">Connecting…</div>
+      </div>
+    </header>
+
+    <section class="layout">
+      <!-- Chat -->
+      <section class="panel chat-panel">
+        <div class="panel-header">
+          <div class="panel-title">Live flow · <span style="color:var(--accent)">HODLXXI</span></div>
+          <div class="panel-badge">Self-erase after 45s</div>
+        </div>
+
+        <div class="panel-body">
+          <div class="messages-wrap">
+            <ul id="messages" class="message-list">
+              {% for m in history %}
+              <li class="message{% if m.pubkey == my_pubkey %} me{% endif %}" data-ts="{{ m.ts|default(0) }}">
+                <div class="message-meta">
+                  <div class="message-sender">{{ (m.pubkey or 'anon')[:12] }}…{{ (m.pubkey or '')[-6:] }}</div>
+                  <div class="message-timestamp">''</div>
                 </div>
+                <div class="message-text">{{ (m.text or '')|e }}</div>
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+
+          <div class="composer">
+            <div class="input-shell">
+              <input id="chatInput" type="text" autocomplete="off" placeholder="Type a whisper…" />
+              <div class="hint-pill">@</div>
             </div>
-            <div class="top-right">
-                <div class="online-chip">
-                    <span class="online-dot"></span>
-                    <span><span id="onlineCount">{{ online_users|length }}</span> online</span>
-                </div>
-                <div id="room-status" class="status-pill">Connecting…</div>
-            </div>
-        </header>
+            <button id="sendBtn" class="send-btn" type="button">➤</button>
+          </div>
 
-        <section class="layout">
-            <!-- Chat panel -->
-            <section class="panel">
-                <div class="panel-header">
-                    <div class="panel-title">Live flow &nbsp;·&nbsp; <span style="color:var(--accent)">HODLXXI</span></div>
-                    <div class="panel-badge">Messages self-erase after 45&nbsp;sec</div>
-                </div>
-                <div class="panel-body">
-                    <div class="messages-wrap">
-                        <ul id="messages" class="message-list">
-                            {% for m in history %}
-                            <li class="message{% if m.pubkey == my_pubkey %} me{% endif %}"
-                                data-ts="{{ m.ts|default(0) }}">
-                                <div class="message-meta">
-                                    <div class="message-sender">
-                                        {{ (m.pubkey or 'anon')[:12] }}…{{ (m.pubkey or '')[-6:] }}
-                                    </div>
-                                    <div class="message-timestamp">
-                                        {{ m.ts|datetimeformat if m.ts else '' }}
-                                    </div>
-                                </div>
-                                <div class="message-text">
-                                    {{ (m.text or '')|e }}
-                                </div>
-                            </li>
-                            {% endfor %}
-                        </ul>
-                    </div>
+          <div class="ephemeral">Ephemeral: messages exist for <span>45 seconds</span>, then vanish.</div>
+        </div>
+      </section>
 
-                    <div class="composer">
-                        <div class="input-shell">
-                            <input id="chatInput"
-                                   type="text"
-                                   autocomplete="off"
-                                   placeholder="Type a whisper…" />
-                            <div class="hint-pill">@</div>
-                        </div>
-                        <button id="sendBtn" class="send-btn" type="button">➤</button>
-                    </div>
-                    <div class="ephemeral">
-                        Ephemeral mode: messages exist in memory for <span>45&nbsp;seconds</span>, then vanish.
-                    </div>
-                </div>
-            </section>
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <section class="panel presence-panel">
+          <div class="panel-header">
+            <div class="panel-title">Online presence</div>
+            <div class="panel-badge">Tap = Explorer · @ = mention · Hold = call</div>
+          </div>
 
-            <!-- Right sidebar: users + call panel -->
-            <aside class="sidebar">
-                <section class="panel">
-                    <div class="panel-header">
-                        <div class="panel-title">Online presence</div>
-                        <div class="panel-badge">Tap = @mention · Long-press = call</div>
-                    </div>
-                    <div class="panel-body">
-                        <div class="users-list-wrap">
-                                        <ul id="userList" class="users-list">
+          <div class="panel-body">
+            <div class="users-list-wrap">
+              <ul id="userList" class="users-list">
                 {% for pk in online_users %}
                 <li class="user-item" data-pubkey="{{ pk|e }}">
-                    <div class="user-left">
-                        <span class="user-dot"></span>
-                        <div>
-                            <div class="user-name">
-                                {% set last4 = pk[-4:] %}
-                                {% if pk.startswith('guest') or pk|length < 20 %}
-                                    guest …{{ last4 }}
-                                {% elif pk == my_pubkey %}
-                                    you · …{{ last4 }}
-                                {% else %}
-                                    …{{ last4 }}
-                                {% endif %}
-                            </div>
-                            {% if pk == my_pubkey %}
-                                <div class="user-tag-me">you</div>
-                            {% else %}
-                                <div class="user-pubkey">…{{ pk[-4:] }}</div>
-                            {% endif %}
-                        </div>
+                  <div class="user-left">
+                    <span class="user-dot"></span>
+                    <div style="min-width:0;">
+                      <div class="user-name">…{{ pk[-4:] }}</div>
+                      {% if pk == my_pubkey %}
+                        <div class="user-tag">you</div>
+                      {% else %}
+                        <div class="user-sub">…{{ pk[-4:] }}</div>
+                      {% endif %}
                     </div>
-                    <button class="user-btn" type="button">@</button>
+                  </div>
+                  <button class="user-btn" type="button">@</button>
                 </li>
                 {% endfor %}
-            </ul>
-                        </div>
-                    </div>
-                </section>
-
-                <section id="callPanel" class="call-panel hidden">
-                    <div class="call-videos">
-                        <div class="video-frame">
-                            <video id="remoteVideo" playsinline></video>
-                            <div class="video-label">Remote stream</div>
-                        </div>
-                        <div class="video-frame" style="max-width: 140px;">
-                            <video id="localVideo" muted playsinline></video>
-                            <div class="video-label">You</div>
-                        </div>
-                    </div>
-                    <div class="call-meta">
-                        <div id="callStatus" class="call-status">
-                            No active call — long-press any user chip to start.
-                        </div>
-                        <div class="call-buttons">
-                            <button id="hangupBtn" class="btn btn-danger" type="button">
-                                <span class="btn-icon">✕</span>
-                                Hang up
-                            </button>
-                        </div>
-                    </div>
-                </section>
-            </aside>
+              </ul>
+            </div>
+          </div>
         </section>
-    </main>
 
-    <!-- JS: Matrix background + chat + WebRTC -->
-    <script>
-        const myPubkey = document.body.dataset.myPubkey || "";
+        <!-- Group call panel -->
+        <section id="groupCallPanel" class="group-call-panel hidden">
+          <div class="call-header">
+            <div id="callStatus" class="call-status">Not in a call</div>
+            <div class="call-controls">
+              <button id="muteBtn" class="ctrl-btn" type="button"><span>🔊</span>Mute</button>
+              <button id="cameraBtn" class="ctrl-btn" type="button"><span>📷</span>Camera Off</button>
+              <button id="hangupGroupBtn" class="ctrl-btn ctrl-danger" type="button"><span>✕</span>Hang Up</button>
+            </div>
+          </div>
 
-        // Matrix "space warp"
-        (() => {
-            const canvas = document.getElementById('matrix-bg');
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d');
-            const CHARS = ['0','1'];
-            let width = 0, height = 0, particles = [], raf = null;
+          <div class="call-grid">
+            <div class="video-tile local-tile">
+              <video id="localVideo" muted playsinline autoplay></video>
+              <div class="video-label">You</div>
+            </div>
+            <div id="remoteVideosContainer"></div>
+          </div>
+        </section>
+      </aside>
+    </section>
+  </main>
 
-            function resize() {
-                const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
-                const cssW = window.innerWidth;
-                const cssH = window.innerHeight;
+  <button class="floating-call-btn" onclick="startGroupCall()" title="Start group call">📞</button>
 
-                canvas.width  = Math.floor(cssW * dpr);
-                canvas.height = Math.floor(cssH * dpr);
-                canvas.style.width  = cssW + 'px';
-                canvas.style.height = cssH + 'px';
+  <script>
+    const myPubkey = document.body.dataset.myPubkey || "";
+    const accessLevel = document.body.dataset.accessLevel || "limited";
+    const SPECIAL_NAMES = (() => {
+      try { return JSON.parse(document.getElementById("specialNames")?.textContent || "{}"); }
+      catch { return {}; }
+    })();
 
-                ctx.setTransform(1,0,0,1,0,0);
-                ctx.scale(dpr, dpr);
+    // Matrix "space warp"
+    (() => {
+      const canvas = document.getElementById('matrix-bg');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const CHARS = ['0','1'];
+      const isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+      let width = 0, height = 0, particles = [], raf = null;
 
-                width = cssW;
-                height = cssH;
+      function resize() {
+        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+        const cssW = window.innerWidth;
+        const cssH = window.innerHeight;
+        canvas.width  = Math.floor(cssW * dpr);
+        canvas.height = Math.floor(cssH * dpr);
+        canvas.style.width  = cssW + 'px';
+        canvas.style.height = cssH + 'px';
+        ctx.setTransform(1,0,0,1,0,0);
+        ctx.scale(dpr, dpr);
+        width = cssW; height = cssH;
 
-                particles = [];
-                for (let i = 0; i < 400; i++) {
-                    particles.push({
-                        x: (Math.random() - 0.5) * width,
-                        y: (Math.random() - 0.5) * height,
-                        z: Math.random() * 800 + 100
-                    });
-                }
-
-                ctx.fillStyle = 'rgba(0,0,0,1)';
-                ctx.fillRect(0, 0, width, height);
-            }
-
-            function draw() {
-                ctx.fillStyle = 'rgba(0,0,0,0.25)';
-                ctx.fillRect(0, 0, width, height);
-                ctx.fillStyle = '#00ff88';
-
-                for (const p of particles) {
-                    const scale = 200 / p.z;
-                    const x2 = width  / 2 + p.x * scale;
-                    const y2 = height / 2 + p.y * scale;
-                    const size = Math.max(8 * scale, 1);
-
-                    ctx.font = size + 'px monospace';
-                    ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
-
-                    p.z -= 5;
-                    if (p.z < 1) {
-                        p.x = (Math.random() - 0.5) * width;
-                        p.y = (Math.random() - 0.5) * height;
-                        p.z = 800;
-                    }
-                }
-
-                raf = requestAnimationFrame(draw);
-            }
-
-            function onVis() {
-                if (document.hidden) {
-                    if (raf) { cancelAnimationFrame(raf); raf = null; }
-                } else {
-                    if (!raf) raf = requestAnimationFrame(draw);
-                }
-            }
-
-            window.addEventListener('resize', resize);
-            document.addEventListener('visibilitychange', onVis);
-
-            resize();
-            raf = requestAnimationFrame(draw);
-        })();
-
-        function goHome(hash) {
-            const base = "{{ url_for('home') }}";
-            const url  = hash ? base + hash : base;
-            window.location.href = url;
+        particles = [];
+        for (let i = 0; i < (isMobile ? 120 : 400); i++) {
+          particles.push({ x:(Math.random()-0.5)*width, y:(Math.random()-0.5)*height, z:Math.random()*800+100 });
         }
+        ctx.fillStyle = 'rgba(0,0,0,1)';
+        ctx.fillRect(0, 0, width, height);
+      }
 
-        function shortKey(pk) {
-            if (!pk) return "";
-            return pk.length > 18 ? pk.slice(0,10) + "…" + pk.slice(-6) : pk;
+      function draw() {
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = '#00ff88';
+        for (const p of particles) {
+          const scale = 200 / p.z;
+          const x2 = width/2 + p.x * scale;
+          const y2 = height/2 + p.y * scale;
+          const size = Math.max(8 * scale, 1);
+          ctx.font = size + 'px monospace';
+          ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
+          p.z -= (isMobile ? 2 : 5);
+          if (p.z < 1) { p.x=(Math.random()-0.5)*width; p.y=(Math.random()-0.5)*height; p.z=800; }
         }
+        raf = requestAnimationFrame(draw);
+      }
 
-        function mentionUser(pubkey) {
-            const input = document.getElementById('chatInput');
-            if (!input) return;
-            const prefix = input.value && !input.value.endsWith(' ') ? ' ' : '';
-            input.value = (input.value || '') + prefix + '@' + shortKey(pubkey) + ' ';
-            input.focus();
-        }
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) { if (raf) cancelAnimationFrame(raf), raf = null; }
+        else { if (!raf) raf = requestAnimationFrame(draw); }
+      });
 
-                function openExplorerFor(pubkey) {
-            if (!pubkey) return;
-            if (pubkey.startsWith('guest')) return;
-            try {
-                localStorage.setItem('hodlxxi_explorer_target', pubkey);
-            } catch (e) {}
-            // Jump to Explorer section; Explorer JS can read localStorage
-            goHome('#explorer');
-        }
+      window.addEventListener('resize', resize);
+      resize(); raf = requestAnimationFrame(draw);
+    })();
 
+    function goHome(hash) {
+      const base = "{{ url_for('home') }}";
+      window.location.href = hash ? base + hash : base;
+    }
 
-        const messagesEl    = document.getElementById('messages');
-        const userListEl    = document.getElementById('userList');
-        const onlineCountEl = document.getElementById('onlineCount');
-        const statusEl      = document.getElementById('room-status');
-        const inputEl       = document.getElementById('chatInput');
-        const sendBtn       = document.getElementById('sendBtn');
+    function shortKey(pk) {
+      if (!pk) return "";
+      return pk.length > 18 ? pk.slice(0,10) + "…" + pk.slice(-6) : pk;
+    }
 
-        const callPanelEl   = document.getElementById('callPanel');
-        const callStatusEl  = document.getElementById('callStatus');
-        const hangupBtn     = document.getElementById('hangupBtn');
-        const localVideo    = document.getElementById('localVideo');
-        const remoteVideo   = document.getElementById('remoteVideo');
+    function displayName(pk) {
+      if (!pk) return "anon";
+      if (SPECIAL_NAMES && SPECIAL_NAMES[pk]) return SPECIAL_NAMES[pk];
+      const last4 = pk.slice(-4);
+      if (pk.startsWith("guest") || pk.length < 20) return "guest …" + last4;
+      if (pk === myPubkey) return "you · …" + last4;
+      return "…"+last4;
+    }
 
-        function setStatus(text) {
-            if (statusEl) statusEl.textContent = text;
-        }
+    function mentionUser(pubkey) {
+      const input = document.getElementById('chatInput');
+      if (!input) return;
+      const prefix = input.value && !input.value.endsWith(' ') ? ' ' : '';
+      input.value = (input.value || '') + prefix + '@' + shortKey(pubkey) + ' ';
+      input.focus();
+    }
 
-        function setOnlineCount(n) {
-            if (onlineCountEl) onlineCountEl.textContent = n;
-        }
+    function openExplorerFor(pubkey) {
+      if (!pubkey) return;
+      if (pubkey.startsWith('guest')) return;
+      try { localStorage.setItem('hodlxxi_explorer_target', pubkey); } catch {}
+      goHome('#explorer');
+    }
 
-        // 45 sec UI cleanup to match backend EXPIRY_SECONDS
-        const EXPIRY_SECONDS = 45;
-        function pruneOldMessagesUI() {
-            if (!messagesEl) return;
-            const now = Date.now() / 1000;
-            const items = messagesEl.querySelectorAll('.message');
-            items.forEach(li => {
-                const ts = parseFloat(li.dataset.ts || "0");
-                if (ts && (now - ts) > EXPIRY_SECONDS) {
-                    li.remove();
-                }
-            });
-        }
-        setInterval(pruneOldMessagesUI, 5000);
-
-        function renderMessage(msg) {
-            if (!messagesEl || !msg) return;
-            const li = document.createElement('li');
-            li.className = 'message';
-
-            const fromPk = msg.pubkey || msg.sender_pubkey || '';
-            if (fromPk && myPubkey && fromPk === myPubkey) {
-                li.classList.add('me');
-            }
-
-            const senderLabel = msg.label || msg.sender || (fromPk || 'anon');
-            const shortSender = senderLabel.length > 22
-                ? senderLabel.slice(0, 12) + '…' + senderLabel.slice(-6)
-                : senderLabel;
-
-            // Server ts is in seconds; fall back to "now"
-            const rawTs = msg.ts || msg.timestamp || msg.created_at || (Date.now() / 1000);
-            const timeStr = new Date(rawTs * 1000).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-
-            // Store timestamp on the DOM node for pruning
-            li.dataset.ts = String(rawTs);
-
-            li.innerHTML = `
-                <div class="message-meta">
-                    <div class="message-sender">${shortSender}</div>
-                    <div class="message-timestamp">${timeStr}</div>
-                </div>
-                <div class="message-text">${(msg.text || msg.body || '').replace(/</g, '&lt;')}</div>
-            `;
-
-            messagesEl.appendChild(li);
-
-            // Always auto-scroll to the newest message
-            requestAnimationFrame(() => {
-                messagesEl.scrollTop = messagesEl.scrollHeight;
-            });
-        }
+    const messagesEl    = document.getElementById('messages');
 
 
-        function extractPubkeys(payload) {
-            if (!payload) return [];
-            const arr = Array.isArray(payload)
-                ? payload
-                : (payload.users || payload.online_users || []);
-            return arr
-                .map(u => typeof u === 'string'
-                    ? u
-                    : (u && (u.pubkey || u.id)) || null
-                )
-                .filter(Boolean);
-        }
+    function scrollMessagesToBottom(){
+      if (!messagesEl) return;
+      requestAnimationFrame(() => {
+        scrollMessagesToBottom();
+      });
+    }
+    const userListEl    = document.getElementById('userList');
+    const onlineCountEl = document.getElementById('onlineCount');
+    const statusEl      = document.getElementById('room-status');
+    const inputEl       = document.getElementById('chatInput');
+    const sendBtn       = document.getElementById('sendBtn');
 
-                function renderUserList(users) {
-            if (!userListEl || !Array.isArray(users)) return;
-            userListEl.innerHTML = '';
+    function setStatus(text) { if (statusEl) statusEl.textContent = text; }
+    function setOnlineCount(n) { if (onlineCountEl) onlineCountEl.textContent = n; }
 
-            users.forEach(pk => {
-                const li = document.createElement('li');
-                li.className = 'user-item';
-                li.dataset.pubkey = pk;
+    // 45s prune (UI)
+    const EXPIRY_SECONDS = 45;
+    setInterval(() => {
+      if (!messagesEl) return;
+      const now = Date.now() / 1000;
+      messagesEl.querySelectorAll('.message').forEach(li => {
+        const ts = parseFloat(li.dataset.ts || "0");
+        if (ts && (now - ts) > EXPIRY_SECONDS) li.remove();
+      });
+    }, 5000);
 
-                const isMe = myPubkey && pk === myPubkey;
-                const isGuest = pk.length < 20 || pk.startsWith('guest');
-                const last4 = pk.slice(-4);
-                let label;
-                if (isGuest) {
-                    label = 'guest …' + last4;
-                } else if (isMe) {
-                    label = 'you · …' + last4;
-                } else {
-                    label = '…' + last4;
-                }
+    function renderMessage(msg) {
+      if (!messagesEl || !msg) return;
+      const li = document.createElement('li');
+      li.className = 'message';
 
-                li.innerHTML = `
-                    <div class="user-left">
-                        <span class="user-dot"></span>
-                        <div>
-                            <div class="user-name">
-                                ${label}
-                            </div>
-                            ${isMe
-                                ? '<div class="user-tag-me">you</div>'
-                                : '<div class="user-pubkey">…' + last4 + '</div>'}
-                        </div>
-                    </div>
-                    <button class="user-btn" type="button">@</button>
-                `;
+      const fromPk = msg.pubkey || msg.sender_pubkey || '';
+      if (fromPk && myPubkey && fromPk === myPubkey) li.classList.add('me');
 
-                const btn = li.querySelector('.user-btn');
-                if (btn) {
-                    btn.addEventListener('click', (ev) => {
-                        ev.stopPropagation();
-                        mentionUser(pk);
-                    });
-                }
+      const senderLabel = msg.label || msg.sender || fromPk || 'anon';
+      const shortSender = senderLabel.length > 22 ? senderLabel.slice(0, 12) + '…' + senderLabel.slice(-6) : senderLabel;
 
-                // Long-press to call
-                let pressTimer = null;
-                let didLongPress = false;
-                const startPress = (ev) => {
-                    if (pk === myPubkey) return;
-                    if (pressTimer !== null) return;
-                    pressTimer = setTimeout(() => {
-                        pressTimer = null;
-                        didLongPress = true;
-                        startCall(pk);
-                        setTimeout(() => { didLongPress = false; }, 100);
-                    }, 700); // 0.7 sec long-press
-                };
-                const cancelPress = () => {
-                    if (pressTimer !== null) {
-                        clearTimeout(pressTimer);
-                        pressTimer = null;
-                    }
-                };
+      const rawTs = msg.ts || msg.timestamp || msg.created_at || (Date.now() / 1000);
+      const timeStr = new Date(rawTs * 1000).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
 
-                li.addEventListener('mousedown', startPress);
-                li.addEventListener('touchstart', startPress, { passive: true });
-                ['mouseup','mouseleave','touchend','touchcancel'].forEach(evName => {
-                    li.addEventListener(evName, cancelPress);
-                });
+      li.dataset.ts = String(rawTs);
+      li.innerHTML = `
+        <div class="message-meta">
+          <div class="message-sender">${shortSender.replace(/</g,'&lt;')}</div>
+          <div class="message-timestamp">${timeStr}</div>
+        </div>
+        <div class="message-text">${(msg.text || msg.body || '').replace(/</g,'&lt;')}</div>
+      `;
 
-                // Tap on real keys -> open Explorer with that pubkey
-                if (!isGuest) {
-                    li.addEventListener('click', (ev) => {
-                        if (didLongPress) return;  // avoid double-fire after long press
-                        openExplorerFor(pk);
-                    });
-                }
+      messagesEl.appendChild(li);
+      requestAnimationFrame(() => { scrollMessagesToBottom(); });
+    }
 
-                userListEl.appendChild(li);
-            });
-            setOnlineCount(users.length);
-        }
+    function extractPubkeys(payload) {
+      if (!payload) return [];
+      const arr = Array.isArray(payload) ? payload : (payload.users || payload.online_users || []);
+      return arr.map(u => typeof u === 'string' ? u : (u && (u.pubkey || u.id)) || null).filter(Boolean);
+    }
 
+    function renderUserList(users) {
+      if (!userListEl || !Array.isArray(users)) return;
+      userListEl.innerHTML = '';
 
-        // --- Socket.IO wiring ---
-        const socket = io();
+      users.forEach(pk => {
+        const li = document.createElement('li');
+        li.className = 'user-item';
+        li.dataset.pubkey = pk;
 
-        socket.on('connect', () => {
-            setStatus('Connected');
+        const isMe = myPubkey && pk === myPubkey;
+        const isGuest = pk.length < 20 || pk.startsWith('guest');
+
+        li.innerHTML = `
+          <div class="user-left">
+            <span class="user-dot"></span>
+            <div style="min-width:0;">
+              <div class="user-name">${displayName(pk).replace(/</g,'&lt;')}</div>
+              ${isMe ? `<div class="user-tag">you</div>` : `<div class="user-sub">${isGuest ? "guest" : ("…"+pk.slice(-4))}</div>`}
+            </div>
+          </div>
+          <button class="user-btn" type="button">@</button>
+        `;
+
+        li.querySelector('.user-btn')?.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          mentionUser(pk);
         });
 
-        socket.on('disconnect', () => {
-            setStatus('Disconnected');
-        });
+        // Long-press to call (direct room)
+        let pressTimer = null;
+        let didLongPress = false;
 
-        socket.on('chat:history', (payload) => {
-            if (!payload) return;
-            const msgs = payload.messages || payload;
-            if (!Array.isArray(msgs)) return;
-            messagesEl.innerHTML = '';
-            msgs.forEach(renderMessage);
-            // Make sure we end up at the bottom after loading history
-            requestAnimationFrame(() => {
-                messagesEl.scrollTop = messagesEl.scrollHeight;
-            });
-            setStatus('History loaded');
-        });
+        const startPress = () => {
+          if (pk === myPubkey) return;
+          if (pressTimer) return;
+          pressTimer = setTimeout(() => {
+            pressTimer = null;
+            didLongPress = true;
+            startCall(pk);
+            setTimeout(() => { didLongPress = false; }, 120);
+          }, 700);
+        };
+        const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
 
-        socket.on('chat:message', (msg) => {
-            renderMessage(msg);
-        });
+        li.addEventListener('mousedown', startPress);
+        li.addEventListener('touchstart', startPress, { passive:true });
+        ['mouseup','mouseleave','touchend','touchcancel'].forEach(ev => li.addEventListener(ev, cancelPress));
 
-
-        socket.on('online:list', (payload) => {
-            const users = extractPubkeys(payload);
-            renderUserList(users);
-        });
-
-        socket.on('user:list', (payload) => {
-            const users = extractPubkeys(payload);
-            renderUserList(users);
-        });
-
-        socket.on('user:joined', (payload) => {
-            const [pk] = extractPubkeys([payload]);
-            if (!pk || !userListEl) return;
-
-            const existing = Array.from(
-                userListEl.querySelectorAll('.user-item')
-            ).map(li => li.dataset.pubkey);
-
-            if (existing.includes(pk)) return;
-            renderUserList([...existing, pk]);
-        });
-
-        socket.on('user:left', (payload) => {
-            const [pk] = extractPubkeys([payload]);
-            if (!pk || !userListEl) return;
-
-            const li = userListEl.querySelector(`.user-item[data-pubkey="${pk}"]`);
-            if (li) li.remove();
-            setOnlineCount(userListEl.querySelectorAll('.user-item').length);
-        });
-
-        function sendMessage() {
-            if (!inputEl) return;
-            const text = inputEl.value.trim();
-            if (!text) return;
-            socket.emit('chat:send', { text });
-            inputEl.value = '';
-            inputEl.focus();
+        // Tap (non-guest) opens Explorer
+        if (!isGuest) {
+          li.addEventListener('click', () => {
+            if (didLongPress) return;
+            openExplorerFor(pk);
+          });
         }
 
-        sendBtn.addEventListener('click', sendMessage);
-        inputEl.addEventListener('keydown', (evt) => {
-            if (evt.key === 'Enter' && !evt.shiftKey) {
-                evt.preventDefault();
-                sendMessage();
-            }
+        userListEl.appendChild(li);
+      });
+
+      setOnlineCount(users.length);
+    }
+
+    // Socket.IO
+    const socket = io();
+
+    socket.on('connect', () => setStatus('Connected'));
+    socket.on('disconnect', () => setStatus('Disconnected'));
+
+    socket.on('chat:history', (payload) => {
+      const msgs = payload?.messages || payload;
+      if (!Array.isArray(msgs)) return;
+      messagesEl.innerHTML = '';
+      msgs.forEach(renderMessage);
+      requestAnimationFrame(() => { scrollMessagesToBottom(); });
+      setStatus('History loaded');
+    });
+
+    socket.on('chat:message', renderMessage);
+
+    socket.on('online:list', (payload) => renderUserList(extractPubkeys(payload)));
+    socket.on('user:list',   (payload) => renderUserList(extractPubkeys(payload)));
+
+    socket.on('user:joined', (payload) => {
+      const [pk] = extractPubkeys([payload]);
+      if (!pk || !userListEl) return;
+      const existing = Array.from(userListEl.querySelectorAll('.user-item')).map(li => li.dataset.pubkey);
+      if (existing.includes(pk)) return;
+      renderUserList([...existing, pk]);
+    });
+
+    socket.on('user:left', (payload) => {
+      const [pk] = extractPubkeys([payload]);
+      if (!pk || !userListEl) return;
+      userListEl.querySelector(`.user-item[data-pubkey="${pk}"]`)?.remove();
+      setOnlineCount(userListEl.querySelectorAll('.user-item').length);
+    });
+
+    function sendMessage() {
+      const text = (inputEl?.value || '').trim();
+      if (!text) return;
+      socket.emit('chat:send', { text });
+      inputEl.value = '';
+      inputEl.focus();
+    }
+    sendBtn?.addEventListener('click', sendMessage);
+    inputEl?.addEventListener('keydown', (evt) => {
+      if (evt.key === 'Enter' && !evt.shiftKey) { evt.preventDefault(); sendMessage(); }
+    });
+
+    // ================== GROUP CALL MANAGER (single implementation) ==================
+    const GroupCallManager = (() => {
+      let localStream = null;
+      let peerConnections = {};
+      let currentRoomId = null;
+      let iceServersCache = null;
+      let isMuted = false;
+      let isCameraOff = false;
+
+      const panel = document.getElementById("groupCallPanel");
+      const callStatusEl = document.getElementById("callStatus");
+      const localVideoEl = document.getElementById("localVideo");
+      const remoteWrap = document.getElementById("remoteVideosContainer");
+      const muteBtn = document.getElementById("muteBtn");
+      const cameraBtn = document.getElementById("cameraBtn");
+      const hangupBtn = document.getElementById("hangupGroupBtn");
+
+      function updateStatus(t){ if (callStatusEl) callStatusEl.textContent = t || "No active call"; }
+      function setUI(active){
+        if (!panel) return;
+        panel.classList.toggle("hidden", !active);
+      }
+
+      async function getIceServers() {
+        if (iceServersCache) return iceServersCache;
+        try {
+          const resp = await fetch("/turn_credentials");
+          iceServersCache = resp.ok ? await resp.json() : [];
+        } catch { iceServersCache = []; }
+        return iceServersCache;
+      }
+
+      async function ensureLocalStream() {
+        if (localStream) return localStream;
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: { width:{ideal:640}, height:{ideal:480} }
+        });
+        localStream = stream;
+        if (localVideoEl) {
+          localVideoEl.srcObject = stream;
+          localVideoEl.muted = true;
+          localVideoEl.play().catch(()=>{});
+        }
+        return stream;
+      }
+
+      function addRemoteTile(pk, stream){
+        if (!remoteWrap) return;
+        let tile = document.getElementById("tile-" + pk);
+        if (!tile){
+          tile = document.createElement("div");
+          tile.className = "video-tile";
+          tile.id = "tile-" + pk;
+
+          const v = document.createElement("video");
+          v.autoplay = true; v.playsinline = true;
+
+          const label = document.createElement("div");
+          label.className = "video-label";
+          label.textContent = displayName(pk);
+
+          tile.appendChild(v);
+          tile.appendChild(label);
+          remoteWrap.appendChild(tile);
+        }
+        const vid = tile.querySelector("video");
+        if (vid){
+          vid.srcObject = stream;
+          vid.play().catch(()=>{});
+        }
+      }
+
+      function removeRemoteTile(pk){
+        document.getElementById("tile-" + pk)?.remove();
+      }
+
+      async function createPC(remotePk){
+        const iceServers = await getIceServers();
+        const pc = new RTCPeerConnection({ iceServers });
+
+        pc.onicecandidate = (e) => {
+          if (e.candidate && currentRoomId){
+            socket.emit("rtc:signal", { room_id: currentRoomId, to: remotePk, type: "ice", payload: e.candidate });
+          }
+        };
+
+        pc.ontrack = (e) => addRemoteTile(remotePk, e.streams[0]);
+
+        pc.oniceconnectionstatechange = () => {
+          if (["disconnected","failed","closed"].includes(pc.iceConnectionState)){
+            closePC(remotePk);
+          }
+        };
+
+        localStream?.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+        peerConnections[remotePk] = pc;
+        return pc;
+      }
+
+      function closePC(remotePk){
+        const pc = peerConnections[remotePk];
+        if (pc){ try{ pc.close(); }catch{} delete peerConnections[remotePk]; }
+        removeRemoteTile(remotePk);
+      }
+
+      async function joinRoom(roomId){
+        if (!myPubkey){ updateStatus("Please log in to join a call"); return; }
+        if (currentRoomId) await leaveRoom();
+
+        try{
+          await ensureLocalStream();
+          currentRoomId = roomId;
+          setUI(true);
+          updateStatus("Joining room…");
+          socket.emit("rtc:join_room", { room_id: roomId });
+        } catch (e){
+          updateStatus("Camera/mic denied");
+          await leaveRoom();
+        }
+      }
+
+      async function leaveRoom(){
+        if (currentRoomId) socket.emit("rtc:leave_room", { room_id: currentRoomId });
+
+        Object.keys(peerConnections).forEach(closePC);
+        peerConnections = {};
+
+        if (localStream){
+          localStream.getTracks().forEach(t => t.stop());
+          localStream = null;
+          if (localVideoEl) localVideoEl.srcObject = null;
+        }
+
+        if (remoteWrap) remoteWrap.innerHTML = "";
+        currentRoomId = null;
+        isMuted = false;
+        isCameraOff = false;
+        muteBtn?.classList.remove("active");
+        cameraBtn?.classList.remove("active");
+        if (muteBtn) muteBtn.innerHTML = "<span>🔊</span>Mute";
+        if (cameraBtn) cameraBtn.innerHTML = "<span>📷</span>Camera Off";
+        setUI(false);
+        updateStatus("Not in a call");
+      }
+
+      async function handleRoomPeers(data){
+        if (!data?.peers || !currentRoomId) return;
+        updateStatus(`In room with ${data.peers.length} peer(s)`);
+
+        for (const remotePk of data.peers){
+          if (remotePk === myPubkey) continue;
+          if (peerConnections[remotePk]) continue;
+          try{
+            const pc = await createPC(remotePk);
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            socket.emit("rtc:signal", { room_id: currentRoomId, to: remotePk, type: "offer", payload: offer });
+          } catch {}
+        }
+      }
+
+      async function handleSignal(data){
+        if (!data || !data.from || !currentRoomId) return;
+        const remotePk = data.from;
+        if (remotePk === myPubkey) return;
+
+        try{
+          if (data.type === "offer"){
+            let pc = peerConnections[remotePk];
+            if (!pc) pc = await createPC(remotePk);
+            await pc.setRemoteDescription(new RTCSessionDescription(data.payload));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            socket.emit("rtc:signal", { room_id: currentRoomId, to: remotePk, type: "answer", payload: answer });
+          } else if (data.type === "answer"){
+            const pc = peerConnections[remotePk];
+            if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.payload));
+          } else if (data.type === "ice"){
+            const pc = peerConnections[remotePk];
+            if (pc && data.payload) await pc.addIceCandidate(new RTCIceCandidate(data.payload));
+          }
+        } catch {}
+      }
+
+      function toggleMute(){
+        if (!localStream) return;
+        isMuted = !isMuted;
+        localStream.getAudioTracks().forEach(t => t.enabled = !isMuted);
+        if (muteBtn){
+          muteBtn.classList.toggle("active", isMuted);
+          muteBtn.innerHTML = isMuted ? "<span>🔇</span>Unmute" : "<span>🔊</span>Mute";
+        }
+      }
+
+      function toggleCamera(){
+        if (!localStream) return;
+        isCameraOff = !isCameraOff;
+        localStream.getVideoTracks().forEach(t => t.enabled = !isCameraOff);
+        if (cameraBtn){
+          cameraBtn.classList.toggle("active", isCameraOff);
+          cameraBtn.innerHTML = isCameraOff ? "<span>📹</span>Camera On" : "<span>📷</span>Camera Off";
+        }
+      }
+
+      function init(){
+        hangupBtn?.addEventListener("click", leaveRoom);
+        muteBtn?.addEventListener("click", toggleMute);
+        cameraBtn?.addEventListener("click", toggleCamera);
+
+        socket.on("rtc:room_peers", handleRoomPeers);
+        socket.on("rtc:signal", handleSignal);
+
+        socket.on("rtc:peer_left", (d) => { if (d?.pubkey) closePC(d.pubkey); });
+
+        // accept invites from either event name (backward compatibility)
+        socket.on("rtc:invite", (d) => { if (d?.room_id) joinRoom(d.room_id); });
+        socket.on("rtc:call_invite", (d) => { if (d?.room_id) joinRoom(d.room_id); });
+
+        socket.on("rtc:error", (d) => updateStatus(d?.error || "RTC error"));
+      }
+
+      return { init, joinRoom, leaveRoom };
+    })();
+
+    GroupCallManager.init();
+
+    // direct call from long-press
+    async function startCall(targetPubkey){
+      if (!targetPubkey || !myPubkey) return;
+      const roomId = "direct-" + [myPubkey, targetPubkey].sort().join("-");
+      GroupCallManager.joinRoom(roomId);
+
+      // invite the other side (supports either handler server-side)
+      socket.emit("rtc:invite", { to: targetPubkey, room_id: roomId, from_name: shortKey(myPubkey) });
+      socket.emit("rtc:call_invite", { to: targetPubkey, room_id: roomId, from_name: shortKey(myPubkey) });
+    }
+
+    // group call picker (max 3 others)
+    function startGroupCall(){
+      const onlineUsers = Array.from(document.querySelectorAll('.user-item'))
+        .map(li => li.dataset.pubkey)
+        .filter(pk => pk && pk !== myPubkey);
+
+      if (onlineUsers.length === 0){ alert("No other users online"); return; }
+
+      const popup = document.createElement('div');
+      popup.style.cssText =
+        'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;' +
+        'background:rgba(0,0,0,.75);z-index:10000;padding:16px;';
+      popup.innerHTML =
+        '<div style="max-width:420px;width:100%;background:rgba(8,12,10,.92);border:1px solid rgba(0,255,136,.35);' +
+        'box-shadow:0 0 30px rgba(0,255,136,.18);border-radius:14px;padding:16px;">' +
+        '<div style="font-family:var(--mono);color:#00ff88;margin-bottom:10px;">Select users (max 3)</div>' +
+        '<div id="userCheckboxes" style="max-height:260px;overflow:auto;margin-bottom:12px;"></div>' +
+        '<div style="display:flex;gap:10px;justify-content:flex-end;">' +
+        '<button id="cancelCallBtn" style="padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.25);color:#e6f1ef;cursor:pointer;">Cancel</button>' +
+        '<button id="startCallBtn" style="padding:8px 12px;border-radius:10px;border:1px solid rgba(0,255,136,.35);background:rgba(0,255,136,.12);color:#00ff88;cursor:pointer;">Start</button>' +
+        '</div></div>';
+      document.body.appendChild(popup);
+
+      const box = popup.querySelector('#userCheckboxes');
+      onlineUsers.forEach(pk => {
+        const row = document.createElement('label');
+        row.style.cssText = 'display:flex;align-items:center;gap:10px;color:#e6f1ef;margin:8px 0;cursor:pointer;font-family:var(--mono);font-size:12px;';
+        row.innerHTML = `<input type="checkbox" value="${pk}" /> <span>${displayName(pk)}</span>`;
+        box.appendChild(row);
+      });
+
+      popup.querySelector('#cancelCallBtn').onclick = () => popup.remove();
+      popup.querySelector('#startCallBtn').onclick = () => {
+        const selected = Array.from(popup.querySelectorAll('input[type=checkbox]:checked')).map(cb => cb.value);
+        if (selected.length === 0) { alert('Select at least one'); return; }
+        if (selected.length > 3) { alert('Max 3 others (4 total)'); return; }
+
+        const roomId = 'room-' + Math.random().toString(36).slice(2, 9);
+        GroupCallManager.joinRoom(roomId);
+
+        selected.forEach(pk => {
+          socket.emit("rtc:invite", { to: pk, room_id: roomId, from_name: shortKey(myPubkey) });
+          socket.emit("rtc:call_invite", { to: pk, room_id: roomId, from_name: shortKey(myPubkey) });
         });
 
-        if (userListEl) {
-            setOnlineCount(userListEl.querySelectorAll('.user-item').length);
-        }
-
-        // --- WebRTC: video calls (uses rtc:* events and /turn_credentials) ---
-        let pc = null;
-        let localStream = null;
-        let currentPeer = null;
-        let iceServersCache = null;
-
-        function setCallUI(active, text) {
-            if (!callPanelEl || !callStatusEl) return;
-            if (active) {
-                callPanelEl.classList.remove('hidden');
-            } else {
-                callPanelEl.classList.add('hidden');
-            }
-            callStatusEl.textContent = text || (active ? 'In call…' : 'No active call — long-press any user chip to start.');
-        }
-
-        async function getIceServers() {
-            if (iceServersCache) return iceServersCache;
-            try {
-                const resp = await fetch('/turn_credentials');
-                if (resp.ok) {
-                    iceServersCache = await resp.json();
-                } else {
-                    iceServersCache = [];
-                }
-            } catch (err) {
-                console.warn('TURN/STUN fetch failed', err);
-                iceServersCache = [];
-            }
-            return iceServersCache;
-        }
-
-        async function ensureMedia() {
-            if (localStream) return localStream;
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-                localStream = stream;
-                if (localVideo) {
-                    localVideo.srcObject = stream;
-                    localVideo.muted = true;
-                    localVideo.play().catch(() => {});
-                }
-                return stream;
-            } catch (err) {
-                console.error('getUserMedia failed', err);
-                setCallUI(false, 'Camera/mic access denied.');
-                throw err;
-            }
-        }
-
-        async function createPeerConnection(targetPubkey) {
-            const iceServers = await getIceServers();
-            pc = new RTCPeerConnection({ iceServers });
-
-            pc.onicecandidate = (event) => {
-                if (event.candidate && currentPeer) {
-                    socket.emit('rtc:ice', {
-                        to: currentPeer,
-                        from: myPubkey,
-                        candidate: event.candidate
-                    });
-                }
-            };
-
-            pc.ontrack = (event) => {
-                if (remoteVideo) {
-                    remoteVideo.srcObject = event.streams[0];
-                    remoteVideo.play().catch(() => {});
-                }
-            };
-
-            const stream = await ensureMedia();
-            stream.getTracks().forEach(t => pc.addTrack(t, stream));
-
-            currentPeer = targetPubkey;
-            setCallUI(true, 'Connecting to ' + shortKey(targetPubkey) + '…');
-            return pc;
-        }
-
-        async function startCall(targetPubkey) {
-            if (!myPubkey) {
-                setCallUI(false, 'Please log in to start a call.');
-                return;
-            }
-            if (!targetPubkey || targetPubkey === myPubkey) return;
-
-            try {
-                if (pc) {
-                    endCall(false);
-                }
-                const conn = await createPeerConnection(targetPubkey);
-                const offer = await conn.createOffer();
-                await conn.setLocalDescription(offer);
-
-                socket.emit('rtc:offer', {
-                    to: targetPubkey,
-                    from: myPubkey,
-                    offer
-                });
-                setCallUI(true, 'Calling ' + shortKey(targetPubkey) + '…');
-            } catch (err) {
-                console.error('startCall failed', err);
-                endCall(false);
-                setCallUI(false, 'Call failed to start.');
-            }
-        }
-
-        function endCall(sendSignal = true) {
-            if (pc) {
-                pc.getSenders().forEach(s => {
-                    try { s.track && s.track.stop(); } catch {}
-                });
-                try { pc.close(); } catch {}
-                pc = null;
-            }
-            if (localStream) {
-                localStream.getTracks().forEach(t => t.stop());
-                localStream = null;
-                if (localVideo) localVideo.srcObject = null;
-            }
-            if (remoteVideo) {
-                remoteVideo.srcObject = null;
-            }
-
-            if (sendSignal && currentPeer && myPubkey) {
-                socket.emit('rtc:hangup', {
-                    to: currentPeer,
-                    from: myPubkey
-                });
-            }
-
-            currentPeer = null;
-            setCallUI(false);
-        }
-
-        hangupBtn.addEventListener('click', () => {
-            endCall(true);
-        });
-
-        socket.on('rtc:offer', async (data) => {
-            try {
-                if (!data || data.to !== myPubkey) return;
-                const from = data.from;
-                if (!from || from === myPubkey) return;
-
-                if (pc) {
-                    endCall(false);
-                }
-
-                const conn = await createPeerConnection(from);
-                await conn.setRemoteDescription(new RTCSessionDescription(data.offer));
-                const answer = await conn.createAnswer();
-                await conn.setLocalDescription(answer);
-
-                socket.emit('rtc:answer', {
-                    to: from,
-                    from: myPubkey,
-                    answer
-                });
-
-                setCallUI(true, 'In call with ' + shortKey(from));
-            } catch (err) {
-                console.error('Error handling rtc:offer', err);
-                endCall(false);
-            }
-        });
-
-        socket.on('rtc:answer', async (data) => {
-            try {
-                if (!data || data.to !== myPubkey || !pc) return;
-                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-                setCallUI(true, 'In call with ' + shortKey(data.from || currentPeer || 'peer'));
-            } catch (err) {
-                console.error('Error handling rtc:answer', err);
-                endCall(false);
-            }
-        });
-
-        socket.on('rtc:ice', async (data) => {
-            try {
-                if (!data || data.to !== myPubkey || !pc || !data.candidate) return;
-                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-            } catch (err) {
-                console.error('Error handling rtc:ice', err);
-            }
-        });
-
-        socket.on('rtc:hangup', (data) => {
-            if (!data || data.to !== myPubkey) return;
-            endCall(false);
-            setCallUI(false, 'Call ended by ' + shortKey(data.from || 'peer') + '.');
-        });
-        
-    </script>
+        popup.remove();
+      };
+    }
+  </script>
 </body>
 </html>
+
+
     """
     return render_template_string(
         chat_html,
@@ -2545,693 +3063,653 @@ def login():
 
     # Login page with dual Matrix backgrounds (toggle embedded inside panel)
     html = """
-
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="theme-color" content="#00ff88"/>
   <title>HODLXXI — Login</title>
 
   <style>
-    :root {
-      --bg: #0b0f10;
-      --panel: #11171a;
-      --fg: #e6f1ef;
-      --accent: #00ff88;
-      --orange: #f7931a;
-      --muted: #8a9da4;
-      --red: #ff3b30;
-      --blue: #3b82f6;
+    :root{
+      --bg: #000;
+      --fg: rgba(235,255,245,.92);
+      --muted: rgba(235,255,245,.70);
+
+      --accent: rgba(0,255,136,.95);
+      --warn: rgba(255,42,42,.90);
+      --blue: rgba(59,130,246,.95);
+      --violet: rgba(139,92,246,.95);
+      --orange: rgba(249,115,22,.95);
+
+      --glass: rgba(8,12,10,.22);
+      --glass2: rgba(0,0,0,.20);
+      --stroke: rgba(255,255,255,.08);
+
+      --radius: 16px;
+      --pad: 14px;
+      --mono: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      --sans: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     }
 
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    *{ box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color: transparent; }
+    html,body{ height:100%; background:var(--bg); color:var(--fg); overflow-x:hidden; }
+    body{ font-family: var(--sans); }
 
-    body {
-      background: var(--bg);
-      color: var(--fg);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
-      min-height: 100vh;
-      overflow-x: hidden;
-      text-rendering: optimizeLegibility;
-    }
+    /* Matrix canvas */
+    #matrix-bg{ position:fixed; inset:0; width:100vw; height:100vh; display:block; z-index:0; pointer-events:none; }
+    body > *:not(#matrix-bg){ position:relative; z-index:1; }
 
-    /* Matrix background (same family as leaderboard/playground) */
-    #matrix-bg {
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-      pointer-events: none;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      #matrix-bg {
-        display: none !important;
-      }
-    }
-
-    /* Top CTA bar like Playground / Leaderboard */
-    .top-cta {
-      position: sticky;
-      top: 0;
-      z-index: 12;
-      width: 100%;
-      display: flex;
-      justify-content: center;
-      padding: 0.45rem 0.75rem;
-      background: radial-gradient(
-        circle at top,
-        rgba(34, 197, 94, 0.16) 0,
-        rgba(3, 7, 18, 0.96) 45%,
-        rgba(3, 7, 18, 0.98) 100%
-      );
-      border-bottom: 1px solid rgba(0, 255, 136, 0.3);
-      box-shadow: 0 18px 35px rgba(0, 0, 0, 0.9);
-      backdrop-filter: blur(16px);
-    }
-
-    .top-cta-inner {
-      width: 100%;
-      max-width: 1200px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.75rem;
-    }
-
-    .top-cta-text {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0.4rem;
-      font-size: 0.85rem;
-      color: #cbd5f5;
-    }
-
-    .top-cta-text strong {
-      color: var(--accent);
-      font-weight: 600;
-    }
-
-    .top-cta-pill {
-      padding: 0.18rem 0.6rem;
-      border-radius: 999px;
-      border: 1px solid rgba(0, 255, 136, 0.6);
-      background: rgba(6, 95, 70, 0.7);
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: #bbf7d0;
-    }
-
-    .top-cta-action {
-      white-space: nowrap;
-    }
-
-    .btn,
-    button {
-      background: var(--accent);
-      color: #000;
-      border: none;
-      padding: 0.8rem 1.8rem;
-      font-size: 0.95rem;
-      font-weight: 600;
-      border-radius: 999px;
-      cursor: pointer;
-      font-family: inherit;
-      transition: all 0.3s;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .btn:hover,
-    button:hover {
-      box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
-      transform: translateY(-2px);
-    }
-
-    button:disabled,
-    .btn:disabled {
-      background: #374151;
-      color: #9ca3af;
-      cursor: not-allowed;
-      transform: none;
-      box-shadow: none;
-    }
-
-    .btn-secondary {
-      background: transparent;
-      border: 1px solid var(--accent);
-      color: var(--accent);
-    }
-
-    .btn-secondary:hover {
-      background: rgba(0, 255, 136, 0.08);
-    }
-
-    /* Main root container */
-    #root {
-      position: relative;
-      z-index: 1;
-      padding: 4.5rem 1.5rem 2rem;
-      max-width: 960px;
+    /* Content */
+    .wrap{
+      max-width: 980px;
       margin: 0 auto;
+      padding: 84px 14px 22px;
     }
 
-    .login-card {
-      background: rgba(17, 23, 26, 0.92);
-      border-radius: 16px;
-      border: 1px solid #0f2a24;
-      box-shadow: 0 0 10px rgba(0, 255, 136, 0.08);
-      padding: 2rem 1.75rem 1.75rem;
+    /* Minimal header */
+    .topline{
+      display:flex;
+      align-items:flex-end;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom: 14px;
+    }
+    .brand{
+      font-family: var(--mono);
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      font-size: 12px;
+      color: var(--warn);
+      text-shadow: 0 0 6px rgba(255,42,42,.18);
+      user-select:none;
+    }
+    .sub{
+      font-family: var(--mono);
+      font-size: 11px;
+      color: rgba(235,255,245,.62);
+      user-select:none;
     }
 
-    .login-header {
-      margin-bottom: 1.5rem;
+    /* Panel (glass card) */
+    .panel{
+      border-radius: var(--radius);
+      border: 1px solid var(--stroke);
+      background: var(--glass);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 10px 40px rgba(0,0,0,.45);
+      overflow:hidden;
+      margin: 12px 0;
     }
-
-    .login-header h1 {
-      font-size: 1.9rem;
-      margin-bottom: 0.4rem;
-      color: var(--accent);
-      text-shadow: 0 0 18px rgba(0, 255, 136, 0.3);
-    }
-
-    .login-header p {
-      font-size: 0.98rem;
-      color: var(--muted);
-    }
-
-    /* Tabs row (Legacy / API / Nostr) */
-    .tabs-row {
-      display: flex;
-      gap: 0.75rem;
-      align-items: center;
-      justify-content: space-between;
-      margin: 1.1rem 0 1.2rem;
+    .panel-hd{
+      padding: 12px 12px 10px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
       flex-wrap: wrap;
     }
+    .panel-title{
+      font-family: var(--mono);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      font-size: 11px;
+      color: var(--warn);
+      text-shadow: 0 0 6px rgba(255,42,42,.18);
+      user-select:none;
+    }
+    .panel-bd{ padding: var(--pad); }
 
-    .tabs {
-      display: flex;
-      gap: 0.5rem;
-      flex-wrap: wrap;
+    .manifesto-text{font-family:var(--mono);font-size:12px;line-height:1.55;color:rgba(235,255,245,.78)}
+    .manifesto-text b{color:var(--accent)}
+    .manifesto-text p{margin:.35rem 0}
+    .home-link{color:var(--accent);text-decoration:none}
+    .home-link:hover,.home-link:focus{text-decoration:underline;outline:none;text-shadow:0 0 14px rgba(0,255,136,.45)}
+
+
+    .hintline{
+      font-family: var(--mono);
+      font-size: 11px;
+      color: rgba(235,255,245,.72);
+      line-height: 1.35;
+    }
+    .hintline b{ color: var(--accent); }
+
+    /* Tabs + actions */
+    .tabs{
+      display:flex; gap:6px; flex-wrap:wrap; align-items:center;
+    }
+    .tab{
+      border-radius: 12px;
+      border:1px solid rgba(255,255,255,.08);
+      background: rgba(0,0,0,.18);
+      color: rgba(235,255,245,.9);
+      padding: 8px 10px;
+      font-size: 12px;
+      font-family: var(--mono);
+      cursor:pointer;
+      user-select:none;
+      touch-action: manipulation;
+    }
+    .tab.is-active{
+      border-color: rgba(0,255,136,.35);
+      box-shadow: 0 0 0 1px rgba(0,255,136,.12) inset;
     }
 
-    .tab-btn {
+    .pill-actions{
+      display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; align-items:center;
+      margin-left:auto;
+    }
+    .pill{
       border-radius: 999px;
-      border: 1px solid #184438;
-      background: #020617;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.22);
+      color: rgba(235,255,245,.92);
+      padding: 8px 12px;
+      font-family: var(--mono);
+      font-size: 12px;
+      cursor:pointer;
+      user-select:none;
+      touch-action: manipulation;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+    }
+    .pill:active{ transform: translateY(1px); background: rgba(0,0,0,.28); }
+
+    .pill.ln{ border-color: rgba(249,115,22,.35); box-shadow: 0 0 0 1px rgba(249,115,22,.10) inset; }
+    .pill.nostr{ border-color: rgba(139,92,246,.35); box-shadow: 0 0 0 1px rgba(139,92,246,.10) inset; }
+    .pill.primary{ border-color: rgba(0,255,136,.35); box-shadow: 0 0 0 1px rgba(0,255,136,.12) inset; }
+
+    /* Forms */
+    label{
+      display:block;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: rgba(255,42,42,.85);
+      margin: 10px 0 6px;
+    }
+    input, textarea{
+      width:100%;
+      border-radius: 14px;
+      border: 1px solid var(--stroke);
+      background: rgba(0,0,0,.22);
       color: var(--fg);
-      padding: 0.45rem 1.1rem;
-      cursor: pointer;
-      font-size: 0.9rem;
-      font-weight: 500;
-      transition: all 0.2s;
+      padding: 12px 12px;
+      font-size: 16px;
+      outline:none;
+      -webkit-appearance:none;
+      appearance:none;
+    }
+    textarea{ min-height: 120px; resize: vertical; font-family: var(--mono); font-size: 12px; }
+
+    input:focus, textarea:focus{
+      border-color: rgba(0,255,136,.35);
+      box-shadow: 0 0 0 1px rgba(0,255,136,.12) inset;
     }
 
-    .tab-btn:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-    }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:flex-start; }
+    .col{ flex: 1 1 260px; min-width: 0; }
 
-    .tab-btn.active {
-      border-color: var(--accent);
-      background: var(--accent);
-      color: #000;
-      box-shadow: 0 0 14px rgba(0, 255, 136, 0.3);
-    }
-
-    /* Nostr / Matrix toggle area */
-    .tabs-right {
-      display: flex;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-
-    .nostr-btn {
-      background: #8b5cf6;
-      color: #fff;
-      border-radius: 999px;
-      padding: 0.45rem 1.1rem;
-      font-size: 0.9rem;
-      font-weight: 600;
-      border: none;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      transition: all 0.2s;
-    }
-
-    .nostr-btn:hover {
-      box-shadow: 0 0 18px rgba(139, 92, 246, 0.5);
-      transform: translateY(-1px);
-    }
-
-    .ln-btn {
-      background: #f97316;
-      color: #fff;
-      border-radius: 999px;
-      padding: 0.45rem 1.1rem;
-      font-size: 0.9rem;
-      font-weight: 600;
-      border: none;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      transition: all 0.2s;
-    }
-
-    .ln-btn:hover {
-      box-shadow: 0 0 18px rgba(248, 150, 30, 0.5);
-      transform: translateY(-1px);
-    }
-
-    .matrix-toggle {
-      border-radius: 999px;
-      border: 1px solid #184438;
-      background: #020617;
+    .btnrow{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top: 10px; }
+    .btn{
+      flex: 1 1 180px;
+      border-radius: 14px;
+      border: 1px solid var(--stroke);
+      background: rgba(0,0,0,.20);
       color: var(--fg);
-      padding: 0.45rem 1.1rem;
-      font-size: 0.85rem;
-      cursor: pointer;
-      font-weight: 600;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.3rem;
+      padding: 12px 12px;
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: .02em;
+      cursor:pointer;
+      user-select:none;
+      touch-action: manipulation;
+      text-align:center;
+    }
+    .btn:active{ transform: translateY(1px); background: rgba(0,0,0,.28); }
+    .btn.primary{
+      border-color: rgba(0,255,136,.35);
+      box-shadow: 0 0 0 1px rgba(0,255,136,.12) inset;
+    }
+    .btn.warn{
+      border-color: rgba(255,42,42,.35);
+      box-shadow: 0 0 0 1px rgba(255,42,42,.10) inset;
     }
 
-    .matrix-toggle:hover {
-      background: #12352d;
+    .status{
+      font-family: var(--mono);
+      font-size: 11px;
+      color: rgba(235,255,245,.72);
+      padding: 10px 0 0;
+      min-height: 18px;
     }
 
-    /* Panels */
-    .panel {
-      display: none;
-      border-top: 1px solid #1f2933;
-      padding-top: 1rem;
-      margin-top: 0.4rem;
+    /* Challenge card */
+    .card{
+      border-radius: 14px;
+      border: 1px solid var(--stroke);
+      background: rgba(0,0,0,.20);
+      padding: 12px 12px;
+      margin: 10px 0;
+      overflow:hidden;
     }
-
-    .panel.active {
-      display: block;
-    }
-
-    .hint {
-      color: var(--muted);
-      font-size: 0.86rem;
-      margin-bottom: 0.8rem;
-    }
-
-    .challenge-box {
-      background: #020617;
-      border: 1px dashed var(--accent);
+    .challenge{
+      font-family: var(--mono);
+      font-size: 12px;
       color: var(--accent);
-      padding: 0.75rem 0.9rem;
-      border-radius: 10px;
+      text-shadow: 0 0 8px rgba(0,255,136,.18);
+      word-break: break-word;
+      cursor: pointer;
+      user-select: none;
       text-align: center;
-      cursor: pointer;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.9rem;
-      margin-bottom: 0.9rem;
     }
 
-    .row {
-      display: flex;
-      gap: 0.75rem;
-      flex-wrap: wrap;
-      margin-bottom: 0.75rem;
+    .hidden{ display:none !important; }
+
+    /* QR modal (glass, not white) */
+    .body-locked{ height: 100dvh; overflow:hidden; }
+    #qrModal{
+      position:fixed; inset:0;
+      background: rgba(0,0,0,.92);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index:99999;
+      padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+      backdrop-filter: blur(2px);
+      -webkit-backdrop-filter: blur(2px);
+    }
+    .qr-content{
+      width: min(420px, 92vw);
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(8,12,10,.22);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 10px 40px rgba(0,0,0,.55);
+      padding: 14px;
+      text-align:center;
+      color: rgba(235,255,245,.92);
+    }
+    .qr-title{
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--warn);
+      text-shadow:0 0 6px rgba(255,42,42,.18);
+      margin-bottom: 10px;
+      user-select:none;
+    }
+    #qrcode{ display:flex; justify-content:center; padding: 6px 0 2px; }
+    #openInWallet{
+      display:inline-block;
+      margin-top: 8px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--blue);
+      text-decoration:none;
+    }
+    #openInWallet:hover{ text-decoration: underline; }
+    #lnurlText{
+      margin-top: 10px;
+      padding: 10px 10px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(0,0,0,.20);
+      font-family: var(--mono);
+      font-size: 11px;
+      word-break: break-all;
+      color: rgba(235,255,245,.82);
+    }
+    #countdown{
+      margin-top: 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: rgba(235,255,245,.72);
     }
 
-    .row > .field {
-      flex: 1 1 260px;
-      min-width: 0;
+    @media (prefers-reduced-motion: reduce){
+      #matrix-bg{ display:none !important; }
+      *{ transition:none !important; animation:none !important; }
     }
 
-    label {
-      display: block;
-      font-size: 0.8rem;
-      color: var(--muted);
-      margin-bottom: 0.25rem;
-    }
 
-    input,
-    textarea {
-      width: 100%;
-      padding: 0.6rem 0.7rem;
-      border-radius: 10px;
-      border: 1px solid #255244;
-      background: #020617;
-      color: #bfffe6;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.85rem;
-      outline: none;
-      transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
-    }
+/* LOGIN_MANIFESTO_SINGLE_V1_CSS */
+.manifesto-details{ position:relative; }
+.manifesto-summary{
+  list-style:none;
+  cursor:pointer;
+  user-select:none;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  margin: 6px 0 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: rgba(235,255,245,.78);
+}
+.manifesto-summary::-webkit-details-marker{ display:none; }
+.manifesto-summary-label{
+  color: var(--accent);
+  text-shadow: 0 0 10px rgba(0,255,136,.25);
+}
+.manifesto-summary-icon{
+  opacity:.85;
+  transform: translateY(-1px);
+  transition: transform .18s ease;
+}
 
-    input:focus,
-    textarea:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 1px rgba(0, 255, 136, 0.4);
-      background: #020c13;
-    }
+/* closed: show ~3 lines */
+.manifesto-preview{
+  max-height: 4.9em;
+  overflow:hidden;
+  position:relative;
+  padding-bottom: 4px;
+}
+.manifesto-preview:after{
+  content:"";
+  position:absolute;
+  left:0; right:0; bottom:0;
+  height: 1.6em;
+  background: linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,.55));
+  pointer-events:none;
+}
 
-    textarea {
-      min-height: 100px;
-      resize: vertical;
-    }
+/* open: reveal full */
+.manifesto-full{ display:none; }
+.manifesto-details[open] .manifesto-full{ display:block; margin-top: 10px; }
+.manifesto-details[open] .manifesto-preview{ max-height:none; }
+.manifesto-details[open] .manifesto-preview:after{ display:none; }
+.manifesto-details[open] .manifesto-summary-icon{ transform: rotate(180deg); }
+.manifesto-details[open] .manifesto-summary-label::after{
+  content:" (collapse)";
+  color: rgba(235,255,245,.55);
+}
 
-    .actions {
-      display: flex;
-      gap: 0.5rem;
-      margin-top: 0.4rem;
-      flex-wrap: wrap;
-    }
-
-    .actions button {
-      border-radius: 999px;
-      padding-inline: 1.3rem;
-    }
-
-    .actions .copy {
-      background: transparent;
-      border: 1px solid var(--accent);
-      color: var(--accent);
-    }
-
-    .actions .copy:hover {
-      background: rgba(0, 255, 136, 0.08);
-    }
-
-    .status {
-      margin-top: 0.6rem;
-      min-height: 1.2rem;
-      font-size: 0.86rem;
-      color: var(--muted);
-    }
-
-    /* Guest login box */
-    .guest-login-panel {
-      margin-top: 1.8rem;
-      padding-top: 1.1rem;
-      border-top: 1px dashed #1f2933;
-    }
-
-    .guest-login-panel h2 {
-      font-size: 1rem;
-      margin-bottom: 0.4rem;
-      color: var(--accent);
-    }
-
-    .guest-login-panel p {
-      font-size: 0.85rem;
-      color: var(--muted);
-      margin-bottom: 0.6rem;
-    }
-
-    .guest-input {
-      width: 100%;
-      padding: 0.55rem 0.65rem;
-      border-radius: 999px;
-      border: 1px solid #255244;
-      background: #020617;
-      color: #bfffe6;
-      font-size: 0.85rem;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      margin-bottom: 0.5rem;
-    }
-
-    .guest-input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 1px rgba(0, 255, 136, 0.4);
-      outline: none;
-    }
-
-    .guest-btn {
-      width: 100%;
-      justify-content: center;
-      border-radius: 999px;
-      padding-block: 0.7rem;
-    }
-
-    @media (max-width: 768px) {
-      #root {
-        padding: 3.5rem 1rem 1.5rem;
-      }
-
-      .login-card {
-        padding: 1.6rem 1.2rem 1.4rem;
-      }
-
-      .login-header h1 {
-        font-size: 1.6rem;
-      }
-
-      .top-cta-inner {
-        flex-direction: column;
-        align-items: flex-start;
-      }
-
-      .top-cta-action {
-        width: 100%;
-        text-align: center;
-      }
-
-      .btn,
-      button {
-        width: auto;
-      }
-    }
-
-    @media (max-width: 480px) {
-      .btn,
-      button {
-        width: 100%;
-        justify-content: center;
-      }
-
-      .tabs-row {
-        flex-direction: column;
-        align-items: flex-start;
-      }
-
-      .tabs-right {
-        width: 100%;
-        justify-content: flex-start;
-      }
-    }
-  </style>
+</style>
+  <link rel="stylesheet" href="/static/ui_core.css?v=1"/>
 </head>
+
 <body>
-  <!-- Global matrix background -->
   <canvas id="matrix-bg" aria-hidden="true"></canvas>
 
-  <!-- Top CTA strip -->
-  <div class="top-cta">
-    <div class="top-cta-inner">
-      <div class="top-cta-text">
-        <span class="top-cta-pill">HODLXXI</span>
-        <span><strong>Bitcoin Key Login</strong> · Prove you are your keys.</span>
+  <!-- Optional login sound -->
+  <audio id="login-sound" src="/static/sounds/login.mp3" preload="auto" playsinline></audio>
+
+  <div class="wrap">
+    <!-- LOGIN_MANIFESTO_SINGLE_V1: single manifesto panel -->
+    <div class="manifesto panel">
+      <div class="panel-hd">
+        <div class="panel-title">HODLXXI MANIFESTO</div>
+        <div class="hintline">Bitcoin-native identity, presence, and covenants.</div>
       </div>
-      <div class="top-cta-action">
-        <button class="btn btn-secondary" onclick="window.location.href='/playground'">
-          Open Playground
-        </button>
+      <div class="panel-bd">
+        <details class="manifesto-details" id="manifestoDetails">
+          <summary class="manifesto-summary">
+            <span class="manifesto-summary-label">Read more</span>
+            <span class="manifesto-summary-icon" aria-hidden="true">▾</span>
+          </summary>
+
+          <div class="manifesto-preview manifesto-text">
+            <p><b>HODLXXI</b> is a Bitcoin-native Auth0: sign-in with keys, not accounts.</p>
+            <p>OAuth2/OIDC for apps, LNURL-Auth for wallets, Nostr for social identity, and Proof-of-Funds for trust gating.</p>
+          </div>
+
+          <div class="manifesto-full manifesto-text">
+            <p><b>Keys replace accounts.</b> You authenticate by proving control of a key — not by handing over email + password.</p>
+            <p><b>Developers get standards:</b> OAuth2/OIDC for Web2/Web3 apps, sessions, scopes, and redirects.</p>
+            <p><b>Users get native flows:</b> Bitcoin signatures, LNURL-Auth QR, Nostr extensions, and optional Proof-of-Funds signals.</p>
+            <p><b>Presence is a signal</b> (who is online / ready to coordinate), not a harvested social graph.</p>
+            <p><b>Covenant descriptors</b> extend identity into time: reciprocal commitments with observable rules.</p>
+
+            <p style="margin-top:.6rem;opacity:.92">
+              <a class="home-link" href="/oidc">← Home</a>
+            </p>
+          </div>
+        </details>
       </div>
     </div>
+
+
+    
+
+    <div class="topline">
+      <div>
+        <div class="brand">HODLXXI // LOGIN</div>
+      </div>
+      <div class="sub" id="miniStatus">status: ready</div>
+    </div>
+
+    <section class="panel">
+      <div class="panel-hd">
+        <div class="panel-title">Authenticate</div>
+
+<div class="tabs" role="tablist" aria-label="Login methods">
+  <button id="tabGuest" class="tab is-active" onclick="showTab('guest')" type="button">Guest</button>
+  <button id="tabLegacy" class="tab" onclick="showTab('legacy')" type="button">Legacy</button>
+  <button id="tabApi" class="tab" onclick="showTab('api')" type="button">API</button>
+  <button id="tabSpecial" class="tab" onclick="showTab('special')" type="button">Special</button>
+</div>
+
+        <div class="pill-actions">
+          <button class="pill nostr" type="button" onclick="loginWithNostr()" id="nostrBtn">🟣 Nostr</button>
+          <button class="pill ln" type="button" onclick="loginWithLightning()" id="lnBtn">⚡ Lightning</button>
+          <a class="pill" href="/pof/leaderboard" style="text-decoration:none;">🏆 PoF</a>
+          <a class="pill" href="/playground" style="text-decoration:none;">▶ Playground</a>
+        </div>
+        <!-- LOGIN_MANIFESTO_DETAILS_V2: Variant C -->
+        
+
+      </div>
+
+      <div class="panel-bd">
+        <div class="hintline">
+          Start with <b>Guest</b> or authenticate using <b>Lightning</b>, <b>Nostr</b>, or <b>Legacy</b>.
+          Use <b>Lightning</b> for LNURL-Auth QR. Use <b>Nostr</b> via extension.
+        </div>
+
+        <!-- Legacy panel -->
+         <div id="panelLegacy" class="hidden">
+          <div class="card">
+            <div class="challenge" id="legacyChallenge" title="Tap to copy">{{ challenge }}</div>
+          </div>
+
+          <div class="row">
+            <div class="col">
+              <label for="legacyPubkey">Public key (hex)</label>
+              <input id="legacyPubkey" placeholder="02.. or 03.." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+            </div>
+            <div class="col">
+              <label for="legacySignature">Signature (base64)</label>
+              <textarea id="legacySignature" rows="4" placeholder="paste signature"></textarea>
+            </div>
+          </div>
+
+          <div class="btnrow">
+            <button class="btn" type="button" onclick="copyText('legacyChallenge')">Copy challenge</button>
+            <button class="btn primary" type="button" onclick="legacyVerify()">Verify &amp; Login</button>
+          </div>
+
+          <div id="legacyStatus" class="status"></div>
+        </div>
+
+        <!-- API panel -->
+        <div id="panelApi" class="hidden">
+          <div class="row">
+            <div class="col">
+              <label for="apiPubkey">Public key (hex)</label>
+              <input id="apiPubkey" placeholder="02.. or 03.." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+            </div>
+            <div class="col">
+              <label for="apiChallenge">Challenge (readonly)</label>
+              <textarea id="apiChallenge" rows="3" readonly></textarea>
+            </div>
+          </div>
+
+          <div class="btnrow">
+            <button class="btn primary" type="button" onclick="getChallenge()">Get challenge</button>
+            <button class="btn" type="button" onclick="copyText('apiChallenge')">Copy</button>
+          </div>
+
+          <div class="row">
+            <div class="col">
+              <label for="apiSignature">Signature (base64)</label>
+              <textarea id="apiSignature" rows="4" placeholder="paste signature"></textarea>
+            </div>
+            <div class="col">
+              <label for="apiCid">Challenge ID</label>
+              <input id="apiCid" readonly />
+            </div>
+          </div>
+
+          <div class="btnrow">
+            <button class="btn primary" type="button" onclick="apiVerify()">Verify &amp; Login</button>
+          </div>
+
+          <div id="apiStatus" class="status"></div>
+        </div>
+
+        <!-- Special panel -->
+        <div id="panelSpecial" class="hidden">
+          <label for="specialSignature">Special signature</label>
+          <textarea id="specialSignature" rows="4" placeholder="Paste special signature"></textarea>
+          <div class="btnrow">
+            <button class="btn primary" type="button" onclick="specialLogin()">Verify &amp; Login</button>
+          </div>
+          <div id="specialStatus" class="status"></div>
+        </div>
+
+        <!-- Guest panel -->
+        <div id="panelGuest">
+          <label for="guestPin">Guest / PIN (blank = random)</label>
+          <input id="guestPin" type="text" placeholder="PIN or leave blank" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+          <div class="btnrow">
+            <button class="btn primary" type="button" onclick="guestLogin()">Enter as Guest</button>
+          </div>
+          <div class="status">Tip: invited PINs map to named guests (server-side).</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Optional stats panel (only shows if you later inject values with Jinja) -->
+    <section class="panel hidden" id="nodePanel">
+      <div class="panel-hd">
+        <div class="panel-title">Node</div>
+      </div>
+      <div class="panel-bd">
+        <div class="hintline mono">block_height={{ block_height }} · balance={{ wallet_balance }} · remaining={{ remaining }}</div>
+        <div class="hintline mono">startup={{ startup_time }} · mempool={{ mempool_txs }} ({{ mempool_usage }})</div>
+      </div>
+    </section>
   </div>
 
-  <!-- Optional login sound (triggered by app JS elsewhere) -->
-  <audio id="login-sound"
-         src="/static/sounds/login.mp3"
-         preload="auto" playsinline></audio>
+<!-- QR modal -->
+<div id="qrModal" aria-hidden="true">
+  <div class="qr-content">
+    <div class="qr-title">Scan with wallet</div>
 
-  <div id="root">
-    <div class="login-card">
-      <div class="login-header">
-        <h1>*Log in with your actual key, we Verify Trust*</h1>
-        <p>Use your Bitcoin key, Lightning wallet, Nostr identity, or guest access to explore HODLXXI.</p>
-      </div>
 
-      <!-- Tabs row -->
-      <div class="tabs-row">
-        <div class="tabs">
-          <button id="tabLegacy" class="tab-btn active" onclick="showTab('legacy')">
-            Legacy
-          </button>
-          <button id="tabApi" class="tab-btn" onclick="showTab('api')">
-            API
-          </button>
-          <button id="tabSpecial" class="tab-btn" onclick="showTab('special')">
-            Special
-          </button>
-        </div>
-        <div class="tabs-right">
-          <button class="nostr-btn" type="button" onclick="loginWithNostr()">
-            🟣 <span>Nostr</span>
-          </button>
-          <button class="ln-btn" type="button" onclick="loginWithLightning()">
-            ⚡ <span>Lightning</span>
-          </button>
-        </div>
-      </div>
 
-      <!-- Legacy panel -->
-      <div id="panelLegacy" class="panel active">
-        <p class="hint">Sign the challenge with your wallet, then paste the signature.</p>
-        <div class="challenge-box" id="legacyChallenge" title="Click to copy">
-          {{ challenge }}
-        </div>
+<style>
+/* LOGIN_QR_UI_V6: final QR modal layout (iPad landscape + phone) */
 
-        <div class="row">
-          <div class="field">
-            <label for="legacyPubkey">Public key</label>
-            <input id="legacyPubkey" placeholder="02.. or 03.." />
-          </div>
-          <div class="field">
-            <label for="legacySignature">Signature</label>
-            <textarea id="legacySignature" rows="4" placeholder="base64 signature"></textarea>
-          </div>
-        </div>
+/* Background never steals taps */
+#matrix-bg, #matrix-canvas, canvas#matrix-bg, canvas#matrix-canvas { pointer-events:none !important; z-index:0 !important; }
 
-        <div class="actions">
-          <button class="copy" type="button" onclick="copyText('legacyChallenge')">
-            Copy challenge
-          </button>
-          <button type="button" onclick="legacyVerify()">
-            Verify &amp; Login
-          </button>
-        </div>
+/* Buttons always tappable */
+#lnBtn, #nostrBtn, button, .pill { position:relative; z-index:50; pointer-events:auto; touch-action:manipulation; -webkit-tap-highlight-color:rgba(0,0,0,0); }
 
-        <div id="legacyStatus" class="status"></div>
-      </div>
+/* Modal on top */
+#qrModal{ position:fixed !important; inset:0 !important; z-index:999999 !important; overflow:auto !important; -webkit-overflow-scrolling:touch; padding:max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
 
-      <!-- API panel -->
-      <div id="panelApi" class="panel">
-        <p class="hint">Request a challenge via the API, sign it, and verify.</p>
+/* Card (your #qrCard wrapper) */
+#qrCard, #qrCard.qr-card{
+  width:min(92vw, 520px);
+  max-height:86vh;
+  overflow:auto;
+  margin:10px auto;
+  padding:12px;
+  border-radius:16px;
+  border:1px solid rgba(0,255,0,0.25);
+  background:rgba(0,0,0,0.55);
+  box-shadow:0 0 18px rgba(0,255,0,0.12);
+}
 
-        <div class="row">
-          <div class="field">
-            <label for="apiPubkey">Public key</label>
-            <input id="apiPubkey" placeholder="02.. or 03.." />
-          </div>
-          <div class="field">
-            <label for="apiChallenge">Challenge</label>
-            <textarea id="apiChallenge" rows="3" readonly></textarea>
-          </div>
-        </div>
+/* QR + text */
+#qrcode{ display:flex; justify-content:center; padding:8px 0 4px; }
+#lnurlText{
+  display:block;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+  font-size:13px; line-height:1.25; opacity:.95;
+  word-break:break-all;
+  max-height:11em; overflow:auto;
+  padding:8px 10px;
+  border-radius:10px;
+  border:1px solid rgba(0,255,0,0.25);
+  background:rgba(0,0,0,0.35);
+}
+#countdown{ display:block; margin-top:8px; font-size:13px; opacity:.9; }
 
-        <div class="actions">
-          <button type="button" onclick="getChallenge()">Get challenge</button>
-          <button class="copy" type="button" onclick="copyText('apiChallenge')">Copy</button>
-        </div>
+/* LANDSCAPE: use max-height so it works on ALL iPads (including Pro) */
+@media (orientation: landscape) and (max-height: 900px){
+  #qrCard, #qrCard.qr-card{
+    width:min(96vw, 980px);
+    display:grid;
+    grid-template-columns:260px 1fr;
+    gap:12px;
+    align-items:start;
+  }
+  #qrcode{ grid-column:1; }
+  #lnurlText{ grid-column:2; max-height:8.5em; }
+  #countdown{ grid-column:2; }
+  #qrcode img, #qrcode canvas{ width:240px !important; height:240px !important; }
+}
 
-        <div class="row">
-          <div class="field">
-            <label for="apiSignature">Signature</label>
-            <textarea id="apiSignature" rows="4" placeholder="base64 signature"></textarea>
-          </div>
-          <div class="field">
-            <label for="apiCid">Challenge ID</label>
-            <input id="apiCid" readonly />
-          </div>
-        </div>
+/* Very short landscape (phones): shrink QR */
+@media (orientation: landscape) and (max-height: 700px){
+  #qrcode img, #qrcode canvas{ width:200px !important; height:200px !important; }
+}
+</style>
 
-        <div class="actions">
-          <button type="button" onclick="apiVerify()">Verify &amp; Login</button>
-        </div>
+<div id="qrCard" class="qr-card"> <!-- QR_MODAL_WRAPPER_V3 -->
+    <div id="qrcode"></div>
 
-        <div id="apiStatus" class="status"></div>
-      </div>
+    <a id="openInWallet" href="#" target="_blank" rel="noopener">Open in wallet</a>
 
-      <!-- Special login panel -->
-      <div id="panelSpecial" class="panel">
-        <p class="hint">For special / host login via pre-agreed signature.</p>
-        <div class="row">
-          <div class="field">
-            <label for="specialSignature">Special signature</label>
-            <textarea id="specialSignature" rows="4" placeholder="Paste special signature"></textarea>
-          </div>
-        </div>
-        <div class="actions">
-          <button type="button" onclick="specialLogin()">
-            Verify &amp; Login
-          </button>
-        </div>
-        <div id="specialStatus" class="status"></div>
-      </div>
+    <!-- Mobile fallback: big tap target -->
+    <button class="btn primary" id="openWalletBtn" type="button" style="margin-top:10px; width:100%;">
+      ⚡ Open Lightning Wallet
+    </button>
 
-      <!-- Guest login -->
-      <div class="guest-login-panel">
-        <h2>Guest / PIN Login</h2>
-        <p>Use a shared PIN (if invited) or leave blank for a random guest session.</p>
-        <input
-          id="guestPin"
-          class="guest-input"
-          type="text"
-          placeholder="PIN or leave blank for guest"
-        />
-        <button type="button" class="btn guest-btn" onclick="guestLogin()">
-          Guest
-        </button>
-      </div>
+    <div id="lnurlText"></div>
+    <div id="countdown"></div>
+
+</div> <!-- /QR_MODAL_WRAPPER_V3 -->
+
+                <button class="btn" id="copyLnurlBtn" type="button" style="margin-top:8px; width:100%;">📋 Copy LNURL</button>
+
+<div class="btnrow" style="margin-top:10px;">
+      <button class="btn warn" type="button" onclick="closeQR()">✕ Close</button>
     </div>
   </div>
+</div>
 
-  <!-- QR modal reused from universal_login -->
-  <div id="qrModal" class="qr-modal" style="
-    position:fixed;
-    inset:0;
-    background:rgba(0,0,0,.95);
-    display:none;
-    align-items:center;
-    justify-content:center;
-    z-index:1000;
-  ">
-    <div class="qr-content" style="
-      background:white;
-      padding:2rem;
-      border-radius:16px;
-      text-align:center;
-      max-width:400px;
-      width:90%;
-    ">
-      <h2>Scan with Wallet</h2>
-      <div id="qrcode"></div>
-      <a id="openInWallet" href="#" target="_blank" rel="noopener">Open in wallet</a>
-      <div id="lnurlText" style="
-        margin-top:1rem;
-        padding:.75rem;
-        background:#f0f0f0;
-        border-radius:8px;
-        font-family:monospace;
-        font-size:.7rem;
-        word-break:break-all;
-        color:#333;
-      "></div>
-      <div id="countdown" style="color:#666;font-size:.85rem;margin-top:.5rem"></div>
-      <button onclick="closeQR()" style="
-        margin-top:1rem;
-        padding:.75rem 2rem;
-        background:#333;
-        color:white;
-        border:none;
-        border-radius:8px;
-        cursor:pointer;
-      ">Close</button>
-    </div>
-  </div>
   <script src="/static/js/qrcode.min.js"></script>
+  <script src="/static/js/ios_tapfix.js"></script>
+<script src="/static/js/tapfix_v2.js"></script>
+<script src="/static/js/tap_probe.js"></script>
 
-  <!-- Login logic (unchanged, just formatted) -->
+
   <script>
     // Helper to respect ?next= parameter for post-login redirects
     function getRedirectUrl() {
@@ -3241,18 +3719,25 @@ def login():
     }
 
     function showTab(which) {
-      ["legacy", "api", "guest", "special"].forEach((t) => {
-        const tab = document.getElementById(
-          "tab" + t.charAt(0).toUpperCase() + t.slice(1)
-        );
-        const panel = document.getElementById(
-          "panel" + t.charAt(0).toUpperCase() + t.slice(1)
-        );
-        if (tab && panel) {
-          tab.classList.toggle("active", t === which);
-          panel.classList.toggle("active", t === which);
-        }
+      const panels = {
+        legacy: ["tabLegacy", "panelLegacy"],
+        api: ["tabApi", "panelApi"],
+        special: ["tabSpecial", "panelSpecial"],
+        guest: ["tabGuest", "panelGuest"],
+      };
+      Object.entries(panels).forEach(([k,[tabId,panelId]]) => {
+        const tab = document.getElementById(tabId);
+        const panel = document.getElementById(panelId);
+        if (tab) tab.classList.toggle("is-active", k === which);
+        if (panel) panel.classList.toggle("hidden", k !== which);
       });
+    }
+
+    function setStatus(id, msg) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = msg || "";
+      const mini = document.getElementById("miniStatus");
+      if (mini) mini.textContent = "status: " + (msg ? msg.toLowerCase() : "ready");
     }
 
     function copyText(id) {
@@ -3261,57 +3746,51 @@ def login():
         el.tagName === "TEXTAREA" || el.tagName === "INPUT"
           ? el.value
           : el.textContent.trim();
-      navigator.clipboard.writeText(txt);
+      navigator.clipboard.writeText(txt).catch(()=>{});
     }
 
-    // Click to copy on the challenge card (visual feedback)
-    const legacyEl = document.getElementById("legacyChallenge");
-    if (legacyEl) {
+    // Tap-to-copy challenge
+    (function(){
+      const legacyEl = document.getElementById("legacyChallenge");
+      if (!legacyEl) return;
       legacyEl.addEventListener("click", () => {
         const text = legacyEl.textContent.trim();
         navigator.clipboard.writeText(text).then(() => {
-          const orig = legacyEl.style.background;
-          legacyEl.style.background = "#12352d";
-          setTimeout(() => (legacyEl.style.background = orig), 300);
-        });
+          const orig = legacyEl.style.opacity || "1";
+          legacyEl.style.opacity = "0.65";
+          setTimeout(() => (legacyEl.style.opacity = orig), 220);
+        }).catch(()=>{});
       });
-    }
+    })();
 
-    // --- Flows ---
+    // --- Legacy verify ---
     async function legacyVerify() {
       const pubkey = document.getElementById("legacyPubkey").value.trim();
-      const signature = document
-        .getElementById("legacySignature")
-        .value.trim();
-      const challenge = document
-        .getElementById("legacyChallenge")
-        .textContent.trim();
-      const st = document.getElementById("legacyStatus");
-      st.textContent = "Verifying...";
+      const signature = document.getElementById("legacySignature").value.trim();
+      const challenge = document.getElementById("legacyChallenge").textContent.trim();
+      setStatus("legacyStatus", "Verifying...");
       try {
         const r = await fetch("/verify_signature", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ pubkey, signature, challenge }),
         });
-        const d = await r.json();
-        // NOTE: access_level in response is for UI hints only.
-        // DO NOT treat this as an authorization boundary.
-        // All actual authorization happens server-side via session validation.
+        const d = await r.json().catch(()=> ({}));
         if (r.ok && d.verified) {
           sessionStorage.setItem("playLoginSound", "1");
           window.location.href = getRedirectUrl();
         } else {
-          st.textContent = d.error || "Failed";
+          setStatus("legacyStatus", d.error || "Failed");
         }
       } catch (e) {
-        st.textContent = "Network error";
+        setStatus("legacyStatus", "Network error");
       }
     }
 
+    // --- API challenge/verify ---
     async function getChallenge() {
       const pubkey = document.getElementById("apiPubkey").value.trim();
-      const st = document.getElementById("apiStatus");
+      setStatus("apiStatus", "Requesting challenge...");
       try {
         const r = await fetch("/api/challenge", {
           method: "POST",
@@ -3322,79 +3801,74 @@ def login():
         if (!r.ok) throw new Error(d.error || "Request failed");
         document.getElementById("apiChallenge").value = d.challenge || "";
         document.getElementById("apiCid").value = d.challenge_id || "";
-        st.textContent = "Challenge ready";
+        setStatus("apiStatus", "Challenge ready");
       } catch (e) {
-        st.textContent = e.message;
+        setStatus("apiStatus", e.message || "Error");
       }
     }
 
     async function apiVerify() {
       const pubkey = document.getElementById("apiPubkey").value.trim();
-      const signature = document
-        .getElementById("apiSignature")
-        .value.trim();
+      const signature = document.getElementById("apiSignature").value.trim();
       const cid = document.getElementById("apiCid").value.trim();
-      const st = document.getElementById("apiStatus");
+      setStatus("apiStatus", "Verifying...");
       try {
         const r = await fetch("/api/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ pubkey, signature, challenge_id: cid }),
         });
-        const d = await r.json();
+        const d = await r.json().catch(()=> ({}));
         if (r.ok && d.verified) {
           sessionStorage.setItem("playLoginSound", "1");
           window.location.href = getRedirectUrl();
         } else {
-          st.textContent = d.error || "Failed";
+          setStatus("apiStatus", d.error || "Failed");
         }
       } catch (e) {
-        st.textContent = "Network error";
+        setStatus("apiStatus", "Network error");
       }
     }
 
+    // --- Guest login ---
     async function guestLogin() {
-      const pinInput = document.getElementById("guestPin");
-      const pin = pinInput ? pinInput.value.trim() : "";
-
-      const res = await fetch("/guest_login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin }),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        alert(data.error || "Guest login failed");
-        return;
+      const pin = (document.getElementById("guestPin")?.value || "").trim();
+      try {
+        const res = await fetch("/guest_login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pin }),
+        });
+        const data = await res.json().catch(()=> ({}));
+        if (!res.ok || !data.ok) {
+          alert(data.error || "Guest login failed");
+          return;
+        }
+        window.location.href = getRedirectUrl();
+      } catch (e) {
+        alert("Guest login error");
       }
-
-      const label = data.label || "Guest";
-      console.log("Guest login successful:", label);
-      alert("Logged in as " + label);
-      window.location.href = getRedirectUrl();
     }
 
+    // --- Special login ---
     async function specialLogin() {
-      const sig = document
-        .getElementById("specialSignature")
-        ?.value.trim();
-      const st = document.getElementById("specialStatus");
+      const sig = (document.getElementById("specialSignature")?.value || "").trim();
+      setStatus("specialStatus", "Verifying...");
       try {
         const r = await fetch("/special_login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ signature: sig }),
         });
-        const d = await r.json();
+        const d = await r.json().catch(()=> ({}));
         if (r.ok && d.verified) {
           sessionStorage.setItem("playLoginSound", "1");
           window.location.href = getRedirectUrl();
         } else {
-          st.textContent = d.error || "Failed";
+          setStatus("specialStatus", d.error || "Failed");
         }
       } catch (e) {
-        st.textContent = "Network error";
+        setStatus("specialStatus", "Network error");
       }
     }
   </script>
@@ -3404,53 +3878,37 @@ def login():
     function urlToLnurl(url) {
       const CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
       function polymod(v) {
-        const G = [
-          0x3b6a57b2,
-          0x26508e6d,
-          0x1ea119fa,
-          0x3d4233dd,
-          0x2a1462b3,
-        ];
+        const G = [0x3b6a57b2,0x26508e6d,0x1ea119fa,0x3d4233dd,0x2a1462b3];
         let chk = 1;
         for (const val of v) {
           const top = chk >>> 25;
           chk = ((chk & 0x1ffffff) << 5) ^ val;
-          for (let i = 0; i < 5; i++)
-            if ((top >>> i) & 1) chk ^= G[i];
+          for (let i=0;i<5;i++) if ((top>>>i)&1) chk ^= G[i];
         }
         return chk;
       }
       function hrpExpand(hrp) {
         const ret = [];
-        for (let i = 0; i < hrp.length; i++)
-          ret.push(hrp.charCodeAt(i) >> 5);
+        for (let i=0;i<hrp.length;i++) ret.push(hrp.charCodeAt(i)>>5);
         ret.push(0);
-        for (let i = 0; i < hrp.length; i++)
-          ret.push(hrp.charCodeAt(i) & 31);
+        for (let i=0;i<hrp.length;i++) ret.push(hrp.charCodeAt(i)&31);
         return ret;
       }
       function createChecksum(hrp, data) {
-        const values = hrpExpand(hrp).concat(data).concat([0, 0, 0, 0, 0, 0]);
+        const values = hrpExpand(hrp).concat(data).concat([0,0,0,0,0,0]);
         const mod = polymod(values) ^ 1;
         const ret = [];
-        for (let p = 0; p < 6; p++)
-          ret.push((mod >> (5 * (5 - p))) & 31);
+        for (let p=0;p<6;p++) ret.push((mod >> (5*(5-p))) & 31);
         return ret;
       }
       function convertBits(data, from, to) {
-        let acc = 0,
-          bits = 0,
-          ret = [],
-          maxv = (1 << to) - 1;
+        let acc=0, bits=0, ret=[], maxv=(1<<to)-1;
         for (const value of data) {
-          acc = (acc << from) | value;
+          acc = (acc<<from) | value;
           bits += from;
-          while (bits >= to) {
-            bits -= to;
-            ret.push((acc >> bits) & maxv);
-          }
+          while (bits >= to) { bits -= to; ret.push((acc>>bits) & maxv); }
         }
-        if (bits > 0) ret.push((acc << (to - bits)) & maxv);
+        if (bits > 0) ret.push((acc << (to-bits)) & maxv);
         return ret;
       }
       const bytes = new TextEncoder().encode(url);
@@ -3463,28 +3921,73 @@ def login():
 
     function renderQR(el, text) {
       el.innerHTML = "";
-      new QRCode(el, {
-        text,
-        width: 256,
-        height: 256,
-        colorDark: "#000",
-        colorLight: "#fff",
-      });
+      new QRCode(el, { text, width: 256, height: 256, colorDark: "#000", colorLight: "#fff" });
     }
 
-    let poll = null,
-      expire = null;
+
+    // --- Mobile-friendly wallet open + copy fallbacks ---
+    function openLightningWallet(lnurl) {
+      const walletUrl = "lightning:" + lnurl;
+
+      // 1) direct navigation (best when allowed)
+      try {window.location.href = walletUrl;} catch(e) {}
+
+      // 2) fallback: temp <a> click (some browsers prefer this)
+      setTimeout(() => {
+        try {const a = document.createElement("a");
+          a.href = walletUrl;
+          a.rel = "noopener";
+          a.style.display = "none";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();} catch(e) {}
+      }, 50);
+
+      // 3) fallback: new tab (some Android cases)
+      setTimeout(() => {
+        try {window.open(walletUrl, "_blank");} catch(e) {}
+      }, 120);
+    }
+
+    (function bindLnurlFallbackButtons(){
+      const openBtn = document.getElementById("openWalletBtn");
+      const copyBtn = document.getElementById("copyLnurlBtn");
+      const lnurlBox = document.getElementById("lnurlText");
+
+      if (openBtn && !openBtn.dataset.bound) {
+        openBtn.dataset.bound = "1";
+        openBtn.addEventListener("click", () => {
+          const lnurl = (lnurlBox?.textContent || "").trim();
+          if (!lnurl) return alert("LNURL not ready yet");
+          openLightningWallet(lnurl);
+        }, { passive: true });
+      }
+
+      if (copyBtn && !copyBtn.dataset.bound) {
+        copyBtn.dataset.bound = "1";
+        copyBtn.addEventListener("click", async () => {
+          const lnurl = (lnurlBox?.textContent || "").trim();
+          if (!lnurl) return alert("LNURL not ready yet");
+          try {await navigator.clipboard.writeText(lnurl);
+            const old = copyBtn.textContent;
+            copyBtn.textContent = "✅ Copied";
+            setTimeout(() => (copyBtn.textContent = old), 900);} catch(e) {
+            alert("Copy failed — press and hold the LNURL text to copy.");
+          }
+        }, { passive: true });
+      }
+    })();
+    let poll=null, expire=null;
 
     function startPolling(sid) {
       clearInterval(poll);
       poll = setInterval(async () => {
         const r = await fetch(`/api/lnurl-auth/check/${sid}`);
-        const j = await r.json();
+        const j = await r.json().catch(()=> ({}));
         if (j.authenticated) {
           clearInterval(poll);
           clearInterval(expire);
           closeQR();
-          alert("Lightning login success!");
           window.location.href = getRedirectUrl();
         }
       }, 2000);
@@ -3496,11 +3999,7 @@ def login():
       const el = document.getElementById("countdown");
       expire = setInterval(() => {
         r--;
-        el.textContent = `Expires in ${Math.floor(r / 60)}:${(
-          r % 60
-        )
-          .toString()
-          .padStart(2, "0")}`;
+        if (el) el.textContent = `Expires in ${Math.floor(r/60)}:${(r%60).toString().padStart(2,"0")}`;
         if (r <= 0) {
           clearInterval(poll);
           clearInterval(expire);
@@ -3510,7 +4009,9 @@ def login():
     }
 
     function closeQR() {
-      document.getElementById("qrModal").style.display = "none";
+      const modal = document.getElementById("qrModal");
+      if (modal) modal.style.display = "none";
+      document.body.classList.remove("body-locked");
     }
 
     async function loginWithLightning() {
@@ -3520,60 +4021,112 @@ def login():
       const countdown = document.getElementById("countdown");
 
       try {
-        // Show modal immediately with loading state
         if (qrBox) qrBox.innerHTML = "";
         if (lnurlBox) lnurlBox.textContent = "Requesting Lightning login…";
         if (countdown) countdown.textContent = "";
         if (modal) modal.style.display = "flex";
+        document.body.classList.add("body-locked");
 
-        const res = await fetch("/api/lnurl-auth/create", {
-          method: "POST",
-        });
-
-        if (!res.ok) {
-          const txt = await res.text().catch(() => "");
+        const res = await fetch("/api/lnurl-auth/create", { method: "POST", headers: { "Accept": "application/json" }, credentials: "same-origin" });
+if (!res.ok) {
+          const txt = await res.text().catch(()=> "");
           console.error("LNURL-auth create failed:", res.status, txt);
           alert("Lightning login init failed: " + res.status);
-          if (modal) modal.style.display = "none";
+          closeQR();
           return;
         }
 
         let j;
-        try {
-          j = await res.json();
-        } catch (e) {
+        try {j = await res.json();} catch (e) {
           console.error("LNURL-auth JSON parse error:", e);
           alert("Lightning login error: invalid server response");
-          if (modal) modal.style.display = "none";
+          closeQR();
           return;
         }
 
         if (!j || !j.callback_url) {
           console.error("LNURL-auth missing callback_url:", j);
           alert("Lightning login error: missing callback_url");
-          if (modal) modal.style.display = "none";
+          closeQR();
           return;
         }
 
         const lnurl = urlToLnurl(j.callback_url);
 
-        if (qrBox && typeof QRCode !== "undefined") {
-          renderQR(qrBox, lnurl);
-        } else if (lnurlBox) {
-          // Fallback: show lnurl text only
-          lnurlBox.textContent = lnurl;
+        
+        
+// bind mobile fallback buttons (must be a user gesture)
+
+          try {await navigator.clipboard.writeText(lnurl);} catch(e) {}
+// Set the link + mobile fallback button
+
+    // REMOVED: orphaned e.preventDefault()
+
+
+        
+        // --- Canonical LNURL UI wiring (single source of truth) ---
+        const walletUrl = "lightning:" + lnurl;
+
+        // "Open in wallet" link (works on desktop and some mobile browsers)
+        const openInWalletEl = document.getElementById("openInWallet");
+        if (openInWalletEl) {
+          openInWalletEl.href = walletUrl;
+          openInWalletEl.onclick = (e) => {
+            e.preventDefault();
+            // some mobile browsers require direct navigation
+            window.location.href = walletUrl;
+          };
         }
 
+        // Mobile-friendly explicit button (user gesture)
+        const openBtn = document.getElementById("openWalletBtn");
+        if (openBtn) {
+          openBtn.onclick = () => {
+            try {window.location.href = walletUrl;} catch(e) {}
+            // fallback: attempt <a> click
+            setTimeout(() => {
+              try {const a = document.createElement("a");
+                a.href = walletUrl;
+                a.rel = "noopener";
+                a.style.display = "none";
+                document.body.appendChild(a);
+                a.click();
+                a.remove();} catch(e) {}
+            }, 50);
+          };
+        }
+
+        // Copy LNURL button (works even if wallet open is blocked)
+        const copyBtn = document.getElementById("copyLnurlBtn");
+        if (copyBtn) {
+          copyBtn.onclick = async () => {
+            try {await navigator.clipboard.writeText(lnurl);
+              alert("LNURL copied");} catch (e) {
+              // fallback: prompt
+              window.prompt("Copy LNURL:", lnurl);
+            }
+          };
+        }
+if (qrBox && typeof QRCode !== "undefined") renderQR(qrBox, lnurl);
         if (lnurlBox) lnurlBox.textContent = lnurl;
+
         const openEl = document.getElementById("openInWallet");
-        if (openEl) openEl.href = "lightning:" + lnurl;
+        if (openEl) {
+  openEl.href = "lightning:" + lnurl;
+  openEl.onclick = (e) => {
+    // Ensure this is a user gesture
+    e.preventDefault();
+    window.location.href = "lightning:" + lnurl;
+  };
+}
+
 
         startPolling(j.session_id);
         startCountdown(j.expires_in || 300);
       } catch (e) {
         console.error("Lightning login error:", e);
-        alert("Lightning login error: " + e);
-        if (modal) modal.style.display = "none";
+        alert("Lightning login error");
+        closeQR();
       }
     }
 
@@ -3591,87 +4144,150 @@ def login():
       const d = await r.json();
       const event = {
         kind: 22242,
-        created_at: Math.floor(Date.now() / 1000),
-        tags: [
-          ["challenge", d.challenge],
-          ["app", "HODLXXI"],
-        ],
+        created_at: Math.floor(Date.now()/1000),
+        tags: [["challenge", d.challenge], ["app", "HODLXXI"]],
         content: `HODLXXI Login: ${d.challenge}`,
       };
       const signed = await window.nostr.signEvent(event);
       const vr = await fetch("/api/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          challenge_id: d.challenge_id,
-          pubkey,
-          signature: signed.sig,
-        }),
+        body: JSON.stringify({ challenge_id: d.challenge_id, pubkey, signature: signed.sig }),
       });
       const j2 = await vr.json();
-      if (j2.verified) {
-        alert("Nostr login success!");
-        window.location.href = getRedirectUrl();
-      } else alert("Verification failed");
+      if (j2.verified) window.location.href = getRedirectUrl();
+      else alert("Verification failed");
     }
-  </script>
 
-  <!-- Matrix background animation (same as leaderboard/playground) -->
+    // --- Bind pill buttons (mobile-safe) ---
+    (function bindLoginPills(){
+      function setMini(msg){
+        const mini = document.getElementById("miniStatus");
+        if (mini) mini.textContent = "status: " + msg;
+      }
+
+      function bindOne(id, fnName){
+        const el = document.getElementById(id);
+        if (!el) return;
+
+        const fire = async (e) => {
+          try {
+            if (e && e.preventDefault) e.preventDefault();
+            if (e && e.stopPropagation) e.stopPropagation();
+            setMini(fnName + "…");
+            // Call the function by name to avoid scope issues
+            const fn = window[fnName] || (typeof eval === "function" ? eval(fnName) : null);
+            if (typeof fn !== "function") {
+              setMini(fnName + " missing");
+              alert(fnName + " is not available (JS load error).");
+              return;
+            }
+            await fn();
+            setMini("ready");
+          } catch (err) {
+            console.error(fnName + " error:", err);
+            setMini("error");
+            alert(fnName + " failed: " + (err && err.message ? err.message : "unknown"));
+          }
+        };
+
+        // iOS: touchstart is often more reliable than click
+        el.addEventListener("touchstart", fire, { passive: false });
+        el.addEventListener("click", fire, { passive: false });
+      }
+
+      // Make sure the global functions are reachable via window
+      try {if (typeof loginWithLightning === "function") window.loginWithLightning = loginWithLightning;} catch(e) {}
+      try {if (typeof loginWithNostr === "function") window.loginWithNostr = loginWithNostr;} catch(e) {}
+
+      setMini("ready");
+    })();
+
+  
+  
+</script>
   <script>
-    (function () {
-      const canvas = document.getElementById("matrix-bg");
-      if (!canvas) return;
+    // --- Top-level pill wiring (runs on page load) ---
+    (function bindLoginPillsTopLevel(){
+      function bind(id, fnName){
+        const el = document.getElementById(id);
+        if (!el) return;
 
-      const ctx = canvas.getContext("2d");
-      const CHARS = ["0", "1"];
-      let width = 0,
-        height = 0,
-        particles = [],
-        raf = null;
+        el.addEventListener("click", async (e) => {
+          try {
+            e.preventDefault();
+            e.stopPropagation();
+            const fn = window[fnName];
+            if (typeof fn !== "function") {
+              console.error("Missing handler:", fnName);
+              alert("Init failed: " + fnName + " is not available");
+              return;
+            }
+            await fn();
+          } catch (err) {
+            console.error(fnName + " error:", err);
+            alert("Init failed");
+          }
+        }, { passive: false });
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", () => {
+          bind("lnBtn", "loginWithLightning");
+          bind("nostrBtn", "loginWithNostr");
+        });
+      } else {
+        bind("lnBtn", "loginWithLightning");
+        bind("nostrBtn", "loginWithNostr");
+      }
+    })();
+  </script>
+</script>
+
+  <!-- Matrix Animation (warp) -->
+  <script>
+    (function() {
+      const canvas = document.getElementById('matrix-bg');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const CHARS = ['0','1'];
+      let width = 0, height = 0, particles = [], raf = null;
 
       function resize() {
         const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
-        const cssW = window.innerWidth;
-        const cssH = window.innerHeight;
-
+        const cssW = window.innerWidth, cssH = window.innerHeight;
         canvas.width = Math.floor(cssW * dpr);
         canvas.height = Math.floor(cssH * dpr);
-        canvas.style.width = cssW + "px";
-        canvas.style.height = cssH + "px";
-
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        canvas.style.width = cssW + 'px';
+        canvas.style.height = cssH + 'px';
+        ctx.setTransform(1,0,0,1,0,0);
         ctx.scale(dpr, dpr);
+        width = cssW; height = cssH;
 
-        width = cssW;
-        height = cssH;
         particles = [];
-
         for (let i = 0; i < 400; i++) {
           particles.push({
             x: (Math.random() - 0.5) * width,
             y: (Math.random() - 0.5) * height,
-            z: Math.random() * 800 + 100,
+            z: Math.random() * 800 + 100
           });
         }
-
-        ctx.fillStyle = "rgba(0,0,0,1)";
+        ctx.fillStyle = 'rgba(0,0,0,1)';
         ctx.fillRect(0, 0, width, height);
       }
 
       function draw() {
-        ctx.fillStyle = "rgba(0,0,0,0.25)";
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
         ctx.fillRect(0, 0, width, height);
-        ctx.fillStyle = "#00ff88";
+        ctx.fillStyle = '#00ff88';
 
         for (const p of particles) {
           const scale = 200 / p.z;
           const x2 = width / 2 + p.x * scale;
           const y2 = height / 2 + p.y * scale;
           const size = Math.max(8 * scale, 1);
-
-          ctx.font = size + "px monospace";
+          ctx.font = size + 'px monospace';
           ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
-
           p.z -= 5;
           if (p.z < 1) {
             p.x = (Math.random() - 0.5) * width;
@@ -3679,53 +4295,25 @@ def login():
             p.z = 800;
           }
         }
-
         raf = requestAnimationFrame(draw);
       }
 
       function onVis() {
-        if (document.hidden) {
-          if (raf) {
-            cancelAnimationFrame(raf);
-            raf = null;
-          }
-        } else {
-          if (!raf) raf = requestAnimationFrame(draw);
-        }
+        if (document.hidden) { if (raf) cancelAnimationFrame(raf), raf = null; }
+        else { if (!raf) raf = requestAnimationFrame(draw); }
       }
 
-      window.addEventListener("resize", resize);
-      document.addEventListener("visibilitychange", onVis);
-
+      window.addEventListener('resize', resize);
+      document.addEventListener('visibilitychange', onVis);
       resize();
       raf = requestAnimationFrame(draw);
-    })();
-
-    // Optional: simple toggle that just flips a flag in localStorage (you can
-    // later wire it to warp/rain variants if you want)
-    (function () {
-      const btn = document.getElementById("bgToggle");
-      if (!btn) return;
-
-      function updateLabel() {
-        const mode = localStorage.getItem("matrixMode") || "warp";
-        btn.textContent = mode === "warp" ? "◒ Matrix" : "◒ Matrix";
-      }
-
-      updateLabel();
-      btn.addEventListener("click", () => {
-        const current = localStorage.getItem("matrixMode") || "warp";
-        const next = current === "warp" ? "rain" : "warp";
-        localStorage.setItem("matrixMode", next);
-        updateLabel();
-        // Visual mode is still the same effect; you can swap implementations later if needed.
-      });
     })();
   </script>
 </body>
 </html>
 
 """
+
     return render_template_string(
         html,
         challenge=challenge_str,
@@ -3880,25 +4468,6 @@ def guest_login():
 SPECIAL_USERS = [p.strip() for p in os.getenv("SPECIAL_USERS", "").split(",") if p.strip()]
 
 
-@app.route("/guest_login2", methods=["POST"])
-def guest_login2():
-    data = request.get_json() or {}
-    challenge = data.get("challenge", "").strip()
-
-    if "challenge" not in session or session["challenge"] != challenge:
-        return jsonify(verified=False, error="Invalid or expired challenge"), 400
-    if time.time() - session.get("challenge_timestamp", 0) > 600:
-        return jsonify(verified=False, error="Challenge expired"), 400
-
-    guest_pk = GUEST2_PUBKEY.strip() if GUEST2_PUBKEY else f"GUEST2-{uuid.uuid4().hex[:8].upper()}"
-
-    session["logged_in_pubkey"] = guest_pk
-    session["access_level"] = "limited"  # keep same policy as guest #1
-    session.permanent = True
-
-    socketio.emit("user:logged_in", guest_pk)
-
-    return jsonify({"verified": True, "access_level": "limited", "pubkey": guest_pk})
 
 
 def get_save_and_check_balances(
@@ -4235,591 +4804,379 @@ def home_page():
     <style>
         .hidden { display: none !important; }
 
-        :root {
-            --bg: #0b0f10;
-            --panel: #11171a;
-            --fg: #e6f1ef;
-            --accent: #00ff88;
-            --orange: #f7931a;
-            --red: #ff3b30;
-            --blue: #3b82f6;
-            --muted: #8a9da4;
-
-            /* legacy names mapped to new palette */
-            --neon-green: var(--accent);
-            --neon-blue: var(--blue);
-            --dark-bg: #020617;
-            --border-color: #0f2a24;
-            --text-color: var(--fg);
-            --spacing-unit: 1rem;
-            --touch-target: 44px;
-        }
-
-        /* --- Matrix background canvas --- */
-        #matrix-bg {
-            position: fixed;
-            inset: 0;
-            z-index: 0;
-            pointer-events: none;
-        }
-
-        body > *:not(#matrix-bg) {
-            position: relative;
-            z-index: 1;
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            #matrix-bg { display: none !important; }
-        }
-
-        @media print {
-            #matrix-bg { display: none !important; }
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            -webkit-tap-highlight-color: transparent;
-        }
-
-        body {
-            margin: 0;
-            background: radial-gradient(circle at top, rgba(0, 255, 136, 0.12) 0, var(--bg) 55%, #020617 100%);
-            color: var(--text-color);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
-            line-height: 1.5;
-            min-height: 100vh;
-            font-size: 16px;
-            overflow-x: hidden;
-            text-rendering: optimizeLegibility;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 4.5rem 1.25rem 2rem;
-        }
-
-        /* Header / Manifest block */
-        .header {
-            text-align: center;
-            margin-bottom: calc(var(--spacing-unit) * 1.5);
-        }
-
-        .app-title {
-            margin: 0 0 0.5rem;
-            font-size: clamp(1.6rem, 6vw, 2.3rem);
-            letter-spacing: 0.16em;
-            text-transform: uppercase;
-            color: var(--accent);
-            text-shadow: 0 0 18px rgba(0,255,136,0.4);
-        }
-
-        .home-link {
-            color: var(--accent);
-            text-decoration: none;
-            cursor: pointer;
-            display: inline-block;
-        }
-
-        .home-link:hover,
-        .home-link:focus {
-            text-decoration: underline;
-            outline: none;
-            text-shadow: 0 0 25px rgba(0,255,136,0.8);
-        }
-
-        .manifesto-panel {
-            margin-top: 0.75rem;
-            border-radius: 14px;
-            background: rgba(17, 23, 26, 0.92);
-            border: 1px solid var(--border-color);
-            box-shadow: 0 0 12px rgba(0,255,136,0.12);
-            padding: 1.2rem 1rem;
-        }
-
-        .manifesto-text {
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-            font-size: 0.78rem;
-            line-height: 1.7;
-            color: var(--muted);
-            text-align: left;
-        }
-
-        .manifesto-text a {
-            color: var(--accent);
-            text-decoration: none;
-        }
-
-        .manifesto-text a:hover {
-            text-decoration: underline;
-        }
-
-        /* Top icon nav (Explorer / Onboard / Chat / Exit) */
-        .manifesto-actions {
-            margin-top: 1rem;
-            text-align: center;
-        }
-
-        .manifesto-actions-inner {
-            display: inline-flex;
-            gap: 12px;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .btn-icon {
-            background: rgba(15, 23, 42, 0.9);
-            border: 1px solid rgba(148, 163, 184, 0.6);
-            color: var(--fg);
-            font-size: 0.85rem;
-            padding: 0.35rem 0.9rem;
-            border-radius: 999px;
-            cursor: pointer;
-            transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 32px;
-        }
-
-        .btn-icon:hover,
-        .btn-icon:active {
-            background: rgba(0, 255, 136, 0.1);
-            color: var(--accent);
-            box-shadow: 0 0 14px rgba(0,255,136,0.3);
-            transform: translateY(-1px);
-        }
-
-        .btn-icon.exit {
-            border-color: rgba(248, 113, 113, 0.8);
-            color: #fecaca;
-        }
-
-        .btn-icon.exit:hover {
-            background: rgba(248, 113, 113, 0.16);
-            color: #fee2e2;
-        }
-
-        /* Main grid – single column but centered */
-        .main-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: var(--spacing-unit);
-            margin-top: calc(var(--spacing-unit) * 1.5);
-            margin-bottom: calc(var(--spacing-unit) * 1.5);
-            max-width: 1100px;
-            margin-inline: auto;
-        }
-
-        @media (min-width: 768px) {
-            :root { --spacing-unit: 1.5rem; }
-        }
-
-        /* Panels */
-        .panel {
-            background: rgba(17, 23, 26, 0.92);
-            border: 1px solid var(--border-color);
-            border-radius: 14px;
-            padding: var(--spacing-unit);
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-            transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
-            overflow: hidden;
-        }
-
-        .panel:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 6px 20px rgba(0,255,136,0.16);
-            border-color: rgba(0,255,136,0.35);
-        }
-
-        .panel h2 {
-            color: var(--accent);
-            font-size: clamp(1rem, 4vw, 1.3rem);
-            margin-bottom: var(--spacing-unit);
-            text-align: center;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        /* Form elements */
-        .form-group {
-            margin-bottom: var(--spacing-unit);
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 0.5rem;
-            color: var(--accent);
-            font-weight: 600;
-            font-size: 0.9rem;
-        }
-
-        input,
-        textarea {
-            width: 100%;
-            background: rgba(3, 7, 18, 0.92);
-            color: var(--text-color);
-            border: 1px solid rgba(15, 23, 42, 0.9);
-            border-radius: 10px;
-            padding: 0.75rem 0.85rem;
-            font-family: inherit;
-            font-size: 16px;
-            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
-            min-height: var(--touch-target);
-            -webkit-appearance: none;
-            appearance: none;
-        }
-
-        input:focus,
-        textarea:focus {
-            outline: none;
-            border-color: var(--accent);
-            box-shadow: 0 0 0 2px rgba(0,255,136,0.25);
-            background: rgba(3, 7, 18, 0.98);
-        }
-
-        textarea {
-            resize: vertical;
-            min-height: 120px;
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-        }
-
-        /* Primary buttons */
-        .btn {
-            width: 100%;
-            background: var(--accent);
-            color: #000;
-            border: none;
-            padding: 0.8rem 1rem;
-            border-radius: 999px;
-            font-family: inherit;
-            font-size: 0.95rem;
-            font-weight: 700;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
-            cursor: pointer;
-            transition: all 0.25s ease;
-            margin-top: 0.5rem;
-            min-height: var(--touch-target);
-            touch-action: manipulation;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .btn:hover,
-        .btn:active {
-            box-shadow: 0 0 20px rgba(0,255,136,0.4);
-            transform: translateY(-1px);
-        }
-
-        .btn-secondary {
-            background: transparent;
-            border: 1px solid var(--accent);
-            color: var(--accent);
-        }
-
-        .btn-secondary:hover,
-        .btn-secondary:active {
-            background: rgba(0,255,136,0.09);
-            color: var(--fg);
-        }
-
-        /* Balance summary */
-        .balance-summary {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0.9rem 1rem;
-            margin: var(--spacing-unit) 0;
-            background: rgba(16, 185, 129, 0.04);
-            border: 1px dashed rgba(16, 185, 129, 0.8);
-            border-radius: 999px;
-            text-align: center;
-            flex-wrap: wrap;
-            gap: 0.75rem;
-        }
-
-        .balance-item {
-            flex: 1;
-            min-width: 140px;
-        }
-
-        .balance-label {
-            font-size: 0.78rem;
-            opacity: 0.85;
-            display: block;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-        }
-
-        .balance-value {
-            font-size: clamp(1rem, 3vw, 1.2rem);
-            font-weight: 700;
-            margin-top: 0.25rem;
-            word-break: break-all;
-        }
-
-        .balance-in { color: var(--accent); }
-        .balance-out { color: var(--blue); }
-
-        .loading {
-            text-align: center;
-            color: var(--accent);
-            padding: var(--spacing-unit);
-            display: none;
-        }
-
-        .loading-text {
-            animation: pulse 1.5s ease-in-out infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        /* Covenant boxes */
-        .contracts-container {
-            margin-top: var(--spacing-unit);
-        }
-
-        .contract-box {
-            background: rgba(2, 6, 23, 0.9);
-            border: 1px solid rgba(148, 163, 184, 0.5);
-            border-radius: 12px;
-            padding: 0.85rem 0.9rem;
-            margin-bottom: var(--spacing-unit);
-            transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
-            overflow: hidden;
-        }
-
-        .contract-box.input-role {
-            border-color: rgba(34, 197, 94, 0.9);
-            box-shadow: 0 0 16px rgba(16, 185, 129, 0.2);
-            background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(2, 6, 23, 0.96));
-        }
-
-        .contract-box.output-role {
-            border-color: rgba(56, 189, 248, 0.9);
-            box-shadow: 0 0 16px rgba(56, 189, 248, 0.18);
-            background: linear-gradient(135deg, rgba(56, 189, 248, 0.14), rgba(2, 6, 23, 0.96));
-        }
-
-        .contract-box pre {
-            background: transparent;
-            padding: 0.25rem 0;
-            border-radius: 0;
-            box-shadow: none;
-            border: 0;
-            overflow-x: auto;
-            font-size: clamp(0.7rem, 2.5vw, 0.85rem);
-            margin: 0.25rem 0;
-            word-break: break-all;
-            white-space: pre-wrap;
-        }
-
-        .nostr-info {
-            font-size: 0.8rem;
-            color: var(--muted);
-        }
-
-        /* QR modal */
-        .body-locked {
-            height: 100dvh;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .qr-modal {
-            position: fixed;
-            inset: 0;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 99999;
-            background: rgba(0, 0, 0, 0.95);
-            padding: env(safe-area-inset-top) 1rem env(safe-area-inset-bottom);
-            -webkit-backdrop-filter: blur(2px);
-            backdrop-filter: blur(2px);
-        }
-
-        .qr-video {
-            width: 100vw;
-            height: 100vh;
-            object-fit: cover;
-            border-radius: 0;
-        }
-
-        .qr-close {
-            position: fixed;
-            top: max(12px, env(safe-area-inset-top));
-            right: max(12px, env(safe-area-inset-right));
-            z-index: 100000;
-            background: rgba(15, 23, 42, 0.9);
-            border: 1px solid rgba(148, 163, 184, 0.8);
-            color: var(--fg);
-            padding: 0.4rem 0.8rem;
-            border-radius: 999px;
-            cursor: pointer;
-            font-size: 0.85rem;
-        }
-
-        /* RPC section */
-        .rpc-section {
-            margin-top: var(--spacing-unit);
-        }
-
-        .rpc-buttons {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-            gap: 0.75rem;
-            margin-bottom: var(--spacing-unit);
-        }
-
-        .rpc-buttons .btn {
-            font-size: 0.8rem;
-            padding: 0.6rem;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .rpc-response {
-            background: rgba(2, 6, 23, 0.95);
-            border: 1px solid rgba(30, 64, 175, 0.6);
-            border-radius: 10px;
-            padding: 0.9rem;
-            font-size: clamp(0.7rem, 2.5vw, 0.82rem);
-            white-space: pre-wrap;
-            overflow-x: auto;
-            max-height: 400px;
-            overflow-y: auto;
-            word-break: break-all;
-        }
-
-        /* QR code grid */
-        .qr-codes {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: var(--spacing-unit);
-            margin-top: var(--spacing-unit);
-            align-items: center;
-        }
-
-        .qr-codes figure {
-            text-align: center;
-            margin: 0;
-        }
-
-        .qr-codes img {
-            image-rendering: pixelated;
-            max-width: 360px;
-            width: 2.5in;
-            height: 2.5in;
-            border-radius: 10px;
-            box-shadow: 0 0 18px rgba(0,255,136,0.32);
-            border: 1px solid rgba(15, 23, 42, 0.9);
-        }
-
-        .qr-codes figcaption {
-            color: var(--accent);
-            font-size: clamp(0.7rem, 2.5vw, 0.8rem);
-            margin-top: 0.5rem;
-            font-weight: 600;
-            word-break: break-word;
-        }
-
-        @media print {
-            body {
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-            }
-
-            figure {
-                break-inside: avoid;
-                page-break-inside: avoid;
-            }
-
-            .qr-codes img {
-                width: 2.5in;
-                height: 2.5in;
-            }
-        }
-
-        /* Mobile-specific tweaks */
-        @media (max-width: 767px) {
-            .container {
-                padding: 3.5rem 1rem 1.5rem;
-            }
-
-            .balance-summary {
-                flex-direction: column;
-                border-radius: 14px;
-            }
-
-            .rpc-buttons {
-                grid-template-columns: 1fr;
-            }
-
-            .qr-codes {
-                grid-template-columns: 1fr;
-            }
-
-            button,
-            .btn,
-            .btn-icon,
-            input,
-            textarea {
-                min-height: var(--touch-target);
-            }
-        }
-
-        @media (max-height: 500px) and (orientation: landscape) {
-            .header {
-                margin-bottom: 1rem;
-            }
-
-            .app-title {
-                font-size: 1.5rem;
-                margin-bottom: 0.5rem;
-            }
-        }
-
-        /* iOS Safari adjustments */
-        @supports (-webkit-touch-callout: none) {
-            .container {
-                padding-bottom: calc(var(--spacing-unit) + env(safe-area-inset-bottom));
-            }
-
-            input,
-            textarea {
-                font-size: 16px;
-            }
-        }
-
-        /* Accessibility / reduced motion */
-        @media (prefers-reduced-motion: reduce) {
-            * {
-                animation-duration: 0.01ms !important;
-                animation-iteration-count: 1 !important;
-                transition-duration: 0.01ms !important;
-            }
-        }
-
-        @media (prefers-contrast: high) {
-            :root {
-                --border-color: #666;
-                --panel: #000;
-            }
-
-            .panel {
-                border-width: 2px;
-            }
-        }
+:root{
+  --bg: #070b0f;
+  --panel: rgba(12, 16, 22, 0.78);
+  --fg: #e7fff4;
+  --muted: rgba(231,255,244,.72);
+  --accent: #00ff88;
+  --accent2: #3b82f6;
+  --danger: #ff3b30;
+  --warn: #f59e0b;
+  --glass: rgba(10, 14, 20, 0.55);
+  --glass2: rgba(10, 14, 20, 0.25);
+  --border: rgba(0, 255, 136, 0.18);
+  --border2: rgba(59, 130, 246, 0.22);
+  --shadow: 0 10px 40px rgba(0,0,0,.55);
+  --shadow2: 0 0 24px rgba(0,255,136,.16);
+  --radius: 16px;
+  --radius2: 12px;
+  --pad: 16px;
+  --touch: 44px;
+}
+
+*{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+html,body{ height:100%; }
+body{
+  margin:0;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+  color: var(--fg);
+  background: radial-gradient(900px 450px at 50% 0%, rgba(0,255,136,.14), rgba(0,0,0,0) 55%),
+              radial-gradient(700px 420px at 70% 12%, rgba(59,130,246,.10), rgba(0,0,0,0) 60%),
+              #03060a;
+  overflow-x:hidden;
+}
+
+/* Matrix canvas behind everything */
+#matrix-bg{
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events:none;
+}
+body > *:not(#matrix-bg){ position:relative; z-index:1; }
+
+.container{
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 4.25rem 1rem 2rem;
+}
+
+.header{
+  text-align:center;
+  margin-bottom: 1rem;
+}
+
+.app-title{
+  margin: 0 0 .5rem;
+  font-size: clamp(1.55rem, 5.5vw, 2.25rem);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  text-shadow: 0 0 18px rgba(0,255,136,.35);
+}
+
+.home-link{
+  color: var(--accent);
+  text-decoration:none;
+}
+.home-link:hover, .home-link:focus{
+  text-decoration:underline;
+  outline:none;
+  text-shadow: 0 0 26px rgba(0,255,136,.65);
+}
+
+.manifesto-panel{
+  margin-top: .75rem;
+  padding: 1rem 1rem;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(12,16,22,.82), rgba(12,16,22,.62));
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.manifesto-text{
+  text-align:left;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
+  font-size: .78rem;
+  line-height: 1.65;
+}
+.manifesto-text a{
+  color: var(--muted);
+  text-decoration:none;
+}
+.manifesto-text a:hover{ color: var(--fg); text-decoration: underline; }
+
+.manifesto-actions{ margin-top: .95rem; }
+.manifesto-actions-inner{
+  display:inline-flex;
+  gap: 10px;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:center;
+}
+
+.btn-icon{
+  min-height: 34px;
+  padding: .38rem .9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(231,255,244,.28);
+  background: rgba(10,14,20,.55);
+  color: var(--fg);
+  cursor:pointer;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease, background .15s ease, color .15s ease;
+  box-shadow: 0 6px 20px rgba(0,0,0,.35);
+}
+.btn-icon:hover, .btn-icon:active{
+  transform: translateY(-1px);
+  border-color: rgba(0,255,136,.35);
+  box-shadow: 0 0 18px rgba(0,255,136,.18);
+  background: rgba(0,255,136,.06);
+  color: var(--accent);
+}
+.btn-icon.exit{
+  border-color: rgba(255,59,48,.35);
+  color: rgba(255,220,220,.92);
+}
+.btn-icon.exit:hover{
+  background: rgba(255,59,48,.12);
+  border-color: rgba(255,59,48,.6);
+  color: #ffe5e5;
+}
+
+.main-grid{
+  display:grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-top: 1.25rem;
+  max-width: 980px;
+  margin-inline: auto;
+}
+
+.panel{
+  border-radius: var(--radius);
+  padding: var(--pad);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  overflow:hidden;
+}
+.panel:hover{
+  border-color: rgba(0,255,136,.28);
+  box-shadow: 0 10px 46px rgba(0,0,0,.6), 0 0 22px rgba(0,255,136,.12);
+}
+
+.panel h2{
+  margin: 0 0 1rem;
+  text-align:center;
+  color: var(--accent);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  font-size: clamp(1rem, 4vw, 1.25rem);
+}
+
+/* Form */
+.form-group{ margin-bottom: 1rem; }
+.form-group label{
+  display:block;
+  margin-bottom: .5rem;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: .9rem;
+}
+
+input, textarea{
+  width:100%;
+  min-height: var(--touch);
+  padding: .75rem .85rem;
+  border-radius: 12px;
+  border: 1px solid rgba(231,255,244,.14);
+  background: rgba(0,0,0,.32);
+  color: var(--fg);
+  outline:none;
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+input:focus, textarea:focus{
+  border-color: rgba(0,255,136,.55);
+  box-shadow: 0 0 0 2px rgba(0,255,136,.22);
+  background: rgba(0,0,0,.38);
+}
+
+textarea{
+  resize: vertical;
+  min-height: 120px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
+}
+
+/* Buttons */
+.btn{
+  width:100%;
+  min-height: var(--touch);
+  border: none;
+  border-radius: 999px;
+  padding: .85rem 1rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  cursor:pointer;
+  background: linear-gradient(90deg, rgba(0,255,136,1), rgba(0,255,136,.78));
+  color: #00140a;
+  transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+}
+.btn:hover, .btn:active{
+  transform: translateY(-1px);
+  box-shadow: 0 0 22px rgba(0,255,136,.28);
+  filter: brightness(1.03);
+}
+.btn.btn-secondary, .btn-secondary{
+  background: rgba(0,0,0,.18);
+  border: 1px solid rgba(0,255,136,.42);
+  color: var(--accent);
+}
+.btn-secondary:hover, .btn-secondary:active{
+  background: rgba(0,255,136,.07);
+  color: var(--fg);
+}
+
+/* Summary pill */
+.balance-summary{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap: 10px;
+  flex-wrap:wrap;
+  padding: .85rem 1rem;
+  border-radius: 999px;
+  border: 1px dashed rgba(0,255,136,.55);
+  background: rgba(0,255,136,.04);
+  margin: 1rem 0;
+}
+.balance-item{ flex:1; min-width: 150px; text-align:center; }
+.balance-label{
+  display:block;
+  font-size: .75rem;
+  opacity:.85;
+  letter-spacing:.12em;
+  text-transform: uppercase;
+}
+.balance-value{
+  margin-top: .25rem;
+  font-weight: 900;
+  font-size: clamp(1rem, 3vw, 1.15rem);
+  word-break: break-word;
+}
+.balance-in{ color: var(--accent); }
+.balance-out{ color: var(--accent2); }
+
+/* Covenant cards */
+.contracts-container{ margin-top: 1rem; }
+.contract-box{
+  background: rgba(0,0,0,.28);
+  border: 1px solid rgba(231,255,244,.16);
+  border-radius: var(--radius2);
+  padding: .85rem .9rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 8px 26px rgba(0,0,0,.35);
+  overflow:hidden;
+}
+.contract-box.input-role{
+  border-color: rgba(0,255,136,.55);
+  box-shadow: 0 0 22px rgba(0,255,136,.14);
+}
+.contract-box.output-role{
+  border-color: rgba(59,130,246,.55);
+  box-shadow: 0 0 22px rgba(59,130,246,.14);
+}
+.contract-box pre{
+  margin: .25rem 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: clamp(.7rem, 2.4vw, .86rem);
+}
+
+.nostr-info{ font-size: .8rem; color: var(--muted); }
+
+/* QR modal */
+.body-locked{ height:100dvh; overflow:hidden; }
+.qr-modal{
+  position:fixed;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  z-index: 99999;
+  background: rgba(0,0,0,.94);
+  padding: env(safe-area-inset-top) 1rem env(safe-area-inset-bottom);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+.qr-video{ width:100vw; height:100vh; object-fit: cover; }
+.qr-close{
+  position:fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  z-index: 100000;
+  border-radius: 999px;
+  padding: .42rem .85rem;
+  background: rgba(10,14,20,.6);
+  border: 1px solid rgba(231,255,244,.24);
+  color: var(--fg);
+  cursor:pointer;
+}
+
+/* RPC */
+.rpc-buttons{
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px,1fr));
+  gap: 10px;
+  margin-bottom: 1rem;
+}
+.rpc-response{
+  background: rgba(0,0,0,.3);
+  border: 1px solid rgba(59,130,246,.35);
+  border-radius: 12px;
+  padding: .9rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 420px;
+  overflow:auto;
+  font-size: clamp(.7rem, 2.4vw, .84rem);
+}
+
+/* QR grid */
+.qr-codes{
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px,1fr));
+  gap: 16px;
+  margin-top: 1rem;
+  align-items:center;
+}
+.qr-codes img{
+  image-rendering: pixelated;
+  max-width: 360px;
+  width: 2.5in;
+  height: 2.5in;
+  border-radius: 12px;
+  border: 1px solid rgba(231,255,244,.18);
+  box-shadow: 0 0 22px rgba(0,255,136,.18);
+}
+.qr-codes figcaption{
+  margin-top: .5rem;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: clamp(.7rem, 2.4vw, .82rem);
+  word-break: break-word;
+  text-align:center;
+}
+
+/* Mobile */
+@media (max-width: 767px){
+  .container{ padding: 3.5rem 1rem 1.5rem; }
+  .balance-summary{ border-radius: var(--radius); }
+  .rpc-buttons{ grid-template-columns: 1fr; }
+  .qr-codes{ grid-template-columns: 1fr; }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce){
+  *{ animation:none !important; transition:none !important; }
+  #matrix-bg{ display:none !important; }
+}
     </style>
 </head>
 
@@ -5429,7 +5786,7 @@ def home_page():
                 if (location.hash !== '#onboard') location.hash = 'onboard';
 
                 setTimeout(() => {
-                    try { handleUpdateScript(); } catch (e) { console.error(e); }
+                    try {handleUpdateScript();} catch (e) { console.error(e); }
                 }, 0);
             } catch (e) {
                 console.error('jumpOnboard error:', e);
@@ -5605,6 +5962,7 @@ def home_page():
             const ctx = canvas.getContext('2d');
 
             const CHARS = ['0','1'];
+      const isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
             let width = 0, height = 0, particles = [], raf = null;
 
             function resize() {
@@ -5624,7 +5982,7 @@ def home_page():
                 height = cssH;
 
                 particles = [];
-                for (let i = 0; i < 400; i++) {
+                for (let i = 0; i < (isMobile ? 120 : 400); i++) {
                     particles.push({
                         x: (Math.random() - 0.5) * width,
                         y: (Math.random() - 0.5) * height,
@@ -5650,7 +6008,7 @@ def home_page():
                     ctx.font = size + 'px monospace';
                     ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
 
-                    p.z -= 5;
+                    p.z -= (isMobile ? 2 : 5);
                     if (p.z < 1) {
                         p.x = (Math.random() - 0.5) * width;
                         p.y = (Math.random() - 0.5) * height;
@@ -5722,9 +6080,7 @@ def home_page():
                 if (!hash || hash.indexOf('#explorer') !== 0) return;
 
                 let target = null;
-                try {
-                    target = localStorage.getItem('hodlxxi_explorer_target') || null;
-                } catch (e) {
+                try {target = localStorage.getItem('hodlxxi_explorer_target') || null;} catch (e) {
                     target = null;
                 }
                 if (!target) return;
@@ -5753,9 +6109,7 @@ def home_page():
                 if (!hash || hash.indexOf('#explorer') !== 0) return;
 
                 let target = null;
-                try {
-                    target = localStorage.getItem('hodlxxi_explorer_target') || null;
-                } catch (e) {
+                try {target = localStorage.getItem('hodlxxi_explorer_target') || null;} catch (e) {
                     target = null;
                 }
                 if (!target) return;
@@ -6528,12 +6882,10 @@ def special_login():
 
 
 # ---- Legacy message-signature verification (JSON-only) ----
-
-
-@app.route("/verify_signature", methods=["POST"])
+# DEPRECATED: old signature flow, kept only for reference.
+# @app.route("/verify_signature", methods=["POST"])
 def verify_signature_legacy():
     from flask import jsonify, request, session
-
     data = request.get_json(silent=True) or {}
     pubkey = (data.get("pubkey") or "").strip()  # compressed hex (02/03...)
     signature = (data.get("signature") or "").strip()  # wallet base64 (Electrum/Sparrow/Core)
@@ -6750,8 +7102,7 @@ def _lnurl_bech32(url_str: str) -> str:
 
 @app.route("/", methods=["GET"])
 def root_redirect():
-    return landing_page()
-
+    return redirect("/screensaver", code=302)
 
 import hashlib
 import json
@@ -8588,9 +8939,75 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
         .animate-in {
             animation: fadeInUp 0.8s ease-out;
         }
-    </style>
+    
+</style>
+<style>
+/* UI_CORE_LANDING_OVERRIDE */
+/* Force KeyAuth landing to use the same glass + matrix aesthetic as /login */
+
+:root{
+  --bg:#000;
+  --dark-bg:#000;
+  --darker-bg: rgba(0,0,0,.22);
+
+  --fg: rgba(235,255,245,.92);
+  --text-light: rgba(235,255,245,.92);
+  --muted: rgba(235,255,245,.70);
+  --text-muted: rgba(235,255,245,.62);
+
+  --accent: rgba(0,255,136,.95);
+
+  --border-color: rgba(255,255,255,.08);
+  --border-hover: rgba(0,255,136,.22);
+
+  --card-bg: rgba(8,12,10,.22);
+  --panel: rgba(8,12,10,.22);
+  --input-bg: rgba(0,0,0,.18);
+  --hover-bg: rgba(0,0,0,.28);
+
+  --gradient-1: linear-gradient(180deg, rgba(0,255,136,.12) 0%, rgba(0,0,0,.12) 100%);
+  --gradient-2: radial-gradient(ellipse at top, rgba(0,255,136,.10) 0%, transparent 60%);
+
+  --glow-green: rgba(0,255,136,.18);
+  --glow-orange: rgba(249,115,22,.18);
+}
+
+.matrix-canvas{ display:none !important; }
+
+body{
+  background:#000 !important;
+  color: rgba(235,255,245,.92) !important;
+}
+
+nav{
+  background: rgba(0,0,0,.25) !important;
+  border-bottom: 1px solid rgba(255,255,255,.08) !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+.logo{
+  font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace !important;
+  letter-spacing: .06em !important;
+  text-transform: uppercase !important;
+}
+
+[class*="card"], .card, .panel, .feature, .tier-card, .pricing-card, .section-card{
+  background: rgba(8,12,10,.22) !important;
+  border: 1px solid rgba(255,255,255,.08) !important;
+  box-shadow: 0 10px 40px rgba(0,0,0,.45) !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+a:hover{
+  text-shadow: 0 0 14px rgba(0,255,136,.35) !important;
+}
+</style>
+
+  <link rel="stylesheet" href="/static/ui_core.css?v=1"/>
 </head>
 <body>
+  <canvas id="matrix-bg"></canvas>
+  <div class="wrap">
     <!-- Matrix Background Canvas - Warp Effect Only -->
     <canvas id="matrix-warp" class="matrix-canvas" aria-hidden="true"></canvas>
 
@@ -9397,7 +9814,13 @@ export default NextAuth({
         // ============================================================================
 
         /* --- Matrix: Warp (0s and 1s flying toward camera) --- */
-        function startMatrixWarp(canvas) {
+                // UI_CORE: define isMobile for landing matrix sizing decisions
+        const isMobile = (() => {
+          try {return window.matchMedia && window.matchMedia("(max-width: 768px)").matches;} catch(e) {}
+          return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+        })();
+
+function startMatrixWarp(canvas) {
             if (!canvas) return () => {};
             const ctx = canvas.getContext('2d');
             const CHARS = ['0', '1'];
@@ -9409,7 +9832,7 @@ export default NextAuth({
                 canvas.width = width;
                 canvas.height = height;
                 particles = [];
-                for (let i = 0; i < 400; i++) {
+                for (let i = 0; i < (isMobile ? 120 : 400); i++) {
                     particles.push({
                         x: (Math.random() - 0.5) * width,
                         y: (Math.random() - 0.5) * height,
@@ -9429,7 +9852,7 @@ export default NextAuth({
                     const size = Math.max(8 * scale, 1);
                     ctx.font = size + 'px monospace';
                     ctx.fillText(CHARS[Math.random() > 0.5 ? 1 : 0], x2, y2);
-                    p.z -= 5;
+                    p.z -= (isMobile ? 2 : 5);
                     if (p.z < 1) {
                         p.x = (Math.random() - 0.5) * width;
                         p.y = (Math.random() - 0.5) * height;
@@ -9545,6 +9968,77 @@ export default NextAuth({
             }
         }
     </script>
+  </div>
+
+  <script>
+  (function() {
+    const canvas = document.getElementById('matrix-bg');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const CHARS = ['0','1'];
+    const isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+    let width = 0, height = 0, particles = [], raf = null;
+
+    function resize() {
+      const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+      const cssW = window.innerWidth, cssH = window.innerHeight;
+      canvas.width = Math.floor(cssW * dpr);
+      canvas.height = Math.floor(cssH * dpr);
+      canvas.style.width = cssW + 'px';
+      canvas.style.height = cssH + 'px';
+      ctx.setTransform(1,0,0,1,0,0);
+      ctx.scale(dpr, dpr);
+      width = cssW; height = cssH;
+      particles = [];
+      const count = isMobile ? 140 : 420;
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: (Math.random() - 0.5) * width,
+          y: (Math.random() - 0.5) * height,
+          z: Math.random() * 800 + 100
+        });
+      }
+      ctx.fillStyle = 'rgba(0,0,0,1)';
+      ctx.fillRect(0, 0, width, height);
+    }
+
+    function draw() {
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = '#00ff88';
+      const speed = isMobile ? 2 : 5;
+      for (const p of particles) {
+        const scale = 200 / p.z;
+        const x2 = width / 2 + p.x * scale;
+        const y2 = height / 2 + p.y * scale;
+        const size = Math.max(8 * scale, 1);
+        ctx.font = size + 'px monospace';
+        ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
+        p.z -= speed;
+        if (p.z < 1) {
+          p.x = (Math.random() - 0.5) * width;
+          p.y = (Math.random() - 0.5) * height;
+          p.z = 800;
+        }
+      }
+      raf = requestAnimationFrame(draw);
+    }
+
+    function onVis() {
+      if (document.hidden) {
+        if (raf) { cancelAnimationFrame(raf); raf = null; }
+      } else {
+        if (!raf) raf = requestAnimationFrame(draw);
+      }
+    }
+
+    window.addEventListener('resize', resize);
+    document.addEventListener('visibilitychange', onVis);
+    resize();
+    raf = requestAnimationFrame(draw);
+  })();
+  </script>
+
 </body>
 </html>
 """
@@ -9925,6 +10419,7 @@ PLAYGROUND_HTML = r"""<!DOCTYPE html>
             if (!canvas) return;
             const ctx = canvas.getContext('2d');
             const CHARS = ['0','1'];
+      const isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
             let width = 0, height = 0, particles = [], raf = null;
 
             function resize() {
@@ -9938,7 +10433,7 @@ PLAYGROUND_HTML = r"""<!DOCTYPE html>
                 ctx.scale(dpr, dpr);
                 width = cssW; height = cssH;
                 particles = [];
-                for (let i = 0; i < 400; i++) {
+                for (let i = 0; i < (isMobile ? 120 : 400); i++) {
                     particles.push({
                         x: (Math.random() - 0.5) * width,
                         y: (Math.random() - 0.5) * height,
@@ -9960,7 +10455,7 @@ PLAYGROUND_HTML = r"""<!DOCTYPE html>
                     const size = Math.max(8 * scale, 1);
                     ctx.font = size + 'px monospace';
                     ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
-                    p.z -= 5;
+                    p.z -= (isMobile ? 2 : 5);
                     if (p.z < 1) {
                         p.x = (Math.random() - 0.5) * width;
                         p.y = (Math.random() - 0.5) * height;
@@ -10902,8 +11397,7 @@ def apply_security_headers(response):
 # ROUTES: LNURL-AUTH
 # ============================================================================
 
-
-@app.route("/api/lnurl-auth/create", methods=["POST"])
+@app.route("/api/lnurl-auth/create", methods=["GET", "POST"])
 def lnurl_create():
     """Create LNURL-Auth session"""
     sid = str(uuid.uuid4())
@@ -11437,149 +11931,149 @@ except NameError:
 # These provide a simpler signature-based flow vs PSBT-based pof_enhanced
 # ============================================================================
 
-@app.route("/pof/api/generate-challenge", methods=["POST"])
-def pof_simple_generate_challenge():
-    """Generate challenge for address-based verification"""
-    try:
-        if 'user_id' not in session:
-            return jsonify({"error": "Authentication required"}), 401
-            
-        data = request.get_json() or {}
-        addresses = data.get("addresses", [])
-        
-        if not addresses or len(addresses) == 0:
-            return jsonify({"error": "At least one address required"}), 400
-            
-        if len(addresses) > 100:
-            return jsonify({"error": "Maximum 100 addresses allowed"}), 400
-        
+#@app.route("/pof/api/generate-challenge", methods=["POST"])
+#def pof_simple_generate_challenge():
+ #   """Generate challenge for address-based verification"""
+  #  try:
+   #     if 'user_id' not in session:
+    #        return jsonify({"error": "Authentication required"}), 401
+     #       
+      #  data = request.get_json() or {}
+       # addresses = data.get("addresses", [])
+        #
+       # if not addresses or len(addresses) == 0:
+        #    return jsonify({"error": "At least one address required"}), 400
+       #     
+       # if len(addresses) > 100:
+        #    return jsonify({"error": "Maximum 100 addresses allowed"}), 400
+        #
         # Generate challenge
-        challenge = secrets.token_hex(32)
-        message = f"HODLXXI Proof of Funds\nChallenge: {challenge}\nTimestamp: {int(time.time())}"
-        
+       # challenge = secrets.token_hex(32)
+       # message = f"HODLXXI Proof of Funds\nChallenge: {challenge}\nTimestamp: {int(time.time())}"
+      #  
         # Store in session
-        session['pof_challenge'] = challenge
-        session['pof_message'] = message
-        session['pof_addresses'] = addresses
-        session['pof_timestamp'] = time.time()
-        
-        return jsonify({
-            "challenge": challenge,
-            "message": message,
-            "addresses": addresses
-        })
-        
-    except Exception as e:
-        logger.error(f"Error generating PoF challenge: {e}")
-        return jsonify({"error": str(e)}), 500
+      #  session['pof_challenge'] = challenge
+       # session['pof_message'] = message
+        #session['pof_addresses'] = addresses
+       # session['pof_timestamp'] = time.time()
+        #
+      #  return jsonify({
+       #     "challenge": challenge,
+        #    "message": message,
+         #   "addresses": addresses
+       # })
+     #   
+  #  except Exception as e:
+ #       logger.error(f"Error generating PoF challenge: {e}")
+   #     return jsonify({"error": str(e)}), 500
 
 
-@app.route("/pof/api/verify-signatures", methods=["POST"])
-def pof_simple_verify_signatures():
-    """Verify signatures and calculate balance"""
-    try:
-        if 'user_id' not in session:
-            return jsonify({"error": "Authentication required"}), 401
-            
-        data = request.get_json() or {}
-        signatures = data.get("signatures", [])
-        privacy_level = data.get("privacy_level", "boolean")
-        
+#@app.route("/pof/api/verify-signatures", methods=["POST"])
+#def pof_simple_verify_signatures():
+ #   """Verify signatures and calculate balance"""
+  #  try:
+   #     if 'user_id' not in session:
+    #        return jsonify({"error": "Authentication required"}), 401
+     #       
+      #  data = request.get_json() or {}
+       # signatures = data.get("signatures", [])
+       # privacy_level = data.get("privacy_level", "boolean")
+       # 
         # Validate session challenge
-        if 'pof_challenge' not in session:
-            return jsonify({"error": "No active challenge"}), 400
-            
-        if time.time() - session.get('pof_timestamp', 0) > 900:  # 15 min
-            return jsonify({"error": "Challenge expired"}), 400
+       # if 'pof_challenge' not in session:
+        #    return jsonify({"error": "No active challenge"}), 400
+         #   
+       # if time.time() - session.get('pof_timestamp', 0) > 900:  # 15 min
+        #    return jsonify({"error": "Challenge expired"}), 400
         
-        message = session['pof_message']
-        rpc = get_rpc_connection()
+      #  message = session['pof_message']
+      #  rpc = get_rpc_connection()
+      #  
+       # verified_addresses = []
+       # total_balance = 0
         
-        verified_addresses = []
-        total_balance = 0
-        
-        for sig_data in signatures:
-            address = sig_data.get("address", "").strip()
-            signature = sig_data.get("signature", "").strip()
-            
-            if not address or not signature:
-                continue
-                
-            try:
+       # for sig_data in signatures:
+        #    address = sig_data.get("address", "").strip()
+         #   signature = sig_data.get("signature", "").strip()
+          #  
+           # if not address or not signature:
+            #    continue
+             #   
+          #  try:
                 # Verify signature
-                is_valid = rpc.verifymessage(address, signature, message)
+           #     is_valid = rpc.verifymessage(address, signature, message)
                 
-                if is_valid:
+            #    if is_valid:
                     # Get balance for this address
-                    try:
-                        utxos = rpc.scantxoutset("start", [f"addr({address})"])
-                        balance = utxos.get("total_amount", 0)
-                        total_balance += balance
-                        verified_addresses.append({
-                            "address": address,
-                            "balance": balance
-                        })
-                    except:
-                        # Address might not have any UTXOs
-                        verified_addresses.append({
-                            "address": address,
-                            "balance": 0
-                        })
-            except Exception as e:
-                logger.error(f"Error verifying {address}: {e}")
-                continue
+             #       try:
+               #         utxos = rpc.scantxoutset("start", [f"addr({address})"])
+              #          balance = utxos.get("total_amount", 0)
+                #        total_balance += balance
+                 #       verified_addresses.append({
+                  #          "address": address,
+                   #         "balance": balance
+                    #    })
+                   # except:
+                    #    # Address might not have any UTXOs
+                     #   verified_addresses.append({
+                      #      "address": address,
+                      #     "balance": 0
+                      #  })
+         #   except Exception as e:
+          #      logger.error(f"Error verifying {address}: {e}")
+           #     continue
         
-        if len(verified_addresses) == 0:
-            return jsonify({"error": "No valid signatures provided"}), 400
+      #  if len(verified_addresses) == 0:
+       #     return jsonify({"error": "No valid signatures provided"}), 400
         
         # Determine whale tier
-        whale_tiers = [
-            {'name': 'Shrimp', 'min': 0.0, 'max': 0.1, 'emoji': '🦐', 'color': '#94A3B8'},
-            {'name': 'Crab', 'min': 0.1, 'max': 1.0, 'emoji': '🦀', 'color': '#F97316'},
-            {'name': 'Dolphin', 'min': 1.0, 'max': 10.0, 'emoji': '🐬', 'color': '#3B82F6'},
-            {'name': 'Shark', 'min': 10.0, 'max': 50.0, 'emoji': '🦈', 'color': '#8B5CF6'},
-            {'name': 'Whale', 'min': 50.0, 'max': 100.0, 'emoji': '🐋', 'color': '#EC4899'},
-            {'name': 'Humpback', 'min': 100.0, 'max': 1000.0, 'emoji': '🐳', 'color': '#F59E0B'},
-            {'name': 'Blue Whale', 'min': 1000.0, 'max': float('inf'), 'emoji': '🌊', 'color': '#14B8A6'}
-        ]
+       # whale_tiers = [
+        #    {'name': 'Shrimp', 'min': 0.0, 'max': 0.1, 'emoji': '🦐', 'color': '#94A3B8'},
+         #   {'name': 'Crab', 'min': 0.1, 'max': 1.0, 'emoji': '🦀', 'color': '#F97316'},
+          ##  {'name': 'Dolphin', 'min': 1.0, 'max': 10.0, 'emoji': '🐬', 'color': '#3B82F6'},
+      #      {'name': 'Shark', 'min': 10.0, 'max': 50.0, 'emoji': '🦈', 'color': '#8B5CF6'},
+      #      {'name': 'Whale', 'min': 50.0, 'max': 100.0, 'emoji': '🐋', 'color': '#EC4899'},
+      #      {'name': 'Humpback', 'min': 100.0, 'max': 1000.0, 'emoji': '🐳', 'color': '#F59E0B'},
+      #      {'name': 'Blue Whale', 'min': 1000.0, 'max': float('inf'), 'emoji': '🌊', 'color': '#14B8A6'}
+      #  ]
         
-        tier = whale_tiers[0]
-        for t in whale_tiers:
-            if t['min'] <= total_balance < t['max']:
-                tier = t
-                break
+      #  tier = whale_tiers[0]
+      #  for t in whale_tiers:
+      #      if t['min'] <= total_balance < t['max']:
+      #          tier = t
+      #          break
         
         # Format amount based on privacy
-        if privacy_level == 'boolean':
-            formatted = "Verified ✓"
-        elif privacy_level == 'threshold':
-            formatted = f"{tier['emoji']} {tier['name']}"
-        elif privacy_level == 'aggregate':
-            rounded = round(total_balance / 10) * 10
-            formatted = f"~{rounded} BTC"
-        else:  # exact
-            formatted = f"{total_balance:.8f} BTC"
-        
+     #   if privacy_level == 'boolean':
+     #       formatted = "Verified ✓"
+      #  elif privacy_level == 'threshold':
+      #      formatted = f"{tier['emoji']} {tier['name']}"
+      #  elif privacy_level == 'aggregate':
+      #      rounded = round(total_balance / 10) * 10
+      #      formatted = f"~{rounded} BTC"
+      #  else:  # exact
+      #      formatted = f"{total_balance:.8f} BTC"
+       # 
         # Generate certificate ID
-        cert_id = secrets.token_urlsafe(16)
+      #  cert_id = secrets.token_urlsafe(16)
         
-        # Clear session challenge
-        session.pop('pof_challenge', None)
-        session.pop('pof_message', None)
-        
-        return jsonify({
-            "success": True,
-            "address_count": len(verified_addresses),
-            "total_btc": total_balance,
-            "whale_tier": tier,
-            "formatted_amount": formatted,
-            "certificate_id": cert_id,
-            "verified_addresses": verified_addresses
-        })
-        
-    except Exception as e:
-        logger.error(f"Error verifying PoF signatures: {e}")
-        return jsonify({"error": str(e)}), 500
+       # # Clear session challenge
+      #  session.pop('pof_challenge', None)
+       # session.pop('pof_message', None)
+      #  
+      #  return jsonify({
+       #     "success": True,
+        #    "address_count": len(verified_addresses),
+         #   "total_btc": total_balance,
+          #  "whale_tier": tier,
+           # "formatted_amount": formatted,
+          #  "certificate_id": cert_id,
+           # "verified_addresses": verified_addresses
+      #  })
+       # 
+   # except Exception as e:
+    #    logger.error(f"Error verifying PoF signatures: {e}")
+     #   return jsonify({"error": str(e)}), 500
 
 # Keeping for reference only - DO NOT USE
 # ============================================================================
@@ -12194,3 +12688,5 @@ def get_login_challenge():
         "expires_in": 600,
         "usage": "Sign this message with bitcoin-cli signmessage <address> '<challenge>'"
     })
+
+

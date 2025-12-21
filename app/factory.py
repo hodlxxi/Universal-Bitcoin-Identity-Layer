@@ -120,7 +120,11 @@ def register_blueprints(app: Flask) -> None:
 
     # UI/frontend blueprint (dashboard, playground, chat)
     from app.blueprints.ui import ui_bp
+    from app.dev_routes import dev_bp
     app.register_blueprint(ui_bp)
+    # Developer Platform
+    app.register_blueprint(dev_bp)
+    logger.info("✓ Developer platform registered")
 
     logger.info("✅ All blueprints registered")
 
