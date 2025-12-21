@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <title>HODLXXI Screensaver</title>
+
+  <style>
+    html, body { margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; }
+    #matrix-bg { position:fixed; inset:0; width:100vw; height:100vh; display:block; }
+
+    /* tiny sharp red HUD */
+    .hud{
+      position:fixed; z-index:10;
+      font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      font-size:11px; letter-spacing:.02em; line-height:1.25;
+      color:#ff2a2a;
+      text-shadow:0 0 6px rgba(255,42,42,.20);
+      user-select:none; pointer-events:none; opacity:.92;
+    }
+    .tl{ top:10px; left:12px; }
+    .tr{ top:10px; right:12px; text-align:right; }
+    .bl{ bottom:10px; left:12px; }
+    .br{ bottom:10px; right:12px; text-align:right; }
+
+    .hint{
+      position:fixed; z-index:9;
+      left:50%; bottom:14px; transform:translateX(-50%);
+      font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      font-size:11px;
+      color:rgba(255,42,42,.65);
+      text-shadow:0 0 6px rgba(255,42,42,.18);
+      user-select:none;
+    }
+
+    /* --- Swipe Nav (frosted, transparent) --- */
+    .nav-scrim{
+      position:fixed; inset:0; z-index:19;
+      background: rgba(0,0,0,.28);
+      opacity:0; pointer-events:none;
+      transition: opacity .18s ease;
+    }
+
+    .nav-sheet{
+      position:fixed; left:12px; right:12px; top:10px;
+      z-index:20;
+      border-radius:16px;
+      border:1px solid rgba(255,255,255,.08);
+      background: rgba(8,12,10,.22);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 10px 40px rgba(0,0,0,.45);
+
+      transform: translateY(-110%);
+      transition: transform .22s ease;
+      overflow:hidden;
+      color: rgba(235,255,245,.92);
+    }
+
+    .nav-sheet.is-open{
+      transform: translateY(0);
+    }
+
+    .nav-scrim.is-open{
+      opacity:1; pointer-events:auto;
+    }
+
+    .nav-grab{
+      padding:10px 12px 8px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+
+    .nav-pill{
+      width:44px; height:5px; border-radius:999px;
+      margin:2px auto 8px;
+      background: rgba(255,255,255,.16);
+    }
+
+    .nav-title{
+      font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      font-size: 11px;
+      letter-spacing: .12em;
+      color:#ff2a2a;
+      text-shadow:0 0 6px rgba(255,42,42,.18);
+    }
+
+    .nav-sub{
+      margin-top:4px;
+      font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      font-size:11px;
+      opacity:.85;
+    }
+
+    .nav-tabs{
+      display:flex;
+      gap:6px;
+      padding:10px 10px 6px;
+    }
+
+    .nav-tab{
+      flex:1;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.08);
+      background: rgba(0,0,0,.18);
+      color: rgba(235,255,245,.9);
+      padding:8px 8px;
+      font-size:12px;
+    }
+
+    .nav-tab.is-active{
+      border-color: rgba(0,255,136,.35);
+      box-shadow: 0 0 0 1px rgba(0,255,136,.12) inset;
+    }
+
+    .nav-pages{
+      padding: 8px 10px 12px;
+    }
+
+    .nav-page{ display:none; }
+    .nav-page.is-active{ display:block; }
+
+    .nav-item{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      text-decoration:none;
+      color: rgba(235,255,245,.92);
+      padding: 12px 12px;
+      margin: 6px 0;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(0,0,0,.20);
+    }
+
+    .nav-item:active{
+      transform: translateY(1px);
+      background: rgba(0,0,0,.28);
+    }
+
+    .nav-item::after{
+      content:"›";
+      color: rgba(255,42,42,.9);
+      margin-left: 10px;
+      font-size: 16px;
+    }
+
+    .chain-info{
+      padding: 4px 2px;
+    }
+
+    .chain-stat{
+      padding: 12px 12px;
+      margin: 6px 0;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(0,0,0,.20);
+    }
+
+    .chain-label{
+      font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      font-size: 10px;
+      letter-spacing: .08em;
+      color: rgba(255,42,42,.85);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .chain-value{
+      font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      font-size: 16px;
+      color: rgba(0,255,136,.95);
+      text-shadow: 0 0 8px rgba(0,255,136,.25);
+    }
+
+    /* small invisible swipe/tap zone at the very top */
+    .nav-hotzone{
+      position: fixed;
+      left: 0; right: 0; top: 0;
+      height: 22px;
+      z-index: 18;
+      background: transparent;
+    }
+
+    /* tiny desktop corner hint (top-right) */
+    .nav-corner{
+      position: fixed;
+      top: 8px; right: 8px;
+      z-index: 18;
+      padding: 4px 8px;
+      font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      font-size: 9px;
+      letter-spacing: .08em;
+      color: rgba(255,42,42,.45);
+      text-shadow: 0 0 4px rgba(255,42,42,.15);
+      background: rgba(0,0,0,.25);
+      border: 1px solid rgba(255,42,42,.15);
+      border-radius: 4px;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity .3s ease;
+      pointer-events: none;
+    }
+
+    /* show corner hint on desktop hover near top */
+    @media (hover: hover) and (pointer: fine) {
+      .nav-corner {
+        pointer-events: auto;
+      }
+      .nav-corner:hover {
+        opacity: 1;
+        color: rgba(255,42,42,.85);
+        border-color: rgba(255,42,42,.35);
+      }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="matrix-bg" aria-hidden="true"></canvas>
+
+  <div class="hud tl">HODLXXI // SCREENSAVER</div>
+
+  <div class="hud tr">
+    <div id="hudTime">--:--:--</div>
+    <div id="hudDate">----</div>
+  </div>
+
+  <div class="hud bl">
+    <div id="hudStatus">status: boot</div>
+  </div>
+
+  <div class="hud br">
+    <div>block: <span id="hudBlock">…</span></div>
+    <div>server: <span id="hudServerTime">…</span></div>
+  </div>
+
+  <div class="hint" id="hint"> · </div>
+
+  <!-- Swipe Navigation Overlay -->
+  <div id="navScrim" class="nav-scrim" aria-hidden="true"></div>
+
+  <div id="navSheet" class="nav-sheet" role="dialog" aria-label="HODLXXI Navigation">
+    <div class="nav-grab">
+      <div class="nav-pill"></div>
+      <div class="nav-title">HODLXXI NAV</div>
+    </div>
+
+    <div class="nav-tabs" id="navTabs">
+      <button class="nav-tab is-active" data-tab="start">Start</button>
+      <button class="nav-tab" data-tab="pof">PoF</button>
+      <button class="nav-tab" data-tab="dev">Dev</button>
+      <button class="nav-tab" data-tab="chain">Chain</button>
+      <button class="nav-tab" data-tab="sys">Sys</button>
+    </div>
+
+    <div class="nav-pages" id="navPages">
+
+      <!-- START -->
+      <div class="nav-page is-active" data-page="start">
+        <a class="nav-item" href="/">Root</a>
+        <a class="nav-item" href="/login">Login</a>
+        <a class="nav-item" href="/app">Chat</a>
+        <a class="nav-item" href="/upgrade">Upgrade</a>
+        <a class="nav-item" href="/oidc">OIDC</a>
+      </div>
+
+      <!-- POF -->
+      <div class="nav-page" data-page="pof">
+        <a class="nav-item" href="/pof/">PoF Landing</a>
+        <a class="nav-item" href="/pof/verify">PoF Verify</a>
+        <a class="nav-item" href="/pof/leaderboard">PoF Leaderboard</a>
+        <a class="nav-item" href="/playground">Playground</a>
+        <a class="nav-item" href="/playground-globals">Playground Globals</a>
+      </div>
+
+      <!-- DEV / OAUTH -->
+      <div class="nav-page" data-page="dev">
+        <a class="nav-item" href="/dev/dashboard">Dev Dashboard</a>
+        <a class="nav-item" href="/dev-dashboard">Dev Dashboard (Legacy)</a>
+        <a class="nav-item" href="/.well-known/openid-configuration">OIDC Discovery</a>
+        <a class="nav-item" href="/oauth/clients">OAuth Clients</a>
+        <a class="nav-item" href="/oauth/jwks.json">JWKS</a>
+        <a class="nav-item" href="/oauthx/status">OAuthX Status</a>
+        <a class="nav-item" href="/oauthx/docs">OAuthX Docs</a>
+      </div>
+
+      <!-- CHAIN (Live Stats) -->
+      <div class="nav-page" data-page="chain">
+        <div class="chain-info">
+          <div class="chain-stat">
+            <div class="chain-label">Block Height</div>
+            <div class="chain-value" id="navBlock">…</div>
+          </div>
+          <div class="chain-stat">
+            <div class="chain-label">Server Time (UTC)</div>
+            <div class="chain-value" id="navServerTime">…</div>
+          </div>
+          <div class="chain-stat">
+            <div class="chain-label">System Status</div>
+            <div class="chain-value" id="navStatus">checking…</div>
+          </div>
+          <div class="chain-stat">
+            <div class="chain-label">Session Uptime</div>
+            <div class="chain-value" id="navUptime">00:00:00</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SYSTEM -->
+      <div class="nav-page" data-page="sys">
+        <a class="nav-item" href="/health">Health</a>
+        <a class="nav-item" href="/metrics">Metrics</a>
+        <a class="nav-item" href="/metrics/prometheus">Prometheus</a>
+        <a class="nav-item" href="/rpc/getblockcount">RPC: getblockcount</a>
+        <a class="nav-item" href="/export_descriptors">Export Descriptors</a>
+        <a class="nav-item" href="/screensaver">Screensaver</a>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Invisible hotzone for opening nav from top edge -->
+  <div class="nav-hotzone" id="navHotzone" aria-hidden="true"></div>
+
+  <!-- Tiny desktop corner hint (only visible on hover) -->
+  <div class="nav-corner" id="navCorner" aria-hidden="true">NAV</div>
+
+  <script>
+    // local clock
+    function tickClock() {
+      const d = new Date();
+      const hh = String(d.getHours()).padStart(2,'0');
+      const mm = String(d.getMinutes()).padStart(2,'0');
+      const ss = String(d.getSeconds()).padStart(2,'0');
+      document.getElementById("hudTime").textContent = `${hh}:${mm}:${ss}`;
+      document.getElementById("hudDate").textContent = d.toLocaleDateString();
+    }
+    setInterval(tickClock, 250);
+    tickClock();
+
+    // poll status (block height etc.)
+    let pollFail = 0;
+    async function pollStatus() {
+      try {
+        const r = await fetch("/api/public/status", { cache: "no-store" });
+        const j = await r.json();
+        document.getElementById("hudBlock").textContent =
+          (j && j.block_height != null) ? j.block_height : "n/a";
+        document.getElementById("hudServerTime").textContent =
+          (j && j.server_time_utc) ? j.server_time_utc : "n/a";
+        document.getElementById("hudStatus").textContent = "status: ok";
+        pollFail = 0;
+      } catch (e) {
+        pollFail++;
+        document.getElementById("hudStatus").textContent =
+          pollFail > 2 ? "status: offline" : "status: retry";
+      }
+    }
+    setInterval(pollStatus, 5000);
+    pollStatus();
+
+    // fullscreen on click/tap (debounced to avoid double-click conflict)
+    async function goFullscreen() {
+      // Don't trigger fullscreen when nav overlay is open
+      if (document.getElementById("navSheet")?.classList.contains("is-open")) return;
+      
+      try {
+        const el = document.documentElement;
+        if (!document.fullscreenElement && el.requestFullscreen) {
+          await el.requestFullscreen();
+          const hint = document.getElementById("hint");
+          if (hint) hint.style.display = "none";
+        }
+      } catch (e) {}
+    }
+    
+    // Desktop: debounced click (wait for potential double-click)
+    let clickT = null;
+    window.addEventListener("click", (e) => {
+      // ignore clicks on nav UI (even when closed) so links feel normal
+      const sheet = document.getElementById("navSheet");
+      const scrim = document.getElementById("navScrim");
+      const hot   = document.getElementById("navHotzone");
+      const t = e.target;
+      if (t && (sheet?.contains(t) || scrim?.contains(t) || hot?.contains(t))) return;
+
+      clearTimeout(clickT);
+      clickT = setTimeout(goFullscreen, 220);
+    }, { passive: true });
+    window.addEventListener("dblclick", () => {
+      clearTimeout(clickT);
+    }, { passive: true });
+    
+    // Mobile: instant fullscreen on touch
+    window.addEventListener("touchstart", goFullscreen, { passive: true });
+  </script>
+
+  <!-- Swipe Navigation Script -->
+  <script>
+  (function(){
+    const sheet = document.getElementById("navSheet");
+    const scrim = document.getElementById("navScrim");
+    const tabs  = document.getElementById("navTabs");
+    const pages = document.getElementById("navPages");
+    const hotzone = document.getElementById("navHotzone");
+
+    if (!sheet || !scrim || !tabs || !pages) return;
+
+    let open = false;
+    let tabOrder = ["start","pof","dev","chain","sys"];
+    let tabIndex = 0;
+
+    function setOpen(v){
+      open = v;
+      sheet.classList.toggle("is-open", open);
+      scrim.classList.toggle("is-open", open);
+      scrim.setAttribute("aria-hidden", open ? "false" : "true");
+    }
+
+    function setTab(name){
+      [...tabs.querySelectorAll(".nav-tab")].forEach(b=>{
+        b.classList.toggle("is-active", b.dataset.tab === name);
+      });
+      [...pages.querySelectorAll(".nav-page")].forEach(p=>{
+        p.classList.toggle("is-active", p.dataset.page === name);
+      });
+      tabIndex = Math.max(0, tabOrder.indexOf(name));
+    }
+
+    // tap scrim to close
+    scrim.addEventListener("click", ()=> setOpen(false));
+
+    // tap tab to switch
+    tabs.addEventListener("click", (e)=>{
+      const b = e.target.closest(".nav-tab");
+      if (!b) return;
+      setTab(b.dataset.tab);
+    });
+
+    // Swipe gestures (one-finger)
+    let sx=0, sy=0, moved=false, tracking=false, startNearTop=false;
+
+    function onStart(e){
+      const t = e.touches ? e.touches[0] : e;
+      sx = t.clientX; sy = t.clientY;
+      moved = false; tracking = true;
+      startNearTop = (sy < 80); // 80px from top
+    }
+
+    function onMove(e){
+      if (!tracking) return;
+      const t = e.touches ? e.touches[0] : e;
+      const dx = t.clientX - sx;
+      const dy = t.clientY - sy;
+      if (Math.abs(dx) > 12 || Math.abs(dy) > 12) moved = true;
+    }
+
+    function onEnd(e){
+      if (!tracking) return;
+      tracking = false;
+
+      const t = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0] : null;
+      const ex = t ? t.clientX : sx;
+      const ey = t ? t.clientY : sy;
+
+      const dx = ex - sx;
+      const dy = ey - sy;
+
+      // Vertical swipe toggles sheet (allow swipe-up anywhere)
+if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 40){
+  if (dy < 0) setOpen(true);     // swipe up from anywhere
+  if (dy > 0 && open) setOpen(false); // swipe down to close
+  return;
+}
+
+
+      // Horizontal swipe changes tabs (only if open)
+      if (open && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)){
+        if (dx < 0) tabIndex = Math.min(tabOrder.length-1, tabIndex+1);
+        else tabIndex = Math.max(0, tabIndex-1);
+        setTab(tabOrder[tabIndex]);
+        return;
+      }
+
+      // Tap on the grab area toggles
+      if (!moved){
+        const withinGrab = (e.target && e.target.closest && e.target.closest(".nav-grab"));
+        if (withinGrab) setOpen(!open);
+      }
+    }
+
+    // Attach to whole document so user can swipe anywhere
+    document.addEventListener("touchstart", onStart, {passive:true});
+    document.addEventListener("touchmove", onMove, {passive:true});
+    document.addEventListener("touchend", onEnd, {passive:true});
+
+    // Desktop convenience: press "n" to toggle
+    document.addEventListener("keydown", (e)=>{
+      if (e.key.toLowerCase() === "n") setOpen(!open);
+      if (e.key === "Escape") setOpen(false);
+    });
+
+    // Desktop: open/close with trackpad swipe / mouse wheel near top
+    let wheelAcc = 0;
+    let wheelT = null;
+    window.addEventListener("wheel", (e) => {
+      // Only react near top edge unless already open
+      const nearTop = (e.clientY < 140);
+      if (!nearTop && !open) return;
+      wheelAcc += e.deltaY;
+      clearTimeout(wheelT);
+      wheelT = setTimeout(() => wheelAcc = 0, 180);
+      // Trackpad "swipe down" gives positive deltaY
+      if (!open && wheelAcc > 140) {
+        setOpen(true);
+        wheelAcc = 0;
+        return;
+      }
+      // Swipe up to close
+      if (open && wheelAcc < -180) {
+        setOpen(false);
+        wheelAcc = 0;
+      }
+    }, { passive: true });
+
+    // Desktop: right-click anywhere to toggle nav (except on links)
+    window.addEventListener("contextmenu", (e) => {
+      if (e.target && e.target.closest && e.target.closest("a")) return; // allow link menu
+      e.preventDefault();
+      setOpen(!open);
+    });
+
+    // Desktop: double-click near top to open
+    window.addEventListener("dblclick", (e) => {
+      const nearTop = (e.clientY < 140);
+      if (nearTop) setOpen(true);
+    }, { passive: true });
+
+    // Hotzone tap/click to open
+    if (hotzone) {
+      hotzone.addEventListener("click", () => setOpen(true));
+      hotzone.addEventListener("touchstart", () => setOpen(true), {passive:true});
+    }
+
+    // Desktop corner hint click to open
+    const corner = document.getElementById("navCorner");
+    if (corner) {
+      corner.addEventListener("click", () => setOpen(true));
+    }
+
+    // init
+    setTab("start");
+    setOpen(false);
+
+    // Update nav overlay with blockchain data
+    let startTime = Date.now();
+    function updateNavData() {
+      // Sync from HUD elements
+      const block = document.getElementById("hudBlock")?.textContent || "…";
+      const serverTime = document.getElementById("hudServerTime")?.textContent || "…";
+      const status = document.getElementById("hudStatus")?.textContent || "status: checking";
+      
+      const navBlock = document.getElementById("navBlock");
+      const navServerTime = document.getElementById("navServerTime");
+      const navStatus = document.getElementById("navStatus");
+      const navUptime = document.getElementById("navUptime");
+      
+      if (navBlock) navBlock.textContent = block;
+      if (navServerTime) navServerTime.textContent = serverTime;
+      if (navStatus) navStatus.textContent = status.replace("status: ", "");
+      
+      // Calculate uptime
+      const uptimeMs = Date.now() - startTime;
+      const uptimeHours = Math.floor(uptimeMs / 3600000);
+      const uptimeMins = Math.floor((uptimeMs % 3600000) / 60000);
+      const uptimeSecs = Math.floor((uptimeMs % 60000) / 1000);
+      if (navUptime) {
+        navUptime.textContent = 
+          `${String(uptimeHours).padStart(2,'0')}:${String(uptimeMins).padStart(2,'0')}:${String(uptimeSecs).padStart(2,'0')}`;
+      }
+    }
+    
+    setInterval(updateNavData, 1000);
+    updateNavData();
+  })();
+  </script>
+
+  <!-- Matrix Animation -->
+  <script>
+      (function() {
+          const canvas = document.getElementById('matrix-bg');
+          if (!canvas) return;
+          const ctx = canvas.getContext('2d');
+          const CHARS = ['0','1'];
+          let width = 0, height = 0, particles = [], raf = null;
+
+          function resize() {
+              const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+              const cssW = window.innerWidth, cssH = window.innerHeight;
+              canvas.width = Math.floor(cssW * dpr);
+              canvas.height = Math.floor(cssH * dpr);
+              canvas.style.width = cssW + 'px';
+              canvas.style.height = cssH + 'px';
+              ctx.setTransform(1,0,0,1,0,0);
+              ctx.scale(dpr, dpr);
+              width = cssW; height = cssH;
+              particles = [];
+              for (let i = 0; i < 400; i++) {
+                  particles.push({
+                      x: (Math.random() - 0.5) * width,
+                      y: (Math.random() - 0.5) * height,
+                      z: Math.random() * 800 + 100
+                  });
+              }
+              ctx.fillStyle = 'rgba(0,0,0,1)';
+              ctx.fillRect(0, 0, width, height);
+          }
+
+          function draw() {
+              ctx.fillStyle = 'rgba(0,0,0,0.25)';
+              ctx.fillRect(0, 0, width, height);
+              ctx.fillStyle = '#00ff88';
+              for (const p of particles) {
+                  const scale = 200 / p.z;
+                  const x2 = width / 2 + p.x * scale;
+                  const y2 = height / 2 + p.y * scale;
+                  const size = Math.max(8 * scale, 1);
+                  ctx.font = size + 'px monospace';
+                  ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
+                  p.z -= 5;
+                  if (p.z < 1) {
+                      p.x = (Math.random() - 0.5) * width;
+                      p.y = (Math.random() - 0.5) * height;
+                      p.z = 800;
+                  }
+              }
+              raf = requestAnimationFrame(draw);
+          }
+
+          function onVis() {
+              if (document.hidden) {
+                  if (raf) cancelAnimationFrame(raf), raf = null;
+              } else {
+                  if (!raf) raf = requestAnimationFrame(draw);
+              }
+          }
+
+          window.addEventListener('resize', resize);
+          document.addEventListener('visibilitychange', onVis);
+          resize();
+          raf = requestAnimationFrame(draw);
+      })();
+  </script>
+</body>
+</html>
