@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>{{ title }} — HODLXXI</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="/static/ui_core.css?v=1"/>
+  <style>
+    :root{
+      --bg:#000;
+      --fg: rgba(235,255,245,.92);
+      --accent: rgba(0,255,136,.95);
+      --warn: rgba(255,42,42,.90);
+      --stroke: rgba(255,255,255,.08);
+      --glass: rgba(8,12,10,.22);
+      --radius: 16px;
+      --mono: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+    html,body{height:100%;background:var(--bg);color:var(--fg);}
+    body{font-family:var(--mono);margin:0;}
+    .wrap{max-width:920px;margin:0 auto;padding:76px 16px 40px;}
+    .panel{border-radius:var(--radius);border:1px solid var(--stroke);background:var(--glass);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 10px 40px rgba(0,0,0,.45);overflow:hidden;margin-top:10px;}
+    .hd{padding:12px 12px 10px;border-bottom:1px solid rgba(255,255,255,.06);}
+    .title{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--warn);}
+    .bd{padding:14px;}
+    a{color:var(--accent);text-decoration:none}
+    a:hover{text-decoration:underline}
+    h1,h2,h3{color:var(--accent);margin:1.1em 0 .4em}
+    h1{font-size:24px}
+    h2{font-size:18px}
+    h3{font-size:15px}
+    p{line-height:1.7;margin:.75em 0}
+    ul,ol{margin:.6em 0 .8em 1.2em}
+    li{margin:.25em 0}
+    code{background:rgba(0,0,0,.25);padding:0 6px;border-radius:8px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div style="display:flex; gap:12px; flex-wrap:wrap; font-size:12px;">
+      <a href="/docs">← Docs</a>
+      <a href="/oidc">← Home</a>
+    </div>
+    <section class="panel">
+      <div class="hd"><div class="title">{{ title }}</div></div>
+      <div class="bd">{{ content|safe }}</div>
+    </section>
+  </div>
+</body>
+</html>

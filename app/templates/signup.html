@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up — HODLXXI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #0b0f10;
+            --panel: #11171a;
+            --fg: #e6f1ef;
+            --accent: #00ff88;
+            --muted: #86a3a1;
+            --warning: #ff6b35;
+            --border: #0f2a24;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .signup-container {
+            max-width: 600px;
+            width: 100%;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 40px;
+            text-align: center;
+        }
+
+        .warning-box {
+            background: rgba(255, 107, 53, 0.1);
+            border: 2px solid var(--warning);
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 32px;
+        }
+
+        .warning-box h2 {
+            color: var(--warning);
+            font-size: 18px;
+            margin-bottom: 16px;
+        }
+
+        .warning-box ul {
+            list-style: none;
+            font-size: 14px;
+            line-height: 2;
+            color: var(--muted);
+        }
+
+        .warning-box li:before {
+            content: "⚠️ ";
+            margin-right: 8px;
+        }
+
+        .form-box {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 32px;
+            margin-bottom: 24px;
+        }
+
+        .form-box h3 {
+            font-size: 20px;
+            margin-bottom: 24px;
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        label {
+            display: block;
+            font-size: 14px;
+            margin-bottom: 8px;
+            color: var(--muted);
+        }
+
+        input[type="email"],
+        input[type="text"] {
+            width: 100%;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px;
+            color: var(--fg);
+            font-family: inherit;
+            font-size: 14px;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .checkbox-group {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+        }
+
+        input[type="checkbox"] {
+            margin-top: 4px;
+        }
+
+        .checkbox-label {
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .checkbox-label strong {
+            color: var(--warning);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: var(--accent);
+            color: var(--bg);
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .note {
+            text-align: center;
+            font-size: 13px;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .note a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .note a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="signup-container">
+        <div class="logo">HODLXXI</div>
+
+        <div class="warning-box">
+            <h2>Before you sign up, understand this:</h2>
+            <ul>
+                <li>This is <strong>experimental software</strong></li>
+                <li>Not ready for production-critical applications</li>
+                <li>Bugs and breaking changes are expected</li>
+                <li>No SLA guarantees or uptime promises</li>
+                <li>Support is best-effort only</li>
+                <li>We may shut down or pivot at any time</li>
+            </ul>
+        </div>
+
+        <div class="form-box">
+            <h3>Create Account</h3>
+            <form id="signup-form">
+                <div class="form-group">
+                    <label for="email">Email (for notifications only)</label>
+                    <input 
+                        type="email" 
+                        id="email" 
+                        name="email" 
+                        required 
+                        placeholder="you@example.com"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="project">Project name</label>
+                    <input 
+                        type="text" 
+                        id="project" 
+                        name="project" 
+                        placeholder="My Bitcoin App"
+                    >
+                </div>
+
+                <div class="form-group checkbox-group">
+                    <input 
+                        type="checkbox" 
+                        id="understand" 
+                        name="understand" 
+                        required
+                    >
+                    <label for="understand" class="checkbox-label">
+                        I understand this is <strong>beta software</strong> and I accept the risks listed above
+                    </label>
+                </div>
+
+                <div class="form-group checkbox-group">
+                    <input 
+                        type="checkbox" 
+                        id="no-production" 
+                        name="no-production" 
+                        required
+                    >
+                    <label for="no-production" class="checkbox-label">
+                        I will <strong>NOT use this for production-critical applications</strong> without understanding the risks
+                    </label>
+                </div>
+
+                <div class="form-group checkbox-group">
+                    <input 
+                        type="checkbox" 
+                        id="read-docs" 
+                        name="read-docs"
+                    >
+                    <label for="read-docs" class="checkbox-label">
+                        I have read the <a href="/docs/limits" target="_blank">limitations</a> and <a href="/docs/faq" target="_blank">FAQ</a>
+                    </label>
+                </div>
+
+                <button type="submit" class="btn" id="submit-btn">
+                    Create Account (Free)
+                </button>
+            </form>
+        </div>
+
+        <p class="note">
+            By signing up, you agree to our <a href="/terms">Terms of Service</a>.<br>
+            No credit card required. Cancel anytime.<br>
+            <br>
+            Already have an account? <a href="/login">Sign in</a>
+        </p>
+    </div>
+
+    <script>
+        document.getElementById('signup-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const btn = document.getElementById('submit-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Creating account...';
+
+            try {
+                const formData = {
+                    email: document.getElementById('email').value,
+                    project: document.getElementById('project').value,
+                    understood_risks: true,
+                    no_production: true,
+                    read_docs: document.getElementById('read-docs').checked
+                };
+
+                const response = await fetch('/api/signup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Redirect to dashboard or setup page
+                    window.location.href = '/dashboard';
+                } else {
+                    alert('Error: ' + (data.message || 'Unknown error'));
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                }
+            } catch (error) {
+                alert('Network error. Please try again.');
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        });
+
+        // Enable submit only when required checkboxes are checked
+        const requiredCheckboxes = document.querySelectorAll('input[type="checkbox"][required]');
+        const submitBtn = document.getElementById('submit-btn');
+
+        function updateSubmitButton() {
+            const allChecked = Array.from(requiredCheckboxes).every(cb => cb.checked);
+            submitBtn.disabled = !allChecked;
+        }
+
+        requiredCheckboxes.forEach(cb => {
+            cb.addEventListener('change', updateSubmitButton);
+        });
+
+        updateSubmitButton();
+    </script>
+<script>
+(function () {
+  if (window.__HODLXXI_PRESENCE_SOCKET) return;
+  if (!document.cookie || !document.cookie.includes("session=")) return;
+
+  function start() {
+    try {
+      const s = io({
+        path: "/socket.io",
+        transports: ["websocket", "polling"],
+        withCredentials: true
+      });
+      window.__HODLXXI_PRESENCE_SOCKET = s;
+    } catch (e) {}
+  }
+
+  if (typeof io === "function") return start();
+
+  const tag = document.createElement("script");
+  tag.src = "https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.min.js";
+  tag.onload = start;
+  document.head.appendChild(tag);
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#00ff88" />
+  <title>{{ title or "HODLXXI Docs" }}</title>
+  <link rel="stylesheet" href="/static/ui_core.css?v=1"/>
+  <style>
+    :root{
+      --bg:#05070b; --fg:#d7ffe8; --muted:#9fd7bf;
+      --neon:#00ff88; --cyan:#33ccff; --card:rgba(0,0,0,.45);
+      --border:rgba(0,255,136,.25);
+      --shadow:0 0 22px rgba(0,255,136,.16), inset 0 0 18px rgba(0,255,136,.10);
+      --radius:18px;
+      --mono: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+    html,body{height:100%; background:var(--bg); color:var(--fg); margin:0; font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;}
+    a{color:var(--neon); text-decoration:none}
+    a:hover{opacity:.9; text-decoration:underline}
+    .wrap{max-width:980px; margin:0 auto; padding:20px 14px 40px;}
+    .hdr{
+      border:1px solid var(--border); border-radius:var(--radius);
+      background:linear-gradient(180deg, rgba(0,255,136,.08), rgba(0,0,0,.30));
+      box-shadow:var(--shadow);
+      padding:16px 16px 14px;
+      display:flex; gap:12px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap;
+    }
+    .title{font-size:22px; letter-spacing:.5px; margin:0}
+    .sub{margin:6px 0 0; color:var(--muted); font-size:13px; line-height:1.35}
+    .right{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+    .pill{
+      font-size:12px; padding:8px 10px; border-radius:999px;
+      border:1px solid rgba(0,255,136,.22);
+      background:rgba(0,0,0,.22);
+      color:var(--fg);
+      box-shadow:0 0 16px rgba(0,255,136,.12);
+    }
+    .search{
+      width:min(420px, 92vw);
+      font-size:14px;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid rgba(0,255,136,.25);
+      background:rgba(0,0,0,.30);
+      color:var(--fg);
+      outline:none;
+    }
+    .grid{display:grid; grid-template-columns:repeat(12, 1fr); gap:12px; margin-top:14px;}
+    .card{
+      grid-column: span 12;
+      border:1px solid var(--border); border-radius:var(--radius);
+      background:var(--card); box-shadow:var(--shadow);
+      padding:12px 14px;
+    }
+    @media(min-width:860px){
+      .card.md{grid-column: span 8;}
+      .card.pdf{grid-column: span 4;}
+    }
+    .k{font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--cyan);}
+    .h{margin:6px 0 2px; font-size:16px; color:var(--fg);}
+    .d{margin:0; color:var(--muted); font-size:13px; line-height:1.45}
+    .meta{margin-top:8px; font-size:12px; color:rgba(215,255,232,.75)}
+    .meta code{font-family:var(--mono); font-size:12px; padding:1px 6px; border-radius:8px; background:rgba(0,0,0,.25)}
+    .row{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px}
+    .btn{
+      display:inline-flex; align-items:center; gap:8px;
+      font-size:12px; padding:8px 10px; border-radius:12px;
+      border:1px solid rgba(0,255,136,.22);
+      background:rgba(0,0,0,.22);
+      color:var(--fg);
+    }
+    .btn:hover{opacity:.95; text-decoration:none}
+    .hidden{display:none !important;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hdr">
+      <div>
+        <h1 class="title">{{ title or "HODLXXI Docs" }}</h1>
+        <p class="sub">Public documentation & theory library. Shareable links. Markdown renders at <code>/docs/&lt;slug&gt;</code>.</p>
+      </div>
+
+      <div class="right">
+        <a class="pill" href="/oidc">Home</a>
+        <a class="pill" href="/login">Login</a>
+        <a class="pill" href="/docs2">Raw Viewer</a>
+      </div>
+
+      <input id="q" class="search" type="search" placeholder="Search docs…" autocomplete="off" />
+    </div>
+
+    <div class="grid">
+      <div class="card md">
+        <div class="k">Markdown</div>
+        {% if md_items %}
+          {% for it in md_items %}
+          <div class="doc" data-h="{{ it.display|lower }}" data-s="{{ it.slug|lower }}" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/{{ it.slug }}">{{ it.display }}</a></div>
+            {% if it.desc %}<p class="d">{{ it.desc }}</p>{% endif %}
+            <div class="meta">slug: <code>{{ it.slug }}</code>{% if it.size_kb %} · {{ it.size_kb }} KB{% endif %}</div>
+            <div class="row">
+              <a class="btn" href="/docs/{{ it.slug }}">Open</a>
+              <a class="btn" href="/static/docs/docs/{{ it.slug }}.md">Raw .md</a>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p class="d">No markdown files found.</p>
+        {% endif %}
+      </div>
+
+      <div class="card pdf">
+        <div class="k">PDF</div>
+        {% if pdf_items %}
+          {% for it in pdf_items %}
+          <div class="doc" data-h="{{ it.name|lower }}" data-s="{{ it.name|lower }}" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/static/docs/docs/{{ it.name }}">{{ it.name }}</a></div>
+            <p class="d">Direct static link.</p>
+            <div class="meta">{% if it.size_kb %}{{ it.size_kb }} KB{% endif %}</div>
+            <div class="row">
+              <a class="btn" href="/static/docs/docs/{{ it.name }}">Open PDF</a>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p class="d">No PDFs found.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      const q = document.getElementById('q');
+      const docs = Array.from(document.querySelectorAll('.doc'));
+      function apply(){
+        const s = (q.value || '').trim().toLowerCase();
+        if(!s){ docs.forEach(d => d.classList.remove('hidden')); return; }
+        docs.forEach(d => {
+          const hay = (d.getAttribute('data-h') || '') + ' ' + (d.getAttribute('data-s') || '');
+          d.classList.toggle('hidden', !hay.includes(s));
+        });
+      }
+      q.addEventListener('input', apply);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HODLXXI Dev Dashboard</title>
+    <style>
+        :root {
+            --bg: #0b0f10;
+            --panel: #11171a;
+            --fg: #e6f1ef;
+            --accent: #00ff88;
+            --orange: #f7931a;
+            --red: #ff3b30;
+            --muted: #8a9da4;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Mono", "Menlo", "Courier New", monospace;
+            background: var(--bg);
+            color: var(--fg);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        #matrix-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #matrix-bg { display: none !important; }
+        }
+
+        .top-cta {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1.25rem;
+            background: rgba(0, 0, 0, 0.9);
+            border-bottom: 1px solid var(--accent);
+        }
+
+        .top-cta-text {
+            font-size: 0.9rem;
+            color: var(--accent);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 60vw;
+        }
+
+        .top-cta-btn {
+            margin-left: 1rem;
+            padding: 0.4rem 0.9rem;
+            border-radius: 999px;
+            border: 1px solid var(--accent);
+            background: rgba(0, 0, 0, 0.95);
+            color: var(--accent);
+            font-size: 0.9rem;
+            cursor: pointer;
+            white-space: nowrap;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.35rem;
+        }
+
+        .top-cta-btn:hover {
+            background: var(--accent);
+            color: #000;
+        }
+
+        @media (max-width: 768px) {
+            .top-cta {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+                padding: 0.6rem 0.9rem;
+            }
+
+            .top-cta-text {
+                max-width: 100%;
+                white-space: normal;
+            }
+
+            .top-cta-btn {
+                width: 100%;
+                margin-left: 0;
+            }
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 4.5rem 1.5rem 2.5rem;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding-top: 3.5rem;
+            }
+        }
+
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .title {
+            font-size: 1.3rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--accent);
+            text-shadow: 0 0 16px rgba(0,255,136,0.35);
+        }
+
+        .pill {
+            padding: 0.3rem 0.9rem;
+            border-radius: 999px;
+            border: 1px solid rgba(0,255,136,0.5);
+            background: rgba(0,0,0,0.7);
+            font-size: 0.8rem;
+            white-space: nowrap;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 900px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            padding: 1.5rem;
+            border-radius: 1rem;
+            border: 1px solid rgba(0,255,136,0.4);
+            background: rgba(10,20,18,0.94);
+            box-shadow: 0 0 18px rgba(0,255,136,0.3);
+        }
+
+        .card h2 {
+            font-size: 1rem;
+            margin-bottom: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .mono {
+            font-family: "Courier New", monospace;
+            font-size: 0.8rem;
+            word-break: break-all;
+        }
+
+        .badge-plan {
+            display: inline-block;
+            margin-top: 0.5rem;
+            padding: 0.25rem 0.7rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            border: 1px solid rgba(0,255,136,0.7);
+            color: var(--accent);
+        }
+
+        .badge-plan.free {
+            border-color: var(--orange);
+            color: var(--orange);
+        }
+
+        .label {
+            font-size: 0.9rem;
+            color: var(--muted);
+        }
+
+        .value {
+            font-size: 0.95rem;
+            margin-bottom: 0.2rem;
+        }
+
+        .btn {
+            padding: 0.5rem 1.1rem;
+            border-radius: 999px;
+            border: 1px solid rgba(0,255,136,0.5);
+            background: transparent;
+            color: var(--accent);
+            cursor: pointer;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .btn:hover {
+            background: rgba(0,255,136,0.1);
+        }
+
+        ul.features {
+            list-style: none;
+            padding-left: 0;
+            line-height: 1.7;
+            font-size: 0.95rem;
+        }
+
+        ul.features li::before {
+            content: "• ";
+            color: var(--accent);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="matrix-bg" aria-hidden="true"></canvas>
+
+    {% if user and user.pubkey %}
+        {% set short_pk = user.pubkey[:18] %}
+    {% else %}
+        {% set short_pk = 'unknown' %}
+    {% endif %}
+
+    <!-- Top CTA: consistent with Playground / Upgrade -->
+    <div class="top-cta">
+        <span class="top-cta-text">
+            ✅ Dev dashboard for {{ short_pk }}…
+        </span>
+        <button class="top-cta-btn"
+                onclick="window.location.href='{{ url_for('playground_page') }}'">
+            Back to Playground
+        </button>
+    </div>
+
+    <div class="container">
+        <div class="top-bar">
+            <div class="title">HODLXXI — Dev Dashboard</div>
+            <div class="pill">
+                {{ short_pk }}…
+            </div>
+        </div>
+
+        <div class="grid">
+            <section class="card">
+                <h2>Account Status</h2>
+
+                <p class="label">Plan</p>
+                <p class="value">
+                    <strong>{{ user.plan or 'unknown' }}</strong>
+                    {% if user.plan == 'paid' or user.plan == 'admin' %}
+                        <span class="badge-plan">Paid Dev</span>
+                    {% elif user.plan == 'free_trial' %}
+                        <span class="badge-plan free">Free Trial</span>
+                    {% endif %}
+                </p>
+
+                <p class="label" style="margin-top:0.6rem;">Sats balance</p>
+                <p class="value"><strong>{{ user.sats_balance }}</strong></p>
+
+                {% if user.membership_expires_at %}
+                    <p class="label" style="margin-top:0.6rem;">Membership expires</p>
+                    <p class="value">{{ user.membership_expires_at }}</p>
+                {% endif %}
+
+                <p class="label" style="margin-top:1rem;">Dev identity pubkey</p>
+                <p class="mono">{{ user.pubkey }}</p>
+
+                <button class="btn" onclick="window.location.href='{{ url_for('upgrade') }}'">
+                    Manage Membership
+                </button>
+            </section>
+
+            <section class="card">
+                <h2>What You Can Do</h2>
+                <ul class="features">
+                    <li>Manage your HODLXXI identity &amp; membership status</li>
+                    <li>Use the Playground to test all auth methods</li>
+                    <li>OAuth2/OIDC client registrations (coming soon)</li>
+                    <li>Proof-of-Funds API access &amp; dashboards (coming soon)</li>
+                    <li>Configure API keys &amp; sats-metered usage (coming soon)</li>
+                </ul>
+
+                <button class="btn" onclick="window.location.href='{{ url_for('playground_page') }}'">
+                    Open Playground
+                </button>
+            </section>
+        </div>
+    </div>
+
+    <!-- Matrix animation (same family as Playground) -->
+    <script>
+    (function() {
+        const canvas = document.getElementById('matrix-bg');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const CHARS = ['0','1'];
+        let width = 0, height = 0, particles = [], raf = null;
+
+        function resize() {
+            const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+            const cssW = window.innerWidth, cssH = window.innerHeight;
+            canvas.width = Math.floor(cssW * dpr);
+            canvas.height = Math.floor(cssH * dpr);
+            canvas.style.width = cssW + 'px';
+            canvas.style.height = cssH + 'px';
+            ctx.setTransform(1,0,0,1,0,0);
+            ctx.scale(dpr, dpr);
+            width = cssW; height = cssH;
+            particles = [];
+            for (let i = 0; i < 350; i++) {
+                particles.push({
+                    x: (Math.random() - 0.5) * width,
+                    y: (Math.random() - 0.5) * height,
+                    z: Math.random() * 800 + 100
+                });
+            }
+            ctx.fillStyle = 'rgba(0,0,0,1)';
+            ctx.fillRect(0, 0, width, height);
+        }
+
+        function draw() {
+            ctx.fillStyle = 'rgba(0,0,0,0.25)';
+            ctx.fillRect(0, 0, width, height);
+            ctx.fillStyle = '#00ff88';
+            for (const p of particles) {
+                const scale = 200 / p.z;
+                const x2 = width / 2 + p.x * scale;
+                const y2 = height / 2 + p.y * scale;
+                const size = Math.max(8 * scale, 1);
+                ctx.font = size + 'px monospace';
+                ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
+                p.z -= 5;
+                if (p.z < 1) {
+                    p.x = (Math.random() - 0.5) * width;
+                    p.y = (Math.random() - 0.5) * height;
+                    p.z = 800;
+                }
+            }
+            raf = requestAnimationFrame(draw);
+        }
+
+        function onVis() {
+            if (document.hidden) {
+                if (raf) cancelAnimationFrame(raf), raf = null;
+            } else {
+                if (!raf) raf = requestAnimationFrame(draw);
+            }
+        }
+
+        window.addEventListener('resize', resize);
+        document.addEventListener('visibilitychange', onVis);
+        resize();
+        raf = requestAnimationFrame(draw);
+    })();
+    </script>
+<script>
+(function () {
+  if (window.__HODLXXI_PRESENCE_SOCKET) return;
+  if (!document.cookie || !document.cookie.includes("session=")) return;
+
+  function start() {
+    try {
+      const s = io({
+        path: "/socket.io",
+        transports: ["websocket", "polling"],
+        withCredentials: true
+      });
+      window.__HODLXXI_PRESENCE_SOCKET = s;
+    } catch (e) {}
+  }
+
+  if (typeof io === "function") return start();
+
+  const tag = document.createElement("script");
+  tag.src = "https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.min.js";
+  tag.onload = start;
+  document.head.appendChild(tag);
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KeyAuth — Reference Implementation</title>
+    <meta name="description" content="A reference implementation inspired by HODLXXI principles. Not canonical. Not authoritative.">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #0b0f10;
+            --panel: #11171a;
+            --fg: #e6f1ef;
+            --accent: #00ff88;
+            --muted: #86a3a1;
+            --warning: #ff6b35;
+            --border-color: #0f2a24;
+            --card-bg: rgba(17, 23, 26, 0.92);
+            --glow-green: rgba(0, 255, 136, 0.2);
+        }
+
+        body {
+            font-family: ui-monospace, 'SF Mono', 'Monaco', monospace;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        header {
+            padding: 40px 0;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 40px;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: 0.1em;
+            margin-bottom: 8px;
+        }
+
+        .tagline {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        /* Disclaimer Box */
+        .disclaimer {
+            background: rgba(255, 107, 53, 0.1);
+            border: 2px solid var(--warning);
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 40px;
+        }
+
+        .disclaimer h2 {
+            color: var(--warning);
+            font-size: 16px;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .disclaimer p {
+            color: var(--fg);
+            font-size: 13px;
+            line-height: 1.8;
+            margin-bottom: 12px;
+        }
+
+        .disclaimer p:last-child {
+            margin-bottom: 0;
+        }
+
+        /* Content Sections */
+        section {
+            margin-bottom: 60px;
+        }
+
+        h2 {
+            font-size: 20px;
+            color: var(--accent);
+            margin-bottom: 20px;
+        }
+
+        p {
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.8;
+            margin-bottom: 16px;
+        }
+
+        ul {
+            list-style: none;
+            margin-bottom: 20px;
+        }
+
+        li {
+            color: var(--muted);
+            font-size: 13px;
+            padding: 8px 0;
+            padding-left: 24px;
+            position: relative;
+        }
+
+        li::before {
+            content: '•';
+            position: absolute;
+            left: 8px;
+            color: var(--accent);
+        }
+
+        .negative-list li::before {
+            content: '✗';
+            color: var(--warning);
+        }
+
+        /* Pricing Section */
+        .pricing {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 32px;
+            margin-top: 40px;
+        }
+
+        .pricing h3 {
+            font-size: 16px;
+            margin-bottom: 16px;
+            color: var(--fg);
+        }
+
+        .pricing-note {
+            background: rgba(0, 255, 136, 0.05);
+            border-left: 3px solid var(--accent);
+            padding: 16px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        .tier {
+            padding: 20px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .tier:last-child {
+            border-bottom: none;
+        }
+
+        .tier-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent);
+            margin-bottom: 8px;
+        }
+
+        .tier-price {
+            font-size: 13px;
+            color: var(--muted);
+            margin-bottom: 12px;
+        }
+
+        /* Links */
+        .link-bar {
+            display: flex;
+            gap: 24px;
+            padding: 20px 0;
+            border-top: 1px solid var(--border-color);
+            margin-top: 40px;
+        }
+
+        .link-bar a {
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 13px;
+            border-bottom: 1px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .link-bar a:hover {
+            border-bottom-color: var(--accent);
+        }
+
+        /* Footer */
+        footer {
+            margin-top: 80px;
+            padding-top: 40px;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+        }
+
+        footer p {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        /* Button */
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: transparent;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 13px;
+            transition: all 0.2s;
+            margin-top: 20px;
+        }
+
+        .btn:hover {
+            background: rgba(0, 255, 136, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">KeyAuth</div>
+            <div class="tagline">An independent implementation inspired by HODLXXI principles — not canonical</div>
+        </header>
+
+        <div class="disclaimer">
+            <h2>⚠️ Important Disclaimer</h2>
+            <p><strong>KeyAuth is an experimental implementation.</strong></p>
+            <p>It is not canonical.<br>
+            It is not authoritative.<br>
+            It does not represent the protocol itself.</p>
+            <p>You are paying for infrastructure and support,<br>
+            not for legitimacy or trust.</p>
+        </div>
+
+        <section>
+            <h2>What KeyAuth Provides</h2>
+            <p>KeyAuth provides hosted infrastructure for:</p>
+            <ul>
+                <li>Bitcoin signature authentication</li>
+                <li>LNURL-Auth integration</li>
+                <li>Nostr-based login (NIP-07)</li>
+                <li>OAuth2 / OIDC compatibility</li>
+                <li>Proof-of-Funds verification (PSBTs)</li>
+            </ul>
+            <p>
+                This service exists for teams that want to experiment
+                without running their own infrastructure.
+            </p>
+        </section>
+
+        <section>
+            <h2>What KeyAuth Does NOT Provide</h2>
+            <p>KeyAuth does not:</p>
+            <ul class="negative-list">
+                <li>Define identity (users control their keys)</li>
+                <li>Assign trust (reputation is derived, not assigned)</li>
+                <li>Control reputation (system observes, doesn't judge)</li>
+                <li>Prevent exit (always possible)</li>
+                <li>Represent canonical deployment (one of many possible implementations)</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Pricing Philosophy</h2>
+            <p>
+                Payment does not imply endorsement.<br>
+                Payment does not imply authority.<br>
+                Payment does not imply correctness.
+            </p>
+            <p>
+                Forking and self-hosting are always valid alternatives.
+            </p>
+
+            <div class="pricing">
+                <h3>Current Pricing (Beta)</h3>
+                <div class="pricing-note">
+                    All tiers are FREE during beta.<br>
+                    When we exit beta (2025?), pricing below will apply.<br>
+                    We'll give 60 days notice before charging.
+                </div>
+
+                <div class="tier">
+                    <div class="tier-name">Free</div>
+                    <div class="tier-price">$0/month • 1,000 active users</div>
+                    <p>Bitcoin signature auth, basic time-locks, community support</p>
+                </div>
+
+                <div class="tier">
+                    <div class="tier-name">Developer</div>
+                    <div class="tier-price">$29/month • 10,000 active users</div>
+                    <p>Email support (48h), early access features, priority bug fixes</p>
+                </div>
+
+                <div class="tier">
+                    <div class="tier-name">Professional</div>
+                    <div class="tier-price">$99/month • 100,000 active users</div>
+                    <p>Priority support, custom covenants, direct feedback to roadmap</p>
+                </div>
+            </div>
+
+            <p style="margin-top: 24px; font-size: 12px;">
+                <strong>No "Enterprise" tier yet.</strong>
+                The system is not ready for mission-critical applications.
+            </p>
+        </section>
+
+        <section>
+            <h2>What Users Pay For</h2>
+            <p>Users pay for:</p>
+            <ul>
+                <li>Hosted infrastructure (servers, monitoring, backups)</li>
+                <li>Uptime and maintenance (best-effort, no SLA during beta)</li>
+                <li>Integration support (email, documentation)</li>
+                <li>Operational convenience (not running your own nodes)</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>What Users Do NOT Pay For</h2>
+            <p>Users do not pay for:</p>
+            <ul class="negative-list">
+                <li>Identity legitimacy (cryptography provides this)</li>
+                <li>Trust guarantees (trust is earned through behavior)</li>
+                <li>Protocol authority (no one has this)</li>
+                <li>Exclusive access (open source, forkable)</li>
+                <li>Long-term control (exit always possible)</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Explicit Red Line</h2>
+            <p>
+                Any monetization that requires:
+            </p>
+            <ul class="negative-list">
+                <li>Lock-in (preventing users from leaving)</li>
+                <li>Hidden constraints (undisclosed limitations)</li>
+                <li>Asymmetry of exit (different rules for different users)</li>
+                <li>Claims of canonical authority (KeyAuth is one implementation among many)</li>
+            </ul>
+            <p>
+                ...violates the principles of HODLXXI and should be considered non-compliant.
+            </p>
+        </section>
+
+        <section>
+            <h2>Acceptable Revenue Sources</h2>
+            <p>KeyAuth may generate revenue from:</p>
+            <ul>
+                <li>Infrastructure fees (hosting, API usage)</li>
+                <li>Integration work (custom deployments)</li>
+                <li>Consulting (system design advice)</li>
+                <li>Research sponsorships (grant-funded work)</li>
+                <li>Educational content (courses, workshops)</li>
+            </ul>
+            <p style="margin-top: 16px;">
+                All revenue sources must preserve user agency and exit rights.
+            </p>
+        </section>
+
+        <div class="link-bar">
+            <a href="https://hodlxxi.com/docs">HODLXXI Documentation</a>
+            <a href="https://hodlxxi.com/docs/limits">System Limits</a>
+            <a href="https://hodlxxi.com/docs/principles">Core Principles</a>
+            <a href="https://github.com/hodlxxi">Source Code</a>
+        </div>
+
+        <a href="/signup" class="btn">Sign Up (Free During Beta)</a>
+
+        <footer>
+            <p>
+                This login interface is a reference implementation.<br>
+                Participation is voluntary. Exit is always allowed.
+            </p>
+            <p style="margin-top: 16px;">
+                KeyAuth • MIT License • 2024
+            </p>
+        </footer>
+    </div>
+<script>
+(function () {
+  if (window.__HODLXXI_PRESENCE_SOCKET) return;
+  if (!document.cookie || !document.cookie.includes("session=")) return;
+
+  function start() {
+    try {
+      const s = io({
+        path: "/socket.io",
+        transports: ["websocket", "polling"],
+        withCredentials: true
+      });
+      window.__HODLXXI_PRESENCE_SOCKET = s;
+    } catch (e) {}
+  }
+
+  if (typeof io === "function") return start();
+
+  const tag = document.createElement("script");
+  tag.src = "https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.min.js";
+  tag.onload = start;
+  document.head.appendChild(tag);
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,94 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:6
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+
+    - name: Set up test environment
+      env:
+        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379/0
+        FLASK_ENV: testing
+        SECRET_KEY: test-secret-key-for-ci
+        JWT_SECRET_KEY: test-jwt-secret-key-for-ci
+      run: |
+        # Initialize database
+        python -c "from app.database import init_all; init_all(create_tables=True)"
+
+    - name: Run unit tests
+      env:
+        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379/0
+        FLASK_ENV: testing
+        SECRET_KEY: test-secret-key-for-ci
+        JWT_SECRET_KEY: test-jwt-secret-key-for-ci
+      run: |
+        pytest tests/unit/ -v --cov=app --cov-report=xml --cov-report=term
+
+    - name: Run integration tests
+      env:
+        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379/0
+        FLASK_ENV: testing
+        SECRET_KEY: test-secret-key-for-ci
+        JWT_SECRET_KEY: test-jwt-secret-key-for-ci
+      run: |
+        pytest tests/integration/ -v
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false

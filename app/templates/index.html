@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HODLXXI — Bitcoin-Native Research Framework</title>
+    <meta name="description" content="An open research framework exploring long-term coordination through cryptographic identity and time-locked commitments.">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #0b0f10;
+            --panel: #11171a;
+            --fg: #e6f1ef;
+            --accent: #00ff88;
+            --muted: #86a3a1;
+            --warning: #ff6b35;
+            --dark-bg: #0b0f10;
+            --darker-bg: #000000;
+            --card-bg: rgba(17, 23, 26, 0.92);
+            --border-color: #0f2a24;
+            --border-hover: #184438;
+            --glow-green: rgba(0, 255, 136, 0.2);
+            --glow-warning: rgba(255, 107, 53, 0.2);
+        }
+
+        body {
+            font-family: ui-monospace, 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Matrix Background */
+        .matrix-canvas {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            opacity: 0.3;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .matrix-canvas {
+                display: none !important;
+            }
+        }
+
+        body > *:not(.matrix-canvas) {
+            position: relative;
+            z-index: 1;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            background: rgba(11, 15, 16, 0.95);
+            backdrop-filter: blur(10px);
+            z-index: 999;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .nav-content {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            text-shadow: 0 0 20px var(--glow-green);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 30px;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: var(--fg);
+            text-decoration: none;
+            font-weight: 400;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: var(--accent);
+            text-shadow: 0 0 10px var(--glow-green);
+        }
+
+        /* Hero Section */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            position: relative;
+            padding-top: 80px;
+            background: radial-gradient(ellipse at top, rgba(0, 255, 136, 0.05) 0%, transparent 50%);
+        }
+
+        .hero-content {
+            max-width: 800px;
+        }
+
+        .hero-content h1 {
+            font-size: 48px;
+            font-weight: 700;
+            line-height: 1.2;
+            margin-bottom: 20px;
+            color: var(--accent);
+            text-shadow: 0 0 40px var(--glow-green);
+            letter-spacing: -0.02em;
+        }
+
+        .hero-content .subtitle {
+            font-size: 18px;
+            color: var(--muted);
+            margin-bottom: 40px;
+            line-height: 1.7;
+        }
+
+        .filter-box {
+            background: rgba(255, 107, 53, 0.08);
+            border: 1px solid var(--warning);
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 40px;
+        }
+
+        .filter-box p {
+            color: var(--warning);
+            font-size: 14px;
+            line-height: 1.8;
+            margin-bottom: 12px;
+        }
+
+        .filter-box p:last-child {
+            margin-bottom: 0;
+        }
+
+        .meta-statement {
+            font-size: 13px;
+            color: var(--muted);
+            margin-bottom: 40px;
+            line-height: 1.7;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: transparent;
+            color: var(--accent);
+            border: 1px solid var(--accent);
+        }
+
+        .btn-primary:hover {
+            background: rgba(0, 255, 136, 0.1);
+            box-shadow: 0 0 20px var(--glow-green);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--fg);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .btn-warning {
+            background: transparent;
+            color: var(--warning);
+            border: 1px solid var(--warning);
+        }
+
+        .btn-warning:hover {
+            background: rgba(255, 107, 53, 0.1);
+            box-shadow: 0 0 20px var(--glow-warning);
+        }
+
+        /* Section Styles */
+        section {
+            padding: 100px 0;
+        }
+
+        .section-alt {
+            background: var(--darker-bg);
+        }
+
+        .section-header {
+            max-width: 700px;
+            margin-bottom: 60px;
+        }
+
+        .section-header h2 {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            color: var(--accent);
+        }
+
+        .section-header p {
+            font-size: 15px;
+            color: var(--muted);
+            line-height: 1.7;
+        }
+
+        /* Content Blocks */
+        .content-block {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 32px;
+            margin-bottom: 24px;
+            transition: all 0.3s;
+        }
+
+        .content-block:hover {
+            border-color: var(--border-hover);
+        }
+
+        .content-block h3 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            color: var(--fg);
+        }
+
+        .content-block p {
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.7;
+            margin-bottom: 12px;
+        }
+
+        .content-block ul {
+            list-style: none;
+            margin-top: 16px;
+        }
+
+        .content-block li {
+            color: var(--muted);
+            font-size: 14px;
+            padding: 8px 0;
+            padding-left: 24px;
+            position: relative;
+        }
+
+        .content-block li::before {
+            content: '•';
+            position: absolute;
+            left: 8px;
+            color: var(--accent);
+        }
+
+        /* Two Column Grid */
+        .two-col-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        /* Link List */
+        .link-list {
+            display: flex;
+            gap: 20px;
+            margin-top: 24px;
+            flex-wrap: wrap;
+        }
+
+        .link-list a {
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 13px;
+            border-bottom: 1px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .link-list a:hover {
+            border-bottom-color: var(--accent);
+        }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid var(--border-color);
+            padding: 60px 0 40px;
+            background: var(--darker-bg);
+        }
+
+        .footer-content {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        .footer-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 60px;
+            margin-bottom: 40px;
+        }
+
+        .footer-col h4 {
+            font-size: 13px;
+            color: var(--accent);
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .footer-col ul {
+            list-style: none;
+        }
+
+        .footer-col li {
+            margin-bottom: 12px;
+        }
+
+        .footer-col a {
+            color: var(--muted);
+            text-decoration: none;
+            font-size: 13px;
+            transition: color 0.2s;
+        }
+
+        .footer-col a:hover {
+            color: var(--accent);
+        }
+
+        .footer-bottom {
+            text-align: center;
+            padding-top: 40px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .footer-bottom p {
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.8;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero-content h1 {
+                font-size: 36px;
+            }
+
+            .two-col-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .footer-grid {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+
+            .nav-links {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <canvas class="matrix-canvas" id="matrix-bg"></canvas>
+
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-content">
+            <div class="logo">HODLXXI</div>
+            <ul class="nav-links">
+                <li><a href="/docs">Documentation</a></li>
+                <li><a href="/docs/limits">Limits</a></li>
+                <li><a href="/docs/research_status">Research Status</a></li>
+                <li><a href="oidc">KeyAuth</a></li>
+                <li><a href="https://github.com/hodlxxi">GitHub</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero">
+        <div class="container">
+            <div class="hero-content">
+                <h1>HODLXXI</h1>
+                <p class="subtitle">
+                    A Bitcoin-native research framework for long-term coordination
+                </p>
+
+                <p class="meta-statement">
+                    HODLXXI explores how cryptographic identity,
+                    time-locked commitments,
+                    and voluntary participation
+                    can support cooperation without central authority.
+                </p>
+
+                <div class="filter-box">
+                    <p>There is no token.<br>
+                    No promised returns.<br>
+                    No central operator.</p>
+                    <p>This is not a product.<br>
+                    This is not a service.<br>
+                    This is an open research framework.</p>
+                </div>
+
+                <div class="hero-buttons">
+                    <a href="/docs" class="btn btn-primary">Read the Documentation</a>
+                    <a href="/playground" class="btn btn-secondary">Open Playground</a>
+                    <a href="/docs/what_this_project_is_not" class="btn btn-warning">What This Is NOT</a>
+                    <a href="/oidc" class="btn btn-secondary">KeyAuth</a>
+                </div>
+
+                <p class="meta-statement" style="margin-top: 16px;">
+                    KeyAuth is one implementation for testing ideas. It is not canonical, not authoritative, and may diverge from the research framework.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- What This Is -->
+    <section>
+        <div class="container">
+            <div class="section-header">
+                <h2>What This Is</h2>
+                <p>HODLXXI is an applied research effort exploring constraint-based coordination over long human time horizons.</p>
+            </div>
+
+            <div class="content-block">
+                <h3>Core Components</h3>
+                <ul>
+                    <li>Bitcoin time primitives (OP_CHECKLOCKTIMEVERIFY, descriptors)</li>
+                    <li>Cryptographic identity (public key authentication)</li>
+                    <li>Repeated-game incentives (iterated Prisoner's Dilemma)</li>
+                    <li>Explicit exit and forkability (no lock-in)</li>
+                </ul>
+                <p style="margin-top: 16px;">
+                    The goal is not optimization. The goal is constraint-based coordination that preserves agency and allows exit.
+                </p>
+            </div>
+
+            <div class="link-list">
+                <a href="/docs/research_status">Research Status</a>
+                <a href="/docs/threat_model_and_failure_modes">Threat Model & Failure Modes</a>
+                <a href="/docs/architecture">Technical Architecture</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Transparency First -->
+    <section class="section-alt">
+        <div class="container">
+            <div class="section-header">
+                <h2>Transparency First</h2>
+                <p>Every assumption is documented. Every limitation is explicit. Every failure mode is acknowledged.</p>
+            </div>
+
+            <div class="two-col-grid">
+                <div class="content-block">
+                    <h3>Open Assumptions</h3>
+                    <p>
+                        All design decisions are documented with rationale. 
+                        We state what we believe and why.
+                        We invite critique and alternative interpretations.
+                    </p>
+                </div>
+
+                <div class="content-block">
+                    <h3>Explicit Limits</h3>
+                    <p>
+                        We document what the system cannot do.
+                        We list failure modes upfront.
+                        We acknowledge uncertainty.
+                    </p>
+                </div>
+
+                <div class="content-block">
+                    <h3>Designed for Fork</h3>
+                    <p>
+                        The system is designed to remain inspectable, 
+                        forkable, and functional without its original authors.
+                    </p>
+                </div>
+
+                <div class="content-block">
+                    <h3>No Authority</h3>
+                    <p>
+                        No single entity controls the protocol.
+                        No privileged keys exist.
+                        Exit is always possible.
+                    </p>
+                </div>
+            </div>
+
+            <div class="link-list">
+                <a href="/docs/limits">Explicit Limits</a>
+                <a href="/docs/ethics">Ethics & Invariants</a>
+                <a href="/docs/governance">Governance</a>
+                <a href="/docs/license">License (MIT)</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Who This Is For / Not For -->
+    <section>
+        <div class="container">
+            <div class="section-header">
+                <h2>Who This Is For / Not For</h2>
+                <p>This framework is suited for specific use cases. Be honest about fit.</p>
+            </div>
+
+            <div class="two-col-grid">
+                <div class="content-block">
+                    <h3>This May Be Relevant If You:</h3>
+                    <ul>
+                        <li>Are interested in long-term commitments (multi-year horizons)</li>
+                        <li>Work on adversarial coordination problems</li>
+                        <li>Build systems that must survive their creators</li>
+                        <li>Value cryptographic verification over institutional trust</li>
+                        <li>Accept experimental risk and documented uncertainty</li>
+                    </ul>
+                </div>
+
+                <div class="content-block">
+                    <h3>This Is Not For You If You:</h3>
+                    <ul>
+                        <li>Need guaranteed outcomes or uptime SLAs</li>
+                        <li>Require central authority or customer support</li>
+                        <li>Want short-term optimization (days/weeks, not years)</li>
+                        <li>Expect enterprise-grade promises or compliance certs</li>
+                        <li>Seek investment returns or token speculation</li>
+                    </ul>
+                </div>
+            </div>
+
+            <p style="margin-top: 40px; color: var(--muted); font-size: 14px;">
+                Use the documentation to determine fit. Don't assume this solves your problem without verification.
+            </p>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <div class="footer-grid">
+                <div class="footer-col">
+                    <h4>Documentation</h4>
+                    <ul>
+                        <li><a href="/docs">Documentation Home</a></li>
+                        <li><a href="/docs/what_is_hodlxxi">What Is HODLXXI?</a></li>
+                        <li><a href="/docs/what_this_project_is_not">What This Project Is NOT</a></li>
+                        <li><a href="/docs/how_it_works">How It Works</a></li>
+                        <li><a href="/docs/principles">Principles & Invariants</a></li>
+                        <li><a href="/docs/faq">FAQ</a></li>
+                    </ul>
+                </div>
+
+                <div class="footer-col">
+                    <h4>Research</h4>
+                    <ul>
+                        <li><a href="/docs/research_status">Research Status</a></li>
+                        <li><a href="/docs/limits">Explicit Limits</a></li>
+                        <li><a href="/docs/philosophy">Philosophical Context</a></li>
+                        <li><a href="/docs/bibliography">Bibliography</a></li>
+                    </ul>
+                </div>
+
+                <div class="footer-col">
+                    <h4>Project</h4>
+                    <ul>
+                        <li><a href="https://github.com/hodlxxi">GitHub</a></li>
+                        <li><a href="/docs/roadmap_21y">21-Year Roadmap</a></li>
+                        <li><a href="/docs/architecture">Architecture</a></li>
+                        <li><a href="/docs/crt_theory">CRT Theory</a></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <p>
+                    HODLXXI is open for inspection, not belief.<br>
+                    This project is experimental. Use at your own risk.<br>
+                    No warranties. No guarantees. No promises.
+                </p>
+                <p style="margin-top: 16px; font-size: 11px;">
+                    MIT License • 2024
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Matrix background (warp effect with 0s and 1s)
+        (function() {
+            const canvas = document.getElementById('matrix-bg');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const CHARS = ['0','1'];
+            const isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+            let width = 0, height = 0, particles = [], raf = null;
+
+            function resize() {
+                const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+                const cssW = window.innerWidth, cssH = window.innerHeight;
+                canvas.width = Math.floor(cssW * dpr);
+                canvas.height = Math.floor(cssH * dpr);
+                canvas.style.width = cssW + 'px';
+                canvas.style.height = cssH + 'px';
+                ctx.setTransform(1,0,0,1,0,0);
+                ctx.scale(dpr, dpr);
+                width = cssW;
+                height = cssH;
+                particles = [];
+                const count = isMobile ? 120 : 300;
+                for (let i = 0; i < count; i++) {
+                    particles.push({
+                        x: (Math.random() - 0.5) * width,
+                        y: (Math.random() - 0.5) * height,
+                        z: Math.random() * 800 + 100
+                    });
+                }
+                ctx.fillStyle = 'rgba(11, 15, 16, 1)';
+                ctx.fillRect(0, 0, width, height);
+            }
+
+            function draw() {
+                ctx.fillStyle = 'rgba(11, 15, 16, 0.3)';
+                ctx.fillRect(0, 0, width, height);
+                ctx.fillStyle = '#00ff88';
+                const speed = isMobile ? 2 : 4;
+                for (const p of particles) {
+                    const scale = 200 / p.z;
+                    const x2 = width / 2 + p.x * scale;
+                    const y2 = height / 2 + p.y * scale;
+                    const size = Math.max(6 * scale, 1);
+                    ctx.font = size + 'px monospace';
+                    ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
+                    p.z -= speed;
+                    if (p.z < 1) {
+                        p.x = (Math.random() - 0.5) * width;
+                        p.y = (Math.random() - 0.5) * height;
+                        p.z = 800;
+                    }
+                }
+                raf = requestAnimationFrame(draw);
+            }
+
+            function onVis() {
+                if (document.hidden) {
+                    if (raf) { cancelAnimationFrame(raf); raf = null; }
+                } else {
+                    if (!raf) raf = requestAnimationFrame(draw);
+                }
+            }
+
+            window.addEventListener('resize', resize);
+            document.addEventListener('visibilitychange', onVis);
+            resize();
+            raf = requestAnimationFrame(draw);
+        })();
+    </script>
+<script>
+(function () {
+  if (window.__HODLXXI_PRESENCE_SOCKET) return;
+  if (!document.cookie || !document.cookie.includes("session=")) return;
+
+  function start() {
+    try {
+      const s = io({
+        path: "/socket.io",
+        transports: ["websocket", "polling"],
+        withCredentials: true
+      });
+      window.__HODLXXI_PRESENCE_SOCKET = s;
+    } catch (e) {}
+  }
+
+  if (typeof io === "function") return start();
+
+  const tag = document.createElement("script");
+  tag.src = "https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.min.js";
+  tag.onload = start;
+  document.head.appendChild(tag);
+})();
+</script>
+
+</body>
+</html>
