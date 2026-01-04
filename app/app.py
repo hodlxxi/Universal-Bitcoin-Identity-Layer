@@ -45,6 +45,7 @@ import redis as redis_client
 from cryptography.hazmat.primitives import serialization
 from prometheus_client import CollectorRegistry, Counter, generate_latest
 
+# Active challenges (in-memory; ephemeral)
 from app.audit_logger import get_audit_logger, init_audit_logger
 from app.config import get_config
 from app.database import close_all, init_all, get_session as get_db_session
@@ -668,6 +669,8 @@ def health():
         health_status = {
             "status": "healthy",
             "timestamp": time.time(),
+            "pid": os.getpid(),
+            "process_start_time": PROCESS_START_TIME,
             "service": "HODLXXI",
             "version": "1.0.0-beta",
             "active_sockets": len(ACTIVE_SOCKETS),
@@ -719,6 +722,100 @@ def _oauth_public_allowlist():
 # ============================================================================
 
 
+
+# --- metrics helpers (safe, soft-fail) ---
+PROCESS_START_TIME = time.time()
+
+def _db_metrics_counts():
+    """
+    Returns a dict of DB row counts. Never raises (soft-fail).
+    Tries env first, then local socket as hodlxxi/hodlxxi.
+    """
+    try:
+        import psycopg2
+        import psycopg2.extras
+    except Exception as e:
+        return {"db_error": f"psycopg2_import_failed: {e}"}
+
+    # best-effort connection params
+    dbname = os.getenv("PGDATABASE") or os.getenv("DB_NAME") or "hodlxxi"
+    user   = os.getenv("PGUSER") or os.getenv("DB_USER") or "hodlxxi"
+    host   = os.getenv("PGHOST") or os.getenv("DB_HOST") or None
+    port   = os.getenv("PGPORT") or os.getenv("DB_PORT") or None
+    password = os.getenv("PGPASSWORD") or os.getenv("DB_PASSWORD") or None
+
+    dsn = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
+
+    conn = None
+    try:
+        if dsn:
+            conn = psycopg2.connect(dsn, connect_timeout=2)
+        else:
+            kwargs = {"dbname": dbname, "user": user, "connect_timeout": 2}
+            if host: kwargs["host"] = host
+            if port: kwargs["port"] = int(port)
+            if password: kwargs["password"] = password
+            conn = psycopg2.connect(**kwargs)
+
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                
+select
+  -- totals
+  (select count(*) from users)            as users,
+  (select count(*) from ubid_users)       as ubid_users,
+  (select count(*) from sessions)         as sessions,
+  (select count(*) from chat_messages)    as chat_messages,
+  (select count(*) from lnurl_challenges) as lnurl_challenges,
+  (select count(*) from pof_challenges)   as pof_challenges,
+  (select count(*) from audit_logs)       as audit_logs,
+  (select count(*) from oauth_clients)    as oauth_clients,
+  (select count(*) from oauth_tokens)     as oauth_tokens,
+  (select count(*) from payments)         as payments,
+  (select count(*) from proof_of_funds)   as proof_of_funds,
+  (select count(*) from subscriptions)    as subscriptions,
+  (select count(*) from usage_stats)      as usage_stats,
+
+  -- activity windows (movement)
+  (select count(*) from users where last_login is not null and last_login > now() - interval '5 minutes')  as logins_5m,
+  (select count(*) from users where last_login is not null and last_login > now() - interval '1 hour')     as logins_1h,
+  (select count(*) from users where last_login is not null and last_login > now() - interval '24 hours')   as logins_24h,
+
+  (select count(*) from chat_messages where "timestamp" > now() - interval '5 minutes')                    as chat_5m,
+  (select count(*) from chat_messages where "timestamp" > now() - interval '1 hour')                       as chat_1h,
+  (select count(*) from chat_messages where "timestamp" > now() - interval '24 hours')                     as chat_24h,
+
+  (select count(*) from lnurl_challenges where created_at > now() - interval '5 minutes')                  as lnurl_created_5m,
+  (select count(*) from lnurl_challenges where created_at > now() - interval '1 hour')                     as lnurl_created_1h,
+  (select count(*) from lnurl_challenges where created_at > now() - interval '24 hours')                   as lnurl_created_24h,
+  (select count(*) from lnurl_challenges where verified_at is not null and verified_at > now() - interval '24 hours') as lnurl_verified_24h,
+
+  (select count(*) from pof_challenges where created_at > now() - interval '5 minutes')                    as pof_created_5m,
+  (select count(*) from pof_challenges where created_at > now() - interval '1 hour')                       as pof_created_1h,
+  (select count(*) from pof_challenges where created_at > now() - interval '24 hours')                     as pof_created_24h,
+  (select count(*) from pof_challenges where verified_at is not null and verified_at > now() - interval '24 hours') as pof_verified_24h,
+
+  (select count(*) from oauth_tokens where created_at > now() - interval '5 minutes')                      as oauth_tokens_5m,
+  (select count(*) from oauth_tokens where created_at > now() - interval '1 hour')                         as oauth_tokens_1h,
+  (select count(*) from oauth_tokens where created_at > now() - interval '24 hours')                       as oauth_tokens_24h,
+
+  (select count(*) from payments where created_at > now() - interval '24 hours')                            as payments_24h,
+  (select count(*) from payments where paid_at is not null and paid_at > now() - interval '24 hours')       as payments_paid_24h
+
+            """)
+            row = cur.fetchone() or {}
+            # cast Decimals/ints cleanly if needed
+            return {k: int(row[k]) if row.get(k) is not None else 0 for k in row.keys()}
+    except Exception as e:
+        return {"db_error": str(e)}
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+# --- end metrics helpers ---
+
 @app.route("/metrics")
 def metrics():
     # SAFE_METRICS_ACTIVE_CHALLENGES_FALLBACK
@@ -734,6 +831,7 @@ def metrics():
             "chat_history_size": len(CHAT_HISTORY),
             "active_challenges": len(ACTIVE_CHALLENGES),
             "lnurl_sessions": len(LNURL_SESSIONS),
+                    "db": _db_metrics_counts(),
         }
         return jsonify({"metrics": metrics_data}), 200
     except Exception as e:
@@ -8433,6 +8531,8 @@ if limiter:
 @app.route("/metrics/prometheus")
 def metrics_prometheus():
 
+    # SAFE_METRICS_ACTIVE_CHALLENGES_FALLBACK
+    ACTIVE_CHALLENGES = globals().get("ACTIVE_CHALLENGES", {}) or {}
     """
     Prometheus metrics endpoint.
     Includes:
@@ -8508,7 +8608,6 @@ def metrics_prometheus():
             base_text = generate_latest().decode("utf-8", errors="ignore")
         except Exception:
             CONTENT_TYPE_LATEST = "text/plain; version=0.0.4; charset=utf-8"
-
         # --- append our custom exposition lines ---
         lines = []
 
@@ -8523,6 +8622,9 @@ def metrics_prometheus():
             "# HELP hodlxxi_chat_history_size In-memory chat history size (ephemeral)",
             "# TYPE hodlxxi_chat_history_size gauge",
             f"hodlxxi_chat_history_size {rt_chat_history_size}",
+            "# HELP hodlxxi_active_challenges Current active challenges (ephemeral)",
+            "# TYPE hodlxxi_active_challenges gauge",
+            f"hodlxxi_active_challenges {len((globals().get('ACTIVE_CHALLENGES', {}) or {}))}",
         ]
         # DB totals (always emitted; 0 if unavailable)
         lines += [
@@ -8547,7 +8649,7 @@ def metrics_prometheus():
 
         # Combine
         out = (base_text or "") + ("\n" if base_text and not base_text.endswith("\n") else "") + custom_text
-        return Response(out, mimetype=CONTENT_TYPE_LATEST), 200
+        return Response(out, content_type=CONTENT_TYPE_LATEST), 200
 
     except Exception as e:
         logger.error(f"Prometheus metrics endpoint failed: {e}", exc_info=True)
@@ -9306,177 +9408,265 @@ def api_debug_session_alias():
 # /API_DEBUG_SESSION_ALIAS_V1
 
 
+
 # API_POF_VERIFY_PSBT_V1
 @app.route("/api/pof/verify_psbt", methods=["POST"])
 def api_pof_verify_psbt():
     """
-    Demo-grade PSBT verifier for PoF OP_RETURN flow.
-
-    Checks:
-      - challenge_id exists in ACTIVE_CHALLENGES and not expired
-      - PSBT base64 decodes and starts with "psbt\xff"
-      - challenge string bytes appear somewhere in PSBT bytes (best-effort)
-      - some signature evidence exists in PSBT input maps (partial_sig/final_script*)
-      - optional: sums witness_utxo values when present (best-effort)
+    Verify a PSBT PoF proof:
+      - PSBT contains OP_RETURN with the exact challenge string for challenge_id
+      - PSBT is signed (has final_scriptwitness/final_scriptsig/partial_sigs per input)
+      - Sum amounts from witness_utxo/non_witness_utxo if available (best-effort)
     """
-    import base64, time
+    import base64
+    import time
     from flask import request, jsonify, session
 
-    data = request.get_json(silent=True) or {}
+    data = request.get_json() or {}
     cid = (data.get("challenge_id") or "").strip()
     psbt_b64 = (data.get("psbt") or "").strip()
     pubkey = (data.get("pubkey") or "").strip()
 
     if not cid or not psbt_b64:
-        resp = jsonify(ok=False, error="Missing challenge_id or psbt")
-        resp.headers["Cache-Control"] = "no-store"
-        return resp, 400
+        return jsonify(ok=False, error="Missing challenge_id or psbt"), 400
 
+    # session fallback for pubkey (optional)
     if not pubkey:
         spk = (session.get("logged_in_pubkey") or "").strip()
         if spk:
             pubkey = spk
 
+    # ACTIVE_CHALLENGES must exist in your app (it does in your /api/challenge flow)
     ch = ACTIVE_CHALLENGES.get(cid) if "ACTIVE_CHALLENGES" in globals() else None
     if not ch:
-        resp = jsonify(ok=False, error="Unknown or expired challenge_id")
-        resp.headers["Cache-Control"] = "no-store"
-        return resp, 400
+        return jsonify(ok=False, error="Unknown or expired challenge_id"), 400
 
+    # Expiry (best-effort)
     exp = ch.get("expires_at") or 0
-    if exp:
+    if exp and time.time() > float(exp):
         try:
-            if time.time() > float(exp):
-                try:
-                    ACTIVE_CHALLENGES.pop(cid, None)
-                except Exception:
-                    pass
-                resp = jsonify(ok=False, error="Challenge expired")
-                resp.headers["Cache-Control"] = "no-store"
-                return resp, 400
+            ACTIVE_CHALLENGES.pop(cid, None)
         except Exception:
             pass
+        return jsonify(ok=False, error="Challenge expired"), 400
 
-    challenge = (ch.get("challenge") or "").strip()
+    challenge = ch.get("challenge") or ""
     if not challenge:
-        resp = jsonify(ok=False, error="Challenge record missing challenge string")
-        resp.headers["Cache-Control"] = "no-store"
-        return resp, 500
+        return jsonify(ok=False, error="Challenge record missing challenge string"), 500
 
-    try:
-        raw = base64.b64decode(psbt_b64, validate=True)
-    except Exception:
-        resp = jsonify(ok=False, error="PSBT is not valid base64")
-        resp.headers["Cache-Control"] = "no-store"
-        return resp, 400
-
-    if not raw.startswith(b"psbt\xff"):
-        resp = jsonify(ok=False, error="Not a PSBT (missing psbt\\xff header)")
-        resp.headers["Cache-Control"] = "no-store"
-        return resp, 400
-
-    challenge_found = (challenge.encode("utf-8") in raw)
-
-    # ---- Minimal PSBT parsing (maps only; enough to detect signatures + witness_utxo sum) ----
+    # -------- PSBT parsing helpers (minimal BIP174) --------
     def read_varint(b, i):
-        if i >= len(b): raise ValueError("varint OOB")
         n = b[i]
-        if n < 0xfd: return n, i+1
-        if n == 0xfd: return int.from_bytes(b[i+1:i+3], "little"), i+3
-        if n == 0xfe: return int.from_bytes(b[i+1:i+5], "little"), i+5
+        if n < 0xfd:
+            return n, i+1
+        if n == 0xfd:
+            return int.from_bytes(b[i+1:i+3], "little"), i+3
+        if n == 0xfe:
+            return int.from_bytes(b[i+1:i+5], "little"), i+5
         return int.from_bytes(b[i+1:i+9], "little"), i+9
 
-    def read_bytes(b, i, n):
-        j = i+n
-        if j > len(b): raise ValueError("bytes OOB")
-        return b[i:j], j
-
-    def parse_kv_map(b, i):
-        kvs = []
+    def read_kv_map(b, i):
+        m = []
         while True:
-            if i >= len(b): raise ValueError("map OOB")
+            if i >= len(b):
+                raise ValueError("truncated psbt map")
             if b[i] == 0x00:
-                return kvs, i+1
+                return m, i+1
             klen, i = read_varint(b, i)
-            k, i = read_bytes(b, i, klen)
+            key = b[i:i+klen]; i += klen
             vlen, i = read_varint(b, i)
-            v, i = read_bytes(b, i, vlen)
-            kvs.append((k, v))
+            val = b[i:i+vlen]; i += vlen
+            m.append((key, val))
         # unreachable
 
-    def parse_unsigned_tx_counts(tx):
-        i = 0
-        if len(tx) < 10: raise ValueError("tx too short")
-        i += 4
-        n_in, i = read_varint(tx, i)
-        for _ in range(n_in):
-            i += 36
-            sl, i = read_varint(tx, i)
-            i += sl
-            i += 4
-        n_out, i = read_varint(tx, i)
-        for _ in range(n_out):
-            i += 8
-            sl, i = read_varint(tx, i)
-            i += sl
-        return n_in, n_out
-
-    try:
+    def parse_psbt(psbt_bytes):
+        if not psbt_bytes.startswith(b"psbt\xff"):
+            raise ValueError("bad psbt magic")
         i = 5
-        gmap, i = parse_kv_map(raw, i)
+        gmap, i = read_kv_map(psbt_bytes, i)
+
         unsigned_tx = None
         for k, v in gmap:
             if len(k) >= 1 and k[0] == 0x00:
                 unsigned_tx = v
                 break
         if not unsigned_tx:
-            raise ValueError("missing unsigned tx in global map")
+            raise ValueError("missing unsigned tx in psbt")
 
-        n_in, n_out = parse_unsigned_tx_counts(unsigned_tx)
+        # parse unsigned tx to know num inputs/outputs
+        tx = parse_tx(unsigned_tx)
+        nin = len(tx["vin"])
+        nout = len(tx["vout"])
 
-        signed = False
-        witness_utxo_total_sats = 0
+        in_maps = []
+        for _ in range(nin):
+            imap, i = read_kv_map(psbt_bytes, i)
+            in_maps.append(imap)
 
-        for _ in range(n_in):
-            imap, i = parse_kv_map(raw, i)
+        out_maps = []
+        for _ in range(nout):
+            omap, i = read_kv_map(psbt_bytes, i)
+            out_maps.append(omap)
+
+        return tx, in_maps, out_maps
+
+    def parse_tx(tx_bytes):
+        # minimal tx parser (handles segwit marker if present)
+        i = 0
+        version = int.from_bytes(tx_bytes[i:i+4], "little"); i += 4
+
+        segwit = False
+        if i+2 <= len(tx_bytes) and tx_bytes[i] == 0x00 and tx_bytes[i+1] == 0x01:
+            segwit = True
+            i += 2
+
+        vin_n, i = read_varint(tx_bytes, i)
+        vin = []
+        for _ in range(vin_n):
+            txid_le = tx_bytes[i:i+32]; i += 32
+            vout = int.from_bytes(tx_bytes[i:i+4], "little"); i += 4
+            slen, i = read_varint(tx_bytes, i)
+            script = tx_bytes[i:i+slen]; i += slen
+            seq = tx_bytes[i:i+4]; i += 4
+            vin.append({"txid_le": txid_le, "vout": vout, "scriptSig": script, "sequence": seq})
+
+        vout_n, i = read_varint(tx_bytes, i)
+        vout_list = []
+        for _ in range(vout_n):
+            amt_sat = int.from_bytes(tx_bytes[i:i+8], "little"); i += 8
+            pklen, i = read_varint(tx_bytes, i)
+            spk = tx_bytes[i:i+pklen]; i += pklen
+            vout_list.append({"value_sat": amt_sat, "scriptPubKey": spk})
+
+        # skip witness if present
+        if segwit:
+            for _ in range(vin_n):
+                items, i = read_varint(tx_bytes, i)
+                for __ in range(items):
+                    ilen, i = read_varint(tx_bytes, i)
+                    i += ilen
+
+        locktime = int.from_bytes(tx_bytes[i:i+4], "little") if i+4 <= len(tx_bytes) else 0
+        return {"version": version, "vin": vin, "vout": vout_list, "locktime": locktime}
+
+    def extract_opreturn_strings(vout_list):
+        out = []
+        for o in vout_list:
+            spk = o["scriptPubKey"]
+            if not spk or spk[0] != 0x6a:  # OP_RETURN
+                continue
+            j = 1
+            if j >= len(spk):
+                continue
+            op = spk[j]; j += 1
+            if op <= 0x4b:
+                n = op
+            elif op == 0x4c:
+                if j >= len(spk): 
+                    continue
+                n = spk[j]; j += 1
+            elif op == 0x4d:
+                if j+1 >= len(spk):
+                    continue
+                n = int.from_bytes(spk[j:j+2], "little"); j += 2
+            else:
+                continue
+            data = spk[j:j+n]
+            try:
+                out.append(data.decode("utf-8", errors="strict"))
+            except Exception:
+                # ignore non-text
+                pass
+        return out
+
+    def input_has_sig(imap):
+        # key type is first byte of key
+        for k, v in imap:
+            if not k:
+                continue
+            t = k[0]
+            # 0x02 partial sig, 0x07 final_scriptsig, 0x08 final_scriptwitness
+            if t in (0x02, 0x07, 0x08):
+                return True
+        return False
+
+    def sum_input_sats(tx, in_maps):
+        total = 0
+        used = 0
+
+        # witness_utxo key type is 0x01, value = TxOut (8 sat + varint scriptlen + script)
+        def parse_txout(v):
+            if len(v) < 9:
+                return None
+            amt = int.from_bytes(v[0:8], "little")
+            # parse script length varint
+            slen, off = read_varint(v, 8)
+            spk = v[off:off+slen]
+            return amt, spk
+
+        # non_witness_utxo key type is 0x00, value = full previous tx
+        def parse_prev_tx_and_get_vout(prev_tx_bytes, vout_index):
+            pt = parse_tx(prev_tx_bytes)
+            if 0 <= vout_index < len(pt["vout"]):
+                return pt["vout"][vout_index]["value_sat"]
+            return None
+
+        for idx, imap in enumerate(in_maps):
+            got = None
             for k, v in imap:
                 if not k:
                     continue
-                kt = k[0]
-                if kt in (0x02, 0x07, 0x08):  # partial_sig, final_scriptSig, final_scriptWitness
-                    signed = True
-                if kt == 0x01 and len(v) >= 8:  # witness_utxo
-                    witness_utxo_total_sats += int.from_bytes(v[0:8], "little")
+                if k[0] == 0x01:  # witness_utxo
+                    parsed = parse_txout(v)
+                    if parsed:
+                        got = parsed[0]
+                        break
+            if got is None:
+                prev_tx = None
+                for k, v in imap:
+                    if k and k[0] == 0x00:  # non_witness_utxo
+                        prev_tx = v
+                        break
+                if prev_tx is not None:
+                    got = parse_prev_tx_and_get_vout(prev_tx, tx["vin"][idx]["vout"])
+            if got is not None:
+                total += got
+                used += 1
 
-        for _ in range(n_out):
-            _, i = parse_kv_map(raw, i)
+        return total, used
 
+    # decode base64 psbt
+    try:
+        psbt_bytes = base64.b64decode(psbt_b64, validate=True)
+    except Exception:
+        return jsonify(ok=False, error="Invalid base64 PSBT"), 400
+
+    try:
+        tx, in_maps, out_maps = parse_psbt(psbt_bytes)
     except Exception as e:
-        resp = jsonify(ok=False, error=f"PSBT parse failed: {e}")
-        resp.headers["Cache-Control"] = "no-store"
-        return resp, 400
+        return jsonify(ok=False, error=f"PSBT parse failed: {e}"), 400
 
-    if not challenge_found:
-        resp = jsonify(ok=False, error="Challenge string not found in PSBT bytes")
-        resp.headers["Cache-Control"] = "no-store"
-        return resp, 400
+    # verify OP_RETURN includes challenge string
+    op_returns = extract_opreturn_strings(tx["vout"])
+    if challenge not in op_returns:
+        return jsonify(ok=False, error="Challenge not found in OP_RETURN"), 400
 
-    if not signed:
-        resp = jsonify(ok=False, error="No signature evidence found in PSBT inputs")
-        resp.headers["Cache-Control"] = "no-store"
-        return resp, 400
+    # verify signed
+    if not all(input_has_sig(im) for im in in_maps):
+        return jsonify(ok=False, error="PSBT not fully signed (missing signatures)"), 400
 
-    resp = jsonify(
+    total_sat, used_inputs = sum_input_sats(tx, in_maps)
+    total_btc = total_sat / 1e8
+
+    # best-effort response compatible with UI
+    return jsonify(
         ok=True,
         verified=True,
-        pubkey=pubkey,
         challenge_id=cid,
-        challenge=challenge,
-        challenge_found=True,
-        signed=True,
-        witness_utxo_total_sats=witness_utxo_total_sats,
-    )
-    resp.headers["Cache-Control"] = "no-store"
-    return resp, 200
+        pubkey=pubkey,
+        unspent_count=len(in_maps),
+        total_sat=total_sat,
+        total_btc=total_btc,
+        inputs_with_amount=used_inputs,
+    ), 200
 # /API_POF_VERIFY_PSBT_V1
-
