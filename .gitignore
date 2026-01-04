@@ -88,3 +88,6 @@ endpoint_test_results.txt
 
 # runtime secrets/keys
 keys/
+
+# Local archives/backups (never commit)
+_archive_baks/
