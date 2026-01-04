@@ -1258,7 +1258,6 @@ def handle_chat_send(data):
 app.config["SESSION_PERMANENT"] = True
 app.permanent_session_lifetime = timedelta(days=7)
 
-import threading
 from decimal import Decimal
 
 
