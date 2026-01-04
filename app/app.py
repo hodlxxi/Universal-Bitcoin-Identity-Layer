@@ -8650,24 +8650,71 @@ def metrics_prometheus():
             "# TYPE hodlxxi_active_challenges gauge",
             f"hodlxxi_active_challenges {len((globals().get('ACTIVE_CHALLENGES', {}) or {}))}",
         ]
+        
         # DB totals (always emitted; 0 if unavailable)
-        lines += [
-            "# HELP hodlxxi_users_total Total users in DB",
-            "# TYPE hodlxxi_users_total gauge",
-            f"hodlxxi_users_total {db_counts.get('users_total', 0)}",
-            "# HELP hodlxxi_proof_of_funds_total Total Proof-of-Funds records in DB",
-            "# TYPE hodlxxi_proof_of_funds_total gauge",
-            f"hodlxxi_proof_of_funds_total {db_counts.get('proof_of_funds_total', 0)}",
-            "# HELP hodlxxi_pof_challenges_total Total PoF challenges in DB",
-            "# TYPE hodlxxi_pof_challenges_total gauge",
-            f"hodlxxi_pof_challenges_total {db_counts.get('pof_challenges_total', 0)}",
-            "# HELP hodlxxi_chat_messages_total Total persisted chat messages in DB",
-            "# TYPE hodlxxi_chat_messages_total gauge",
-            f"hodlxxi_chat_messages_total {db_counts.get('chat_messages_total', 0)}",
-            "# HELP hodlxxi_oauth_tokens_total Total OAuth tokens in DB",
-            "# TYPE hodlxxi_oauth_tokens_total gauge",
-            f"hodlxxi_oauth_tokens_total {db_counts.get('oauth_tokens_total', 0)}",
-        ]
+        db = _db_metrics_counts_cached()
+
+        def _emit_gauge(name: str, help_text: str, value) -> None:
+            try:
+                v = int(value or 0)
+            except Exception:
+                v = 0
+            lines.extend([
+                f"# HELP {name} {help_text}",
+                f"# TYPE {name} gauge",
+                f"{name} {v}",
+            ])
+
+        # DB health
+        _emit_gauge("hodlxxi_db_up", "Database reachable for metrics query (1=up, 0=down)",
+                    0 if (isinstance(db, dict) and db.get("db_error")) else 1)
+
+        # Totals
+        for key, help_text in [
+            ("users", "Total users in DB"),
+            ("ubid_users", "Total UBID users in DB"),
+            ("sessions", "Total sessions in DB"),
+            ("chat_messages", "Total chat messages in DB"),
+            ("lnurl_challenges", "Total LNURL challenges in DB"),
+            ("pof_challenges", "Total PoF challenges in DB"),
+            ("audit_logs", "Total audit logs in DB"),
+            ("oauth_clients", "Total OAuth clients in DB"),
+            ("oauth_tokens", "Total OAuth tokens in DB"),
+            ("payments", "Total payments in DB"),
+            ("proof_of_funds", "Total Proof-of-Funds records in DB"),
+            ("subscriptions", "Total subscriptions in DB"),
+            ("usage_stats", "Total usage_stats rows in DB"),
+        ]:
+            _emit_gauge(f"hodlxxi_{key}_total", help_text, (db or {}).get(key) if isinstance(db, dict) else 0)
+
+        # Activity windows (movement)
+        for key, help_text in [
+            ("logins_5m", "Users with last_login in last 5 minutes"),
+            ("logins_1h", "Users with last_login in last 1 hour"),
+            ("logins_24h", "Users with last_login in last 24 hours"),
+
+            ("chat_5m", "Chat messages in last 5 minutes"),
+            ("chat_1h", "Chat messages in last 1 hour"),
+            ("chat_24h", "Chat messages in last 24 hours"),
+
+            ("lnurl_created_5m", "LNURL challenges created in last 5 minutes"),
+            ("lnurl_created_1h", "LNURL challenges created in last 1 hour"),
+            ("lnurl_created_24h", "LNURL challenges created in last 24 hours"),
+            ("lnurl_verified_24h", "LNURL challenges verified in last 24 hours"),
+
+            ("pof_created_5m", "PoF challenges created in last 5 minutes"),
+            ("pof_created_1h", "PoF challenges created in last 1 hour"),
+            ("pof_created_24h", "PoF challenges created in last 24 hours"),
+            ("pof_verified_24h", "PoF challenges verified in last 24 hours"),
+
+            ("oauth_tokens_5m", "OAuth tokens created in last 5 minutes"),
+            ("oauth_tokens_1h", "OAuth tokens created in last 1 hour"),
+            ("oauth_tokens_24h", "OAuth tokens created in last 24 hours"),
+
+            ("payments_24h", "Payments created in last 24 hours"),
+            ("payments_paid_24h", "Payments paid in last 24 hours"),
+        ]:
+            _emit_gauge(f"hodlxxi_{key}", help_text, (db or {}).get(key) if isinstance(db, dict) else 0)
 
         custom_text = "\n".join(lines) + "\n"
 
