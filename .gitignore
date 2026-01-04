@@ -69,30 +69,6 @@ endpoint_map.txt
 endpoint_test_results.txt
 # runtime secrets/keys
 keys/
+
 # Local archives/backups (never commit)
 _archive_baks/
-# --- local-only / not for OSS ---
-**/*.bak*
-**/*~
-**/*.swp
-**/*.swo
-# Local PoF debug scripts
-pof_*.sh
-app/pof_*.sh
-# Local one-off patch/mapping helpers
-app/patch_*.py
-app/map_*.py
-# Session notes (local)
-docs/SESSION_*.md
-# VPS-local ops/admin helpers (keep local, not OSS)
-hodlxxi-admin.sh
-# local/backup artifacts
-*.pyc
-# --- secrets / local-only ---
-jwt_private.pem
-jwt_public.pem
-# --- backups / junk ---
-cleanup_graveyard_*/
-bitcoinrpc_stub_backup/
-# --- python ---
-.venv/

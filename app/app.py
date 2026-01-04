@@ -555,8 +555,6 @@ app.config.setdefault('SESSION_COOKIE_DOMAIN', '.hodlxxi.com')
 app.config.setdefault('SESSION_COOKIE_SECURE', True)
 app.config.setdefault('SESSION_COOKIE_SAMESITE', 'Lax')
 # /COOKIE_DOMAIN_V1
-app.config.setdefault("PAYG_ACTION_COSTS", {"login": 1, "pof": 1, "other": 1})
-app.config.setdefault("PAYG_MIN_TOPUP_SATS", 10)
 
 # === DOCS_ROUTES_REGISTER_V1 ===
 try:
@@ -674,8 +672,62 @@ def default_error_handler(e):
 
 @app.route("/health")
 def health():
-    """
-    Liveness endpoint (FAST).
+    """Comprehensive health check endpoint used by monitoring and tests."""
+    try:
+        health_status = {
+            "status": "healthy",
+            "timestamp": time.time(),
+            "pid": os.getpid(),
+            "process_start_time": PROCESS_START_TIME,
+            "service": "HODLXXI",
+            "version": "1.0.0-beta",
+            "active_sockets": len(ACTIVE_SOCKETS),
+            "online_users": len(ONLINE_USERS),
+            "chat_history_size": len(CHAT_HISTORY),
+        }
+
+        # Try to ping RPC (optional in test environments)
+        try:
+            rpc = get_rpc_connection()
+            rpc.getblockchaininfo()
+            health_status["rpc"] = "connected"
+        except Exception as e:  # pragma: no cover - network dependent
+            health_status["rpc"] = "error"
+            health_status["rpc_error"] = str(e)
+            logger.warning(f"RPC health check failed: {e}")
+
+        return jsonify(health_status), 200
+    except Exception as e:  # pragma: no cover - defensive
+        logger.error(f"Health check failed: {e}", exc_info=True)
+        return jsonify({"status": "unhealthy", "error": str(e)}), 500
+
+
+@app.before_request
+def _oauth_public_allowlist():
+    # OAUTH_ALLOWLIST_SCOPE_GUARD_V1
+    # This allowlist is only meant for OAuth/OIDC endpoints.
+    # Do NOT enforce login here for the rest of the site.
+    from flask import request
+    _p = (request.path or "/")
+    if not (
+        _p.startswith("/oauth/")
+        or _p.startswith("/oauthx/")
+        or _p.startswith("/oauthdemo/")
+        or _p.startswith("/.well-known/")
+    ):
+        return None
+    # /OAUTH_ALLOWLIST_SCOPE_GUARD_V1
+
+    p = request.path or "/"
+    if any(p.startswith(pref) for pref in OAUTH_PATH_PREFIXES) or p in OAUTH_PUBLIC_PATHS:
+        # Mark request so any later guards skip login
+        setattr(request, "_oauth_public", True)
+        return None
+
+
+# ============================================================================
+# HEALTH CHECK & MONITORING ENDPOINTS
+# ============================================================================
 
     IMPORTANT:
     - Must never block on Bitcoin RPC or other external deps.
@@ -686,14 +738,126 @@ def health():
     from flask import jsonify
     return jsonify(ok=True, status="ok", ts=int(time.time())), 200
 
+
+# --- metrics helpers (safe, soft-fail) ---
+PROCESS_START_TIME = time.time()
+
+# DB metrics cache (avoid heavy COUNT(*) on every scrape)
+_DB_METRICS_LOCK = threading.Lock()
+_DB_METRICS_CACHE = {"ts": 0.0, "data": None}
+
+def _db_metrics_counts_cached(ttl_seconds: int = 15):
+    now = time.time()
+    try:
+        with _DB_METRICS_LOCK:
+            data = _DB_METRICS_CACHE.get("data")
+            ts = float(_DB_METRICS_CACHE.get("ts") or 0.0)
+            if data is not None and (now - ts) < ttl_seconds:
+                return data
+    except Exception:
+        # soft-fail: if lock/cache breaks, just compute live
+        pass
+
+    data = _db_metrics_counts()
+    try:
+        with _DB_METRICS_LOCK:
+            _DB_METRICS_CACHE["ts"] = now
+            _DB_METRICS_CACHE["data"] = data
+    except Exception:
+        pass
+    return data
+def _db_metrics_counts():
+    """
+    Returns a dict of DB row counts. Never raises (soft-fail).
+    Tries env first, then local socket as hodlxxi/hodlxxi.
+    """
+    try:
+        import psycopg2
+        import psycopg2.extras
+    except Exception as e:
+        return {"db_error": f"psycopg2_import_failed: {e}"}
+
+    # best-effort connection params
+    dbname = os.getenv("PGDATABASE") or os.getenv("DB_NAME") or "hodlxxi"
+    user   = os.getenv("PGUSER") or os.getenv("DB_USER") or "hodlxxi"
+    host   = os.getenv("PGHOST") or os.getenv("DB_HOST") or None
+    port   = os.getenv("PGPORT") or os.getenv("DB_PORT") or None
+    password = os.getenv("PGPASSWORD") or os.getenv("DB_PASSWORD") or None
+
+    dsn = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
+
+    conn = None
+    try:
+        if dsn:
+            conn = psycopg2.connect(dsn, connect_timeout=2)
+        else:
+            kwargs = {"dbname": dbname, "user": user, "connect_timeout": 2}
+            if host: kwargs["host"] = host
+            if port: kwargs["port"] = int(port)
+            if password: kwargs["password"] = password
+            conn = psycopg2.connect(**kwargs)
+
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                
+select
+  -- totals
+  (select count(*) from users)            as users,
+  (select count(*) from ubid_users)       as ubid_users,
+  (select count(*) from sessions)         as sessions,
+  (select count(*) from chat_messages)    as chat_messages,
+  (select count(*) from lnurl_challenges) as lnurl_challenges,
+  (select count(*) from pof_challenges)   as pof_challenges,
+  (select count(*) from audit_logs)       as audit_logs,
+  (select count(*) from oauth_clients)    as oauth_clients,
+  (select count(*) from oauth_tokens)     as oauth_tokens,
+  (select count(*) from payments)         as payments,
+  (select count(*) from proof_of_funds)   as proof_of_funds,
+  (select count(*) from subscriptions)    as subscriptions,
+  (select count(*) from usage_stats)      as usage_stats,
+
+  -- activity windows (movement)
+  (select count(*) from users where last_login is not null and last_login > now() - interval '5 minutes')  as logins_5m,
+  (select count(*) from users where last_login is not null and last_login > now() - interval '1 hour')     as logins_1h,
+  (select count(*) from users where last_login is not null and last_login > now() - interval '24 hours')   as logins_24h,
+
+  (select count(*) from chat_messages where "timestamp" > now() - interval '5 minutes')                    as chat_5m,
+  (select count(*) from chat_messages where "timestamp" > now() - interval '1 hour')                       as chat_1h,
+  (select count(*) from chat_messages where "timestamp" > now() - interval '24 hours')                     as chat_24h,
+
+  (select count(*) from lnurl_challenges where created_at > now() - interval '5 minutes')                  as lnurl_created_5m,
+  (select count(*) from lnurl_challenges where created_at > now() - interval '1 hour')                     as lnurl_created_1h,
+  (select count(*) from lnurl_challenges where created_at > now() - interval '24 hours')                   as lnurl_created_24h,
+  (select count(*) from lnurl_challenges where verified_at is not null and verified_at > now() - interval '24 hours') as lnurl_verified_24h,
+
+  (select count(*) from pof_challenges where created_at > now() - interval '5 minutes')                    as pof_created_5m,
+  (select count(*) from pof_challenges where created_at > now() - interval '1 hour')                       as pof_created_1h,
+  (select count(*) from pof_challenges where created_at > now() - interval '24 hours')                     as pof_created_24h,
+  (select count(*) from pof_challenges where verified_at is not null and verified_at > now() - interval '24 hours') as pof_verified_24h,
+
+  (select count(*) from oauth_tokens where created_at > now() - interval '5 minutes')                      as oauth_tokens_5m,
+  (select count(*) from oauth_tokens where created_at > now() - interval '1 hour')                         as oauth_tokens_1h,
+  (select count(*) from oauth_tokens where created_at > now() - interval '24 hours')                       as oauth_tokens_24h,
+
+  (select count(*) from payments where created_at > now() - interval '24 hours')                            as payments_24h,
+  (select count(*) from payments where paid_at is not null and paid_at > now() - interval '24 hours')       as payments_paid_24h
+
+            """)
+            row = cur.fetchone() or {}
+            # cast Decimals/ints cleanly if needed
+            return {k: int(row[k]) if row.get(k) is not None else 0 for k in row.keys()}
+    except Exception as e:
+        return {"db_error": str(e)}
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+# --- end metrics helpers ---
+
 @app.route("/metrics")
 def metrics():
-    # METRICS_GUARD_V1
-    from flask import request, session
-    ra = (request.remote_addr or '').strip()
-    if ra not in ('127.0.0.1', '::1') and session.get('access_level') != 'full':
-        return jsonify(error='Forbidden'), 403
-
     # SAFE_METRICS_ACTIVE_CHALLENGES_FALLBACK
     # Some deployments removed/renamed ACTIVE_CHALLENGES; avoid NameError in /metrics
     ACTIVE_CHALLENGES = globals().get('ACTIVE_CHALLENGES', {}) or {}
@@ -707,7 +871,7 @@ def metrics():
             "chat_history_size": len(CHAT_HISTORY),
             "active_challenges": len(ACTIVE_CHALLENGES),
             "lnurl_sessions": len(LNURL_SESSIONS),
-                    "db": (_db_metrics_counts_cached() if "_db_metrics_counts_cached" in globals() else {}),
+                    "db": _db_metrics_counts_cached(),
         }
         return jsonify({"metrics": metrics_data}), 200
     except Exception as e:
@@ -1245,11 +1409,6 @@ def generate_challenge():
 # --- Minimal login/guest/dev helpers ---------------------------------
 @app.before_request
 def check_auth():
-    # GUEST_LOGIN_ALLOWLIST_V2: allow unauthenticated PIN/guest login endpoint
-    from flask import request
-    if request.path == '/guest_login':
-        return None
-
 
     # PUBLIC PREVIEW ROUTES (no login required)
     from flask import request as flask_request
@@ -7426,6 +7585,58 @@ def special_login():
     return jsonify(error="Invalid signature for all special users", verified=False), 403
 
 
+# ---- Legacy message-signature verification (JSON-only) ----
+# DEPRECATED: old signature flow, kept only for reference.
+# @app.route("/verify_signature", methods=["POST"])
+def verify_signature_legacy():
+    from flask import jsonify, request, session
+    data = request.get_json(silent=True) or {}
+    pubkey = (data.get("pubkey") or "").strip()  # compressed hex (02/03...)
+    signature = (data.get("signature") or "").strip()  # wallet base64 (Electrum/Sparrow/Core)
+    challenge = (data.get("challenge") or "").strip()  # shown on the Legacy tab
+
+    # Basic input
+    if not signature or not challenge:
+        return jsonify(error="Missing signature or challenge"), 400
+
+    # Must match the session challenge injected into the Legacy tab
+    sess = session.get("challenge")
+    if not sess or sess != challenge:
+        return jsonify(error="Invalid or expired challenge"), 400
+
+    if not pubkey:
+        return jsonify(error="Pubkey required"), 400  # (can add recovery later if you want it optional)
+
+    # Verify like your API: derive legacy address from pubkey and ask Bitcoin Core to verify
+    try:
+        rpc = get_rpc_connection()
+        addr = derive_legacy_address_from_pubkey(pubkey)
+        ok = rpc.verifymessage(addr, signature, challenge)
+        if not ok:
+            return jsonify(error="Invalid signature"), 403
+    except Exception as e:
+        return jsonify(error=f"Signature verification failed: {e}"), 500
+
+    # Access level (same rule you use in /api/verify)
+    try:
+        in_total, out_total = get_save_and_check_balances_for_pubkey(pubkey)
+        ratio = (out_total / in_total) if in_total > 0 else 0
+        access = "full" if ratio >= 1 else "limited"
+    except Exception:
+        access = "limited"
+
+    # Set session / cookies exactly like API
+    payload = {
+        "ok": True,
+        "verified": True,
+        "pubkey": pubkey,
+        "access_level": access,
+    }
+    resp = jsonify(payload)
+    resp = _finish_login(resp, pubkey, access)  # your helper used in /api/verify
+    return resp
+
+
 def _finish_login(resp, pubkey: str, level: str = "limited"):
     """Sets session, and (best-effort) sets OAuth cookies for convenience."""
     # Create/update user in membership system
@@ -7596,10 +7807,6 @@ def _lnurl_bech32(url_str: str) -> str:
 
 @app.route("/", methods=["GET"])
 def root_redirect():
-    # TESTING: pytest expects '/' to be 200 (not a redirect)
-    if app.config.get('TESTING') or getattr(app, 'testing', False):
-        return ('HODLXXI', 200)
-
     """Public front door:
     - logged-in users -> /home
     - everyone else   -> /screensaver
@@ -8803,12 +9010,177 @@ if limiter:
 
 @app.route("/metrics/prometheus")
 def metrics_prometheus():
-    # PROM_METRICS_GUARD_V1
-    from flask import request, session
-    ra = (request.remote_addr or '').strip()
-    if ra not in ('127.0.0.1', '::1') and session.get('access_level') != 'full':
-        return ('Forbidden\n', 403, {'Content-Type':'text/plain; charset=utf-8'})
 
+    # SAFE_METRICS_ACTIVE_CHALLENGES_FALLBACK
+    ACTIVE_CHALLENGES = globals().get("ACTIVE_CHALLENGES", {}) or {}
+    """
+    Prometheus metrics endpoint.
+    Includes:
+      - realtime in-memory gauges (sockets/online/chat memory)
+      - DB-backed totals (users, PoF, challenges, tokens, messages)
+      - any existing oauth counters already registered
+    """
+    try:
+        # --- realtime gauges (in-memory) ---
+        rt_active_sockets = len(ACTIVE_SOCKETS)
+        rt_online_users = len(ONLINE_USERS)
+        rt_chat_history_size = len(CHAT_HISTORY)
+
+        # --- DB-backed totals ---
+        db_counts = {}
+        try:
+            import os
+
+            # Prefer psycopg3, fall back to psycopg2
+            _connect = None
+            try:
+                import psycopg  # psycopg3
+                _connect = psycopg.connect
+            except Exception:
+                import psycopg2  # psycopg2
+                _connect = psycopg2.connect
+
+            # DSN from env (best), else build from common PG vars
+            dsn = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or ""
+            if not dsn:
+                host = os.getenv("PGHOST", os.getenv("DB_HOST", "127.0.0.1"))
+                port = os.getenv("PGPORT", os.getenv("DB_PORT", "5432"))
+                db   = os.getenv("PGDATABASE", os.getenv("DB_NAME", "hodlxxi"))
+                user = os.getenv("PGUSER", os.getenv("DB_USER", "hodlxxi"))
+                pw   = os.getenv("PGPASSWORD", os.getenv("DB_PASSWORD", ""))
+
+                if pw:
+                    dsn = f"postgresql://{user}:{pw}@{host}:{port}/{db}"
+                else:
+                    dsn = f"postgresql://{user}@{host}:{port}/{db}"
+
+            conn = _connect(dsn)
+            try:
+                cur = conn.cursor()
+                try:
+                    def q(sql: str) -> int:
+                        cur.execute(sql)
+                        row = cur.fetchone()
+                        return int((row[0] if row else 0) or 0)
+
+                    db_counts["users_total"] = q("select count(*) from users;")
+                    db_counts["proof_of_funds_total"] = q("select count(*) from proof_of_funds;")
+                    db_counts["pof_challenges_total"] = q("select count(*) from pof_challenges;")
+                    db_counts["chat_messages_total"] = q("select count(*) from chat_messages;")
+                    db_counts["oauth_tokens_total"] = q("select count(*) from oauth_tokens;")
+                finally:
+                    try: cur.close()
+                    except Exception: pass
+            finally:
+                try: conn.close()
+                except Exception: pass
+
+        except Exception as e:
+            logger.warning(f"Prometheus DB metrics unavailable: {e}")
+            db_counts = {}
+
+
+
+        # --- base prometheus content from existing registry (if available) ---
+        base_text = ""
+        try:
+            from prometheus_client import generate_latest, CONTENT_TYPE_LATEST  # type: ignore
+            base_text = generate_latest().decode("utf-8", errors="ignore")
+        except Exception:
+            CONTENT_TYPE_LATEST = "text/plain; version=0.0.4; charset=utf-8"
+        # --- append our custom exposition lines ---
+        lines = []
+
+        # realtime
+        lines += [
+            "# HELP hodlxxi_active_sockets Current active Socket.IO connections (session-authenticated)",
+            "# TYPE hodlxxi_active_sockets gauge",
+            f"hodlxxi_active_sockets {rt_active_sockets}",
+            "# HELP hodlxxi_online_users Current unique online users (session-authenticated pubkeys)",
+            "# TYPE hodlxxi_online_users gauge",
+            f"hodlxxi_online_users {rt_online_users}",
+            "# HELP hodlxxi_chat_history_size In-memory chat history size (ephemeral)",
+            "# TYPE hodlxxi_chat_history_size gauge",
+            f"hodlxxi_chat_history_size {rt_chat_history_size}",
+            "# HELP hodlxxi_active_challenges Current active challenges (ephemeral)",
+            "# TYPE hodlxxi_active_challenges gauge",
+            f"hodlxxi_active_challenges {len((globals().get('ACTIVE_CHALLENGES', {}) or {}))}",
+        ]
+        
+        # DB totals (always emitted; 0 if unavailable)
+        db = _db_metrics_counts_cached()
+
+        def _emit_gauge(name: str, help_text: str, value) -> None:
+            try:
+                v = int(value or 0)
+            except Exception:
+                v = 0
+            lines.extend([
+                f"# HELP {name} {help_text}",
+                f"# TYPE {name} gauge",
+                f"{name} {v}",
+            ])
+
+        # DB health
+        _emit_gauge("hodlxxi_db_up", "Database reachable for metrics query (1=up, 0=down)",
+                    0 if (isinstance(db, dict) and db.get("db_error")) else 1)
+
+        # Totals
+        for key, help_text in [
+            ("users", "Total users in DB"),
+            ("ubid_users", "Total UBID users in DB"),
+            ("sessions", "Total sessions in DB"),
+            ("chat_messages", "Total chat messages in DB"),
+            ("lnurl_challenges", "Total LNURL challenges in DB"),
+            ("pof_challenges", "Total PoF challenges in DB"),
+            ("audit_logs", "Total audit logs in DB"),
+            ("oauth_clients", "Total OAuth clients in DB"),
+            ("oauth_tokens", "Total OAuth tokens in DB"),
+            ("payments", "Total payments in DB"),
+            ("proof_of_funds", "Total Proof-of-Funds records in DB"),
+            ("subscriptions", "Total subscriptions in DB"),
+            ("usage_stats", "Total usage_stats rows in DB"),
+        ]:
+            _emit_gauge(f"hodlxxi_{key}_total", help_text, (db or {}).get(key) if isinstance(db, dict) else 0)
+
+        # Activity windows (movement)
+        for key, help_text in [
+            ("logins_5m", "Users with last_login in last 5 minutes"),
+            ("logins_1h", "Users with last_login in last 1 hour"),
+            ("logins_24h", "Users with last_login in last 24 hours"),
+
+            ("chat_5m", "Chat messages in last 5 minutes"),
+            ("chat_1h", "Chat messages in last 1 hour"),
+            ("chat_24h", "Chat messages in last 24 hours"),
+
+            ("lnurl_created_5m", "LNURL challenges created in last 5 minutes"),
+            ("lnurl_created_1h", "LNURL challenges created in last 1 hour"),
+            ("lnurl_created_24h", "LNURL challenges created in last 24 hours"),
+            ("lnurl_verified_24h", "LNURL challenges verified in last 24 hours"),
+
+            ("pof_created_5m", "PoF challenges created in last 5 minutes"),
+            ("pof_created_1h", "PoF challenges created in last 1 hour"),
+            ("pof_created_24h", "PoF challenges created in last 24 hours"),
+            ("pof_verified_24h", "PoF challenges verified in last 24 hours"),
+
+            ("oauth_tokens_5m", "OAuth tokens created in last 5 minutes"),
+            ("oauth_tokens_1h", "OAuth tokens created in last 1 hour"),
+            ("oauth_tokens_24h", "OAuth tokens created in last 24 hours"),
+
+            ("payments_24h", "Payments created in last 24 hours"),
+            ("payments_paid_24h", "Payments paid in last 24 hours"),
+        ]:
+            _emit_gauge(f"hodlxxi_{key}", help_text, (db or {}).get(key) if isinstance(db, dict) else 0)
+
+        custom_text = "\n".join(lines) + "\n"
+
+        # Combine
+        out = (base_text or "") + ("\n" if base_text and not base_text.endswith("\n") else "") + custom_text
+        return Response(out, content_type=CONTENT_TYPE_LATEST), 200
+
+    except Exception as e:
+        logger.error(f"Prometheus metrics endpoint failed: {e}", exc_info=True)
+        return Response("# ERROR generating metrics\n", mimetype="text/plain"), 500
 
     # SAFE_METRICS_ACTIVE_CHALLENGES_FALLBACK
     ACTIVE_CHALLENGES = globals().get("ACTIVE_CHALLENGES", {}) or {}
@@ -9728,358 +10100,10 @@ def playground():
 # API_DEBUG_SESSION_ALIAS_V1
 @app.route("/api/debug/session", methods=["GET"])
 def api_debug_session_alias():
-    """Debug: return current session identity info."""
-    # DEBUG_SESSION_GUARD_V1: production safety — require full access
-    guard = require_full_access_json()
-    if guard:
-        return guard
-
-    from flask import jsonify, session
-
-    pubkey = session.get("logged_in_pubkey")
-    return jsonify(
-        ok=True,
-        logged_in=bool(pubkey),
-        pubkey=pubkey,
-        access_level=session.get("access_level"),
-        login_method=session.get("login_method"),
-        guest_label=session.get("guest_label"),
-    ), 200
-
+    """Compat endpoint: some frontend code calls /api/debug/session."""
+    return api_whoami()
 # /API_DEBUG_SESSION_ALIAS_V1
 
-
-@app.route("/upgrade", methods=["GET", "POST"])
-def upgrade():
-    logged_in_pubkey = session.get("logged_in_pubkey")
-    user = get_user(logged_in_pubkey) if logged_in_pubkey else None
-    # UPGRADE_ENSURE_USER_V1
-    # get_user() is in-memory; after a restart it may be empty even for a real-key session.
-    if logged_in_pubkey and not str(logged_in_pubkey).startswith("guest-") and user is None:
-        user = set_payg(logged_in_pubkey, False)
-
-    message = None
-    error = None
-
-    if request.method == "POST":
-        if not logged_in_pubkey:
-            return redirect(url_for("login", next="/upgrade"))
-        if str(logged_in_pubkey).startswith("guest-"):
-            error = "Guests must login with a real Bitcoin key to enable billing."
-        else:
-            billing_mode = (request.form.get("billing_mode") or "free").strip()
-            if billing_mode not in {"free", "payg"}:
-                error = "Invalid billing mode."
-            else:
-                user = set_payg(logged_in_pubkey, billing_mode == "payg")
-                if billing_mode == "free":
-                    user.plan = "free"
-                message = "Billing preference updated."
-
-    return render_template(
-        "upgrade.html",
-        user=user,
-        logged_in_pubkey=logged_in_pubkey,
-        message=message,
-        error=error,
-    )
-
-@app.route("/account", methods=["GET"])
-def account_page():
-    logged_in_pubkey = session.get("logged_in_pubkey")
-    if not logged_in_pubkey:
-        return redirect(url_for("login", next="/account"))
-    if str(logged_in_pubkey).startswith("guest-"):
-        # guests can’t manage billing; push them to login with real key
-        return redirect(url_for("login", next="/account"))
-    return render_template("account.html")
-
-
-def _pg_connect_for_account():
-    import os
-    import psycopg2
-    from flask import current_app
-
-    dsn = (
-        os.getenv("DATABASE_URL")
-        or current_app.config.get("DATABASE_URL")
-        or current_app.config.get("SQLALCHEMY_DATABASE_URI")
-    )
-    if dsn:
-        dsn = dsn.strip()
-        if dsn.startswith("postgres://"):
-            dsn = "postgresql://" + dsn[len("postgres://"):]
-        return psycopg2.connect(dsn)
-
-    host = os.getenv("PGHOST", "127.0.0.1")
-    port = int(os.getenv("PGPORT", "5432"))
-    user = os.getenv("PGUSER", "hodlxxi")
-    password = os.getenv("PGPASSWORD", "")
-    dbname = os.getenv("PGDATABASE", "hodlxxi")
-    return psycopg2.connect(host=host, port=port, user=user, password=password, dbname=dbname)
-
-
-@app.route("/api/account/summary", methods=["GET"])
-def api_account_summary():
-    logged_in_pubkey = session.get("logged_in_pubkey")
-    if not logged_in_pubkey:
-        return jsonify({"ok": False, "error": "Login required"}), 401
-    if str(logged_in_pubkey).startswith("guest-"):
-        return jsonify({"ok": False, "error": "Guests have no account"}), 403
-
-    # pull from Postgres
-    plan = "free"
-    sats_balance = 0
-    payg_enabled = False
-    membership_expires_at = None
-    recent = []
-
-    try:
-        with _pg_connect_for_account() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "select plan, sats_balance, payg_enabled, membership_expires_at "
-                    "from ubid_users where pubkey=%s limit 1",
-                    (logged_in_pubkey,),
-                )
-                row = cur.fetchone()
-                if row:
-                    plan, sats_balance, payg_enabled, membership_expires_at = row
-
-                cur.execute(
-                    "select invoice_id, amount_sats, status, created_at, paid_at "
-                    "from payments where user_pubkey=%s "
-                    "order by id desc limit 12",
-                    (logged_in_pubkey,),
-                )
-                for (invoice_id, amount_sats, status, created_at, paid_at) in cur.fetchall():
-                    recent.append(
-                        {
-                            "invoice_id": invoice_id,
-                            "amount_sats": int(amount_sats) if amount_sats is not None else None,
-                            "status": status,
-                            "created_at": created_at.isoformat() if created_at else None,
-                            "paid_at": paid_at.isoformat() if paid_at else None,
-                        }
-                    )
-    except Exception:
-        current_app.logger.exception("account: failed to load summary")
-
-    return jsonify(
-        {
-            "ok": True,
-            "pubkey": logged_in_pubkey,
-            "plan": plan,
-            "sats_balance": int(sats_balance or 0),
-            "payg_enabled": bool(payg_enabled),
-            "membership_expires_at": membership_expires_at.isoformat() if membership_expires_at else None,
-            "needs_topup": bool(session.get("needs_topup")),
-            "recent_payments": recent,
-        }
-    )
-
-
-@app.route("/api/account/set-payg", methods=["POST"])
-def api_account_set_payg():
-    logged_in_pubkey = session.get("logged_in_pubkey")
-    if not logged_in_pubkey:
-        return jsonify({"ok": False, "error": "Login required"}), 401
-    if str(logged_in_pubkey).startswith("guest-"):
-        return jsonify({"ok": False, "error": "Guests cannot enable PAYG"}), 403
-
-    data = request.get_json() or {}
-    enabled = bool(data.get("enabled"))
-
-    try:
-        with _pg_connect_for_account() as conn:
-            with conn.cursor() as cur:
-                # ensure row exists
-                cur.execute("select 1 from ubid_users where pubkey=%s limit 1", (logged_in_pubkey,))
-                if cur.fetchone() is None:
-                    cur.execute(
-                        "insert into ubid_users (pubkey, plan, sats_balance, membership_expires_at, created_at, last_login_at, payg_enabled) "
-                        "values (%s, 'free', 0, null, now(), now(), %s)",
-                        (logged_in_pubkey, enabled),
-                    )
-                else:
-                    cur.execute(
-                        "update ubid_users set payg_enabled=%s where pubkey=%s",
-                        (enabled, logged_in_pubkey),
-                    )
-        session["payg_enabled"] = enabled
-        return jsonify({"ok": True, "payg_enabled": enabled})
-    except Exception:
-        current_app.logger.exception("account: failed to set payg")
-        return jsonify({"ok": False, "error": "internal error"}), 500
-
-
-@app.route("/api/billing/create-invoice", methods=["POST"])
-def api_billing_create_invoice():
-    from flask import request, jsonify, session, current_app
-    import os
-    from urllib.parse import urlparse
-    import psycopg2
-
-    def _pg_connect():
-        dsn = (
-            os.getenv("DATABASE_URL")
-            or current_app.config.get("DATABASE_URL")
-            or current_app.config.get("SQLALCHEMY_DATABASE_URI")
-        )
-        if dsn:
-            dsn = dsn.strip()
-            if dsn.startswith("postgres://"):
-                dsn = "postgresql://" + dsn[len("postgres://"):]
-            return psycopg2.connect(dsn)
-
-        # fallback to PG* envs
-        host = os.getenv("PGHOST", "127.0.0.1")
-        port = int(os.getenv("PGPORT", "5432"))
-        user = os.getenv("PGUSER", "hodlxxi")
-        password = os.getenv("PGPASSWORD", "")
-        dbname = os.getenv("PGDATABASE", "hodlxxi")
-        return psycopg2.connect(host=host, port=port, user=user, password=password, dbname=dbname)
-
-    logged_in_pubkey = session.get("logged_in_pubkey")
-    if not logged_in_pubkey:
-        return jsonify({"ok": False, "error": "Login required."}), 401
-    if str(logged_in_pubkey).startswith("guest-"):
-        return jsonify({"ok": False, "error": "Guests cannot create invoices."}), 403
-
-    data = request.get_json() or {}
-    try:
-        amount_sats = int(data.get("amount_sats") or 0)
-    except (TypeError, ValueError):
-        return jsonify({"ok": False, "error": "amount_sats must be an integer."}), 400
-
-    min_topup = int(current_app.config.get("PAYG_MIN_TOPUP_SATS", 10))
-    if amount_sats < min_topup:
-        return jsonify({"ok": False, "error": f"Minimum top-up is {min_topup} sats."}), 400
-
-    memo = f"HODLXXI pay-as-you-go topup ({amount_sats} sats)"
-    payment_request, invoice_id = create_payg_invoice(logged_in_pubkey, amount_sats, memo)
-
-    # Persist invoice in Postgres so you can settle by DB status even without Lightning.
-    try:
-        with _pg_connect() as conn:
-            with conn.cursor() as cur:
-                # ensure user row exists
-                cur.execute("select 1 from ubid_users where pubkey=%s limit 1", (logged_in_pubkey,))
-                if cur.fetchone() is None:
-                    cur.execute(
-                        "insert into ubid_users (pubkey, plan, sats_balance, membership_expires_at, created_at, last_login_at, payg_enabled) "
-                        "values (%s, 'free', 0, null, now(), now(), true)",
-                        (logged_in_pubkey,),
-                    )
-
-                # insert payment row if missing
-                cur.execute("select 1 from payments where invoice_id=%s limit 1", (invoice_id,))
-                if cur.fetchone() is None:
-                    cur.execute(
-                        "insert into payments (user_pubkey, invoice_id, payment_request, amount_sats, status, plan, created_at, expires_at, metadata) "
-                        "values (%s, %s, %s, %s, 'pending', 'payg', now(), now() + interval '1 hour', '{}'::jsonb)",
-                        (logged_in_pubkey, invoice_id, payment_request, amount_sats),
-                    )
-    except Exception:
-        current_app.logger.exception("billing: failed to persist invoice to Postgres")
-
-    return jsonify(
-        {
-            "ok": True,
-            "invoice_id": invoice_id,
-            "payment_request": payment_request,
-            "amount_sats": amount_sats,
-        }
-    )
-
-
-@app.route("/api/billing/check-invoice", methods=["POST"])
-def api_billing_check_invoice():
-    from flask import request, jsonify, session, current_app
-    import os
-    import json
-    import psycopg2
-
-    def _pg_connect():
-        dsn = (
-            os.getenv("DATABASE_URL")
-            or current_app.config.get("DATABASE_URL")
-            or current_app.config.get("SQLALCHEMY_DATABASE_URI")
-        )
-        if dsn:
-            dsn = dsn.strip()
-            if dsn.startswith("postgres://"):
-                dsn = "postgresql://" + dsn[len("postgres://"):]
-            return psycopg2.connect(dsn)
-
-        host = os.getenv("PGHOST", "127.0.0.1")
-        port = int(os.getenv("PGPORT", "5432"))
-        user = os.getenv("PGUSER", "hodlxxi")
-        password = os.getenv("PGPASSWORD", "")
-        dbname = os.getenv("PGDATABASE", "hodlxxi")
-        return psycopg2.connect(host=host, port=port, user=user, password=password, dbname=dbname)
-
-    logged_in_pubkey = session.get("logged_in_pubkey")
-    if not logged_in_pubkey:
-        return jsonify({"ok": False, "error": "Login required."}), 401
-    if str(logged_in_pubkey).startswith("guest-"):
-        return jsonify({"ok": False, "error": "Guests cannot check invoices."}), 403
-
-    data = request.get_json() or {}
-    invoice_id = (data.get("invoice_id") or "").strip()
-    if not invoice_id:
-        return jsonify({"ok": False, "error": "invoice_id required."}), 400
-
-    try:
-        with _pg_connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "select p.user_pubkey, p.amount_sats, p.status, "
-                    "coalesce((p.metadata->>'credited')::boolean,false) as credited, "
-                    "coalesce(u.sats_balance,0) as sats_balance "
-                    "from payments p left join ubid_users u on u.pubkey=p.user_pubkey "
-                    "where p.invoice_id=%s limit 1",
-                    (invoice_id,),
-                )
-                row = cur.fetchone()
-                if not row:
-                    return jsonify({"ok": False, "error": "Unknown invoice_id"}), 404
-
-                inv_pubkey, amt, status, credited, sats_balance = row
-
-                if inv_pubkey != logged_in_pubkey:
-                    return jsonify({"ok": False, "error": "Invoice does not belong to current user"}), 403
-
-                status = (status or "").lower()
-                paid = (status == "paid")
-
-                # If not marked paid in DB, ask LN backend (will be False in stub mode).
-                if not paid:
-                    try:
-                        from app.payments.ln import check_invoice_paid
-                        if check_invoice_paid(invoice_id):
-                            cur.execute("update payments set status='paid', paid_at=now() where invoice_id=%s", (invoice_id,))
-                            paid = True
-                    except Exception:
-                        current_app.logger.exception("billing: check_invoice_paid failed")
-
-                # If paid and not yet credited, credit once (idempotent).
-                if paid and not credited:
-                    cur.execute(
-                        "update ubid_users set sats_balance = coalesce(sats_balance,0) + %s where pubkey=%s",
-                        (int(amt or 0), logged_in_pubkey),
-                    )
-                    cur.execute(
-                        "update payments set metadata = coalesce(metadata,'{}'::jsonb) || %s::jsonb where invoice_id=%s",
-                        (json.dumps({"credited": True, "credited_at": "now"}), invoice_id),
-                    )
-                    cur.execute("select coalesce(sats_balance,0) from ubid_users where pubkey=%s", (logged_in_pubkey,))
-                    sats_balance = int(cur.fetchone()[0])
-
-        return jsonify({"ok": True, "paid": bool(paid), "sats_balance": int(sats_balance)})
-    except Exception:
-        current_app.logger.exception("billing: check-invoice failed")
-        return jsonify({"ok": False, "error": "Internal error"}), 500
 
 
 # API_POF_VERIFY_PSBT_V1
@@ -10108,11 +10132,6 @@ def api_pof_verify_psbt():
         spk = (session.get("logged_in_pubkey") or "").strip()
         if spk:
             pubkey = spk
-    spk = (session.get("logged_in_pubkey") or "").strip()
-    if spk and pubkey and pubkey == spk:
-        ok, reason = charge_action(pubkey, "pof")
-        if not ok:
-            return jsonify(ok=False, error="Pay-as-you-go balance too low.", reason=reason), 402
 
     # ACTIVE_CHALLENGES must exist in your app (it does in your /api/challenge flow)
     ch = ACTIVE_CHALLENGES.get(cid) if "ACTIVE_CHALLENGES" in globals() else None
