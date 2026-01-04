@@ -1,4 +1,5 @@
 import hashlib
+import threading
 import json
 import redis
 import redis
@@ -6,6 +7,7 @@ import logging
 import os
 import re
 from flask import session, request
+from flask import render_template_string
 import secrets
 import time
 from flask import jsonify, render_template
@@ -44,6 +46,7 @@ import redis as redis_client
 from cryptography.hazmat.primitives import serialization
 from prometheus_client import CollectorRegistry, Counter, generate_latest
 
+# Active challenges (in-memory; ephemeral)
 from app.audit_logger import get_audit_logger, init_audit_logger
 from app.config import get_config
 from app.database import close_all, init_all, get_session as get_db_session
@@ -540,6 +543,21 @@ def truncate_key(key: str, head: int = 6, tail: int = 4) -> str:
 
 app = Flask(__name__)
 
+# COOKIE_DOMAIN_V1
+app.config.setdefault('SESSION_COOKIE_DOMAIN', '.hodlxxi.com')
+app.config.setdefault('SESSION_COOKIE_SECURE', True)
+app.config.setdefault('SESSION_COOKIE_SAMESITE', 'Lax')
+# /COOKIE_DOMAIN_V1
+
+# === DOCS_ROUTES_REGISTER_V1 ===
+try:
+    from .docs_routes import register_docs_routes
+    register_docs_routes(app)
+except Exception as _e:
+    # Docs are non-critical; do not break service if something is misconfigured.
+    app.logger.warning(f"Docs routes not registered: {_e}")
+# === /DOCS_ROUTES_REGISTER_V1 ===
+
 @app.route("/screensaver")
 def screensaver():
     return render_template("screensaver.html")
@@ -652,6 +670,8 @@ def health():
         health_status = {
             "status": "healthy",
             "timestamp": time.time(),
+            "pid": os.getpid(),
+            "process_start_time": PROCESS_START_TIME,
             "service": "HODLXXI",
             "version": "1.0.0-beta",
             "active_sockets": len(ACTIVE_SOCKETS),
@@ -677,6 +697,20 @@ def health():
 
 @app.before_request
 def _oauth_public_allowlist():
+    # OAUTH_ALLOWLIST_SCOPE_GUARD_V1
+    # This allowlist is only meant for OAuth/OIDC endpoints.
+    # Do NOT enforce login here for the rest of the site.
+    from flask import request
+    _p = (request.path or "/")
+    if not (
+        _p.startswith("/oauth/")
+        or _p.startswith("/oauthx/")
+        or _p.startswith("/oauthdemo/")
+        or _p.startswith("/.well-known/")
+    ):
+        return None
+    # /OAUTH_ALLOWLIST_SCOPE_GUARD_V1
+
     p = request.path or "/"
     if any(p.startswith(pref) for pref in OAUTH_PATH_PREFIXES) or p in OAUTH_PUBLIC_PATHS:
         # Mark request so any later guards skip login
@@ -689,8 +723,130 @@ def _oauth_public_allowlist():
 # ============================================================================
 
 
+
+# --- metrics helpers (safe, soft-fail) ---
+PROCESS_START_TIME = time.time()
+
+# DB metrics cache (avoid heavy COUNT(*) on every scrape)
+_DB_METRICS_LOCK = threading.Lock()
+_DB_METRICS_CACHE = {"ts": 0.0, "data": None}
+
+def _db_metrics_counts_cached(ttl_seconds: int = 15):
+    now = time.time()
+    try:
+        with _DB_METRICS_LOCK:
+            data = _DB_METRICS_CACHE.get("data")
+            ts = float(_DB_METRICS_CACHE.get("ts") or 0.0)
+            if data is not None and (now - ts) < ttl_seconds:
+                return data
+    except Exception:
+        # soft-fail: if lock/cache breaks, just compute live
+        pass
+
+    data = _db_metrics_counts()
+    try:
+        with _DB_METRICS_LOCK:
+            _DB_METRICS_CACHE["ts"] = now
+            _DB_METRICS_CACHE["data"] = data
+    except Exception:
+        pass
+    return data
+def _db_metrics_counts():
+    """
+    Returns a dict of DB row counts. Never raises (soft-fail).
+    Tries env first, then local socket as hodlxxi/hodlxxi.
+    """
+    try:
+        import psycopg2
+        import psycopg2.extras
+    except Exception as e:
+        return {"db_error": f"psycopg2_import_failed: {e}"}
+
+    # best-effort connection params
+    dbname = os.getenv("PGDATABASE") or os.getenv("DB_NAME") or "hodlxxi"
+    user   = os.getenv("PGUSER") or os.getenv("DB_USER") or "hodlxxi"
+    host   = os.getenv("PGHOST") or os.getenv("DB_HOST") or None
+    port   = os.getenv("PGPORT") or os.getenv("DB_PORT") or None
+    password = os.getenv("PGPASSWORD") or os.getenv("DB_PASSWORD") or None
+
+    dsn = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
+
+    conn = None
+    try:
+        if dsn:
+            conn = psycopg2.connect(dsn, connect_timeout=2)
+        else:
+            kwargs = {"dbname": dbname, "user": user, "connect_timeout": 2}
+            if host: kwargs["host"] = host
+            if port: kwargs["port"] = int(port)
+            if password: kwargs["password"] = password
+            conn = psycopg2.connect(**kwargs)
+
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                
+select
+  -- totals
+  (select count(*) from users)            as users,
+  (select count(*) from ubid_users)       as ubid_users,
+  (select count(*) from sessions)         as sessions,
+  (select count(*) from chat_messages)    as chat_messages,
+  (select count(*) from lnurl_challenges) as lnurl_challenges,
+  (select count(*) from pof_challenges)   as pof_challenges,
+  (select count(*) from audit_logs)       as audit_logs,
+  (select count(*) from oauth_clients)    as oauth_clients,
+  (select count(*) from oauth_tokens)     as oauth_tokens,
+  (select count(*) from payments)         as payments,
+  (select count(*) from proof_of_funds)   as proof_of_funds,
+  (select count(*) from subscriptions)    as subscriptions,
+  (select count(*) from usage_stats)      as usage_stats,
+
+  -- activity windows (movement)
+  (select count(*) from users where last_login is not null and last_login > now() - interval '5 minutes')  as logins_5m,
+  (select count(*) from users where last_login is not null and last_login > now() - interval '1 hour')     as logins_1h,
+  (select count(*) from users where last_login is not null and last_login > now() - interval '24 hours')   as logins_24h,
+
+  (select count(*) from chat_messages where "timestamp" > now() - interval '5 minutes')                    as chat_5m,
+  (select count(*) from chat_messages where "timestamp" > now() - interval '1 hour')                       as chat_1h,
+  (select count(*) from chat_messages where "timestamp" > now() - interval '24 hours')                     as chat_24h,
+
+  (select count(*) from lnurl_challenges where created_at > now() - interval '5 minutes')                  as lnurl_created_5m,
+  (select count(*) from lnurl_challenges where created_at > now() - interval '1 hour')                     as lnurl_created_1h,
+  (select count(*) from lnurl_challenges where created_at > now() - interval '24 hours')                   as lnurl_created_24h,
+  (select count(*) from lnurl_challenges where verified_at is not null and verified_at > now() - interval '24 hours') as lnurl_verified_24h,
+
+  (select count(*) from pof_challenges where created_at > now() - interval '5 minutes')                    as pof_created_5m,
+  (select count(*) from pof_challenges where created_at > now() - interval '1 hour')                       as pof_created_1h,
+  (select count(*) from pof_challenges where created_at > now() - interval '24 hours')                     as pof_created_24h,
+  (select count(*) from pof_challenges where verified_at is not null and verified_at > now() - interval '24 hours') as pof_verified_24h,
+
+  (select count(*) from oauth_tokens where created_at > now() - interval '5 minutes')                      as oauth_tokens_5m,
+  (select count(*) from oauth_tokens where created_at > now() - interval '1 hour')                         as oauth_tokens_1h,
+  (select count(*) from oauth_tokens where created_at > now() - interval '24 hours')                       as oauth_tokens_24h,
+
+  (select count(*) from payments where created_at > now() - interval '24 hours')                            as payments_24h,
+  (select count(*) from payments where paid_at is not null and paid_at > now() - interval '24 hours')       as payments_paid_24h
+
+            """)
+            row = cur.fetchone() or {}
+            # cast Decimals/ints cleanly if needed
+            return {k: int(row[k]) if row.get(k) is not None else 0 for k in row.keys()}
+    except Exception as e:
+        return {"db_error": str(e)}
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+# --- end metrics helpers ---
+
 @app.route("/metrics")
 def metrics():
+    # SAFE_METRICS_ACTIVE_CHALLENGES_FALLBACK
+    # Some deployments removed/renamed ACTIVE_CHALLENGES; avoid NameError in /metrics
+    ACTIVE_CHALLENGES = globals().get('ACTIVE_CHALLENGES', {}) or {}
+
     """Metrics endpoint for monitoring"""
     try:
         metrics_data = {
@@ -700,6 +856,7 @@ def metrics():
             "chat_history_size": len(CHAT_HISTORY),
             "active_challenges": len(ACTIVE_CHALLENGES),
             "lnurl_sessions": len(LNURL_SESSIONS),
+                    "db": _db_metrics_counts_cached(),
         }
         return jsonify({"metrics": metrics_data}), 200
     except Exception as e:
@@ -1101,7 +1258,6 @@ def handle_chat_send(data):
 app.config["SESSION_PERMANENT"] = True
 app.permanent_session_lifetime = timedelta(days=7)
 
-import threading
 from decimal import Decimal
 
 
@@ -1217,6 +1373,14 @@ def derive_legacy_address_from_pubkey(pubkey_hex):
     address = base58.b58encode(vbyte + chksum).decode()
     return address
 
+# CHALLENGE_STORE_V1
+# In-memory login/PoF challenge store (single worker/eventlet).
+# If you scale workers, move this to Redis.
+ACTIVE_CHALLENGES = {}
+CHALLENGE_TTL_SECONDS = 300
+# /CHALLENGE_STORE_V1
+
+
 
 def generate_challenge():
     return str(uuid.uuid4())
@@ -1225,9 +1389,33 @@ def generate_challenge():
 # --- Minimal login/guest/dev helpers ---------------------------------
 @app.before_request
 def check_auth():
+
+    # PUBLIC PREVIEW ROUTES (no login required)
+    from flask import request as flask_request
+    # ALLOW_POF_API_V1
+    # These endpoints are safe to hit without redirecting users to login,
+    # and are used by the Playground/PoF flows.
+    if flask_request.path in (
+        "/api/whoami",
+        "/api/debug/session",
+        "/api/challenge",
+        "/api/verify",
+        "/api/pof/verify_psbt",
+    ):
+        return None
+    if flask_request.path.startswith("/api/lnurl-auth/"):
+        return None
+    # /ALLOW_POF_API_V1
+
+
+    if flask_request.path in ("/new-index", "/new-keyauth", "/new-signup", "/docs2", "/screensaver"):
+        return None
+
     from flask import jsonify, redirect, request, session, url_for
 
     p = request.path or "/"
+
+    # Canonicalize legacy dev dashboard URL early
     m = request.method
     endpoint = request.endpoint or ""
     endpoint_base = endpoint.rsplit(".", 1)[-1]  # handle blueprint endpoints
@@ -1259,6 +1447,9 @@ def check_auth():
     PUBLIC_PATHS = {
         "/",
         "/oidc",
+        "/docs",
+        "/docs/",
+        "/docs.json",
         "/oicd",
         "/pof/",
         "/pof/leaderboard",
@@ -1275,9 +1466,14 @@ def check_auth():
         "/login",
         "/logout",
         "/metrics",
-        "/metrics/prometheus",
+        "/metrics/prometheus",        "/pof/verify",
+        "/pof/verify/",
+        "/api/challenge",
+        "/api/verify",        "/pof/verify",
+
+
     }
-    if p in PUBLIC_PATHS:
+    if p in PUBLIC_PATHS or p.startswith("/docs/"):
         return None
 
     # 2) Public endpoints by function name (handle blueprints)
@@ -1306,6 +1502,7 @@ def check_auth():
         "oauth_token",
         "oauthx_status",
         "oauthx_docs",
+        "docs_json_alias",
         "api_docs",
         # landing & explorer
         "landing_page",
@@ -1331,8 +1528,7 @@ def on_connect(auth=None):
     pubkey = session.get("logged_in_pubkey", "")
     level = session.get("access_level")
     if not pubkey:
-        return
-
+        return False
     role = classify_presence(pubkey, level)
 
     ACTIVE_SOCKETS[request.sid] = pubkey
@@ -2333,10 +2529,10 @@ def chat():
   <main class="shell">
     <header class="top-bar">
       <div class="top-left">
-        <button class="back-btn" type="button" onclick="goHome('#explorer')">home</button>
+        <button class="back-btn" type="button" onclick="goHome('#explorer')">CRT</button>
         <div class="title-block">
-          <div class="title">Covenant Lounge</div>
-          <div class="subtitle">Presence chips · 45s whispers · tap-hold to call</div>
+          <div class="title">Global Chat</div>
+          <div class="subtitle">Presence chips ·  whispers · p2p call</div>
         </div>
       </div>
       <div class="top-right">
@@ -2379,8 +2575,6 @@ def chat():
             <button id="sendBtn" class="send-btn" type="button">➤</button>
           </div>
 
-          <div class="ephemeral">Ephemeral: messages exist for <span>45 seconds</span>, then vanish.</div>
-        </div>
       </section>
 
       <!-- Sidebar -->
@@ -2388,7 +2582,7 @@ def chat():
         <section class="panel presence-panel">
           <div class="panel-header">
             <div class="panel-title">Online presence</div>
-            <div class="panel-badge">Tap = Explorer · @ = mention · Hold = call</div>
+            <div class="panel-badge">@ = mention · Hold = call</div>
           </div>
 
           <div class="panel-body">
@@ -2538,13 +2732,9 @@ def chat():
     }
 
     const messagesEl    = document.getElementById('messages');
-
-
     function scrollMessagesToBottom(){
       if (!messagesEl) return;
-      requestAnimationFrame(() => {
-        scrollMessagesToBottom();
-      });
+      messagesEl.scrollTop = messagesEl.scrollHeight;
     }
     const userListEl    = document.getElementById('userList');
     const onlineCountEl = document.getElementById('onlineCount');
@@ -3473,7 +3663,7 @@ def login():
             <p><b>Covenant descriptors</b> extend identity into time: reciprocal commitments with observable rules.</p>
 
             <p style="margin-top:.6rem;opacity:.92">
-              <a class="home-link" href="/oidc">← Home</a>
+              <a class="home-link" href="/new-index">← Home</a>
             </p>
           </div>
         </details>
@@ -3506,6 +3696,7 @@ def login():
           <button class="pill ln" type="button" onclick="loginWithLightning()" id="lnBtn">⚡ Lightning</button>
           <a class="pill" href="/pof/leaderboard" style="text-decoration:none;">🏆 PoF</a>
           <a class="pill" href="/playground" style="text-decoration:none;">▶ Playground</a>
+          <a class="pill" href="/docs2" style="text-decoration:none;">📚 Docs</a>
         </div>
         <!-- LOGIN_MANIFESTO_DETAILS_V2: Variant C -->
         
@@ -6678,6 +6869,20 @@ def _public_guard_for_lnurl():
     if p.startswith('/pof/certificate/'):
         return None
 
+    # PUBLIC_GUARD_ALLOW_POF_V1
+    # Allow PoF pages (viral/public)
+    if p.startswith('/pof/'):
+        return None
+
+    # Allow public docs/pages
+    if p == '/' or p.startswith('/screensaver'):
+        return None
+    if p.startswith('/docs') or p.startswith('/docs/'):
+        return None
+    if p in ('/new-index','/new-keyauth','/new-signup','/docs2'):
+        return None
+    # /PUBLIC_GUARD_ALLOW_POF_V1
+
     if p.startswith('/playground') or p.startswith('/playground/') or p.startswith('/static/playground'):
         return None
 
@@ -6751,26 +6956,56 @@ def is_valid_pubkey(pubkey: str) -> bool:
     except Exception:
         return False
 
-
+# WHOAMI_V1
+@app.route("/api/whoami", methods=["GET"])
+def api_whoami():
+    spk = (session.get("logged_in_pubkey") or "").strip()
+    return jsonify(
+        ok=True,
+        logged_in=bool(spk),
+        pubkey=spk,
+        access_level=session.get("access_level", "limited"),
+        login_method=session.get("login_method", ""),
+    )
+# /WHOAMI_V1
 @app.route("/api/challenge", methods=["POST"])
 def api_challenge():
     data = request.get_json() or {}
-    pubkey = (data.get("pubkey") or "").strip()
-    if not pubkey or not is_valid_pubkey(pubkey):
-        return jsonify(error="Missing or invalid pubkey"), 400
+    user_input = (data.get("pubkey") or "").strip()
 
+    # Accept either:
+    # - explicit pubkey in request
+    # - OR (if logged in) any label, using session pubkey
+    pubkey = user_input
+    label = ""
+
+    if not pubkey or not is_valid_pubkey(pubkey):
+        spk = (session.get("logged_in_pubkey") or "").strip()
+        if spk and is_valid_pubkey(spk):
+            label = user_input
+            pubkey = spk
+        else:
+            return jsonify(error="Missing or invalid pubkey"), 400
     cid = str(uuid.uuid4())
     challenge = f"HODLXXI:login:{int(time.time())}:{uuid.uuid4().hex[:8]}"
     ACTIVE_CHALLENGES[cid] = {
         "pubkey": pubkey,
+        "label": label,
         "challenge": challenge,
         "created": datetime.utcnow(),
         "expires": datetime.utcnow() + timedelta(minutes=5),
         "method": data.get("method", "api"),
     }
-    return jsonify(challenge_id=cid, challenge=challenge, expires_in=300)
+    return jsonify(ok=True, challenge_id=cid, challenge=challenge, expires_in=300)
 
 
+
+# ALIAS_PLAYGROUND_POF_CHALLENGE_V1
+@app.route("/api/playground/pof/challenge", methods=["POST", "OPTIONS"])
+def api_playground_pof_challenge():
+    """Backward-compatible alias for older front-end code."""
+    return api_challenge()
+# /ALIAS_PLAYGROUND_POF_CHALLENGE_V1
 @app.route("/api/verify", methods=["POST"])
 def api_verify():
     data = request.get_json() or {}
@@ -6778,8 +7013,13 @@ def api_verify():
     pubkey = (data.get("pubkey") or "").strip()
     signature = (data.get("signature") or "").strip()
 
-    if not (cid and pubkey and signature):
+    if not (cid and signature):
         return jsonify(error="Missing required parameters"), 400
+
+    if not pubkey:
+        spk = (session.get("logged_in_pubkey") or "").strip()
+        if spk and is_valid_pubkey(spk):
+            pubkey = spk
 
     rec = ACTIVE_CHALLENGES.get(cid)
     if not rec or rec["expires"] < datetime.utcnow():
@@ -6833,6 +7073,7 @@ def api_verify():
     ACTIVE_CHALLENGES.pop(cid, None)
 
     payload = {
+        "ok": True,
         "verified": True,
         "token_type": "Bearer",
         "access_token": access_token,
@@ -6846,6 +7087,13 @@ def api_verify():
     return resp
 
 
+
+# ALIAS_PLAYGROUND_POF_VERIFY_V1
+@app.route("/api/playground/pof/verify", methods=["POST", "OPTIONS"])
+def api_playground_pof_verify():
+    """Backward-compatible alias for older front-end code."""
+    return api_verify()
+# /ALIAS_PLAYGROUND_POF_VERIFY_V1
 @app.route("/special_login", methods=["POST"])
 def special_login():
     data = request.get_json(silent=True) or {}
@@ -6923,6 +7171,7 @@ def verify_signature_legacy():
 
     # Set session / cookies exactly like API
     payload = {
+        "ok": True,
         "verified": True,
         "pubkey": pubkey,
         "access_level": access,
@@ -7102,55 +7351,29 @@ def _lnurl_bech32(url_str: str) -> str:
 
 @app.route("/", methods=["GET"])
 def root_redirect():
+    """Public front door:
+    - logged-in users -> /home
+    - everyone else   -> /screensaver
+    """
+    from flask import session, redirect, url_for
+    try:
+        if session.get("logged_in_pubkey"):
+            return redirect(url_for("home"))
+    except Exception:
+        pass
     return redirect("/screensaver", code=302)
 
-import hashlib
-import json
-import redis
-import redis
-
-# =========================
-# COMPLETE OIDC/OAuth2 SYSTEM (append at EOF after your existing code)
-# =========================
-import os
-import secrets
-import time
-import uuid
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 from enum import Enum
-from typing import Dict, List, Optional, Set
-
-from flask import Flask, jsonify, redirect, render_template_string, request, url_for
-
-# ----------------------------------------------------------------------------
-# CONFIGURATION & GLOBALS
-# ----------------------------------------------------------------------------
-
-if JWT_SIGNING_KEY:
-    JWT_SECRET = JWT_SIGNING_KEY
-else:
-    fallback_secret = os.getenv("JWT_SECRET", secrets.token_hex(32))
-    JWT_SECRET = fallback_secret if isinstance(fallback_secret, bytes) else fallback_secret.encode()
-
-# memory stores; in prod you'd use Redis / DB
-CLIENT_STORE: Dict[str, dict] = {}
-AUTH_CODE_STORE: Dict[str, dict] = {}
-LNURL_SESSION_STORE: Dict[str, dict] = {}
-
-LNURL_TTL = 300  # seconds
-
-
-# ----------------------------------------------------------------------------
-# DATA MODELS
-# ----------------------------------------------------------------------------
-
 
 class ClientType(Enum):
     FREE = "free"
     PAID = "paid"
     PREMIUM = "premium"
 
+
+from dataclasses import dataclass, field
+from typing import List, Set, Optional
+from datetime import datetime
 
 @dataclass
 class ClientCredentials:
@@ -7168,6 +7391,12 @@ class ClientCredentials:
 # CLIENT MANAGER
 # ----------------------------------------------------------------------------
 
+
+
+# OAuth/OIDC in-memory stores (use Redis for production)
+CLIENT_STORE = {}
+# auth code store is used by cleanup_expired_data() and token flows
+AUTH_CODE_STORE = globals().get('AUTH_CODE_STORE', {})
 
 class ClientManager:
     @staticmethod
@@ -7737,7 +7966,8 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KeyAuth Protocol | Bitcoin Authentication & Identity for Web3</title>
+    <title>KeyAuth — Reference Implementation</title>
+    <meta name="description" content="A reference implementation inspired by HODLXXI principles. Not canonical. Not authoritative.">
     <style>
         * {
             margin: 0;
@@ -7751,3479 +7981,379 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
             --fg: #e6f1ef;
             --accent: #00ff88;
             --muted: #86a3a1;
-            --bitcoin-orange: #f7931a;
-            --dark-bg: #0b0f10;
-            --darker-bg: #000000;
-            --card-bg: rgba(17, 23, 26, 0.92);
-            --text-light: #e6f1ef;
-            --text-muted: #86a3a1;
+            --warning: #ff6b35;
             --border-color: #0f2a24;
-            --border-hover: #184438;
-            --input-bg: #0e1315;
-            --hover-bg: #12352d;
-            --gradient-1: linear-gradient(135deg, #00ff88 0%, #00cc66 100%);
-            --gradient-2: linear-gradient(135deg, #f7931a 0%, #ff6b35 100%);
+            --card-bg: rgba(17, 23, 26, 0.92);
             --glow-green: rgba(0, 255, 136, 0.2);
-            --glow-orange: rgba(247, 147, 26, 0.2);
         }
 
         body {
-            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-family: ui-monospace, 'SF Mono', 'Monaco', monospace;
             background: var(--bg);
             color: var(--fg);
             line-height: 1.6;
-            overflow-x: hidden;
-        }
-
-        /* Matrix Background Canvases */
-        .matrix-canvas {
-            position: fixed;
-            inset: 0;
-            z-index: 0;
-            pointer-events: none;
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            .matrix-canvas {
-                display: none !important;
-            }
-        }
-
-        @media print {
-            .matrix-canvas {
-                display: none !important;
-            }
-        }
-
-        /* Ensure all content stays above Matrix canvases */
-        body > *:not(.matrix-canvas) {
-            position: relative;
-            z-index: 1;
+            padding: 20px;
         }
 
         .container {
-            max-width: 1280px;
+            max-width: 800px;
             margin: 0 auto;
-            padding: 0 20px;
         }
 
-        /* Navigation */
-        nav {
-            position: fixed;
-            top: 0;
-            width: 100%;
-            background: rgba(11, 15, 16, 0.95);
-            backdrop-filter: blur(10px);
-            z-index: 999;
+        /* Header */
+        header {
+            padding: 40px 0;
             border-bottom: 1px solid var(--border-color);
-        }
-
-        .nav-content {
-            max-width: 1280px;
-            margin: 0 auto;
-            padding: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            margin-bottom: 40px;
         }
 
         .logo {
             font-size: 24px;
-            font-weight: 800;
+            font-weight: 700;
             color: var(--accent);
-            text-shadow: 0 0 20px var(--glow-green);
+            letter-spacing: 0.1em;
+            margin-bottom: 8px;
         }
 
-        .nav-links {
-            display: flex;
-            gap: 30px;
-            list-style: none;
-        }
-
-        .nav-links a {
-            color: var(--fg);
-            text-decoration: none;
-            font-weight: 500;
-            transition: all 0.3s;
-        }
-
-        .nav-links a:hover {
-            color: var(--accent);
-            text-shadow: 0 0 10px var(--glow-green);
-        }
-
-        .cta-button {
-            background: var(--gradient-2);
-            color: white;
-            padding: 12px 28px;
-            border-radius: 8px;
-            text-decoration: none;
-            font-weight: 600;
-            transition: all 0.3s;
-            display: inline-block;
-            border: 1px solid var(--bitcoin-orange);
-        }
-
-        .cta-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 30px var(--glow-orange);
-        }
-
-        /* Hero Section */
-        .hero {
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            position: relative;
-            padding-top: 80px;
-            background: radial-gradient(ellipse at top, rgba(0, 255, 136, 0.08) 0%, transparent 50%);
-        }
-
-        .hero-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 60px;
-            align-items: center;
-        }
-
-        .hero-content h1 {
-            font-size: 64px;
-            font-weight: 900;
-            line-height: 1.1;
-            margin-bottom: 24px;
-            color: var(--accent);
-            text-shadow: 0 0 40px var(--glow-green);
-        }
-
-        .hero-content .subtitle {
-            font-size: 24px;
-            color: var(--bitcoin-orange);
-            margin-bottom: 32px;
-            font-weight: 600;
-        }
-
-        .hero-content .description {
-            font-size: 18px;
+        .tagline {
             color: var(--muted);
+            font-size: 13px;
+        }
+
+        /* Disclaimer Box */
+        .disclaimer {
+            background: rgba(255, 107, 53, 0.1);
+            border: 2px solid var(--warning);
+            border-radius: 8px;
+            padding: 24px;
             margin-bottom: 40px;
+        }
+
+        .disclaimer h2 {
+            color: var(--warning);
+            font-size: 16px;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .disclaimer p {
+            color: var(--fg);
+            font-size: 13px;
             line-height: 1.8;
-        }
-
-        .hero-buttons {
-            display: flex;
-            gap: 20px;
-        }
-
-        .secondary-button {
-            background: transparent;
-            color: var(--accent);
-            padding: 12px 28px;
-            border: 2px solid var(--accent);
-            border-radius: 8px;
-            text-decoration: none;
-            font-weight: 600;
-            transition: all 0.3s;
-        }
-
-        .secondary-button:hover {
-            background: var(--accent);
-            color: var(--bg);
-            transform: translateY(-2px);
-            box-shadow: 0 10px 30px var(--glow-green);
-        }
-
-        .hero-visual {
-            position: relative;
-        }
-
-        .protocol-diagram {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 20px;
-            padding: 40px;
-            position: relative;
-            overflow: hidden;
-            box-shadow: 0 0 10px #003a2b, 0 0 20px var(--glow-green);
-            animation: pulse-glow 2.4s ease-in-out infinite;
-        }
-
-        @keyframes pulse-glow {
-            0%, 100% {
-                box-shadow: 0 0 10px #003a2b, 0 0 20px var(--glow-green);
-            }
-            50% {
-                box-shadow: 0 0 18px #00664c, 0 0 30px rgba(0, 255, 136, 0.3);
-            }
-        }
-
-        .protocol-diagram::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            right: -50%;
-            width: 200%;
-            height: 200%;
-            background: conic-gradient(from 0deg, transparent, var(--accent), transparent);
-            animation: rotate 8s linear infinite;
-            opacity: 0.08;
-        }
-
-        @keyframes rotate {
-            100% { transform: rotate(360deg); }
-        }
-
-        .protocol-layers {
-            position: relative;
-            z-index: 1;
-        }
-
-        .protocol-layer {
-            background: rgba(14, 21, 22, 0.6);
-            border: 1px solid var(--border-hover);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 16px;
-            transition: all 0.3s;
-        }
-
-        .protocol-layer:hover {
-            background: rgba(0, 255, 136, 0.05);
-            border-color: var(--accent);
-            transform: translateX(10px);
-            box-shadow: 0 0 20px var(--glow-green);
-        }
-
-        .protocol-layer h4 {
-            font-size: 16px;
-            color: var(--accent);
-            margin-bottom: 8px;
-        }
-
-        .protocol-layer p {
-            font-size: 14px;
-            color: var(--muted);
-        }
-
-        /* A to Z Section */
-        .a-to-z-section {
-            padding: 120px 0;
-            background: var(--darker-bg);
-        }
-
-        .section-header {
-            text-align: center;
-            max-width: 800px;
-            margin: 0 auto 80px;
-        }
-
-        .section-header h2 {
-            font-size: 48px;
-            font-weight: 800;
-            margin-bottom: 20px;
-        }
-
-        .section-header .highlight {
-            color: var(--accent);
-            text-shadow: 0 0 30px var(--glow-green);
-        }
-
-        .section-header p {
-            font-size: 20px;
-            color: var(--muted);
-        }
-
-        .a-to-z-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 30px;
-            margin-top: 60px;
-        }
-
-        .capability-card {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 32px;
-            transition: all 0.3s;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .capability-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 4px;
-            background: var(--gradient-1);
-            transform: scaleX(0);
-            transition: transform 0.3s;
-        }
-
-        .capability-card:hover {
-            transform: translateY(-8px);
-            border-color: var(--accent);
-            box-shadow: 0 0 30px var(--glow-green);
-        }
-
-        .capability-card:hover::before {
-            transform: scaleX(1);
-        }
-
-        .capability-icon {
-            width: 60px;
-            height: 60px;
-            background: var(--gradient-1);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 28px;
-            margin-bottom: 20px;
-            box-shadow: 0 0 20px var(--glow-green);
-        }
-
-        .capability-card h3 {
-            font-size: 20px;
             margin-bottom: 12px;
-            color: var(--fg);
         }
 
-        .capability-card p {
-            color: var(--muted);
-            font-size: 15px;
-            line-height: 1.6;
+        .disclaimer p:last-child {
+            margin-bottom: 0;
         }
 
-        /* Use Cases Section */
-        .use-cases-section {
-            padding: 120px 0;
-        }
-
-        .use-case-tabs {
-            display: flex;
-            gap: 20px;
+        /* Content Sections */
+        section {
             margin-bottom: 60px;
-            flex-wrap: wrap;
-            justify-content: center;
         }
 
-        .tab-button {
-            background: var(--card-bg);
-            border: 2px solid var(--border-hover);
-            color: var(--fg);
-            padding: 16px 32px;
-            border-radius: 12px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .tab-button:hover, .tab-button.active {
-            background: var(--hover-bg);
-            border-color: var(--accent);
+        h2 {
+            font-size: 20px;
             color: var(--accent);
-            transform: translateY(-2px);
-            box-shadow: 0 0 20px var(--glow-green);
-        }
-
-        .use-case-content {
-            display: none;
-        }
-
-        .use-case-content.active {
-            display: block;
-        }
-
-        .use-case-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 30px;
-        }
-
-        .use-case-card {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 32px;
-            transition: all 0.3s;
-        }
-
-        .use-case-card:hover {
-            border-color: var(--accent);
-            transform: translateY(-4px);
-            box-shadow: 0 0 30px var(--glow-green);
-        }
-
-        .use-case-badge {
-            display: inline-block;
-            background: rgba(0, 255, 136, 0.1);
-            color: var(--accent);
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 16px;
-            border: 1px solid var(--accent);
-        }
-
-        .use-case-card h4 {
-            font-size: 22px;
-            margin-bottom: 12px;
-            color: var(--fg);
-        }
-
-        .use-case-card .scenario {
-            color: var(--muted);
-            font-size: 15px;
-            line-height: 1.7;
             margin-bottom: 20px;
         }
 
-        .use-case-features {
+        p {
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.8;
+            margin-bottom: 16px;
+        }
+
+        ul {
             list-style: none;
-            margin-top: 20px;
+            margin-bottom: 20px;
         }
 
-        .use-case-features li {
+        li {
             color: var(--muted);
-            font-size: 14px;
+            font-size: 13px;
             padding: 8px 0;
-            padding-left: 28px;
+            padding-left: 24px;
             position: relative;
         }
 
-        .use-case-features li::before {
-            content: '✓';
+        li::before {
+            content: '•';
             position: absolute;
-            left: 0;
+            left: 8px;
             color: var(--accent);
-            font-weight: bold;
         }
 
-        /* How It Works */
-        .how-it-works {
-            padding: 120px 0;
-            background: var(--darker-bg);
+        .negative-list li::before {
+            content: '✗';
+            color: var(--warning);
         }
 
-        .timeline {
-            position: relative;
-            max-width: 900px;
-            margin: 0 auto;
-        }
-
-        .timeline::before {
-            content: '';
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 2px;
-            height: 100%;
-            background: linear-gradient(180deg, var(--accent) 0%, rgba(0, 255, 136, 0.1) 100%);
-        }
-
-        .timeline-item {
-            display: flex;
-            margin-bottom: 60px;
-            position: relative;
-        }
-
-        .timeline-item:nth-child(odd) {
-            flex-direction: row-reverse;
-        }
-
-        .timeline-content {
-            width: 45%;
+        /* Pricing Section */
+        .pricing {
             background: var(--card-bg);
             border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 32px;
-        }
-
-        .timeline-number {
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 60px;
-            height: 60px;
-            background: var(--gradient-1);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            font-weight: 800;
-            color: var(--bg);
-            box-shadow: 0 0 0 8px var(--darker-bg), 0 0 30px var(--glow-green);
-        }
-
-        .timeline-content h3 {
-            font-size: 22px;
-            margin-bottom: 12px;
-            color: var(--accent);
-        }
-
-        .timeline-content p {
-            color: var(--muted);
-            line-height: 1.7;
-        }
-
-        /* Trust Indicators */
-        .trust-section {
-            padding: 120px 0;
-            text-align: center;
-        }
-
-        .trust-metrics {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 40px;
-            margin-top: 60px;
-        }
-
-        .metric {
-            padding: 32px;
-        }
-
-        .metric-value {
-            font-size: 56px;
-            font-weight: 900;
-            color: var(--accent);
-            text-shadow: 0 0 30px var(--glow-green);
-            margin-bottom: 12px;
-        }
-
-        .metric-label {
-            font-size: 18px;
-            color: var(--muted);
-            font-weight: 600;
-        }
-
-        /* Features Grid */
-        .features-section {
-            padding: 120px 0;
-            background: var(--darker-bg);
-        }
-
-        /* Developer Portal Section */
-        .developer-section {
-            padding: 120px 0;
-            background: var(--bg);
-        }
-
-        .portal-links {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 30px;
-            margin-top: 60px;
-            margin-bottom: 80px;
-        }
-
-        .portal-card {
-            background: var(--card-bg);
-            border: 2px solid var(--border-color);
-            border-radius: 16px;
-            padding: 32px;
-            text-decoration: none;
-            color: var(--fg);
-            transition: all 0.3s;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .portal-card:hover {
-            border-color: var(--accent);
-            transform: translateY(-8px);
-            box-shadow: 0 0 30px var(--glow-green);
-        }
-
-        .portal-icon {
-            font-size: 48px;
-            margin-bottom: 16px;
-        }
-
-        .portal-card h3 {
-            font-size: 22px;
-            margin-bottom: 8px;
-            color: var(--accent);
-        }
-
-        .portal-card p {
-            color: var(--muted);
-            font-size: 14px;
-            line-height: 1.6;
-            margin-bottom: 16px;
-        }
-
-        .portal-arrow {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            font-size: 24px;
-            color: var(--accent);
-            transition: transform 0.3s;
-        }
-
-        .portal-card:hover .portal-arrow {
-            transform: translateX(5px);
-        }
-
-        /* API Documentation Styles */
-        .api-docs {
-            max-width: 1000px;
-            margin: 0 auto;
-        }
-
-        .api-section-title {
-            font-size: 28px;
-            color: var(--accent);
-            margin-bottom: 32px;
-            margin-top: 60px;
-        }
-
-        .api-block {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 32px;
-            margin-bottom: 30px;
-        }
-
-        .api-block h4 {
-            font-size: 20px;
-            color: var(--fg);
-            margin-bottom: 8px;
-        }
-
-        .api-description {
-            color: var(--muted);
-            margin-bottom: 24px;
-            font-size: 15px;
-        }
-
-        .endpoint-list {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .endpoint-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            background: var(--input-bg);
-            border: 1px solid var(--border-hover);
             border-radius: 8px;
-            padding: 12px 16px;
+            padding: 32px;
+            margin-top: 40px;
         }
 
-        .http-method {
-            padding: 4px 12px;
-            border-radius: 6px;
-            font-weight: 700;
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .http-method.get {
-            background: rgba(16, 185, 129, 0.1);
-            color: #10b981;
-            border: 1px solid #10b981;
-        }
-
-        .http-method.post {
-            background: rgba(59, 130, 246, 0.1);
-            color: #3b82f6;
-            border: 1px solid #3b82f6;
-        }
-
-        .endpoint-url {
-            flex: 1;
-            color: var(--accent);
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            word-break: break-all;
-        }
-
-        .copy-btn {
-            background: transparent;
-            border: 1px solid var(--border-hover);
-            color: var(--muted);
-            padding: 6px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.3s;
+        .pricing h3 {
             font-size: 16px;
-        }
-
-        .copy-btn:hover {
-            background: var(--hover-bg);
-            border-color: var(--accent);
-            color: var(--accent);
-        }
-
-        .api-note {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-top: 16px;
-            padding: 12px;
-            background: rgba(247, 147, 26, 0.05);
-            border-left: 3px solid var(--bitcoin-orange);
-            border-radius: 6px;
-            color: var(--muted);
-            font-size: 14px;
-        }
-
-        .note-icon {
-            font-size: 20px;
-        }
-
-        .api-note code {
-            background: rgba(0, 0, 0, 0.3);
-            padding: 2px 6px;
-            border-radius: 4px;
-            color: var(--bitcoin-orange);
-            font-family: monospace;
-        }
-
-        /* Code Examples */
-        .code-examples {
-            margin-top: 60px;
-        }
-
-        .code-block {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            overflow: hidden;
-            margin-bottom: 24px;
-        }
-
-        .code-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 16px 20px;
-            background: var(--input-bg);
-            border-bottom: 1px solid var(--border-hover);
-        }
-
-        .code-title {
-            color: var(--accent);
-            font-weight: 600;
-            font-size: 15px;
-        }
-
-        .copy-code-btn {
-            background: var(--accent);
-            color: var(--bg);
-            border: none;
-            padding: 6px 16px;
-            border-radius: 6px;
-            font-weight: 600;
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .copy-code-btn:hover {
-            box-shadow: 0 0 20px var(--glow-green);
-            transform: translateY(-2px);
-        }
-
-        .code-block pre {
-            margin: 0;
-            padding: 20px;
-            overflow-x: auto;
-            background: var(--bg);
-        }
-
-        .code-block code {
-            color: var(--accent);
-            font-family: 'Courier New', Consolas, monospace;
-            font-size: 13px;
-            line-height: 1.6;
-        }
-
-        /* Live Test Section */
-        .live-test-section {
-            margin-top: 60px;
-        }
-
-        .test-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 30px;
-            margin-top: 32px;
-        }
-
-        .test-card {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 32px;
-        }
-
-        .test-card h4 {
-            font-size: 20px;
+            margin-bottom: 16px;
             color: var(--fg);
+        }
+
+        .pricing-note {
+            background: rgba(0, 255, 136, 0.05);
+            border-left: 3px solid var(--accent);
+            padding: 16px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        .tier {
+            padding: 20px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .tier:last-child {
+            border-bottom: none;
+        }
+
+        .tier-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent);
             margin-bottom: 8px;
         }
 
-        .test-card p {
+        .tier-price {
+            font-size: 13px;
             color: var(--muted);
-            margin-bottom: 20px;
-            font-size: 14px;
-        }
-
-        .test-button {
-            width: 100%;
-            background: var(--gradient-1);
-            color: var(--bg);
-            border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 15px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .test-button:hover {
-            box-shadow: 0 0 30px var(--glow-green);
-            transform: translateY(-2px);
-        }
-
-        .test-result {
-            margin-top: 16px;
-            padding: 16px;
-            background: var(--input-bg);
-            border: 1px solid var(--border-hover);
-            border-radius: 8px;
-            color: var(--accent);
-            font-family: monospace;
-            font-size: 12px;
-            max-height: 300px;
-            overflow-y: auto;
-            display: none;
-        }
-
-        .test-result:not(:empty) {
-            display: block;
-        }
-
-        /* Code block scrollbar styling */
-        .code-block pre::-webkit-scrollbar {
-            height: 8px;
-        }
-
-        .code-block pre::-webkit-scrollbar-track {
-            background: var(--input-bg);
-        }
-
-        .code-block pre::-webkit-scrollbar-thumb {
-            background: var(--border-hover);
-            border-radius: 4px;
-        }
-
-        .code-block pre::-webkit-scrollbar-thumb:hover {
-            background: var(--accent);
-        }
-
-        .test-result::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        .test-result::-webkit-scrollbar-track {
-            background: var(--input-bg);
-        }
-
-        .test-result::-webkit-scrollbar-thumb {
-            background: var(--border-hover);
-            border-radius: 4px;
-        }
-
-        .test-result::-webkit-scrollbar-thumb:hover {
-            background: var(--accent);
-        }
-
-        .features-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 30px;
-            margin-top: 60px;
-        }
-
-        .feature-card {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 40px;
-            text-align: center;
-            transition: all 0.3s;
-        }
-
-        .feature-card:hover {
-            border-color: var(--accent);
-            transform: translateY(-8px);
-            box-shadow: 0 0 30px var(--glow-green);
-        }
-
-        .feature-icon {
-            width: 80px;
-            height: 80px;
-            background: var(--gradient-1);
-            border-radius: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 36px;
-            margin: 0 auto 24px;
-            box-shadow: 0 0 30px var(--glow-green);
-        }
-
-        .feature-card h3 {
-            font-size: 20px;
             margin-bottom: 12px;
         }
 
-        .feature-card p {
-            color: var(--muted);
-            line-height: 1.7;
-        }
-
-        /* CTA Section */
-        .cta-section {
-            padding: 120px 0;
-            text-align: center;
-        }
-
-        .cta-box {
-            background: var(--gradient-2);
-            border-radius: 24px;
-            padding: 80px 40px;
-            max-width: 900px;
-            margin: 0 auto;
-            position: relative;
-            overflow: hidden;
-            border: 2px solid var(--bitcoin-orange);
-        }
-
-        .cta-box::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            right: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
-            animation: pulse 4s ease-in-out infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); opacity: 0.5; }
-            50% { transform: scale(1.1); opacity: 0.8; }
-        }
-
-        .cta-box h2 {
-            font-size: 42px;
-            font-weight: 900;
-            margin-bottom: 20px;
-            color: white;
-            position: relative;
-            z-index: 1;
-        }
-
-        .cta-box p {
-            font-size: 20px;
-            color: rgba(255, 255, 255, 0.9);
-            margin-bottom: 40px;
-            position: relative;
-            z-index: 1;
-        }
-
-        .cta-buttons-large {
+        /* Links */
+        .link-bar {
             display: flex;
-            gap: 20px;
-            justify-content: center;
-            position: relative;
-            z-index: 1;
-            flex-wrap: wrap;
+            gap: 24px;
+            padding: 20px 0;
+            border-top: 1px solid var(--border-color);
+            margin-top: 40px;
         }
 
-        .white-button {
-            background: white;
-            color: var(--bg);
-            padding: 16px 40px;
-            border-radius: 12px;
+        .link-bar a {
+            color: var(--accent);
             text-decoration: none;
-            font-weight: 700;
-            font-size: 18px;
-            transition: all 0.3s;
+            font-size: 13px;
+            border-bottom: 1px solid transparent;
+            transition: all 0.2s;
         }
 
-        .white-button:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-        }
-
-        .cta-buttons-large .secondary-button {
-            padding: 16px 40px;
-            border-radius: 12px;
-            text-decoration: none;
-            font-weight: 700;
-            font-size: 18px;
-            transition: all 0.3s;
-        }
-
-        .cta-buttons-large .secondary-button:hover {
-            transform: translateY(-4px);
+        .link-bar a:hover {
+            border-bottom-color: var(--accent);
         }
 
         /* Footer */
         footer {
-            background: var(--darker-bg);
+            margin-top: 80px;
+            padding-top: 40px;
             border-top: 1px solid var(--border-color);
-            padding: 60px 0 30px;
-        }
-
-        .footer-content {
-            display: grid;
-            grid-template-columns: 2fr 1fr 1fr 1fr;
-            gap: 60px;
-            margin-bottom: 40px;
-        }
-
-        .footer-brand h3 {
-            font-size: 24px;
-            margin-bottom: 16px;
-            color: var(--accent);
-            text-shadow: 0 0 20px var(--glow-green);
-        }
-
-        .footer-brand p {
-            color: var(--muted);
-            line-height: 1.7;
-        }
-
-        .footer-links h4 {
-            font-size: 16px;
-            margin-bottom: 20px;
-            color: var(--accent);
-        }
-
-        .footer-links ul {
-            list-style: none;
-        }
-
-        .footer-links ul li {
-            margin-bottom: 12px;
-        }
-
-        .footer-links a {
-            color: var(--muted);
-            text-decoration: none;
-            transition: color 0.3s;
-        }
-
-        .footer-links a:hover {
-            color: var(--accent);
-        }
-
-        .footer-bottom {
             text-align: center;
-            padding-top: 30px;
-            border-top: 1px solid var(--border-color);
+        }
+
+        footer p {
+            font-size: 12px;
             color: var(--muted);
         }
 
-        /* Responsive */
-        @media (max-width: 968px) {
-            .hero-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .hero-content h1 {
-                font-size: 48px;
-            }
-
-            .nav-links {
-                display: none;
-            }
-
-            .portal-links {
-                grid-template-columns: 1fr;
-            }
-
-            .test-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .endpoint-item {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-
-            .code-header {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 12px;
-            }
-
-            .copy-code-btn {
-                width: 100%;
-            }
-
-            .code-block pre {
-                font-size: 12px;
-                padding: 16px;
-            }
-
-            .cta-buttons-large {
-                flex-direction: column;
-                align-items: stretch;
-            }
-
-            .white-button,
-            .cta-buttons-large .secondary-button {
-                width: 100%;
-                text-align: center;
-            }
-
-            .timeline::before {
-                left: 30px;
-            }
-
-            .timeline-item,
-            .timeline-item:nth-child(odd) {
-                flex-direction: row;
-            }
-
-            .timeline-content {
-                width: calc(100% - 80px);
-                margin-left: 80px;
-            }
-
-            .timeline-number {
-                left: 30px;
-            }
-
-            .footer-content {
-                grid-template-columns: 1fr;
-            }
-
-            .a-to-z-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        /* Animations */
-        @keyframes fadeInUp {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .animate-in {
-            animation: fadeInUp 0.8s ease-out;
-        }
-    
-</style>
-<style>
-/* UI_CORE_LANDING_OVERRIDE */
-/* Force KeyAuth landing to use the same glass + matrix aesthetic as /login */
-
-:root{
-  --bg:#000;
-  --dark-bg:#000;
-  --darker-bg: rgba(0,0,0,.22);
-
-  --fg: rgba(235,255,245,.92);
-  --text-light: rgba(235,255,245,.92);
-  --muted: rgba(235,255,245,.70);
-  --text-muted: rgba(235,255,245,.62);
-
-  --accent: rgba(0,255,136,.95);
-
-  --border-color: rgba(255,255,255,.08);
-  --border-hover: rgba(0,255,136,.22);
-
-  --card-bg: rgba(8,12,10,.22);
-  --panel: rgba(8,12,10,.22);
-  --input-bg: rgba(0,0,0,.18);
-  --hover-bg: rgba(0,0,0,.28);
-
-  --gradient-1: linear-gradient(180deg, rgba(0,255,136,.12) 0%, rgba(0,0,0,.12) 100%);
-  --gradient-2: radial-gradient(ellipse at top, rgba(0,255,136,.10) 0%, transparent 60%);
-
-  --glow-green: rgba(0,255,136,.18);
-  --glow-orange: rgba(249,115,22,.18);
-}
-
-.matrix-canvas{ display:none !important; }
-
-body{
-  background:#000 !important;
-  color: rgba(235,255,245,.92) !important;
-}
-
-nav{
-  background: rgba(0,0,0,.25) !important;
-  border-bottom: 1px solid rgba(255,255,255,.08) !important;
-  backdrop-filter: blur(10px) !important;
-}
-
-.logo{
-  font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace !important;
-  letter-spacing: .06em !important;
-  text-transform: uppercase !important;
-}
-
-[class*="card"], .card, .panel, .feature, .tier-card, .pricing-card, .section-card{
-  background: rgba(8,12,10,.22) !important;
-  border: 1px solid rgba(255,255,255,.08) !important;
-  box-shadow: 0 10px 40px rgba(0,0,0,.45) !important;
-  backdrop-filter: blur(10px) !important;
-}
-
-a:hover{
-  text-shadow: 0 0 14px rgba(0,255,136,.35) !important;
-}
-</style>
-
-  <link rel="stylesheet" href="/static/ui_core.css?v=1"/>
-</head>
-<body>
-  <canvas id="matrix-bg"></canvas>
-  <div class="wrap">
-    <!-- Matrix Background Canvas - Warp Effect Only -->
-    <canvas id="matrix-warp" class="matrix-canvas" aria-hidden="true"></canvas>
-
-    <!-- Navigation -->
-    <nav>
-        <div class="nav-content">
-            <div class="logo">⚡ KeyAuth Protocol ⚡</div>
-            <ul class="nav-links">
-    <li><a href="/playground">Playground</a></li>
-    <li><a href="/pof/">Proof of Funds</a></li>
-    <li><a href="/pof/leaderboard">Whale Leaderboard</a></li>
-    <li><a href="/login">Login</a></li>
-</ul>
-            <a href="#contact" class="cta-button">Get Started</a>
-        </div>
-    </nav>
-
-    <!-- Hero Section -->
-    <section class="hero">
-        <div class="container">
-            <div class="hero-grid">
-                <div class="hero-content animate-in">
-                    <h1> Universal Bitcoin Identity Layer</h1>
-                    <p class="subtitle"> Solutions for the Web3 Future</p>
-                    <p class="description">
-                        Bridge your Web2 business into the Bitcoin economy with enterprise-grade authentication,
-                        proof-of-funds, and identity services. No custody. No compromise. Just cryptographic truth.
-                    </p>
-                    <div class="hero-buttons">
-                        <a href="#contact" class="cta-button">Request Consultation</a>
-                        <a href="#developer" class="secondary-button">Try API Now</a>
-                    </div>
-                </div>
-                <div class="hero-visual">
-                    <div class="protocol-diagram">
-                        <div class="protocol-layers">
-                            <div class="protocol-layer">
-                                <h4>🌐 OAuth2 / OpenID Connect</h4>
-                                <p>Standards-based SSO for seamless integration</p>
-                            </div>
-                            <div class="protocol-layer">
-                                <h4>⚡ LNURL Authentication</h4>
-                                <p>Instant Lightning Network login without passwords</p>
-                            </div>
-                            <div class="protocol-layer">
-                                <h4>🔐 Bitcoin Signature Auth</h4>
-                                <p>Cryptographic identity tied to Bitcoin keys</p>
-                            </div>
-                            <div class="protocol-layer">
-                                <h4>💰 Proof of Funds (PSBT)</h4>
-                                <p>Non-custodial verification of Bitcoin holdings</p>
-                            </div>
-                            <div class="protocol-layer">
-                                <h4>👥 Covenant Groups</h4>
-                                <p>Multi-party coordination with threshold controls</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- A to Z Capabilities -->
-    <section id="capabilities" class="a-to-z-section">
-        <div class="container">
-            <div class="section-header">
-                <h2>From <span class="highlight">A to Z</span>, We've Got You Covered</h2>
-                <p>KeyAuth Protocol covers every need in the Bitcoin authentication and identity space</p>
-            </div>
-
-            <div class="a-to-z-grid">
-                <div class="capability-card">
-                    <div class="capability-icon">🔐</div>
-                    <h3>Authentication Services</h3>
-                    <p>LNURL-auth, Bitcoin signature verification, OAuth2/OIDC integration for passwordless, cryptographic authentication</p>
-                </div>
-
-                <div class="capability-card">
-                    <div class="capability-icon">💰</div>
-                    <h3>Proof of Funds</h3>
-                    <p>Non-custodial PSBT verification with privacy levels (boolean/threshold/aggregate) for lending, trading, and more</p>
-                </div>
-
-                <div class="capability-card">
-                    <div class="capability-icon">🌐</div>
-                    <h3>SSO Integration</h3>
-                    <p>Drop-in replacement for Auth0, Okta, or Firebase - but with Bitcoin identity at the core</p>
-                </div>
-
-                <div class="capability-card">
-                    <div class="capability-icon">👥</div>
-                    <h3>Covenant Groups</h3>
-                    <p>Multi-party coordination, governance, and access control with cryptographic membership verification</p>
-                </div>
-
-                <div class="capability-card">
-                    <div class="capability-icon">💬</div>
-                    <h3>Real-Time Chat</h3>
-                    <p>WebSocket-powered chat with Bitcoin-native identity, perfect for trading desks or DAO coordination</p>
-                </div>
-
-                <div class="capability-card">
-                    <div class="capability-icon">🎟️</div>
-                    <h3>Access Control</h3>
-                    <p>Token-gated content, tiered memberships, and threshold-based permissions tied to Bitcoin holdings</p>
-                </div>
-
-                <div class="capability-card">
-                    <div class="capability-icon">📊</div>
-                    <h3>Enterprise Analytics</h3>
-                    <p>Track authentication events, covenant activity, and user behavior with privacy-preserving analytics</p>
-                </div>
-
-                <div class="capability-card">
-                    <div class="capability-icon">🔗</div>
-                    <h3>API Integration</h3>
-                    <p>RESTful APIs and WebSocket endpoints for seamless integration with your existing infrastructure</p>
-                </div>
-
-                <div class="capability-card">
-                    <div class="capability-icon">🛡️</div>
-                    <h3>Security Auditing</h3>
-                    <p>Comprehensive logging, challenge-response verification, and cryptographic audit trails</p>
-                </div>
-
-                <div class="capability-card">
-                    <div class="capability-icon">⚙️</div>
-                    <h3>Custom Solutions</h3>
-                    <p>White glove service for bespoke authentication flows, multi-sig coordination, and specialized use cases</p>
-                </div>
-
-                <div class="capability-card">
-                    <div class="capability-icon">🚀</div>
-                    <h3>Migration Services</h3>
-                    <p>Migrate from Web2 auth providers to Bitcoin-native identity with zero downtime</p>
-                </div>
-
-                <div class="capability-card">
-                    <div class="capability-icon">📱</div>
-                    <h3>Mobile & Desktop</h3>
-                    <p>SDK support for iOS, Android, and desktop applications with unified Bitcoin identity</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Use Cases by Industry -->
-    <section id="use-cases" class="use-cases-section">
-        <div class="container">
-            <div class="section-header">
-                <h2>Real-World <span class="highlight">Solutions</span></h2>
-                <p>Proven implementations across industries</p>
-            </div>
-
-            <div class="use-case-tabs">
-                <button class="tab-button active">💼 Finance</button>
-                <button class="tab-button">🏢 Enterprise</button>
-                <button class="tab-button">🌐 Web3</button>
-                <button class="tab-button">👥 Community</button>
-            </div>
-
-            <!-- Finance Use Cases -->
-            <div id="finance" class="use-case-content active">
-                <div class="use-case-grid">
-                    <div class="use-case-card">
-                        <div class="use-case-badge">Trading Platforms</div>
-                        <h4>Exclusive Trading Communities</h4>
-                        <p class="scenario">
-                            <strong>Challenge:</strong> Prevent spam and bots in premium trading groups while maintaining privacy.<br><br>
-                            <strong>Solution:</strong> LNURL-auth for instant signup, PSBT proof-of-funds for tiered access (e.g., 1 BTC minimum for whale rooms), real-time chat with cryptographic identities.
-                        </p>
-                        <ul class="use-case-features">
-                            <li>No email required, full pseudonymity</li>
-                            <li>Automatic tier assignment based on holdings</li>
-                            <li>Non-custodial verification</li>
-                        </ul>
-                    </div>
-
-                    <div class="use-case-card">
-                        <div class="use-case-badge">P2P Lending</div>
-                        <h4>Non-Custodial Lending Platforms</h4>
-                        <p class="scenario">
-                            <strong>Challenge:</strong> Verify collateral without taking custody of user funds.<br><br>
-                            <strong>Solution:</strong> Borrowers prove funds via PSBT, lenders authenticate with Bitcoin keys, smart contracts triggered by cryptographic proofs.
-                        </p>
-                        <ul class="use-case-features">
-                            <li>Prove up to X BTC without moving coins</li>
-                            <li>Privacy-preserving verification (boolean/threshold modes)</li>
-                            <li>Integration with multi-sig escrow</li>
-                        </ul>
-                    </div>
-
-                    <div class="use-case-card">
-                        <div class="use-case-badge">Wealth Management</div>
-                        <h4>Bitcoin Private Banking</h4>
-                        <p class="scenario">
-                            <strong>Challenge:</strong> Wealthy clients want white-glove service with full privacy.<br><br>
-                            <strong>Solution:</strong> Covenant groups for family offices, threshold-based access to advisors, encrypted chat with proof-of-identity.
-                        </p>
-                        <ul class="use-case-features">
-                            <li>Multi-party governance for family offices</li>
-                            <li>Selective disclosure to advisors</li>
-                            <li>Audit trail for compliance</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Enterprise Use Cases -->
-            <div id="enterprise" class="use-case-content">
-                <div class="use-case-grid">
-                    <div class="use-case-card">
-                        <div class="use-case-badge">HR & Payroll</div>
-                        <h4>Bitcoin-Paid Contractor Platforms</h4>
-                        <p class="scenario">
-                            <strong>Challenge:</strong> Verify contractor payment capabilities and company solvency before engagement.<br><br>
-                            <strong>Solution:</strong> Both parties prove funds, establish covenant for escrow, integrated chat for project coordination.
-                        </p>
-                        <ul class="use-case-features">
-                            <li>Reduce payment disputes by 90%</li>
-                            <li>Cryptographic work agreements</li>
-                            <li>Milestone-based fund verification</li>
-                        </ul>
-                    </div>
-
-                    <div class="use-case-card">
-                        <div class="use-case-badge">Supply Chain</div>
-                        <h4>Bitcoin-Settled B2B Networks</h4>
-                        <p class="scenario">
-                            <strong>Challenge:</strong> Coordinate multi-party supply chains with Bitcoin settlements.<br><br>
-                            <strong>Solution:</strong> Each stakeholder authenticates with Bitcoin identity, covenants per shipment, real-time status updates via WebSocket.
-                        </p>
-                        <ul class="use-case-features">
-                            <li>Immutable identity tied to payment rails</li>
-                            <li>Automated settlement triggers</li>
-                            <li>Multi-party chat per shipment</li>
-                        </ul>
-                    </div>
-
-                    <div class="use-case-card">
-                        <div class="use-case-badge">SaaS Migration</div>
-                        <h4>Replace Auth0 with Bitcoin Auth</h4>
-                        <p class="scenario">
-                            <strong>Challenge:</strong> Existing SaaS wants to add Bitcoin-native identity without rewriting auth.<br><br>
-                            <strong>Solution:</strong> Drop-in OAuth2/OIDC provider, migrate existing users to Bitcoin keys, maintain legacy auth during transition.
-                        </p>
-                        <ul class="use-case-features">
-                            <li>Standards-compliant OIDC endpoints</li>
-                            <li>Zero downtime migration</li>
-                            <li>Dual auth during transition</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Web3 Use Cases -->
-            <div id="web3" class="use-case-content">
-                <div class="use-case-grid">
-                    <div class="use-case-card">
-                        <div class="use-case-badge">DAO Governance</div>
-                        <h4>Bitcoin-Native DAO Coordination</h4>
-                        <p class="scenario">
-                            <strong>Challenge:</strong> Sybil-resistant voting with transparent stake verification.<br><br>
-                            <strong>Solution:</strong> Covenant-based membership, voting weight from PoF, real-time proposal discussions, OAuth for off-chain tools.
-                        </p>
-                        <ul class="use-case-features">
-                            <li>Cryptographic voting with PoF weight</li>
-                            <li>Integrate with Snapshot, Discourse, etc.</li>
-                            <li>Threshold-based proposal rights</li>
-                        </ul>
-                    </div>
-
-                    <div class="use-case-card">
-                        <div class="use-case-badge">Content Platforms</div>
-                        <h4>Bitcoin-Gated Content & Subscriptions</h4>
-                        <p class="scenario">
-                            <strong>Challenge:</strong> Monetize content without payment processors or censorship risk.<br><br>
-                            <strong>Solution:</strong> LNURL login, threshold-based access tiers (e.g., 0.01 BTC for premium), OAuth for cross-platform access.
-                        </p>
-                        <ul class="use-case-features">
-                            <li>No Stripe, PayPal, or card fees</li>
-                            <li>Censorship-resistant monetization</li>
-                            <li>Automatic tier upgrades via PoF</li>
-                        </ul>
-                    </div>
-
-                    <div class="use-case-card">
-                        <div class="use-case-badge">NFT & Gaming</div>
-                        <h4>Bitcoin-Authenticated Gaming</h4>
-                        <p class="scenario">
-                            <strong>Challenge:</strong> Prove ownership of high-value NFTs or game assets without centralized servers.<br><br>
-                            <strong>Solution:</strong> Bitcoin signature verification for asset ownership, PSBT for in-game tournaments with real stakes.
-                        </p>
-                        <ul class="use-case-features">
-                            <li>Cryptographic proof of asset ownership</li>
-                            <li>Escrow-free tournaments</li>
-                            <li>Cross-game identity</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Community Use Cases -->
-            <div id="community" class="use-case-content">
-                <div class="use-case-grid">
-                    <div class="use-case-card">
-                        <div class="use-case-badge">Education</div>
-                        <h4>Bitcoin Learning Platforms</h4>
-                        <p class="scenario">
-                            <strong>Challenge:</strong> Progressive course access tied to Bitcoin acquisition milestones.<br><br>
-                            <strong>Solution:</strong> Free tier (LNURL auth), Premium (0.1 BTC PoF), Whale Class (1+ BTC PoF) - incentivize learning through acquisition.
-                        </p>
-                        <ul class="use-case-features">
-                            <li>Gamified learning paths</li>
-                            <li>Proof-of-progress via holdings</li>
-                            <li>Peer-to-peer mentorship matching</li>
-                        </ul>
-                    </div>
-
-                    <div class="use-case-card">
-                        <div class="use-case-badge">Local Communities</div>
-                        <h4>Regional Bitcoin Meetup Networks</h4>
-                        <p class="scenario">
-                            <strong>Challenge:</strong> Coordinate local meetups without email/phone collection.<br><br>
-                            <strong>Solution:</strong> Covenant per city, LNURL-auth for quick entry, event chat, privacy-preserving coordination.
-                        </p>
-                        <ul class="use-case-features">
-                            <li>No PII collection required</li>
-                            <li>Regional reputation building</li>
-                            <li>Cross-city collaboration</li>
-                        </ul>
-                    </div>
-
-                    <div class="use-case-card">
-                        <div class="use-case-badge">Crowdfunding</div>
-                        <h4>KYC-Free Bitcoin Crowdfunding</h4>
-                        <p class="scenario">
-                            <strong>Challenge:</strong> Global crowdfunding without payment processor restrictions.<br><br>
-                            <strong>Solution:</strong> Founders prove credibility via PoF, backers authenticate with LNURL, covenant for multi-sig escrow, real-time updates via chat.
-                        </p>
-                        <ul class="use-case-features">
-                            <li>Permissionless global fundraising</li>
-                            <li>Cryptographic accountability</li>
-                            <li>Milestone-based fund releases</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- How It Works -->
-    <section id="how-it-works" class="how-it-works">
-        <div class="container">
-            <div class="section-header">
-                <h2>How <span class="highlight">It Works</span></h2>
-                <p>From consultation to deployment in 4 simple steps</p>
-            </div>
-
-            <div class="timeline">
-                <div class="timeline-item">
-                    <div class="timeline-content">
-                        <h3>Discovery & Consultation</h3>
-                        <p>We meet with your team to understand your specific needs - whether it's migrating from Auth0, adding Bitcoin payments, or building a new Web3 product. We assess your current infrastructure and design a custom integration plan.</p>
-                    </div>
-                    <div class="timeline-number">1</div>
-                </div>
-
-                <div class="timeline-item">
-                    <div class="timeline-content">
-                        <h3>Custom Configuration</h3>
-                        <p>Our engineers configure the KeyAuth Protocol for your use case - setting up OAuth scopes, covenant structures, PoF thresholds, and privacy levels. We provide sandbox environments for testing before production.</p>
-                    </div>
-                    <div class="timeline-number">2</div>
-                </div>
-
-                <div class="timeline-item">
-                    <div class="timeline-content">
-                        <h3>Integration & Migration</h3>
-                        <p>Seamless integration with your existing systems via our RESTful API, WebSocket endpoints, or OAuth2/OIDC flows. We handle data migration from legacy auth providers with zero downtime.</p>
-                    </div>
-                    <div class="timeline-number">3</div>
-                </div>
-
-                <div class="timeline-item">
-                    <div class="timeline-content">
-                        <h3>Launch & Ongoing Support</h3>
-                        <p>Go live with 24/7 monitoring, dedicated support, and continuous optimization. We provide analytics dashboards, security audits, and proactive scaling recommendations.</p>
-                    </div>
-                    <div class="timeline-number">4</div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Features -->
-    <section id="features" class="features-section">
-        <div class="container">
-            <div class="section-header">
-                <h2>Why <span class="highlight">KeyAuth Protocol</span></h2>
-                <p>Built for generations, secured by Bitcoin</p>
-            </div>
-
-            <div class="features-grid">
-                <div class="feature-card">
-                    <div class="feature-icon">🔒</div>
-                    <h3>Non-Custodial</h3>
-                    <p>Users never give up control of their Bitcoin. All verification happens via PSBT and signatures - no custody, no counterparty risk.</p>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">🎭</div>
-                    <h3>Privacy First</h3>
-                    <p>Multiple privacy levels (boolean/threshold/aggregate). Prove holdings without revealing exact amounts. Pseudonymous by default.</p>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">⚡</div>
-                    <h3>Lightning Fast</h3>
-                    <p>LNURL-auth for instant onboarding. WebSocket real-time updates. Sub-second authentication flows.</p>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">🌐</div>
-                    <h3>Standards Compliant</h3>
-                    <p>OAuth2, OpenID Connect, LNURL, PSBT - we speak the language of both Web2 and Web3.</p>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">🛡️</div>
-                    <h3>Sybil Resistant</h3>
-                    <p>Real economic cost to create accounts. Proof-of-funds as spam protection. Covenant-based access control.</p>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">📊</div>
-                    <h3>Enterprise Grade</h3>
-                    <p>99.9% uptime SLA. SOC 2 compliant. Comprehensive audit logs. 24/7 support for critical deployments.</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Trust Indicators -->
-    <section class="trust-section">
-        <div class="container">
-            <div class="section-header">
-                <h2>Trusted by <span class="highlight">Bitcoin Natives</span></h2>
-                <p>Powering the next generation of Bitcoin-first applications</p>
-            </div>
-
-            <div class="trust-metrics">
-                <div class="metric">
-                    <div class="metric-value">100%</div>
-                    <div class="metric-label">Non-Custodial</div>
-                </div>
-                <div class="metric">
-                    <div class="metric-value">24/7</div>
-                    <div class="metric-label">White Glove Support</div>
-                </div>
-                <div class="metric">
-                    <div class="metric-value">99.9%</div>
-                    <div class="metric-label">Uptime SLA</div>
-                </div>
-                <div class="metric">
-                    <div class="metric-value">A-Z</div>
-                    <div class="metric-label">Full Coverage</div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Developer Portal / API Documentation -->
-    <section id="developer" class="developer-section">
-        <div class="container">
-            <div class="section-header">
-                <h2>Try the <span class="highlight">Protocol</span></h2>
-                <p>Explore our live dashboard, playground, and comprehensive API documentation</p>
-            </div>
-
-            <!-- Quick Access Buttons -->
-            <div class="portal-links">
-                <a href="https://hodlxxi.com/dashboard" target="_blank" class="portal-card">
-                    <div class="portal-icon">📊</div>
-                    <h3>Dashboard</h3>
-                    <p>Monitor your authentication metrics and usage</p>
-                    <span class="portal-arrow">→</span>
-                </a>
-
-                <a href="https://hodlxxi.com/playground" target="_blank" class="portal-card">
-                    <div class="portal-icon">🎮</div>
-                    <h3>Playground</h3>
-                    <p>Test authentication flows in real-time</p>
-                    <span class="portal-arrow">→</span>
-                </a>
-
-                <a href="https://hodlxxi.com/oauthx/status" target="_blank" class="portal-card">
-                    <div class="portal-icon">🔍</div>
-                    <h3>System Status</h3>
-                    <p>Check service health and uptime</p>
-                    <span class="portal-arrow">→</span>
-                </a>
-
-                <a href="https://hodlxxi.com/oauthx/docs" target="_blank" class="portal-card">
-                    <div class="portal-icon">📚</div>
-                    <h3>Documentation</h3>
-                    <p>Complete API reference and guides</p>
-                    <span class="portal-arrow">→</span>
-                </a>
-            </div>
-
-            <!-- API Documentation -->
-            <div class="api-docs">
-                <h3 class="api-section-title">🔌 Quick Start Guide</h3>
-
-                <!-- Well-Known Endpoints -->
-                <div class="api-block">
-                    <h4>🌐 Discovery Endpoints</h4>
-                    <p class="api-description">OpenID Connect discovery and JWKS endpoints</p>
-                    <div class="endpoint-list">
-                        <div class="endpoint-item">
-                            <span class="http-method get">GET</span>
-                            <code class="endpoint-url">https://hodlxxi.com/.well-known/openid-configuration</code>
-                            <button class="copy-btn" onclick="copyToClipboard('https://hodlxxi.com/.well-known/openid-configuration')">📋</button>
-                        </div>
-                        <div class="endpoint-item">
-                            <span class="http-method get">GET</span>
-                            <code class="endpoint-url">https://hodlxxi.com/oauth/jwks.json</code>
-                            <button class="copy-btn" onclick="copyToClipboard('https://hodlxxi.com/oauth/jwks.json')">📋</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Metered API -->
-                <div class="api-block">
-                    <h4>⚡ Metered API (Pay per Use)</h4>
-                    <p class="api-description">Lightning-metered verification endpoint - pay only for what you use</p>
-                    <div class="endpoint-list">
-                        <div class="endpoint-item">
-                            <span class="http-method post">POST</span>
-                            <code class="endpoint-url">https://hodlxxi.com/v1/verify</code>
-                            <button class="copy-btn" onclick="copyToClipboard('https://hodlxxi.com/v1/verify')">📋</button>
-                        </div>
-                    </div>
-                    <div class="api-note">
-                        <span class="note-icon">💡</span>
-                        <span>Returns <code>402 Payment Required</code> with BOLT11 invoice when credits depleted</span>
-                    </div>
-                </div>
-
-                <!-- Code Examples -->
-                <div class="code-examples">
-                    <h3 class="api-section-title">💻 Integration Examples</h3>
-
-                    <!-- Example 1: Configure OIDC -->
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-title">1. Configure OIDC Provider</span>
-                            <button class="copy-code-btn" onclick="copyCode('code-oidc-config')">Copy</button>
-                        </div>
-                        <pre id="code-oidc-config"><code class="language-javascript">// Example: Next.js / NextAuth.js
-import NextAuth from "next-auth";
-
-export default NextAuth({
-  providers: [
-    {
-      id: "hodlxxi",
-      name: "HODLXXI",
-      type: "oauth",
-      wellKnown: "https://hodlxxi.com/.well-known/openid-configuration",
-      authorization: { params: { scope: "openid profile" } },
-      clientId: process.env.HODLXXI_CLIENT_ID,
-      clientSecret: process.env.HODLXXI_CLIENT_SECRET,
-      profile(profile) {
-        return {
-          id: profile.sub,
-          name: profile.name,
-          email: profile.email,
-        }
-      }
-    }
-  ]
-});</code></pre>
-                    </div>
-
-                    <!-- Example 2: Token Exchange -->
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-title">2. Exchange Authorization Code for Token</span>
-                            <button class="copy-code-btn" onclick="copyCode('code-token-exchange')">Copy</button>
-                        </div>
-                        <pre id="code-token-exchange"><code class="language-bash">curl -X POST https://hodlxxi.com/oauth/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=authorization_code" \
-  -d "client_id=YOUR_CLIENT_ID" \
-  -d "client_secret=YOUR_CLIENT_SECRET" \
-  -d "code=AUTHORIZATION_CODE" \
-  -d "redirect_uri=https://yourapp.com/callback"</code></pre>
-                    </div>
-
-                    <!-- Example 3: Verify Proof -->
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-title">3. Verify Bitcoin Signature (Metered)</span>
-                            <button class="copy-code-btn" onclick="copyCode('code-verify-proof')">Copy</button>
-                        </div>
-                        <pre id="code-verify-proof"><code class="language-bash">curl -X POST https://hodlxxi.com/v1/verify \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "type": "bip322",
-    "pubkey": "02ab1234567890abcdef...",
-    "message": "login:nonce:abc123",
-    "signature": "H+Xy9..."
-  }'</code></pre>
-                    </div>
-
-                    <!-- Discovery Response -->
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-title">📡 Discovery Endpoint Response</span>
-                            <button class="copy-code-btn" onclick="copyCode('code-discovery')">Copy</button>
-                        </div>
-                        <pre id="code-discovery"><code class="language-json">{
-  "issuer": "https://hodlxxi.com",
-  "authorization_endpoint": "https://hodlxxi.com/oauth/authorize",
-  "token_endpoint": "https://hodlxxi.com/oauth/token",
-  "jwks_uri": "https://hodlxxi.com/oauth/jwks.json",
-  "userinfo_endpoint": "https://hodlxxi.com/oauth/userinfo",
-  "response_types_supported": ["code"],
-  "grant_types_supported": ["authorization_code", "refresh_token"],
-  "subject_types_supported": ["public"],
-  "id_token_signing_alg_values_supported": ["RS256"],
-  "scopes_supported": ["openid", "profile", "email"]
-}</code></pre>
-                    </div>
-                </div>
-
-                <!-- Live Test Section -->
-                <div class="live-test-section">
-                    <h3 class="api-section-title">🚀 Test Live Endpoints</h3>
-                    <div class="test-grid">
-                        <div class="test-card">
-                            <h4>Discovery Endpoint</h4>
-                            <p>Fetch OpenID configuration</p>
-                            <button class="test-button" onclick="testEndpoint('discovery')">
-                                <span id="discovery-status">Test Now</span>
-                            </button>
-                            <pre id="discovery-result" class="test-result"></pre>
-                        </div>
-                        <div class="test-card">
-                            <h4>System Status</h4>
-                            <p>Check service health</p>
-                            <button class="test-button" onclick="testEndpoint('status')">
-                                <span id="status-status">Test Now</span>
-                            </button>
-                            <pre id="status-result" class="test-result"></pre>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- CTA Section -->
-    <section id="contact" class="cta-section">
-        <div class="container">
-            <div class="cta-box">
-                <h2>Ready to Build on Bitcoin?</h2>
-                <p>E-mail or Chat with our team to discuss your specific needs</p>
-                <div class="cta-buttons-large">
-                    <a href="mailto:hodlxxi@proton.me" class="white-button">E-mail</a>
-                    <a href="https://hodlxxi.com/oauthx/docs" target="_blank" class="secondary-button" style="background: rgba(255,255,255,0.2); color: white; border-color: white;">Docs</a>
-                    <a href="https://hodlxxi.com/login" target="_blank" class="secondary-button" style="background: rgba(0,255,136,0.2); color: white; border: 2px solid var(--accent);">Login</a>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Footer -->
-    <footer>
-        <div class="container">
-            <div class="footer-content">
-                <div class="footer-brand">
-                    <h3>⚡ KeyAuth Protocol ⚡</h3>
-                    <p>The universal Bitcoin identity layer bridging Web2 to Web3. Non-custodial authentication, proof-of-funds, and covenant coordination for the Bitcoin economy.</p>
-                </div>
-                <div class="footer-links">
-                    <h4>Product</h4>
-                    <ul>
-                        <li><a href="#capabilities">Capabilities</a></li>
-                        <li><a href="#use-cases">Use Cases</a></li>
-                        <li><a href="#developer">Developer Portal</a></li>
-                        <li><a href="#features">Features</a></li>
-                        <li><a href="https://hodlxxi.com/oauthx/docs" target="_blank">Documentation</a></li>
-                        <li><a href="https://hodlxxi.com/playground" target="_blank">API Playground</a></li>
-                    </ul>
-                </div>
-                <div class="footer-links">
-                    <h4>Resources</h4>
-                    <ul>
-                        <li><a href="#">GitHub</a></li>
-                        <li><a href="#">Support</a></li>
-                        <li><a href="#">Privacy Policy</a></li>
-                        <li><a href="#">Terms of Service</a></li>
-                    </ul>
-                </div>
-            </div>
-            <div class="footer-bottom">
-                <p>&copy; 2025 KeyAuth Protocol. All rights reserved. Built on Bitcoin.</p>
-            </div>
-        </div>
-    </footer>
-
-    <script>
-        // Tab switching for use cases - Fixed for mobile
-        function showTab(tabName) {
-            // Hide all content
-            document.querySelectorAll('.use-case-content').forEach(content => {
-                content.classList.remove('active');
-            });
-
-            // Remove active from all buttons
-            document.querySelectorAll('.tab-button').forEach(button => {
-                button.classList.remove('active');
-            });
-
-            // Show selected content
-            const targetContent = document.getElementById(tabName);
-            if (targetContent) {
-                targetContent.classList.add('active');
-            }
-
-            // Add active to clicked button - find button by matching text or data attribute
-            document.querySelectorAll('.tab-button').forEach(button => {
-                const buttonText = button.textContent.toLowerCase();
-                if (buttonText.includes(tabName.toLowerCase()) ||
-                    button.getAttribute('data-tab') === tabName) {
-                    button.classList.add('active');
-                }
-            });
-        }
-
-        // Add click handlers to buttons (better than inline onclick for mobile)
-        document.addEventListener('DOMContentLoaded', function() {
-            const tabButtons = [
-                { button: document.querySelectorAll('.tab-button')[0], tab: 'finance' },
-                { button: document.querySelectorAll('.tab-button')[1], tab: 'enterprise' },
-                { button: document.querySelectorAll('.tab-button')[2], tab: 'web3' },
-                { button: document.querySelectorAll('.tab-button')[3], tab: 'community' }
-            ];
-
-            tabButtons.forEach(({ button, tab }) => {
-                if (button) {
-                    button.setAttribute('data-tab', tab);
-                    button.addEventListener('click', function(e) {
-                        e.preventDefault();
-                        showTab(tab);
-                    });
-                }
-            });
-        });
-
-        // Smooth scroll
-        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-            anchor.addEventListener('click', function (e) {
-                e.preventDefault();
-                const target = document.querySelector(this.getAttribute('href'));
-                if (target) {
-                    target.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'start'
-                    });
-                }
-            });
-        });
-
-        // Intersection Observer for animations
-        const observerOptions = {
-            threshold: 0.1,
-            rootMargin: '0px 0px -100px 0px'
-        };
-
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    entry.target.style.opacity = '1';
-                    entry.target.style.transform = 'translateY(0)';
-                }
-            });
-        }, observerOptions);
-
-        // Observe all cards
-        document.querySelectorAll('.capability-card, .use-case-card, .feature-card, .timeline-item').forEach(el => {
-            el.style.opacity = '0';
-            el.style.transform = 'translateY(30px)';
-            el.style.transition = 'all 0.6s ease-out';
-            observer.observe(el);
-        });
-
-        // ============================================================================
-        // MATRIX BACKGROUND ANIMATION - WARP EFFECT
-        // ============================================================================
-
-        /* --- Matrix: Warp (0s and 1s flying toward camera) --- */
-                // UI_CORE: define isMobile for landing matrix sizing decisions
-        const isMobile = (() => {
-          try {return window.matchMedia && window.matchMedia("(max-width: 768px)").matches;} catch(e) {}
-          return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
-        })();
-
-function startMatrixWarp(canvas) {
-            if (!canvas) return () => {};
-            const ctx = canvas.getContext('2d');
-            const CHARS = ['0', '1'];
-            let width = 0, height = 0, particles = [], raf = null;
-
-            function resize() {
-                width = window.innerWidth;
-                height = window.innerHeight;
-                canvas.width = width;
-                canvas.height = height;
-                particles = [];
-                for (let i = 0; i < (isMobile ? 120 : 400); i++) {
-                    particles.push({
-                        x: (Math.random() - 0.5) * width,
-                        y: (Math.random() - 0.5) * height,
-                        z: Math.random() * 800 + 100
-                    });
-                }
-            }
-
-            function draw() {
-                ctx.fillStyle = 'rgba(0,0,0,0.25)';
-                ctx.fillRect(0, 0, width, height);
-                ctx.fillStyle = '#00ff88';
-                for (const p of particles) {
-                    const scale = 200 / p.z;
-                    const x2 = width / 2 + p.x * scale;
-                    const y2 = height / 2 + p.y * scale;
-                    const size = Math.max(8 * scale, 1);
-                    ctx.font = size + 'px monospace';
-                    ctx.fillText(CHARS[Math.random() > 0.5 ? 1 : 0], x2, y2);
-                    p.z -= (isMobile ? 2 : 5);
-                    if (p.z < 1) {
-                        p.x = (Math.random() - 0.5) * width;
-                        p.y = (Math.random() - 0.5) * height;
-                        p.z = 800;
-                    }
-                }
-                raf = requestAnimationFrame(draw);
-            }
-
-            function onVis() {
-                if (document.hidden) {
-                    if (raf) cancelAnimationFrame(raf), raf = null;
-                } else {
-                    if (!raf) raf = requestAnimationFrame(draw);
-                }
-            }
-
-            function onResize() {
-                resize();
-            }
-
-            window.addEventListener('resize', onResize);
-            document.addEventListener('visibilitychange', onVis);
-            resize();
-            raf = requestAnimationFrame(draw);
-            return function stop() {
-                if (raf) cancelAnimationFrame(raf), raf = null;
-                window.removeEventListener('resize', onResize);
-                document.removeEventListener('visibilitychange', onVis);
-            };
-        }
-
-        /* --- Initialize Matrix Warp Background --- */
-        (function initMatrix() {
-            const warpCanvas = document.getElementById('matrix-warp');
-            if (!warpCanvas) return;
-
-            let stopWarp = startMatrixWarp(warpCanvas);
-
-            // Cleanup on page unload
-            window.addEventListener('beforeunload', () => {
-                if (stopWarp) stopWarp();
-            });
-        })();
-
-        // ============================================================================
-        // DEVELOPER PORTAL FUNCTIONS
-        // ============================================================================
-
-        // Copy text to clipboard
-        function copyToClipboard(text) {
-            navigator.clipboard.writeText(text).then(() => {
-                // Visual feedback
-                const btn = event.target;
-                const originalText = btn.textContent;
-                btn.textContent = '✓';
-                btn.style.color = 'var(--accent)';
-                setTimeout(() => {
-                    btn.textContent = originalText;
-                    btn.style.color = '';
-                }, 2000);
-            }).catch(err => {
-                console.error('Failed to copy:', err);
-            });
-        }
-
-        // Copy code block
-        function copyCode(elementId) {
-            const codeElement = document.getElementById(elementId);
-            if (!codeElement) return;
-
-            const text = codeElement.textContent;
-            navigator.clipboard.writeText(text).then(() => {
-                // Visual feedback
-                const btn = event.target;
-                const originalText = btn.textContent;
-                btn.textContent = 'Copied!';
-                setTimeout(() => {
-                    btn.textContent = originalText;
-                }, 2000);
-            }).catch(err => {
-                console.error('Failed to copy:', err);
-            });
-        }
-
-        // Test live endpoints
-        async function testEndpoint(type) {
-            const statusElement = document.getElementById(`${type}-status`);
-            const resultElement = document.getElementById(`${type}-result`);
-
-            statusElement.textContent = 'Testing...';
-            resultElement.textContent = '';
-
-            try {
-                let url;
-                if (type === 'discovery') {
-                    url = 'https://hodlxxi.com/.well-known/openid-configuration';
-                } else if (type === 'status') {
-                    url = 'https://hodlxxi.com/oauthx/status';
-                }
-
-                const response = await fetch(url);
-                const data = await response.json();
-
-                statusElement.textContent = `✓ ${response.status} ${response.statusText}`;
-                resultElement.textContent = JSON.stringify(data, null, 2);
-                resultElement.style.display = 'block';
-            } catch (error) {
-                statusElement.textContent = '✗ Error';
-                resultElement.textContent = `Error: ${error.message}\n\nThis might be due to CORS restrictions. Try accessing the URL directly in a new tab.`;
-                resultElement.style.display = 'block';
-                resultElement.style.color = 'var(--bitcoin-orange)';
-            }
-        }
-    </script>
-  </div>
-
-  <script>
-  (function() {
-    const canvas = document.getElementById('matrix-bg');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const CHARS = ['0','1'];
-    const isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
-    let width = 0, height = 0, particles = [], raf = null;
-
-    function resize() {
-      const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
-      const cssW = window.innerWidth, cssH = window.innerHeight;
-      canvas.width = Math.floor(cssW * dpr);
-      canvas.height = Math.floor(cssH * dpr);
-      canvas.style.width = cssW + 'px';
-      canvas.style.height = cssH + 'px';
-      ctx.setTransform(1,0,0,1,0,0);
-      ctx.scale(dpr, dpr);
-      width = cssW; height = cssH;
-      particles = [];
-      const count = isMobile ? 140 : 420;
-      for (let i = 0; i < count; i++) {
-        particles.push({
-          x: (Math.random() - 0.5) * width,
-          y: (Math.random() - 0.5) * height,
-          z: Math.random() * 800 + 100
-        });
-      }
-      ctx.fillStyle = 'rgba(0,0,0,1)';
-      ctx.fillRect(0, 0, width, height);
-    }
-
-    function draw() {
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = '#00ff88';
-      const speed = isMobile ? 2 : 5;
-      for (const p of particles) {
-        const scale = 200 / p.z;
-        const x2 = width / 2 + p.x * scale;
-        const y2 = height / 2 + p.y * scale;
-        const size = Math.max(8 * scale, 1);
-        ctx.font = size + 'px monospace';
-        ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
-        p.z -= speed;
-        if (p.z < 1) {
-          p.x = (Math.random() - 0.5) * width;
-          p.y = (Math.random() - 0.5) * height;
-          p.z = 800;
-        }
-      }
-      raf = requestAnimationFrame(draw);
-    }
-
-    function onVis() {
-      if (document.hidden) {
-        if (raf) { cancelAnimationFrame(raf); raf = null; }
-      } else {
-        if (!raf) raf = requestAnimationFrame(draw);
-      }
-    }
-
-    window.addEventListener('resize', resize);
-    document.addEventListener('visibilitychange', onVis);
-    resize();
-    raf = requestAnimationFrame(draw);
-  })();
-  </script>
-
-</body>
-</html>
-"""
-
-
-
-# ============================================================================
-# PLAYGROUND HTML TEMPLATE
-# ============================================================================
-
-PLAYGROUND_HTML = r"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎮 HODLXXI Playground - Test All Auth Methods</title>
-    
-    <!-- React 18 -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- QR Code -->
-    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-    
-    <!-- Socket.IO -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.min.js"></script>
-    
-    <style>
-        :root {
-            --bg: #0b0f10;
-            --panel: #11171a;
-            --fg: #e6f1ef;
-            --accent: #00ff88;
-            --orange: #f7931a;
-            --red: #ff3b30;
-            --blue: #3b82f6;
-        }
-        
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        body {
-            background: var(--bg);
-            color: var(--fg);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-            min-height: 100vh;
-            overflow-x: hidden;
-        }
-        
-        #matrix-bg {
-            position: fixed;
-            inset: 0;
-            z-index: 0;
-            pointer-events: none;
-        }
-        
-        @media (prefers-reduced-motion: reduce) {
-            #matrix-bg { display: none !important; }
-        }
-        
-        #root {
-            position: relative;
-            z-index: 1;
-            padding: 2rem;
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-        
-        .header {
-            background: rgba(17, 23, 26, 0.92);
-            border: 1px solid #0f2a24;
-            border-radius: 14px;
-            padding: 1.5rem;
-            margin-bottom: 1.5rem;
-            box-shadow: 0 0 10px rgba(0, 255, 136, 0.08);
-        }
-        
-        .header h1 {
-            color: var(--accent);
-            font-size: 2rem;
-            margin-bottom: 0.5rem;
-            text-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
-        }
-        
-        .header-info {
-            display: flex;
-            gap: 1rem;
-            margin-top: 1rem;
-            flex-wrap: wrap;
-        }
-        
-        .card {
-            background: rgba(17, 23, 26, 0.92);
-            border: 1px solid #0f2a24;
-            border-radius: 14px;
-            padding: 1.5rem;
-            margin-bottom: 1.5rem;
-            box-shadow: 0 0 10px rgba(0, 255, 136, 0.08);
-        }
-        
-        .card h2 {
-            color: var(--accent);
-            margin-bottom: 1rem;
-            font-size: 1.3rem;
-        }
-        
-        .tabs {
-            display: flex;
-            gap: 0.5rem;
-            margin-bottom: 1.5rem;
-            flex-wrap: wrap;
-        }
-        
-        .tab {
-            background: #0e1516;
-            border: 1px solid #184438;
-            color: var(--fg);
-            padding: 0.75rem 1.25rem;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s;
-            font-weight: 500;
-            font-size: 0.9rem;
-        }
-        
-        .tab.active {
-            background: var(--accent);
-            color: #000;
-            border-color: var(--accent);
-            box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
-        }
-        
-        .tab:hover:not(.active) {
-            border-color: var(--accent);
-            background: rgba(0, 255, 136, 0.1);
-        }
-        
-        input, textarea, select {
-            width: 100%;
-            background: #0e1315;
-            color: var(--fg);
-            border: 1px solid #255244;
-            padding: 0.75rem;
-            border-radius: 8px;
-            font-family: ui-monospace, monospace;
-            margin: 0.5rem 0;
-            font-size: 0.9rem;
-        }
-        
-        input:focus, textarea:focus, select:focus {
-            outline: none;
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px rgba(0, 255, 136, 0.2);
-        }
-        
-        button {
-            background: var(--accent);
-            color: #000;
-            border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s;
-            font-size: 0.95rem;
-        }
-        
-        button:hover {
-            box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
-            transform: translateY(-2px);
-        }
-        
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        button.secondary {
+        /* Button */
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
             background: transparent;
             border: 1px solid var(--accent);
             color: var(--accent);
-        }
-        
-        button.danger {
-            background: var(--red);
-            color: white;
-        }
-        
-        .result {
-            background: #0e1315;
-            border: 1px solid #255244;
-            padding: 1rem;
-            border-radius: 8px;
-            font-family: monospace;
-            font-size: 0.8rem;
-            max-height: 400px;
-            overflow-y: auto;
-            margin-top: 1rem;
-        }
-        
-        .result.success {
-            border-color: var(--accent);
-            background: rgba(0, 255, 136, 0.05);
-        }
-        
-        .result.error {
-            border-color: var(--red);
-            background: rgba(255, 59, 48, 0.05);
-            color: var(--red);
-        }
-        
-        .qr-container {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin: 1rem 0;
-            padding: 1rem;
-            background: white;
-            border-radius: 12px;
-            border: 2px solid var(--accent);
-        }
-        
-        .qr-container canvas {
-            display: block;
-        }
-        
-        .status-badge {
-            display: inline-block;
-            padding: 0.35rem 0.85rem;
+            text-decoration: none;
             border-radius: 6px;
-            font-size: 0.85rem;
-            font-weight: 600;
+            font-size: 13px;
+            transition: all 0.2s;
+            margin-top: 20px;
         }
-        
-        .status-badge.success {
-            background: rgba(0, 255, 136, 0.2);
-            color: var(--accent);
-            border: 1px solid var(--accent);
-        }
-        
-        .status-badge.pending {
-            background: rgba(247, 147, 26, 0.2);
-            color: var(--orange);
-            border: 1px solid var(--orange);
-        }
-        
-        .status-badge.error {
-            background: rgba(255, 59, 48, 0.2);
-            color: var(--red);
-            border: 1px solid var(--red);
-        }
-        
-        .label {
-            font-size: 0.875rem;
-            color: var(--accent);
-            font-weight: 600;
-            display: block;
-            margin-top: 1rem;
-            margin-bottom: 0.25rem;
-        }
-        
-        .code-box {
-            background: #0e1315;
-            padding: 1rem;
-            border-radius: 8px;
-            border: 1px dashed var(--accent);
-            cursor: pointer;
-            transition: all 0.3s;
-            position: relative;
-        }
-        
-        .code-box:hover {
-            background: rgba(0, 255, 136, 0.05);
-            border-color: var(--accent);
-        }
-        
-        .code-box code {
-            color: var(--accent);
-            word-break: break-all;
-            font-size: 0.85rem;
-        }
-        
-        .hint {
-            background: rgba(247, 147, 26, 0.1);
-            border-left: 3px solid var(--orange);
-            padding: 1rem;
-            border-radius: 6px;
-            margin-top: 1rem;
-        }
-        
-        .hint-title {
-            color: var(--orange);
-            font-weight: 600;
-            margin-bottom: 0.5rem;
-        }
-        
-        .hint ol, .hint ul {
-            margin-left: 1.5rem;
-            color: var(--muted);
-            font-size: 0.875rem;
-        }
-        
-        .hint li {
-            margin: 0.25rem 0;
-        }
-        
-        .spinner {
-            display: inline-block;
-            width: 1rem;
-            height: 1rem;
-            border: 2px solid rgba(0, 255, 136, 0.3);
-            border-top-color: var(--accent);
-            border-radius: 50%;
-            animation: spin 0.6s linear infinite;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        @media (max-width: 768px) {
-            #root {
-                padding: 1rem;
-            }
-            
-            .header h1 {
-                font-size: 1.5rem;
-            }
-            
-            .tabs {
-                flex-direction: column;
-            }
-            
-            .tab {
-                width: 100%;
-                text-align: center;
-            }
-        }
-        
-        /* Loading overlay */
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.8);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-        }
-        
-        .loading-content {
-            text-align: center;
-        }
-        
-        .loading-spinner {
-            width: 3rem;
-            height: 3rem;
-            border: 3px solid rgba(0, 255, 136, 0.3);
-            border-top-color: var(--accent);
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            margin: 0 auto 1rem;
+
+        .btn:hover {
+            background: rgba(0, 255, 136, 0.1);
         }
     </style>
 </head>
 <body>
-    <canvas id="matrix-bg" aria-hidden="true"></canvas>
-    <div id="root"></div>
-    
-    <!-- Matrix Animation -->
-    <script>
-        (function() {
-            const canvas = document.getElementById('matrix-bg');
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d');
-            const CHARS = ['0','1'];
-      const isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
-            let width = 0, height = 0, particles = [], raf = null;
+    <div class="container">
+        <header>
+            <div class="logo">KeyAuth</div>
+            <div class="tagline">An independent implementation inspired by HODLXXI principles — not canonical</div>
+        </header>
 
-            function resize() {
-                const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
-                const cssW = window.innerWidth, cssH = window.innerHeight;
-                canvas.width = Math.floor(cssW * dpr);
-                canvas.height = Math.floor(cssH * dpr);
-                canvas.style.width = cssW + 'px';
-                canvas.style.height = cssH + 'px';
-                ctx.setTransform(1,0,0,1,0,0);
-                ctx.scale(dpr, dpr);
-                width = cssW; height = cssH;
-                particles = [];
-                for (let i = 0; i < (isMobile ? 120 : 400); i++) {
-                    particles.push({
-                        x: (Math.random() - 0.5) * width,
-                        y: (Math.random() - 0.5) * height,
-                        z: Math.random() * 800 + 100
-                    });
-                }
-                ctx.fillStyle = 'rgba(0,0,0,1)';
-                ctx.fillRect(0, 0, width, height);
-            }
+        <div class="disclaimer">
+            <h2>⚠️ Important Disclaimer</h2>
+            <p><strong>KeyAuth is an experimental implementation.</strong></p>
+            <p>It is not canonical.<br>
+            It is not authoritative.<br>
+            It does not represent the protocol itself.</p>
+            <p>You are paying for infrastructure and support,<br>
+            not for legitimacy or trust.</p>
+        </div>
 
-            function draw() {
-                ctx.fillStyle = 'rgba(0,0,0,0.25)';
-                ctx.fillRect(0, 0, width, height);
-                ctx.fillStyle = '#00ff88';
-                for (const p of particles) {
-                    const scale = 200 / p.z;
-                    const x2 = width / 2 + p.x * scale;
-                    const y2 = height / 2 + p.y * scale;
-                    const size = Math.max(8 * scale, 1);
-                    ctx.font = size + 'px monospace';
-                    ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
-                    p.z -= (isMobile ? 2 : 5);
-                    if (p.z < 1) {
-                        p.x = (Math.random() - 0.5) * width;
-                        p.y = (Math.random() - 0.5) * height;
-                        p.z = 800;
-                    }
-                }
-                raf = requestAnimationFrame(draw);
-            }
+        <section>
+            <h2>What KeyAuth Provides</h2>
+            <p>KeyAuth provides hosted infrastructure for:</p>
+            <ul>
+                <li>Bitcoin signature authentication</li>
+                <li>LNURL-Auth integration</li>
+                <li>Nostr-based login (NIP-07)</li>
+                <li>OAuth2 / OIDC compatibility</li>
+                <li>Proof-of-Funds verification (PSBTs)</li>
+            </ul>
+            <p>
+                This service exists for teams that want to experiment
+                without running their own infrastructure.
+            </p>
+        </section>
 
-            function onVis() {
-                if (document.hidden) { 
-                    if (raf) cancelAnimationFrame(raf), raf = null; 
-                } else { 
-                    if (!raf) raf = requestAnimationFrame(draw); 
-                }
-            }
+        <section>
+            <h2>What KeyAuth Does NOT Provide</h2>
+            <p>KeyAuth does not:</p>
+            <ul class="negative-list">
+                <li>Define identity (users control their keys)</li>
+                <li>Assign trust (reputation is derived, not assigned)</li>
+                <li>Control reputation (system observes, doesn't judge)</li>
+                <li>Prevent exit (always possible)</li>
+                <li>Represent canonical deployment (one of many possible implementations)</li>
+            </ul>
+        </section>
 
-            window.addEventListener('resize', resize);
-            document.addEventListener('visibilitychange', onVis);
-            resize();
-            raf = requestAnimationFrame(draw);
-        })();
-    </script>
-    
-    <!-- React App -->
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
-        
-        function PlaygroundApp() {
-            const [activeTab, setActiveTab] = useState('legacy');
-            const [result, setResult] = useState(null);
-            const [loading, setLoading] = useState(false);
-            
-            const loggedIn = "{{ logged_in_pubkey }}";
-            const accessLevel = "{{ access_level }}";
-            const issuer = "{{ issuer }}";
-            
-            return (
-                <div>
-                    <div className="header">
-                        <h1>🎮 HODLXXI API Playground</h1>
-                        <p style={{color: 'var(--muted)', marginBottom: '1rem'}}>
-                            Test all authentication methods, OAuth flows, and Bitcoin verification in real-time
-                        </p>
-                        {loggedIn && loggedIn !== '' ? (
-                            <div className="header-info">
-                                <span className="status-badge success">
-                                    Logged in: {loggedIn.slice(-8)}
-                                </span>
-                                <span className="status-badge pending">
-                                    Access: {accessLevel}
-                                </span>
-                            </div>
-                        ) : (
-                            <div className="header-info">
-                                <span className="status-badge error">
-                                    Not logged in
-                                </span>
-                            </div>
-                        )}
-                    </div>
-                    
-                    {loading && (
-                        <div className="loading-overlay">
-                            <div className="loading-content">
-                                <div className="loading-spinner"></div>
-                                <p style={{color: 'var(--accent)'}}>Processing...</p>
-                            </div>
-                        </div>
-                    )}
-                    
-                    <div className="card">
-                        <div className="tabs">
-                            <button 
-                                className={`tab ${activeTab === 'legacy' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('legacy')}
-                            >
-                                🔐 Legacy Signature
-                            </button>
-                            <button 
-                                className={`tab ${activeTab === 'api' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('api')}
-                            >
-                                ⚡ API Challenge
-                            </button>
-                            <button 
-                                className={`tab ${activeTab === 'lnurl' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('lnurl')}
-                            >
-                                ⚡ LNURL-Auth
-                            </button>
-                            <button 
-                                className={`tab ${activeTab === 'oauth' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('oauth')}
-                            >
-                                🔑 OAuth Flow
-                            </button>
-                            <button 
-                                className={`tab ${activeTab === 'pof' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('pof')}
-                            >
-                                💰 Proof of Funds
-                            </button>
-                        </div>
-                        
-                        {activeTab === 'legacy' && <LegacyTab setResult={setResult} setLoading={setLoading} />}
-                        {activeTab === 'api' && <APITab setResult={setResult} setLoading={setLoading} />}
-                        {activeTab === 'lnurl' && <LNURLTab setResult={setResult} setLoading={setLoading} issuer={issuer} />}
-                        {activeTab === 'oauth' && <OAuthTab setResult={setResult} setLoading={setLoading} issuer={issuer} />}
-                        {activeTab === 'pof' && <PoFTab setResult={setResult} setLoading={setLoading} />}
-                    </div>
-                    
-                    {result && (
-                        <div className="card">
-                            <h2>📊 Result</h2>
-                            <div className={`result ${result.error ? 'error' : 'success'}`}>
-                                <pre>{JSON.stringify(result, null, 2)}</pre>
-                            </div>
-                            <button 
-                                className="secondary" 
-                                style={{marginTop: '1rem'}}
-                                onClick={() => setResult(null)}
-                            >
-                                Clear Result
-                            </button>
-                        </div>
-                    )}
+        <section>
+            <h2>Pricing Philosophy</h2>
+            <p>
+                Payment does not imply endorsement.<br>
+                Payment does not imply authority.<br>
+                Payment does not imply correctness.
+            </p>
+            <p>
+                Forking and self-hosting are always valid alternatives.
+            </p>
+
+            <div class="pricing">
+                <h3>Current Pricing (Beta)</h3>
+                <div class="pricing-note">
+                    All tiers are FREE during beta.<br>
+                    When we exit beta (2025?), pricing below will apply.<br>
+                    We'll give 60 days notice before charging.
                 </div>
-            );
-        }
-        
-        // === TAB COMPONENTS ===
-        
-        function LegacyTab({ setResult, setLoading }) {
-            const [pubkey, setPubkey] = useState('');
-            const [signature, setSignature] = useState('');
-            const [challenge, setChallenge] = useState('Loading...');
-            
-            useEffect(() => {
-                fetch('/login')
-                    .then(r => r.text())
-                    .then(html => {
-                        const match = html.match(/id="legacyChallenge"[^>]*>([^<]+)</);
-                        if (match) setChallenge(match[1].trim());
-                        else setChallenge('Failed to load challenge');
-                    })
-                    .catch(() => setChallenge('Error loading challenge'));
-            }, []);
-            
-            const handleVerify = async () => {
-                if (!pubkey || !signature) {
-                    setResult({ error: 'Both pubkey and signature are required' });
-                    return;
-                }
-                
-                setLoading(true);
-                try {
-                    const res = await fetch('/verify_signature', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ pubkey, signature, challenge })
-                    });
-                    const data = await res.json();
-                    setResult(data);
-                    
-                    if (data.verified) {
-                        setTimeout(() => window.location.href = '/app', 2000);
-                    }
-                } catch (err) {
-                    setResult({ error: err.message });
-                } finally {
-                    setLoading(false);
-                }
-            };
-            
-            const copyChallenge = () => {
-                navigator.clipboard.writeText(challenge);
-                alert('Challenge copied to clipboard!');
-            };
-            
-            return (
-                <div>
-                    <label className="label">Challenge (Sign this in your wallet)</label>
-                    <div className="code-box" onClick={copyChallenge} title="Click to copy">
-                        <code>{challenge}</code>
-                    </div>
-                    
-                    <label className="label">Public Key</label>
-                    <input 
-                        value={pubkey}
-                        onChange={(e) => setPubkey(e.target.value)}
-                        placeholder="02... or 03... (66 hex chars)"
-                    />
-                    
-                    <label className="label">Signature (Base64)</label>
-                    <textarea 
-                        value={signature}
-                        onChange={(e) => setSignature(e.target.value)}
-                        placeholder="Base64 signature from Electrum/Sparrow/Bitcoin Core"
-                        rows="4"
-                    />
-                    
-                    <button onClick={handleVerify} style={{marginTop: '1rem'}}>
-                        Verify & Login
-                    </button>
-                    
-                    <div className="hint">
-                        <div className="hint-title">How to sign:</div>
-                        <ol>
-                            <li>Copy the challenge above</li>
-                            <li>Open your Bitcoin wallet (Electrum, Sparrow, etc.)</li>
-                            <li>Find "Sign Message" feature</li>
-                            <li>Paste challenge, sign with your key</li>
-                            <li>Copy signature and paste above</li>
-                        </ol>
-                    </div>
+
+                <div class="tier">
+                    <div class="tier-name">Free</div>
+                    <div class="tier-price">$0/month • 1,000 active users</div>
+                    <p>Bitcoin signature auth, basic time-locks, community support</p>
                 </div>
-            );
-        }
-        
-        function APITab({ setResult, setLoading }) {
-            const [pubkey, setPubkey] = useState('');
-            const [challengeId, setChallengeId] = useState('');
-            const [challengeText, setChallengeText] = useState('');
-            const [signature, setSignature] = useState('');
-            const [step, setStep] = useState(1);
-            
-            const getChallenge = async () => {
-                if (!pubkey) {
-                    setResult({ error: 'Public key is required' });
-                    return;
-                }
-                
-                setLoading(true);
-                try {
-                    const res = await fetch('/api/challenge', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ pubkey })
-                    });
-                    const data = await res.json();
-                    
-                    if (data.challenge_id && data.challenge) {
-                        setChallengeId(data.challenge_id);
-                        setChallengeText(data.challenge);
-                        setStep(2);
-                        setResult(data);
-                    } else {
-                        setResult({ error: 'Invalid response from server' });
-                    }
-                } catch (err) {
-                    setResult({ error: err.message });
-                } finally {
-                    setLoading(false);
-                }
-            };
-            
-            const verify = async () => {
-                if (!signature) {
-                    setResult({ error: 'Signature is required' });
-                    return;
-                }
-                
-                setLoading(true);
-                try {
-                    const res = await fetch('/api/verify', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
-                            pubkey, 
-                            signature, 
-                            challenge_id: challengeId 
-                        })
-                    });
-                    const data = await res.json();
-                    setResult(data);
-                    
-                    if (data.verified) {
-                        setTimeout(() => window.location.href = '/app', 2000);
-                    }
-                } catch (err) {
-                    setResult({ error: err.message });
-                } finally {
-                    setLoading(false);
-                }
-            };
-            
-            const copyText = (text) => {
-                navigator.clipboard.writeText(text);
-                alert('Copied to clipboard!');
-            };
-            
-            return (
-                <div>
-                    <div style={{marginBottom: '1rem'}}>
-                        <span className="status-badge success">Step {step} of 2</span>
-                    </div>
-                    
-                    <label className="label">Public Key</label>
-                    <input 
-                        value={pubkey}
-                        onChange={(e) => setPubkey(e.target.value)}
-                        placeholder="02... or npub..."
-                        disabled={step === 2}
-                    />
-                    
-                    {step === 1 && (
-                        <button onClick={getChallenge} style={{marginTop: '0.5rem'}}>
-                            Get Challenge
-                        </button>
-                    )}
-                    
-                    {step === 2 && (
-                        <>
-                            <label className="label">Challenge (Click to copy)</label>
-                            <div className="code-box" onClick={() => copyText(challengeText)}>
-                                <code>{challengeText}</code>
-                            </div>
-                            
-                            <label className="label">Challenge ID</label>
-                            <input value={challengeId} readOnly />
-                            
-                            <label className="label">Signature (Base64)</label>
-                            <textarea 
-                                value={signature}
-                                onChange={(e) => setSignature(e.target.value)}
-                                placeholder="Paste signature here"
-                                rows="4"
-                            />
-                            
-                            <div style={{display: 'flex', gap: '0.5rem', marginTop: '1rem'}}>
-                                <button onClick={verify}>Verify & Login</button>
-                                <button className="secondary" onClick={() => { setStep(1); setChallengeText(''); setSignature(''); }}>
-                                    Start Over
-                                </button>
-                            </div>
-                        </>
-                    )}
-                    
-                    <div className="hint">
-                        <div className="hint-title">API Authentication Flow:</div>
-                        <ol>
-                            <li>Request challenge with your pubkey</li>
-                            <li>Sign challenge with your Bitcoin wallet</li>
-                            <li>Submit signature for verification</li>
-                            <li>Receive access token on success</li>
-                        </ol>
-                    </div>
+
+                <div class="tier">
+                    <div class="tier-name">Developer</div>
+                    <div class="tier-price">$29/month • 10,000 active users</div>
+                    <p>Email support (48h), early access features, priority bug fixes</p>
                 </div>
-            );
-        }
-        
-        function LNURLTab({ setResult, setLoading, issuer }) {
-            const [lnurl, setLnurl] = useState('');
-            const [sessionId, setSessionId] = useState('');
-            const [polling, setPolling] = useState(false);
-            const qrRef = useRef(null);
-            const pollIntervalRef = useRef(null);
-            
-            useEffect(() => {
-                return () => {
-                    if (pollIntervalRef.current) {
-                        clearInterval(pollIntervalRef.current);
-                    }
-                };
-            }, []);
-            
-            const createSession = async () => {
-                setLoading(true);
-                try {
-                    const res = await fetch('/api/lnurl-auth/create', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' }
-                    });
-                    const data = await res.json();
-                    
-                    if (data.lnurl && data.session_id) {
-                        setLnurl(data.lnurl);
-                        setSessionId(data.session_id);
-                        setResult(data);
-                        
-                        // Generate QR
-                        if (qrRef.current && window.QRCode) {
-                            qrRef.current.innerHTML = '';
-                            new QRCode(qrRef.current, {
-                                text: data.lnurl,
-                                width: 256,
-                                height: 256,
-                                colorDark: '#000000',
-                                colorLight: '#ffffff'
-                            });
-                        }
-                        
-                        // Start polling
-                        setPolling(true);
-                        pollIntervalRef.current = setInterval(async () => {
-                            try {
-                                const checkRes = await fetch(`/api/lnurl-auth/check/${data.session_id}`);
-                                const checkData = await checkRes.json();
-                                
-                                if (checkData.authenticated) {
-                                    clearInterval(pollIntervalRef.current);
-                                    setPolling(false);
-                                    setResult({ 
-                                        ...checkData, 
-                                        message: '✓ Authentication successful!',
-                                        success: true
-                                    });
-                                    setTimeout(() => window.location.href = '/app', 2000);
-                                }
-                            } catch (err) {
-                                console.error('Polling error:', err);
-                            }
-                        }, 2000);
-                    } else {
-                        setResult({ error: 'Invalid response from server' });
-                    }
-                } catch (err) {
-                    setResult({ error: err.message });
-                } finally {
-                    setLoading(false);
-                }
-            };
-            
-            const stopPolling = () => {
-                if (pollIntervalRef.current) {
-                    clearInterval(pollIntervalRef.current);
-                    setPolling(false);
-                }
-            };
-            
-            return (
-                <div>
-                    {!lnurl ? (
-                        <button onClick={createSession}>
-                            Create LNURL-Auth Session
-                        </button>
-                    ) : (
-                        <>
-                            <div className="qr-container">
-                                <div ref={qrRef}></div>
-                            </div>
-                            
-                            <label className="label">LNURL (Click to copy)</label>
-                            <div 
-                                className="code-box" 
-                                onClick={() => {
-                                    navigator.clipboard.writeText(lnurl);
-                                    alert('LNURL copied to clipboard!');
-                                }}
-                                style={{fontSize: '0.75rem', wordBreak: 'break-all'}}
-                            >
-                                <code>{lnurl}</code>
-                            </div>
-                            
-                            <div style={{display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap'}}>
-                                <a 
-                                    href={`lightning:${lnurl}`} 
-                                    style={{
-                                        display: 'inline-block',
-                                        padding: '0.75rem 1.5rem',
-                                        background: 'var(--orange)',
-                                        color: '#fff',
-                                        borderRadius: '8px',
-                                        textDecoration: 'none',
-                                        fontWeight: 600
-                                    }}
-                                >
-                                    Open in Wallet
-                                </a>
-                                <button className="secondary" onClick={stopPolling}>
-                                    {polling ? 'Stop Polling' : 'Stopped'}
-                                </button>
-                            </div>
-                            
-                            {polling && (
-                                <div style={{marginTop: '1rem', textAlign: 'center'}}>
-                                    <span className="spinner" style={{marginRight: '0.5rem'}}></span>
-                                    <span style={{color: 'var(--muted)'}}>
-                                        Waiting for authentication... (Session: {sessionId.slice(0, 8)}...)
-                                    </span>
-                                </div>
-                            )}
-                        </>
-                    )}
-                    
-                    <div className="hint">
-                        <div className="hint-title">Compatible Wallets:</div>
-                        <ul>
-                            <li>Alby (Browser extension)</li>
-                            <li>Mutiny (Web/Mobile)</li>
-                            <li>Zeus (Mobile)</li>
-                            <li>Phoenix (Mobile)</li>
-                            <li>Blixt (Mobile)</li>
-                        </ul>
-                    </div>
+
+                <div class="tier">
+                    <div class="tier-name">Professional</div>
+                    <div class="tier-price">$99/month • 100,000 active users</div>
+                    <p>Priority support, custom covenants, direct feedback to roadmap</p>
                 </div>
-            );
-        }
-        
-        function OAuthTab({ setResult, setLoading, issuer }) {
-            const [clientId, setClientId] = useState('');
-            const [clientSecret, setClientSecret] = useState('');
-            const [registeredClient, setRegisteredClient] = useState(null);
-            const [showSecret, setShowSecret] = useState(false);
-            
-            const registerClient = async () => {
-                setLoading(true);
-                try {
-                    const res = await fetch('/oauth/register', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            redirect_uris: ['http://localhost:3000/callback', 'https://oauth.pstmn.io/v1/callback']
-                        })
-                    });
-                    const data = await res.json();
-                    
-                    if (data.client_id && data.client_secret) {
-                        setRegisteredClient(data);
-                        setClientId(data.client_id);
-                        setClientSecret(data.client_secret);
-                        setResult(data);
-                    } else {
-                        setResult({ error: 'Registration failed', details: data });
-                    }
-                } catch (err) {
-                    setResult({ error: err.message });
-                } finally {
-                    setLoading(false);
-                }
-            };
-            
-            const startOAuthFlow = () => {
-                const params = new URLSearchParams({
-                    client_id: clientId,
-                    redirect_uri: 'http://localhost:3000/callback',
-                    scope: 'read',
-                    response_type: 'code',
-                    state: Math.random().toString(36).slice(2)
-                });
-                const url = `/oauth/authorize?${params}`;
-                window.open(url, '_blank', 'width=600,height=800');
-            };
-            
-            return (
-                <div>
-                    {!registeredClient ? (
-                        <>
-                            <button onClick={registerClient}>
-                                Register New OAuth Client
-                            </button>
-                            
-                            <div className="hint">
-                                <div className="hint-title">What is OAuth2?</div>
-                                <p style={{color: 'var(--muted)', fontSize: '0.875rem'}}>
-                                    OAuth 2.0 is an authorization framework that enables applications to obtain 
-                                    limited access to user accounts. This playground lets you test the full 
-                                    OAuth flow including client registration, authorization, and token exchange.
-                                </p>
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            <label className="label">Client ID</label>
-                            <div className="code-box" onClick={() => navigator.clipboard.writeText(clientId)}>
-                                <code>{clientId}</code>
-                            </div>
-                            
-                            <label className="label">Client Secret (Save this securely!)</label>
-                            <div style={{position: 'relative'}}>
-                                <input 
-                                    type={showSecret ? 'text' : 'password'}
-                                    value={clientSecret}
-                                    readOnly
-                                    style={{fontFamily: 'monospace'}}
-                                />
-                                <button 
-                                    className="secondary"
-                                    style={{
-                                        position: 'absolute',
-                                        right: '0.5rem',
-                                        top: '50%',
-                                        transform: 'translateY(-50%)',
-                                        padding: '0.5rem 1rem'
-                                    }}
-                                    onClick={() => setShowSecret(!showSecret)}
-                                >
-                                    {showSecret ? '🙈 Hide' : '👁️ Show'}
-                                </button>
-                            </div>
-                            
-                            <div style={{marginTop: '1rem'}}>
-                                <button onClick={startOAuthFlow}>
-                                    Start Authorization Flow
-                                </button>
-                            </div>
-                            
-                            <div className="hint">
-                                <div className="hint-title">Next Steps:</div>
-                                <ol>
-                                    <li>Click "Start Authorization Flow"</li>
-                                    <li>Authorize in the popup window</li>
-                                    <li>You'll receive an authorization code</li>
-                                    <li>Exchange code for access token at <code>/oauth/token</code></li>
-                                </ol>
-                            </div>
-                            
-                            <div className="hint" style={{marginTop: '1rem'}}>
-                                <div className="hint-title">Token Exchange Example:</div>
-                                <pre style={{background: '#000', padding: '1rem', borderRadius: '6px', overflow: 'auto'}}>
-{`curl -X POST ${issuer}/oauth/token \\
-  -H "Content-Type: application/x-www-form-urlencoded" \\
-  -d "grant_type=authorization_code" \\
-  -d "client_id=${clientId}" \\
-  -d "client_secret=${clientSecret}" \\
-  -d "code=YOUR_AUTH_CODE" \\
-  -d "redirect_uri=http://localhost:3000/callback"`}
-                                </pre>
-                            </div>
-                        </>
-                    )}
-                </div>
-            );
-        }
-        
-        function PoFTab({ setResult, setLoading }) {
-            const [pubkey, setPubkey] = useState('');
-            const [challengeId, setChallengeId] = useState('');
-            const [challenge, setChallenge] = useState('');
-            const [psbt, setPsbt] = useState('');
-            const [step, setStep] = useState(1);
-            
-            const getChallenge = async () => {
-                if (!pubkey) {
-                    setResult({ error: 'Public key is required' });
-                    return;
-                }
-                
-                setLoading(true);
-                try {
-                    const res = await fetch('/api/pof/challenge', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ pubkey })
-                    });
-                    const data = await res.json();
-                    
-                    if (data.challenge_id && data.challenge) {
-                        setChallengeId(data.challenge_id);
-                        setChallenge(data.challenge);
-                        setStep(2);
-                        setResult(data);
-                    } else {
-                        setResult({ error: 'Failed to get challenge', details: data });
-                    }
-                } catch (err) {
-                    setResult({ error: err.message });
-                } finally {
-                    setLoading(false);
-                }
-            };
-            
-            const verifyPSBT = async () => {
-                if (!psbt) {
-                    setResult({ error: 'PSBT is required' });
-                    return;
-                }
-                
-                setLoading(true);
-                try {
-                    const res = await fetch('/api/pof/verify_psbt', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            challenge_id: challengeId,
-                            psbt,
-                            privacy_level: 'aggregate',
-                            min_sat: 0
-                        })
-                    });
-                    const data = await res.json();
-                    setResult(data);
-                } catch (err) {
-                    setResult({ error: err.message });
-                } finally {
-                    setLoading(false);
-                }
-            };
-            
-            return (
-                <div>
-                    <div style={{marginBottom: '1rem'}}>
-                        <span className="status-badge success">Step {step} of 2</span>
-                    </div>
-                    
-                    <label className="label">Public Key</label>
-                    <input 
-                        value={pubkey}
-                        onChange={(e) => setPubkey(e.target.value)}
-                        placeholder="02... or npub..."
-                        disabled={step === 2}
-                    />
-                    
-                    {step === 1 && (
-                        <button onClick={getChallenge} style={{marginTop: '0.5rem'}}>
-                            Get PoF Challenge
-                        </button>
-                    )}
-                    
-                    {step === 2 && (
-                        <>
-                            <label className="label">Challenge (Include in OP_RETURN)</label>
-                            <div 
-                                className="code-box" 
-                                onClick={() => {
-                                    navigator.clipboard.writeText(challenge);
-                                    alert('Challenge copied!');
-                                }}
-                            >
-                                <code>{challenge}</code>
-                            </div>
-                            
-                            <label className="label">PSBT (Base64)</label>
-                            <textarea 
-                                value={psbt}
-                                onChange={(e) => setPsbt(e.target.value)}
-                                placeholder="Paste PSBT here (must contain OP_RETURN with challenge)"
-                                rows="8"
-                            />
-                            
-                            <div style={{display: 'flex', gap: '0.5rem', marginTop: '1rem'}}>
-                                <button onClick={verifyPSBT}>Verify Proof</button>
-                                <button className="secondary" onClick={() => { setStep(1); setChallenge(''); setPsbt(''); }}>
-                                    Start Over
-                                </button>
-                            </div>
-                        </>
-                    )}
-                    
-                    <div className="hint">
-                        <div className="hint-title">How to create PoF PSBT:</div>
-                        <ol>
-                            <li>Create a transaction with your UTXOs as inputs</li>
-                            <li>Add an OP_RETURN output containing the challenge string</li>
-                            <li><strong>DO NOT broadcast the transaction</strong></li>
-                            <li>Export as PSBT (base64 format)</li>
-                            <li>Paste the PSBT above and verify</li>
-                        </ol>
-                    </div>
-                    
-                    <div className="hint" style={{marginTop: '1rem', borderColor: 'var(--accent)'}}>
-                        <div className="hint-title" style={{color: 'var(--accent)'}}>Privacy Levels:</div>
-                        <ul>
-                            <li><strong>Boolean:</strong> Only yes/no (meets threshold?)</li>
-                            <li><strong>Threshold:</strong> True/false for specific amount</li>
-                            <li><strong>Aggregate:</strong> Exact total revealed (default)</li>
-                        </ul>
-                    </div>
-                </div>
-            );
-        }
-        
-        // Render app
-        ReactDOM.createRoot(document.getElementById('root')).render(<PlaygroundApp />);
-    </script>
+            </div>
+
+            <p style="margin-top: 24px; font-size: 12px;">
+                <strong>No "Enterprise" tier yet.</strong>
+                The system is not ready for mission-critical applications.
+            </p>
+        </section>
+
+        <section>
+            <h2>What Users Pay For</h2>
+            <p>Users pay for:</p>
+            <ul>
+                <li>Hosted infrastructure (servers, monitoring, backups)</li>
+                <li>Uptime and maintenance (best-effort, no SLA during beta)</li>
+                <li>Integration support (email, documentation)</li>
+                <li>Operational convenience (not running your own nodes)</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>What Users Do NOT Pay For</h2>
+            <p>Users do not pay for:</p>
+            <ul class="negative-list">
+                <li>Identity legitimacy (cryptography provides this)</li>
+                <li>Trust guarantees (trust is earned through behavior)</li>
+                <li>Protocol authority (no one has this)</li>
+                <li>Exclusive access (open source, forkable)</li>
+                <li>Long-term control (exit always possible)</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Explicit Red Line</h2>
+            <p>
+                Any monetization that requires:
+            </p>
+            <ul class="negative-list">
+                <li>Lock-in (preventing users from leaving)</li>
+                <li>Hidden constraints (undisclosed limitations)</li>
+                <li>Asymmetry of exit (different rules for different users)</li>
+                <li>Claims of canonical authority (KeyAuth is one implementation among many)</li>
+            </ul>
+            <p>
+                ...violates the principles of HODLXXI and should be considered non-compliant.
+            </p>
+        </section>
+
+        <section>
+            <h2>Acceptable Revenue Sources</h2>
+            <p>KeyAuth may generate revenue from:</p>
+            <ul>
+                <li>Infrastructure fees (hosting, API usage)</li>
+                <li>Integration work (custom deployments)</li>
+                <li>Consulting (system design advice)</li>
+                <li>Research sponsorships (grant-funded work)</li>
+                <li>Educational content (courses, workshops)</li>
+            </ul>
+            <p style="margin-top: 16px;">
+                All revenue sources must preserve user agency and exit rights.
+            </p>
+        </section>
+
+        <div class="link-bar">
+            <a href="https://hodlxxi.com/docs">HODLXXI Documentation</a>
+            <a href="https://hodlxxi.com/docs/limits">System Limits</a>
+            <a href="https://hodlxxi.com/docs/principles">Core Principles</a>
+            <a href="https://github.com/hodlxxi">Source Code</a>
+        </div>
+
+
+        <footer>
+            <p>
+                This KeyAuth  interface is a reference implementation.<br>
+                Participation is voluntary. Exit is always allowed.
+            </p>
+            <p style="margin-top: 16px;">
+                KeyAuth • MIT License • 2024
+            </p>
+        </footer>
+    </div>
 </body>
 </html>
+
 """
 
 
@@ -11233,8 +8363,8 @@ PLAYGROUND_HTML = r"""<!DOCTYPE html>
 # ============================================================================
 
 
-@app.route("/")
 @app.route("/oidc")
+
 def landing_page():
     """Serve the KeyAuth BTC OIDC landing page"""
     # Get the issuer URL dynamically
@@ -11244,6 +8374,29 @@ def landing_page():
 
 
 # ============================================================================
+
+# ----------------------------------------------------------------------------
+# PREVIEW ROUTES (template-based pages)
+# ----------------------------------------------------------------------------
+
+@app.get("/new-index")
+def new_index_preview():
+    base = request.url_root.rstrip("/")
+    from flask import render_template
+    return render_template("index.html", issuer=base)
+
+@app.get("/new-keyauth")
+def new_keyauth_preview():
+    base = request.url_root.rstrip("/")
+    from flask import render_template
+    return render_template("keyauth.html", issuer=base)
+
+@app.get("/new-signup")
+def new_signup_preview():
+    base = request.url_root.rstrip("/")
+    from flask import render_template
+    return render_template("signup.html", issuer=base)
+
 # ROUTES: ADDITIONAL PAGES
 # ============================================================================
 
@@ -11279,6 +8432,28 @@ def landing_page():
 
 @app.route("/oauth/register", methods=["POST"])
 def oauth_register():
+
+    # --- ownership + stricter anon throttling ---
+    from flask import session, request
+    import time
+
+    my_pubkey = session.get("logged_in_pubkey") or ""
+    level = session.get("access_level") or ""
+
+    # Simple extra throttle for anonymous registrations (in-memory, per-process)
+    if not my_pubkey:
+        ip = (request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.remote_addr or "unknown")
+        now = time.time()
+        window = 3600  # 1 hour
+        limit = 10     # anon register max 10/hour per IP
+        bucket = getattr(oauth_register, "_anon_bucket", {})
+        times = [t for t in bucket.get(ip, []) if (now - t) < window]
+        if len(times) >= limit:
+            return jsonify(ok=False, error="Rate limited"), 429
+        times.append(now)
+        bucket[ip] = times
+        setattr(oauth_register, "_anon_bucket", bucket)
+
     """Register a new OAuth client"""
     body = request.get_json(silent=True) or {}
 
@@ -11379,16 +8554,180 @@ if limiter:
 
 @app.route("/metrics/prometheus")
 def metrics_prometheus():
-    """Prometheus-formatted metrics endpoint."""
-    data = generate_latest(REGISTRY)
-    return Response(data, mimetype="text/plain; version=0.0.4; charset=utf-8")
 
+    # SAFE_METRICS_ACTIVE_CHALLENGES_FALLBACK
+    ACTIVE_CHALLENGES = globals().get("ACTIVE_CHALLENGES", {}) or {}
+    """
+    Prometheus metrics endpoint.
+    Includes:
+      - realtime in-memory gauges (sockets/online/chat memory)
+      - DB-backed totals (users, PoF, challenges, tokens, messages)
+      - any existing oauth counters already registered
+    """
+    try:
+        # --- realtime gauges (in-memory) ---
+        rt_active_sockets = len(ACTIVE_SOCKETS)
+        rt_online_users = len(ONLINE_USERS)
+        rt_chat_history_size = len(CHAT_HISTORY)
+
+        # --- DB-backed totals ---
+        db_counts = {}
+        try:
+            import os
+
+            # Prefer psycopg3, fall back to psycopg2
+            _connect = None
+            try:
+                import psycopg  # psycopg3
+                _connect = psycopg.connect
+            except Exception:
+                import psycopg2  # psycopg2
+                _connect = psycopg2.connect
+
+            # DSN from env (best), else build from common PG vars
+            dsn = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or ""
+            if not dsn:
+                host = os.getenv("PGHOST", os.getenv("DB_HOST", "127.0.0.1"))
+                port = os.getenv("PGPORT", os.getenv("DB_PORT", "5432"))
+                db   = os.getenv("PGDATABASE", os.getenv("DB_NAME", "hodlxxi"))
+                user = os.getenv("PGUSER", os.getenv("DB_USER", "hodlxxi"))
+                pw   = os.getenv("PGPASSWORD", os.getenv("DB_PASSWORD", ""))
+
+                if pw:
+                    dsn = f"postgresql://{user}:{pw}@{host}:{port}/{db}"
+                else:
+                    dsn = f"postgresql://{user}@{host}:{port}/{db}"
+
+            conn = _connect(dsn)
+            try:
+                cur = conn.cursor()
+                try:
+                    def q(sql: str) -> int:
+                        cur.execute(sql)
+                        row = cur.fetchone()
+                        return int((row[0] if row else 0) or 0)
+
+                    db_counts["users_total"] = q("select count(*) from users;")
+                    db_counts["proof_of_funds_total"] = q("select count(*) from proof_of_funds;")
+                    db_counts["pof_challenges_total"] = q("select count(*) from pof_challenges;")
+                    db_counts["chat_messages_total"] = q("select count(*) from chat_messages;")
+                    db_counts["oauth_tokens_total"] = q("select count(*) from oauth_tokens;")
+                finally:
+                    try: cur.close()
+                    except Exception: pass
+            finally:
+                try: conn.close()
+                except Exception: pass
+
+        except Exception as e:
+            logger.warning(f"Prometheus DB metrics unavailable: {e}")
+            db_counts = {}
+
+
+
+        # --- base prometheus content from existing registry (if available) ---
+        base_text = ""
+        try:
+            from prometheus_client import generate_latest, CONTENT_TYPE_LATEST  # type: ignore
+            base_text = generate_latest().decode("utf-8", errors="ignore")
+        except Exception:
+            CONTENT_TYPE_LATEST = "text/plain; version=0.0.4; charset=utf-8"
+        # --- append our custom exposition lines ---
+        lines = []
+
+        # realtime
+        lines += [
+            "# HELP hodlxxi_active_sockets Current active Socket.IO connections (session-authenticated)",
+            "# TYPE hodlxxi_active_sockets gauge",
+            f"hodlxxi_active_sockets {rt_active_sockets}",
+            "# HELP hodlxxi_online_users Current unique online users (session-authenticated pubkeys)",
+            "# TYPE hodlxxi_online_users gauge",
+            f"hodlxxi_online_users {rt_online_users}",
+            "# HELP hodlxxi_chat_history_size In-memory chat history size (ephemeral)",
+            "# TYPE hodlxxi_chat_history_size gauge",
+            f"hodlxxi_chat_history_size {rt_chat_history_size}",
+            "# HELP hodlxxi_active_challenges Current active challenges (ephemeral)",
+            "# TYPE hodlxxi_active_challenges gauge",
+            f"hodlxxi_active_challenges {len((globals().get('ACTIVE_CHALLENGES', {}) or {}))}",
+        ]
+        
+        # DB totals (always emitted; 0 if unavailable)
+        db = _db_metrics_counts_cached()
+
+        def _emit_gauge(name: str, help_text: str, value) -> None:
+            try:
+                v = int(value or 0)
+            except Exception:
+                v = 0
+            lines.extend([
+                f"# HELP {name} {help_text}",
+                f"# TYPE {name} gauge",
+                f"{name} {v}",
+            ])
+
+        # DB health
+        _emit_gauge("hodlxxi_db_up", "Database reachable for metrics query (1=up, 0=down)",
+                    0 if (isinstance(db, dict) and db.get("db_error")) else 1)
+
+        # Totals
+        for key, help_text in [
+            ("users", "Total users in DB"),
+            ("ubid_users", "Total UBID users in DB"),
+            ("sessions", "Total sessions in DB"),
+            ("chat_messages", "Total chat messages in DB"),
+            ("lnurl_challenges", "Total LNURL challenges in DB"),
+            ("pof_challenges", "Total PoF challenges in DB"),
+            ("audit_logs", "Total audit logs in DB"),
+            ("oauth_clients", "Total OAuth clients in DB"),
+            ("oauth_tokens", "Total OAuth tokens in DB"),
+            ("payments", "Total payments in DB"),
+            ("proof_of_funds", "Total Proof-of-Funds records in DB"),
+            ("subscriptions", "Total subscriptions in DB"),
+            ("usage_stats", "Total usage_stats rows in DB"),
+        ]:
+            _emit_gauge(f"hodlxxi_{key}_total", help_text, (db or {}).get(key) if isinstance(db, dict) else 0)
+
+        # Activity windows (movement)
+        for key, help_text in [
+            ("logins_5m", "Users with last_login in last 5 minutes"),
+            ("logins_1h", "Users with last_login in last 1 hour"),
+            ("logins_24h", "Users with last_login in last 24 hours"),
+
+            ("chat_5m", "Chat messages in last 5 minutes"),
+            ("chat_1h", "Chat messages in last 1 hour"),
+            ("chat_24h", "Chat messages in last 24 hours"),
+
+            ("lnurl_created_5m", "LNURL challenges created in last 5 minutes"),
+            ("lnurl_created_1h", "LNURL challenges created in last 1 hour"),
+            ("lnurl_created_24h", "LNURL challenges created in last 24 hours"),
+            ("lnurl_verified_24h", "LNURL challenges verified in last 24 hours"),
+
+            ("pof_created_5m", "PoF challenges created in last 5 minutes"),
+            ("pof_created_1h", "PoF challenges created in last 1 hour"),
+            ("pof_created_24h", "PoF challenges created in last 24 hours"),
+            ("pof_verified_24h", "PoF challenges verified in last 24 hours"),
+
+            ("oauth_tokens_5m", "OAuth tokens created in last 5 minutes"),
+            ("oauth_tokens_1h", "OAuth tokens created in last 1 hour"),
+            ("oauth_tokens_24h", "OAuth tokens created in last 24 hours"),
+
+            ("payments_24h", "Payments created in last 24 hours"),
+            ("payments_paid_24h", "Payments paid in last 24 hours"),
+        ]:
+            _emit_gauge(f"hodlxxi_{key}", help_text, (db or {}).get(key) if isinstance(db, dict) else 0)
+
+        custom_text = "\n".join(lines) + "\n"
+
+        # Combine
+        out = (base_text or "") + ("\n" if base_text and not base_text.endswith("\n") else "") + custom_text
+        return Response(out, content_type=CONTENT_TYPE_LATEST), 200
+
+    except Exception as e:
+        logger.error(f"Prometheus metrics endpoint failed: {e}", exc_info=True)
+        return Response("# ERROR generating metrics\n", mimetype="text/plain"), 500
 
 @app.after_request
 def apply_security_headers(response):
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
   #  response.headers["Content-Security-Policy"] = "default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.tailwindcss.com; connect-src 'self' wss: ws: https: http:; font-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; frame-ancestors 'none'"
     return response
@@ -11551,7 +8890,7 @@ def oauthx_status():
             "timestamp": int(time.time()),
             "registered_clients": len(CLIENT_STORE),
             "active_codes": len(AUTH_CODE_STORE),
-            "lnurl_sessions": len(LNURL_SESSION_STORE),
+            "lnurl_sessions": len((globals().get("LNURL_SESSION_STORE") or globals().get("LNURL_SESSIONS") or {})),
             "issuer": ISSUER,
             "endpoints": {
                 "discovery": "/.well-known/openid-configuration",
@@ -11563,6 +8902,142 @@ def oauthx_status():
         }
     )
 
+
+# ----------------------------------------------------------------------------
+# DOCS VIEWER (preview) - does NOT replace existing /docs
+# ----------------------------------------------------------------------------
+@app.get("/docs2")
+def docs_viewer_v2():
+    import os
+    from flask import render_template
+
+    docs_dir = os.path.join(app.static_folder, "docs", "docs")
+    items = []
+    try:
+        for name in sorted(os.listdir(docs_dir)):
+            low = name.lower()
+            if low.endswith(".md") or low.endswith(".pdf"):
+                items.append(name)
+    except Exception:
+        # If folder missing, show empty list instead of crashing prod
+        items = []
+
+    return render_template("docs_viewer.html", items=items)
+
+@app.route("/docs")
+@app.route("/docs/")
+def docs_alias():
+
+    # === DOCS_INDEX_DYNAMIC_V1: dynamic docs index from /static/docs/docs ===
+    import os
+    import re as _re
+    from flask import render_template
+
+    docs_dir = os.path.join(app.static_folder, "docs", "docs")
+
+    # Curated ordering: put the "start here" set on top if present
+    curated = [
+        "README",
+        "what_is_hodlxxi",
+        "about_short",
+        "how_it_works",
+        "architecture",
+        "faq",
+        "crt_theory",
+        "principles",
+        "ethics",
+        "threat_model_and_failure_modes",
+        "research_status",
+        "auth0_comparison",
+        "academic_references_and_prior_art",
+        "bibliography",
+    ]
+
+    md_items = []
+    pdf_items = []
+
+    def _title_from_md(text: str, fallback: str) -> str:
+        # first markdown heading like "# Title"
+        for line in (text or "").splitlines():
+            line = line.strip()
+            if line.startswith("#"):
+                return line.lstrip("#").strip() or fallback
+            if line:
+                break
+        return fallback
+
+    def _desc_from_md(text: str) -> str:
+        # first non-empty paragraph-ish line (not heading)
+        for line in (text or "").splitlines():
+            t = line.strip()
+            if not t:
+                continue
+            if t.startswith("#"):
+                continue
+            if t.startswith(">"):
+                t = t.lstrip(">").strip()
+            if len(t) < 8:
+                continue
+            return t[:220]
+        return ""
+
+    try:
+        names = sorted(os.listdir(docs_dir))
+    except Exception:
+        names = []
+
+    # Build md list
+    md_map = {}
+    for name in names:
+        low = name.lower()
+        p = os.path.join(docs_dir, name)
+        if low.endswith(".md") and os.path.isfile(p):
+            slug = name[:-3]
+            md_map[slug] = p
+
+    # Order: curated first, then the rest alpha
+    ordered_slugs = []
+    for c in curated:
+        if c in md_map:
+            ordered_slugs.append(c)
+    for slug in sorted(md_map.keys()):
+        if slug not in ordered_slugs:
+            ordered_slugs.append(slug)
+
+    for slug in ordered_slugs:
+        p = md_map[slug]
+        try:
+            raw = Path(p).read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            raw = ""
+        display = _title_from_md(raw, slug.replace("_", " ").replace("-", " ").title())
+        desc = _desc_from_md(raw)
+        try:
+            size_kb = int((Path(p).stat().st_size + 1023) / 1024)
+        except Exception:
+            size_kb = None
+        md_items.append({"slug": slug, "display": display, "desc": desc, "size_kb": size_kb})
+
+    # PDFs
+    for name in names:
+        low = name.lower()
+        p = os.path.join(docs_dir, name)
+        if low.endswith(".pdf") and os.path.isfile(p):
+            try:
+                size_kb = int((Path(p).stat().st_size + 1023) / 1024)
+            except Exception:
+                size_kb = None
+            pdf_items.append({"name": name, "size_kb": size_kb})
+
+    return render_template("docs_index.html", title="HODLXXI Docs", md_items=md_items, pdf_items=pdf_items)
+    # === /DOCS_INDEX_DYNAMIC_V1 ===
+
+
+
+
+@app.route("/docs.json")
+def docs_json_alias():
+    return redirect(url_for("oauthx_docs"), code=302)
 
 @app.route("/oauthx/docs")
 def oauthx_docs():
@@ -11674,6 +9149,15 @@ def oauth_introspect():
 
 
 def cleanup_expired_data():
+    # Defensive: some stores may be defined later / conditionally
+    g = globals()
+    g.setdefault('AUTH_CODE_STORE', {})
+    if 'LNURL_SESSION_STORE' not in g:
+        g['LNURL_SESSION_STORE'] = g.get('LNURL_SESSIONS', {}) or {}
+
+    # Guard: app can import before stores are defined (gunicorn boot)
+    global AUTH_CODE_STORE
+    AUTH_CODE_STORE = globals().get("AUTH_CODE_STORE", {})
     """Remove expired auth codes and sessions"""
     import threading
 
@@ -11711,7 +9195,32 @@ def cleanup_expired_data():
 
 
 # Start cleanup thread
-cleanup_expired_data()
+# Defer cleanup until runtime (avoid import-time crashes during gunicorn boot)
+# Flask 3+: before_first_request was removed. Run cleanup once via before_request.
+_cleanup_once = {"done": False}
+
+@app.before_request
+def _run_cleanup_once():
+    if _cleanup_once.get("done"):
+        return None
+    _cleanup_once["done"] = True
+    try:
+        cleanup_expired_data()
+    except Exception as e:
+        try:
+            app.logger.warning("cleanup_expired_data failed: %s", e)
+        except Exception:
+            pass
+    return None
+
+def _deferred_cleanup_expired_data():
+    try:
+        cleanup_expired_data()
+    except Exception as e:
+        try:
+            logger.warning(f"deferred cleanup_expired_data failed: {e}", exc_info=True)
+        except Exception:
+            print(f"deferred cleanup_expired_data failed: {e}")
 
 # ============================================================================
 # ADDITIONAL HELPER ROUTES
@@ -11720,973 +9229,515 @@ cleanup_expired_data()
 
 @app.route("/oauth/clients", methods=["GET"])
 def list_clients():
-    """List all registered clients (admin only - add auth in production)"""
-    return jsonify(
-        {
-            "clients": [
-                {
-                    "client_id": data["client_id"],
-                    "client_type": data["client_type"],
-                    "created_at": data["created_at"],
-                    "scopes": data["allowed_scopes"],
-                }
-                for data in CLIENT_STORE.values()
-            ]
-        }
-    )
+    from flask import jsonify, session
+    import os, json, time
+    import psycopg
 
+    pubkey = session.get("logged_in_pubkey", "")
+    level  = session.get("access_level")
 
-@app.route("/oauth/revoke", methods=["POST"])
-def oauth_revoke():
-    """Revoke a token"""
-    data = request.get_json(silent=True) or {}
-    token = data.get("token")
-
-    if not token:
-        return jsonify({"error": "token required"}), 400
-
-    # In production, maintain a blacklist in Redis
-    return jsonify({"revoked": True}), 200
-
-
-# ============================================================================
-# PRINT STARTUP INFO
-# ============================================================================
-
-logger.info("=" * 70)
-logger.info("🔐 HODLXXI OAuth2/OIDC System Initialized")
-logger.info("=" * 70)
-logger.info(f"📍 Issuer: {ISSUER}")
-logger.info(f"🔑 JWT Secret: {'*' * 20} (set)")
-logger.info(f"📊 Storage: In-Memory (use Redis for production)")
-logger.info("🌐 Endpoints:")
-logger.info(f"   • Landing:    / and /oidc (KeyAuth BTC OIDC Landing Page)")
-logger.info(f"   • Discovery:  /.well-known/openid-configuration")
-logger.info(f"   • Register:   POST /oauth/register")
-logger.info(f"   • Authorize:  GET /oauth/authorize")
-logger.info(f"   • Token:      POST /oauth/token")
-logger.info(f"   • Status:     GET /oauthx/status")
-logger.info(f"   • Docs:       GET /oauthx/docs")
-logger.info("🧪 Demo:")
-logger.info(f"   • Protected:  GET /api/demo/protected (requires Bearer token)")
-logger.info("⚡ LNURL-Auth:")
-logger.info(f"   • Create:     POST /api/lnurl-auth/create")
-logger.info(f"   • Check:      GET /api/lnurl-auth/check/<session_id>")
-logger.info("=" * 70)
-
-# ============================================================================
-# END OF OIDC/OAuth2 SYSTEM
-# ============================================================================
-
-@app.route("/playground")
-def playground_page():
-    """Render the React playground shell."""
-    # Optional membership user: look up by session pubkey
-    from app.ubid_membership import UbidUser  # safe import here if not at top
-
-    user = None
-    try:
-        pubkey = session.get("logged_in_pubkey")
-        if pubkey:
-            user = UbidUser.query.filter_by(pubkey=pubkey).first()
-    except Exception:
-        user = None
-
-    # Logged-in info from session (safe defaults)
-    try:
-        logged_in = session.get("logged_in_pubkey", "") or ""
-    except Exception:
-        logged_in = ""
-
-    try:
-        access_level = session.get("access_level", "limited") or "limited"
-    except Exception:
-        access_level = "limited"
-
-    # Issuer from CFG (which is a dict in your app)
-    try:
-        issuer = CFG.get("ISSUER", "") or ""
-    except Exception:
-        issuer = ""
-
-    initial_tab = request.args.get("tab", "legacy")
-
-    return render_template(
-        "playground.html",
-        logged_in_pubkey=logged_in,
-        access_level=access_level,
-        issuer=issuer,
-        initial_tab=initial_tab,
-        user=user,  # 👈 Jinja sees this
-    )
-
-
-def require_login(view_func):
-    @wraps(view_func)
-    def wrapper(*args, **kwargs):
-        if "logged_in_pubkey" not in session:
-            next_url = request.path
-            return redirect(url_for("login", next=next_url))
-        return view_func(*args, **kwargs)
-    return wrapper
-
-
-@app.route("/dev-dashboard")
-@require_login
-def dev_dashboard():
-    """
-    Lightweight dev dashboard backed only by session.
-    """
-    pubkey = session.get("logged_in_pubkey")
     if not pubkey:
-        return redirect(url_for("login", next="/dev-dashboard"))
+        return jsonify(ok=False, error="Not logged in", clients=[]), 401
 
-    user = {
-        "pubkey": pubkey,
-        "plan": session.get("ubid_plan", "free"),
-        "sats_balance": session.get("ubid_sats_balance", 0),
-        "membership_expires_at": session.get("ubid_membership_expires_at"),
-    }
-    return render_template("dashboard.html", user=user)
+    # DSN from env (best), else build from common vars
+    dsn = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or ""
+    if not dsn:
+        host = os.getenv("PGHOST", os.getenv("DB_HOST", "127.0.0.1"))
+        port = os.getenv("PGPORT", os.getenv("DB_PORT", "5432"))
+        db   = os.getenv("PGDATABASE", os.getenv("DB_NAME", "hodlxxi"))
+        user = os.getenv("PGUSER", os.getenv("DB_USER", "hodlxxi"))
+        pw   = os.getenv("PGPASSWORD", os.getenv("DB_PASSWORD", ""))
+        dsn = f"postgresql://{user}:{pw}@{host}:{port}/{db}" if pw else f"postgresql://{user}@{host}:{port}/{db}"
 
+    def _jsonish(v):
+        if v is None: return None
+        if isinstance(v, (dict, list, int, float, bool)): return v
+        if isinstance(v, str):
+            t = v.strip()
+            if (t.startswith("{") and t.endswith("}")) or (t.startswith("[") and t.endswith("]")):
+                try: return json.loads(t)
+                except Exception: return v
+            return v
+        return v
 
-@app.route("/upgrade", methods=["GET", "POST"])
-@require_login
-def upgrade():
-    """
-    Upgrade page that just stores membership info in the session for now.
-    """
-    pubkey = session.get("logged_in_pubkey")
-    if not pubkey:
-        return redirect(url_for("login", next="/upgrade"))
+    # Full users can view all clients; others see owned + NULL-owned (legacy)
+    is_full = (level == "full")
 
-    if request.method == "POST":
-        plan_choice = request.form.get("plan", "paid")
-        if plan_choice not in ("paid", "free_trial"):
-            plan_choice = "paid"
-
-        session["ubid_plan"] = plan_choice
-
-        if plan_choice == "paid":
-            expires = datetime.utcnow() + timedelta(days=365)
-        else:
-            expires = datetime.utcnow() + timedelta(days=14)
-
-        session["ubid_membership_expires_at"] = expires.isoformat() + "Z"
-        session.setdefault("ubid_sats_balance", 0)
-        flash("Membership updated", "success")
-        return redirect(url_for("dev_dashboard"))
-
-    user = {
-        "pubkey": pubkey,
-        "plan": session.get("ubid_plan", "free"),
-        "sats_balance": session.get("ubid_sats_balance", 0),
-        "membership_expires_at": session.get("ubid_membership_expires_at"),
-    }
-    return render_template("upgrade.html", user=user, logged_in_pubkey=pubkey)
-
-    # GET → show current info
-    user = {
-        "pubkey": pubkey,
-        "plan": session.get("ubid_plan", "free"),
-        "sats_balance": session.get("ubid_sats_balance", 0),
-        "membership_expires_at": session.get("ubid_membership_expires_at"),
-    }
-
-    # Template also expects logged_in_pubkey
-    return render_template(
-        "upgrade.html",
-
-        user=user,
-        logged_in_pubkey=pubkey,
-    )
-
-
-
-
-def create_app():
-    """Return the configured Flask application."""
-    return app
-
-
-if __name__ == "__main__":
-    # Run the demo server locally
-    app.run(host="127.0.0.1", port=5000, debug=True)
-
-
-# === HODLXXI â Proof of Funds (append-only block) ============================
-# Non-custodial PoF: challenge -> PSBT (with OP_RETURN containing challenge)
-# -> server verifies unspent inputs; stores short-lived attestation only.
-# This block is self-contained and safe to append at EOF.
-try:
-    ACTIVE_CHALLENGES  # reuse if already defined
-except NameError:
-    ACTIVE_CHALLENGES = {}
-
-
-# ============================================================================
-# OLD POF CODE - REPLACED BY pof_enhanced.py
-# ============================================================================
-# SIMPLE POF ENDPOINTS - Wrapper for verify.html template
-# These provide a simpler signature-based flow vs PSBT-based pof_enhanced
-# ============================================================================
-
-#@app.route("/pof/api/generate-challenge", methods=["POST"])
-#def pof_simple_generate_challenge():
- #   """Generate challenge for address-based verification"""
-  #  try:
-   #     if 'user_id' not in session:
-    #        return jsonify({"error": "Authentication required"}), 401
-     #       
-      #  data = request.get_json() or {}
-       # addresses = data.get("addresses", [])
-        #
-       # if not addresses or len(addresses) == 0:
-        #    return jsonify({"error": "At least one address required"}), 400
-       #     
-       # if len(addresses) > 100:
-        #    return jsonify({"error": "Maximum 100 addresses allowed"}), 400
-        #
-        # Generate challenge
-       # challenge = secrets.token_hex(32)
-       # message = f"HODLXXI Proof of Funds\nChallenge: {challenge}\nTimestamp: {int(time.time())}"
-      #  
-        # Store in session
-      #  session['pof_challenge'] = challenge
-       # session['pof_message'] = message
-        #session['pof_addresses'] = addresses
-       # session['pof_timestamp'] = time.time()
-        #
-      #  return jsonify({
-       #     "challenge": challenge,
-        #    "message": message,
-         #   "addresses": addresses
-       # })
-     #   
-  #  except Exception as e:
- #       logger.error(f"Error generating PoF challenge: {e}")
-   #     return jsonify({"error": str(e)}), 500
-
-
-#@app.route("/pof/api/verify-signatures", methods=["POST"])
-#def pof_simple_verify_signatures():
- #   """Verify signatures and calculate balance"""
-  #  try:
-   #     if 'user_id' not in session:
-    #        return jsonify({"error": "Authentication required"}), 401
-     #       
-      #  data = request.get_json() or {}
-       # signatures = data.get("signatures", [])
-       # privacy_level = data.get("privacy_level", "boolean")
-       # 
-        # Validate session challenge
-       # if 'pof_challenge' not in session:
-        #    return jsonify({"error": "No active challenge"}), 400
-         #   
-       # if time.time() - session.get('pof_timestamp', 0) > 900:  # 15 min
-        #    return jsonify({"error": "Challenge expired"}), 400
-        
-      #  message = session['pof_message']
-      #  rpc = get_rpc_connection()
-      #  
-       # verified_addresses = []
-       # total_balance = 0
-        
-       # for sig_data in signatures:
-        #    address = sig_data.get("address", "").strip()
-         #   signature = sig_data.get("signature", "").strip()
-          #  
-           # if not address or not signature:
-            #    continue
-             #   
-          #  try:
-                # Verify signature
-           #     is_valid = rpc.verifymessage(address, signature, message)
-                
-            #    if is_valid:
-                    # Get balance for this address
-             #       try:
-               #         utxos = rpc.scantxoutset("start", [f"addr({address})"])
-              #          balance = utxos.get("total_amount", 0)
-                #        total_balance += balance
-                 #       verified_addresses.append({
-                  #          "address": address,
-                   #         "balance": balance
-                    #    })
-                   # except:
-                    #    # Address might not have any UTXOs
-                     #   verified_addresses.append({
-                      #      "address": address,
-                      #     "balance": 0
-                      #  })
-         #   except Exception as e:
-          #      logger.error(f"Error verifying {address}: {e}")
-           #     continue
-        
-      #  if len(verified_addresses) == 0:
-       #     return jsonify({"error": "No valid signatures provided"}), 400
-        
-        # Determine whale tier
-       # whale_tiers = [
-        #    {'name': 'Shrimp', 'min': 0.0, 'max': 0.1, 'emoji': '🦐', 'color': '#94A3B8'},
-         #   {'name': 'Crab', 'min': 0.1, 'max': 1.0, 'emoji': '🦀', 'color': '#F97316'},
-          ##  {'name': 'Dolphin', 'min': 1.0, 'max': 10.0, 'emoji': '🐬', 'color': '#3B82F6'},
-      #      {'name': 'Shark', 'min': 10.0, 'max': 50.0, 'emoji': '🦈', 'color': '#8B5CF6'},
-      #      {'name': 'Whale', 'min': 50.0, 'max': 100.0, 'emoji': '🐋', 'color': '#EC4899'},
-      #      {'name': 'Humpback', 'min': 100.0, 'max': 1000.0, 'emoji': '🐳', 'color': '#F59E0B'},
-      #      {'name': 'Blue Whale', 'min': 1000.0, 'max': float('inf'), 'emoji': '🌊', 'color': '#14B8A6'}
-      #  ]
-        
-      #  tier = whale_tiers[0]
-      #  for t in whale_tiers:
-      #      if t['min'] <= total_balance < t['max']:
-      #          tier = t
-      #          break
-        
-        # Format amount based on privacy
-     #   if privacy_level == 'boolean':
-     #       formatted = "Verified ✓"
-      #  elif privacy_level == 'threshold':
-      #      formatted = f"{tier['emoji']} {tier['name']}"
-      #  elif privacy_level == 'aggregate':
-      #      rounded = round(total_balance / 10) * 10
-      #      formatted = f"~{rounded} BTC"
-      #  else:  # exact
-      #      formatted = f"{total_balance:.8f} BTC"
-       # 
-        # Generate certificate ID
-      #  cert_id = secrets.token_urlsafe(16)
-        
-       # # Clear session challenge
-      #  session.pop('pof_challenge', None)
-       # session.pop('pof_message', None)
-      #  
-      #  return jsonify({
-       #     "success": True,
-        #    "address_count": len(verified_addresses),
-         #   "total_btc": total_balance,
-          #  "whale_tier": tier,
-           # "formatted_amount": formatted,
-          #  "certificate_id": cert_id,
-           # "verified_addresses": verified_addresses
-      #  })
-       # 
-   # except Exception as e:
-    #    logger.error(f"Error verifying PoF signatures: {e}")
-     #   return jsonify({"error": str(e)}), 500
-
-# Keeping for reference only - DO NOT USE
-# ============================================================================
-def _hodlxxi_pof_bootstrap():
-    # Local imports to avoid touching your top import section
-    import hashlib
-    import os
-    import secrets
-    import sqlite3
-    import time
-    from datetime import datetime, timedelta
-
-    from flask import jsonify, request, session
-
-    globals_ = globals()
-
-    # Must exist in your app already:
-    app = globals_["app"]
-    socketio = globals_["socketio"]
-    get_rpc_connection = globals_["get_rpc_connection"]
-
-    # Config
-    POF_DB_PATH = os.getenv("POF_DB_PATH", "/srv/app/pof_attest.db")
-    POF_TTL_SECONDS = int(os.getenv("POF_TTL_SECONDS", "172800"))  # 48h
-    POF_MAX_PSBT_B64 = int(os.getenv("POF_MAX_PSBT_B64", "250000"))  # ~250 KB
-
-    os.makedirs(os.path.dirname(POF_DB_PATH), exist_ok=True)
-    _POF = sqlite3.connect(POF_DB_PATH, check_same_thread=False, isolation_level=None)
-    _POF.execute("PRAGMA journal_mode=WAL")
-    _POF.execute(
-        """
-    CREATE TABLE IF NOT EXISTS pof_attestations(
-      pubkey TEXT NOT NULL,
-      covenant_id TEXT NOT NULL DEFAULT '',
-      total_sat INTEGER NOT NULL,
-      method TEXT NOT NULL,
-      privacy_level TEXT NOT NULL,
-      proof_hash TEXT NOT NULL,
-      expires_at INTEGER NOT NULL,
-      created_at INTEGER NOT NULL,
-      PRIMARY KEY(pubkey, covenant_id)
-    )"""
-    )
-
-    def _pof_now():
-        return int(time.time())
-
-    def _pof_prune():
-        try:
-            _POF.execute("DELETE FROM pof_attestations WHERE expires_at < ?", (_pof_now(),))
-        except Exception:
-            pass
-
-    def _pof_get_status(pubkey, covenant_id):
-        row = _POF.execute(
-            "SELECT pubkey, covenant_id, total_sat, method, privacy_level, proof_hash, expires_at, created_at "
-            "FROM pof_attestations WHERE pubkey=? AND covenant_id=?",
-            (pubkey, covenant_id),
-        ).fetchone()
-        if not row:
-            return None
-        keys = [
-            "pubkey",
-            "covenant_id",
-            "total_sat",
-            "method",
-            "privacy_level",
-            "proof_hash",
-            "expires_at",
-            "created_at",
-        ]
-        return dict(zip(keys, row))
-
-    def _extract_opret_hex(vout_obj: dict):
-        spk = (vout_obj or {}).get("scriptPubKey") or {}
-        asm = spk.get("asm") or ""
-        parts = asm.split()
-        if len(parts) >= 2 and parts[0] == "OP_RETURN":
-            return parts[1]
-        return None
-
-    def _is_member(pubkey: str, covenant_id: str | None):
-        # Minimal guard: logged-in pubkey must match the claimant.
-        # You can tighten this to "pubkey is actually in covenant_id" using your existing metadata.
-        try:
-            return session.get("logged_in_pubkey") == pubkey
-        except Exception:
-            return False
-
-    # @app.post("/api/pof/challenge")
-    def api_pof_challenge():
-        data = request.get_json(silent=True) or {}
-        pubkey = (data.get("pubkey") or "").strip()
-        covenant_id = (data.get("covenant_id") or "").strip() or None
-        if not pubkey:
-            return jsonify(ok=False, error="pubkey required"), 400
-        if not _is_member(pubkey, covenant_id):
-            return jsonify(ok=False, error="membership required"), 403
-        cid = secrets.token_hex(8)
-        challenge = f"HODLXXI-PoF:{cid}:{_pof_now()}"
-        ACTIVE_CHALLENGES[cid] = {
-            "pubkey": pubkey,
-            "covenant_id": covenant_id,
-            "challenge": challenge,
-            "expires": _pof_now() + 900,
-        }
-        return jsonify(ok=True, challenge_id=cid, challenge=challenge, expires_in=900)
-
-    # @app.post("/api/pof/verify_psbt")
-    def api_pof_verify_psbt():
-        data = request.get_json(silent=True) or {}
-        cid = (data.get("challenge_id") or "").strip()
-        psbt = (data.get("psbt") or "").strip()
-        privacy_level = (data.get("privacy_level") or "aggregate").strip().lower()
-        min_sat = int(data.get("min_sat") or 0)
-        if not cid or not psbt:
-            return jsonify(ok=False, error="challenge_id and psbt required"), 400
-        if len(psbt) > POF_MAX_PSBT_B64:
-            return jsonify(ok=False, error="PSBT too large"), 413
-        rec = ACTIVE_CHALLENGES.get(cid)
-        if not rec or rec["expires"] < _pof_now():
-            return jsonify(ok=False, error="invalid or expired challenge"), 400
-        pubkey, cov_id, challenge = rec["pubkey"], rec["covenant_id"], rec["challenge"]
-        if not _is_member(pubkey, cov_id):
-            return jsonify(ok=False, error="membership required"), 403
-
-        rpc = get_rpc_connection()
-        dec = rpc.decodepsbt(psbt)
-        tx = dec.get("tx") or {}
-        vouts = tx.get("vout") or []
-        vins = tx.get("vin") or []
-
-        # OP_RETURN must contain our challenge bytes
-        bound = False
-        for vout in vouts:
-            ophex = _extract_opret_hex(vout)
-            if not ophex:
-                continue
-            try:
-                if challenge.encode() in bytes.fromhex(ophex):
-                    bound = True
-                    break
-            except Exception:
-                pass
-        if not bound:
-            return jsonify(ok=False, error="OP_RETURN challenge missing"), 400
-
-        # At least one referenced input must still be unspent + sum all currently unspent inputs
-        total_sat = 0
-        for i in vins:
-            txid = i.get("txid")
-            voutn = i.get("vout")
-            if not txid and txid != "":
-                continue
-            if voutn is None:
-                continue
-            utxo = rpc.gettxout(txid, voutn)
-            if utxo:
-                amt_sat = int(round(float(utxo.get("value", 0.0)) * 1e8))
-                total_sat += amt_sat
-        if total_sat <= 0:
-            return jsonify(ok=False, error="no live inputs"), 400
-
-        # Store short-lived attestation (NOT a balance)
-        proof_hash = hashlib.sha256((psbt + challenge).encode()).hexdigest()
-        now = _pof_now()
-        exp = now + POF_TTL_SECONDS
-        _POF.execute(
-            """
-          INSERT INTO pof_attestations(pubkey,covenant_id,total_sat,method,privacy_level,proof_hash,expires_at,created_at)
-          VALUES(?,?,?,?,?,?,?,?)
-          ON CONFLICT(pubkey, covenant_id) DO UPDATE SET
-            total_sat=excluded.total_sat, method=excluded.method,
-            privacy_level=excluded.privacy_level, proof_hash=excluded.proof_hash,
-            expires_at=excluded.expires_at, created_at=excluded.created_at
-        """,
-            (pubkey, (cov_id or ""), total_sat, "psbt", privacy_level, proof_hash, exp, now),
-        )
-        _pof_prune()
-        ACTIVE_CHALLENGES.pop(cid, None)
-
-        # Live signal (optional)
-        try:
-            socketio.emit(
-                "pof:updated",
-                {
-                    "pubkey": pubkey,
-                    "covenant_id": cov_id,
-                    "total_sat": total_sat,
-                    "privacy_level": privacy_level,
-                    "expires_at": exp,
-                    "method": "psbt",
-                },
-            )
-        except Exception:
-            pass
-
-        res = {"ok": True, "pubkey": pubkey, "total_sat": total_sat, "expires_in": POF_TTL_SECONDS}
-        if privacy_level == "boolean":
-            res["has_threshold"] = total_sat >= max(min_sat, 0)
-        elif privacy_level == "threshold":
-            res["meets_min_sat"] = total_sat >= max(min_sat, 0)
-        return jsonify(res)
-
-    # @app.get("/api/pof/status/<pubkey>")
-    def api_pof_status(pubkey):
-        covenant_id = (request.args.get("covenant_id") or "").strip()
-        st = _pof_get_status((pubkey or "").strip(), covenant_id)
-        return jsonify(ok=True, status=st)
-
-
-# ============================================================================
-# PLAYGROUND POF - Public demo endpoints (no membership required)
-# ============================================================================
-@app.route('/api/playground/pof/challenge', methods=['POST'])
-def playground_pof_challenge():
-    """Generate PoF challenge for playground demo (no auth required)"""
     try:
-        data = request.get_json(silent=True) or {}
-        pubkey = (data.get("pubkey") or "playground-demo").strip()
+        with psycopg.connect(dsn) as conn:
+            with conn.cursor() as cur:
+                if is_full:
+                    cur.execute("""
+                        select client_id, client_name, redirect_uris, grant_types, response_types,
+                               scope, token_endpoint_auth_method, created_at, metadata, is_active,
+                               owner_pubkey, plan
+                        from oauth_clients
+                        order by created_at desc
+                        limit 200
+                    """)
+                else:
+                    cur.execute("""
+                        select client_id, client_name, redirect_uris, grant_types, response_types,
+                               scope, token_endpoint_auth_method, created_at, metadata, is_active,
+                               owner_pubkey, plan
+                        from oauth_clients
+                        where owner_pubkey = %s or owner_pubkey is null
+                        order by created_at desc
+                        limit 200
+                    """, (pubkey,))
+                rows = cur.fetchall()
 
-        # Generate challenge
-        cid = secrets.token_hex(8)
-        challenge = f"HODLXXI-PoF:{cid}:{int(time.time())}"
-
-        # Store in Redis (5 min expiry for demo)
-        if 'playground_redis' in globals() and playground_redis is not None:
-            playground_redis.setex(
-                f'pg_pof:{cid}',
-                300,
-                json.dumps({
-                    'pubkey': pubkey,
-                    'challenge': challenge,
-                    'created_at': int(time.time())
-                })
-            )
-
-        return jsonify({
-            'ok': True,
-            'challenge_id': cid,
-            'challenge': challenge,
-            'expires_in': 300,
-            'pubkey': pubkey,
-        })
-
-    except Exception as e:
-        logger.error(f"Playground PoF challenge failed: {e}")
-        return jsonify({'ok': False, 'error': str(e)}), 500
-
-
-@app.route('/api/playground/pof/verify', methods=['POST'])
-def playground_pof_verify():
-    """Verify PSBT proof for playground demo"""
-    try:
-        data = request.get_json(silent=True) or {}
-        challenge_id = (data.get('challenge_id') or '').strip()
-        psbt = (data.get('psbt') or '').strip()
-        privacy_level = (data.get('privacy_level') or 'aggregate').strip()
-        min_sat_raw = data.get('min_sat') or 0
-
-        try:
-            min_sat = int(min_sat_raw)
-        except Exception:
-            min_sat = 0
-
-        if not challenge_id or not psbt:
-            return jsonify({'ok': False, 'error': 'challenge_id and psbt required'}), 400
-
-        # Get challenge from Redis
-        if 'playground_redis' in globals() and playground_redis is not None:
-            challenge_data = playground_redis.get(f'pg_pof:{challenge_id}')
-        else:
-            challenge_data = None
-
-        if not challenge_data:
-            return jsonify({'ok': False, 'error': 'Challenge expired or invalid'}), 400
-
-        challenge_info = json.loads(challenge_data)
-        challenge = challenge_info.get('challenge', '')
-
-        # Verify PSBT using Bitcoin RPC
-        rpc = get_rpc_connection()
-        decoded = rpc.decodepsbt(psbt)
-        tx = decoded.get('tx', {})
-        vouts = tx.get('vout', [])
-        vins = tx.get('vin', [])
-
-        # Check OP_RETURN contains our challenge *bytes*
-        has_challenge = False
-        for vout in vouts:
-            spk = vout.get('scriptPubKey', {})
-            asm = spk.get('asm', '') or ''
-            parts = asm.split()
-
-            # Expect: "OP_RETURN <hexdata>"
-            if len(parts) >= 2 and parts[0] == 'OP_RETURN':
-                data_hex = parts[1]
-                try:
-                    data_bytes = bytes.fromhex(data_hex)
-                    if challenge and challenge.encode() in data_bytes:
-                        has_challenge = True
-                        break
-                except Exception:
-                    continue
-
-        # Sum unspent inputs
-        total_sat = 0
-        unspent_count = 0
-        for vin in vins:
-            txid = vin.get('txid')
-            vout_n = vin.get('vout')
-            if not txid or vout_n is None:
-                continue
-            try:
-                utxo = rpc.gettxout(txid, vout_n)
-                if utxo:
-                    value_btc = float(utxo.get('value', 0))
-                    total_sat += int(value_btc * 100_000_000)
-                    unspent_count += 1
-            except Exception:
-                continue
-
-        if total_sat <= 0:
-            return jsonify({'ok': False, 'error': 'No valid unspent inputs'}), 400
-
-        proof_id = secrets.token_hex(8)
-
-        # Optional: store result in Redis for 1 hour
-        if 'playground_redis' in globals() and playground_redis is not None:
-            playground_redis.setex(
-                f'pg_pof_result:{proof_id}',
-                3600,
-                json.dumps({
-                    'challenge_id': challenge_id,
-                    'total_sat': total_sat,
-                    'unspent_count': unspent_count,
-                    'verified_at': int(time.time()),
-                    'privacy_level': privacy_level,
-                    'min_sat': min_sat,
-                })
-            )
-
-        return jsonify({
-            'ok': True,
-            'message': 'Proof verified successfully!',
-            'proof_id': proof_id,
-            'total_sat': total_sat,
-            'total_btc': round(total_sat / 100_000_000, 8),
-            'unspent_count': unspent_count,
-            'privacy_level': privacy_level,
-            'min_sat': min_sat,
-        })
-
-    except Exception as e:
-        logger.error(f"Playground PoF verify failed: {e}")
-        return jsonify({'ok': False, 'error': f'internal error: {e}'}), 500
-
-
-# ---- playground runtime globals API (used by static/playground.html) ----
-@app.route('/playground-globals', methods=['GET'])
-def playground_globals():
-    """Return runtime values the static playground can fetch (safe JSON)."""
-    try:
-        logged = session.get('logged_in_pubkey', '')
-    except Exception:
-        logged = ''
-    try:
-        access = session.get('access_level', 'limited')
-    except Exception:
-        access = 'limited'
-    issuer_val = globals().get('ISSUER', '') if 'ISSUER' in globals() else ''
-    return jsonify({
-        'logged_in_pubkey': logged,
-        'access_level': access,
-        'issuer': issuer_val
-    })
-# ------------------------------------------------------------------------
-
-# ============================================================================
-# PLAYGROUND - REAL DEMOS API
-# Auto-added by deploy script
-# ============================================================================
-
-@app.route('/api/playground/stats', methods=['GET'])
-def playground_stats():
-    """Get real-time authentication statistics"""
-    try:
-        from datetime import datetime as dt
-        today_key = f"pg_stats:{dt.now().strftime('%Y-%m-%d')}"
-        auths_today = playground_redis.get(today_key) or 0
-        
-        return jsonify({
-            'avgAuthTime': 4.2,
-            'authsToday': int(auths_today),
-            'countries': 0,  # Can add IP geolocation later
-            'totalAuths': int(auths_today)  # For now, same as today
-        })
-    except Exception as e:
-        logger.error(f"Stats error: {e}")
-        return jsonify({
-            'avgAuthTime': 4.2,
-            'authsToday': 0,
-            'countries': 0,
-            'totalAuths': 0
-        })
-
-
-
-        activities = []
-        recent = playground_redis.zrevrange('pg_activity', 0, 9)
-        logger.info(f"Got {len(recent)} items from Redis")
-        
-        for activity_json in recent:
-            logger.info(f"Processing: {activity_json[:50]}...")
-            try:
-                activity = json.loads(activity_json)
-                activities.append(activity)
-                logger.info(f"Parsed: {activity.get('action', 'N/A')}")
-            except Exception as parse_err:
-                logger.error(f"Parse error: {parse_err}")
-        
-        logger.info(f"Returning {len(activities)} activities")
-        return jsonify({'activities': activities})
-    except Exception as e:
-        logger.error(f"Activity error: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return jsonify({'activities': []})
-
-
-def log_playground_activity(user_id, action, location='Unknown'):
-    """Log playground activity to Redis"""
-    logger.info(f"log_playground_activity called: {user_id}, {action}")
-    try:
-        logger.info("Step 1: Creating activity JSON...")
-        activity = json.dumps({
-            'user': user_id[:8] if len(user_id) > 8 else user_id,
-            'action': action,
-            'location': location,
-            'timestamp': int(time.time())
-        })
-        logger.info(f"Step 2: Activity JSON created: {activity[:50]}...")
-        
-        logger.info("Step 3: Adding to Redis sorted set...")
-        playground_redis.zadd('pg_activity', {activity: time.time()})
-        logger.info("Step 4: Trimming old entries...")
-        playground_redis.zremrangebyrank('pg_activity', 0, -101)
-        logger.info("Step 5: Activity added to Redis!")
-        
-        # Increment daily counter
-        from datetime import datetime as dt
-        today_key = f"pg_stats:{dt.now().strftime('%Y-%m-%d')}"
-        logger.info(f"Step 6: Incrementing counter: {today_key}")
-        playground_redis.incr(today_key)
-        playground_redis.expire(today_key, 86400 * 7)
-        logger.info("Step 7: Counter incremented! SUCCESS!")
-    except Exception as e:
-        logger.error(f"Activity log error at some step: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-
-
-@app.route('/api/playground/lightning/init', methods=['POST'])
-def playground_lightning_init():
-    """Initialize real Lightning authentication"""
-    try:
-        import secrets, qrcode, base64
-        from io import BytesIO
-        
-        session_id = secrets.token_hex(16)
-        k1 = secrets.token_hex(32)
-        
-        # Store session in Redis
-        playground_redis.setex(
-            f'pg_ln:{session_id}',
-            300,  # 5 minutes
-            json.dumps({'k1': k1, 'authenticated': False})
-        )
-        
-        # Create LNURL callback URL
-        callback_url = f'https://hodlxxi.com/api/playground/lightning/callback?session={session_id}&k1={k1}'
-        
-        # Generate QR code
-        qr = qrcode.QRCode(version=1, box_size=10, border=4)
-        qr.add_data(callback_url)
-        qr.make(fit=True)
-        
-        img = qr.make_image(fill_color="black", back_color="white")
-        buffer = BytesIO()
-        img.save(buffer, format='PNG')
-        qr_b64 = base64.b64encode(buffer.getvalue()).decode()
-        
-        return jsonify({
-            'sessionId': session_id,
-            'qrCodeDataUrl': f'data:image/png;base64,{qr_b64}',
-            'expiresIn': 300
-        })
-        
-    except Exception as e:
-        logger.error(f"Lightning init failed: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/playground/lightning/callback', methods=['GET'])
-def playground_lightning_callback():
-    """Handle Lightning wallet callback"""
-    try:
-        session_id = request.args.get('session')
-        k1 = request.args.get('k1')
-        sig = request.args.get('sig')
-        key = request.args.get('key')
-        
-        if not session_id or not key:
-            return jsonify({'status': 'ERROR', 'reason': 'Missing parameters'})
-        
-        # Get session
-        session_data = playground_redis.get(f'pg_ln:{session_id}')
-        if not session_data:
-            return jsonify({'status': 'ERROR', 'reason': 'Session expired'})
-        
-        # Update session (TODO: Add signature verification in production)
-        data = json.loads(session_data)
-        data['authenticated'] = True
-        log_playground_activity(key, 'logged in via Lightning', 'Web')
-        data['pubkey'] = key
-        playground_redis.setex(f'pg_ln:{session_id}', 300, json.dumps(data))
-        
-        return jsonify({'status': 'OK'})
-        
-    except Exception as e:
-        logger.error(f"Lightning callback failed: {e}")
-        return jsonify({'status': 'ERROR', 'reason': str(e)})
-
-
-@app.route('/api/playground/lightning/check/<session_id>', methods=['GET'])
-def playground_lightning_check(session_id):
-    """Check Lightning authentication status"""
-    try:
-        session_data = playground_redis.get(f'pg_ln:{session_id}')
-        
-        if not session_data:
-            return jsonify({'authenticated': False, 'expired': True})
-        
-        data = json.loads(session_data)
-        
-        return jsonify({
-            'authenticated': data.get('authenticated', False),
-            'pubkey': data.get('pubkey', None)
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/playground/nostr/auth', methods=['POST'])
-def playground_nostr_auth():
-    """Nostr authentication with demo session"""
-    try:
-        data = request.get_json()
-        pubkey = data.get('pubkey')
-        
-        if pubkey:
-            # Store in Redis for demo purposes
-            session_id = secrets.token_hex(16)
-            playground_redis.setex(
-                f'pg_nostr:{session_id}',
-                3600,  # 1 hour
-                json.dumps({
-                    'pubkey': pubkey,
-                    'authenticated': True,
-                    'timestamp': int(time.time())
-                })
-            )
-            
-            return jsonify({
-                'authenticated': True,
-                'pubkey': pubkey,
-                'sessionId': session_id,
-                'message': 'Successfully authenticated via Nostr!',
-                'nextSteps': [
-                    'Your Nostr identity is now verified',
-                    'In production, this would create a user session',
-                    'You could now access Nostr-gated features'
-                ]
+        clients = []
+        for (client_id, client_name, redirect_uris, grant_types, response_types,
+             scope, token_auth, created_at, metadata, is_active, owner_pubkey, plan) in rows:
+            clients.append({
+                "client_id": client_id,
+                "client_name": client_name,
+                "redirect_uris": _jsonish(redirect_uris) or [],
+                "grant_types": _jsonish(grant_types) or [],
+                "response_types": _jsonish(response_types) or [],
+                "scope": scope,
+                "token_endpoint_auth_method": token_auth,
+                "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at),
+                "metadata": _jsonish(metadata) or {},
+                "is_active": bool(is_active) if is_active is not None else True,
+                "owner_pubkey": owner_pubkey,
+                "plan": plan or "free",
             })
-        
-        return jsonify({'authenticated': False, 'error': 'No pubkey provided'})
-        
+
+        return jsonify(ok=True, clients=clients, count=len(clients), ts=time.time()), 200
+
     except Exception as e:
-        return jsonify({'authenticated': False, 'error': str(e)})
+        return jsonify(ok=False, error=f"DB query failed: {e}", clients=[]), 500
 
 
-@app.route("/play")
-def play():
-    return send_from_directory("static", "play.html")
 
+@app.route("/oauth/clients/<client_id>", methods=["GET"])
+def oauth_client_detail(client_id):
+    """
+    GET /oauth/clients/<client_id> (NO SECRET)
+    - 401 not logged in
+    - 403 not full
+    - 404 not found
+    - 403 if not owner (owner_pubkey), and not admin for NULL-owned
+    """
+    from flask import jsonify, session
+    import os, json
+    import psycopg
 
-@app.route("/api/get-login-challenge", methods=["GET"])
-def get_login_challenge():
-    """Get login challenge in JSON format - for testing/CLI use"""
-    import secrets
-    import time
-    
-    # Generate a fresh challenge
-    challenge_str = secrets.token_hex(32)
-    challenge_message = f"HODLXXI Login Challenge: {challenge_str}"
-    
-    return jsonify({
-        "challenge": challenge_message,
-        "challenge_id": challenge_str,
-        "timestamp": int(time.time()),
-        "expires_in": 600,
-        "usage": "Sign this message with bitcoin-cli signmessage <address> '<challenge>'"
+    pubkey = session.get("logged_in_pubkey") or ""
+    level  = session.get("access_level") or ""
+
+    if not pubkey:
+        resp = jsonify(ok=False, error="Not logged in")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp, 401
+
+    if level != "full":
+        resp = jsonify(ok=False, error="Forbidden")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp, 403
+
+    admins = {x.strip() for x in (os.getenv("OAUTH_CLIENTS_ADMIN_PUBKEYS","")).split(",") if x.strip()}
+    is_admin = (pubkey in admins)
+
+    dsn = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or ""
+    if not dsn:
+        host = os.getenv("PGHOST", os.getenv("DB_HOST", "127.0.0.1"))
+        port = os.getenv("PGPORT", os.getenv("DB_PORT", "5432"))
+        db   = os.getenv("PGDATABASE", os.getenv("DB_NAME", "hodlxxi"))
+        user = os.getenv("PGUSER", os.getenv("DB_USER", "hodlxxi"))
+        pw   = os.getenv("PGPASSWORD", os.getenv("DB_PASSWORD", ""))
+        dsn = f"postgresql://{user}:{pw}@{host}:{port}/{db}" if pw else f"postgresql://{user}@{host}:{port}/{db}"
+
+    def _jsonish(v):
+        if v is None: return None
+        if isinstance(v, (dict, list, int, float, bool)): return v
+        if isinstance(v, str):
+            t = v.strip()
+            if (t.startswith("{") and t.endswith("}")) or (t.startswith("[") and t.endswith("]")):
+                try: return json.loads(t)
+                except Exception: return v
+            return v
+        return v
+
+    sql = """
+      SELECT client_id, client_name, redirect_uris, grant_types, response_types, scope,
+             token_endpoint_auth_method, created_at, metadata, is_active, owner_pubkey, plan
+      FROM oauth_clients
+      WHERE client_id = %s
+      LIMIT 1
+    """
+
+    try:
+        with psycopg.connect(dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (client_id,))
+                r = cur.fetchone()
+    except Exception as e:
+        resp = jsonify(ok=False, error=f"DB query failed: {e}")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp, 500
+
+    if not r:
+        resp = jsonify(ok=False, error="Not found")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp, 404
+
+    owner = r[10]
+    if owner != pubkey and not (owner is None and is_admin):
+        resp = jsonify(ok=False, error="Forbidden")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp, 403
+
+    resp = jsonify(ok=True, client={
+        "client_id": r[0],
+        "client_name": r[1],
+        "redirect_uris": _jsonish(r[2]) or [],
+        "grant_types": _jsonish(r[3]) or [],
+        "response_types": _jsonish(r[4]) or [],
+        "scope": r[5],
+        "token_endpoint_auth_method": r[6],
+        "created_at": (r[7].isoformat() if getattr(r[7], "isoformat", None) else str(r[7])),
+        "metadata": _jsonish(r[8]) or {},
+        "is_active": bool(r[9]),
+        "owner_pubkey": owner,
+        "plan": r[11] or "free",
     })
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 200
 
 
+@app.route("/oauth/clients/<client_id>/rotate-secret", methods=["POST"])
+def oauth_client_rotate_secret(client_id):
+    """
+    POST /oauth/clients/<client_id>/rotate-secret
+    ADMIN-ONLY (pubkey in OAUTH_CLIENTS_ADMIN_PUBKEYS + full)
+    Returns new client_secret.
+    """
+    from flask import jsonify, session
+    import os, secrets
+    import psycopg
+
+    pubkey = session.get("logged_in_pubkey") or ""
+    level  = session.get("access_level") or ""
+
+    admins = {x.strip() for x in (os.getenv("OAUTH_CLIENTS_ADMIN_PUBKEYS","")).split(",") if x.strip()}
+    is_admin = (pubkey in admins)
+
+    if not pubkey:
+        resp = jsonify(ok=False, error="Not logged in")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp, 401
+    if level != "full" or not is_admin:
+        resp = jsonify(ok=False, error="Forbidden")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp, 403
+
+    dsn = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or ""
+    if not dsn:
+        host = os.getenv("PGHOST", os.getenv("DB_HOST", "127.0.0.1"))
+        port = os.getenv("PGPORT", os.getenv("DB_PORT", "5432"))
+        db   = os.getenv("PGDATABASE", os.getenv("DB_NAME", "hodlxxi"))
+        user = os.getenv("PGUSER", os.getenv("DB_USER", "hodlxxi"))
+        pw   = os.getenv("PGPASSWORD", os.getenv("DB_PASSWORD", ""))
+        dsn = f"postgresql://{user}:{pw}@{host}:{port}/{db}" if pw else f"postgresql://{user}@{host}:{port}/{db}"
+
+    new_secret = secrets.token_urlsafe(32)
+
+    try:
+        with psycopg.connect(dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE oauth_clients SET client_secret=%s WHERE client_id=%s", (new_secret, client_id))
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    resp = jsonify(ok=False, error="Not found")
+                    resp.headers["Cache-Control"] = "no-store"
+                    return resp, 404
+            conn.commit()
+    except Exception as e:
+        resp = jsonify(ok=False, error=f"DB update failed: {e}")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp, 500
+
+    resp = jsonify(ok=True, client_id=client_id, client_secret=new_secret)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 200
+
+
+@app.route("/playground", methods=["GET"])
+def playground():
+    # Public demo page
+    from flask import render_template
+    return render_template("playground.html")
+
+# API_DEBUG_SESSION_ALIAS_V1
+@app.route("/api/debug/session", methods=["GET"])
+def api_debug_session_alias():
+    """Compat endpoint: some frontend code calls /api/debug/session."""
+    return api_whoami()
+# /API_DEBUG_SESSION_ALIAS_V1
+
+
+
+# API_POF_VERIFY_PSBT_V1
+@app.route("/api/pof/verify_psbt", methods=["POST"])
+def api_pof_verify_psbt():
+    """
+    Verify a PSBT PoF proof:
+      - PSBT contains OP_RETURN with the exact challenge string for challenge_id
+      - PSBT is signed (has final_scriptwitness/final_scriptsig/partial_sigs per input)
+      - Sum amounts from witness_utxo/non_witness_utxo if available (best-effort)
+    """
+    import base64
+    import time
+    from flask import request, jsonify, session
+
+    data = request.get_json() or {}
+    cid = (data.get("challenge_id") or "").strip()
+    psbt_b64 = (data.get("psbt") or "").strip()
+    pubkey = (data.get("pubkey") or "").strip()
+
+    if not cid or not psbt_b64:
+        return jsonify(ok=False, error="Missing challenge_id or psbt"), 400
+
+    # session fallback for pubkey (optional)
+    if not pubkey:
+        spk = (session.get("logged_in_pubkey") or "").strip()
+        if spk:
+            pubkey = spk
+
+    # ACTIVE_CHALLENGES must exist in your app (it does in your /api/challenge flow)
+    ch = ACTIVE_CHALLENGES.get(cid) if "ACTIVE_CHALLENGES" in globals() else None
+    if not ch:
+        return jsonify(ok=False, error="Unknown or expired challenge_id"), 400
+
+    # Expiry (best-effort)
+    exp = ch.get("expires_at") or 0
+    if exp and time.time() > float(exp):
+        try:
+            ACTIVE_CHALLENGES.pop(cid, None)
+        except Exception:
+            pass
+        return jsonify(ok=False, error="Challenge expired"), 400
+
+    challenge = ch.get("challenge") or ""
+    if not challenge:
+        return jsonify(ok=False, error="Challenge record missing challenge string"), 500
+
+    # -------- PSBT parsing helpers (minimal BIP174) --------
+    def read_varint(b, i):
+        n = b[i]
+        if n < 0xfd:
+            return n, i+1
+        if n == 0xfd:
+            return int.from_bytes(b[i+1:i+3], "little"), i+3
+        if n == 0xfe:
+            return int.from_bytes(b[i+1:i+5], "little"), i+5
+        return int.from_bytes(b[i+1:i+9], "little"), i+9
+
+    def read_kv_map(b, i):
+        m = []
+        while True:
+            if i >= len(b):
+                raise ValueError("truncated psbt map")
+            if b[i] == 0x00:
+                return m, i+1
+            klen, i = read_varint(b, i)
+            key = b[i:i+klen]; i += klen
+            vlen, i = read_varint(b, i)
+            val = b[i:i+vlen]; i += vlen
+            m.append((key, val))
+        # unreachable
+
+    def parse_psbt(psbt_bytes):
+        if not psbt_bytes.startswith(b"psbt\xff"):
+            raise ValueError("bad psbt magic")
+        i = 5
+        gmap, i = read_kv_map(psbt_bytes, i)
+
+        unsigned_tx = None
+        for k, v in gmap:
+            if len(k) >= 1 and k[0] == 0x00:
+                unsigned_tx = v
+                break
+        if not unsigned_tx:
+            raise ValueError("missing unsigned tx in psbt")
+
+        # parse unsigned tx to know num inputs/outputs
+        tx = parse_tx(unsigned_tx)
+        nin = len(tx["vin"])
+        nout = len(tx["vout"])
+
+        in_maps = []
+        for _ in range(nin):
+            imap, i = read_kv_map(psbt_bytes, i)
+            in_maps.append(imap)
+
+        out_maps = []
+        for _ in range(nout):
+            omap, i = read_kv_map(psbt_bytes, i)
+            out_maps.append(omap)
+
+        return tx, in_maps, out_maps
+
+    def parse_tx(tx_bytes):
+        # minimal tx parser (handles segwit marker if present)
+        i = 0
+        version = int.from_bytes(tx_bytes[i:i+4], "little"); i += 4
+
+        segwit = False
+        if i+2 <= len(tx_bytes) and tx_bytes[i] == 0x00 and tx_bytes[i+1] == 0x01:
+            segwit = True
+            i += 2
+
+        vin_n, i = read_varint(tx_bytes, i)
+        vin = []
+        for _ in range(vin_n):
+            txid_le = tx_bytes[i:i+32]; i += 32
+            vout = int.from_bytes(tx_bytes[i:i+4], "little"); i += 4
+            slen, i = read_varint(tx_bytes, i)
+            script = tx_bytes[i:i+slen]; i += slen
+            seq = tx_bytes[i:i+4]; i += 4
+            vin.append({"txid_le": txid_le, "vout": vout, "scriptSig": script, "sequence": seq})
+
+        vout_n, i = read_varint(tx_bytes, i)
+        vout_list = []
+        for _ in range(vout_n):
+            amt_sat = int.from_bytes(tx_bytes[i:i+8], "little"); i += 8
+            pklen, i = read_varint(tx_bytes, i)
+            spk = tx_bytes[i:i+pklen]; i += pklen
+            vout_list.append({"value_sat": amt_sat, "scriptPubKey": spk})
+
+        # skip witness if present
+        if segwit:
+            for _ in range(vin_n):
+                items, i = read_varint(tx_bytes, i)
+                for __ in range(items):
+                    ilen, i = read_varint(tx_bytes, i)
+                    i += ilen
+
+        locktime = int.from_bytes(tx_bytes[i:i+4], "little") if i+4 <= len(tx_bytes) else 0
+        return {"version": version, "vin": vin, "vout": vout_list, "locktime": locktime}
+
+    def extract_opreturn_strings(vout_list):
+        out = []
+        for o in vout_list:
+            spk = o["scriptPubKey"]
+            if not spk or spk[0] != 0x6a:  # OP_RETURN
+                continue
+            j = 1
+            if j >= len(spk):
+                continue
+            op = spk[j]; j += 1
+            if op <= 0x4b:
+                n = op
+            elif op == 0x4c:
+                if j >= len(spk): 
+                    continue
+                n = spk[j]; j += 1
+            elif op == 0x4d:
+                if j+1 >= len(spk):
+                    continue
+                n = int.from_bytes(spk[j:j+2], "little"); j += 2
+            else:
+                continue
+            data = spk[j:j+n]
+            try:
+                out.append(data.decode("utf-8", errors="strict"))
+            except Exception:
+                # ignore non-text
+                pass
+        return out
+
+    def input_has_sig(imap):
+        # key type is first byte of key
+        for k, v in imap:
+            if not k:
+                continue
+            t = k[0]
+            # 0x02 partial sig, 0x07 final_scriptsig, 0x08 final_scriptwitness
+            if t in (0x02, 0x07, 0x08):
+                return True
+        return False
+
+    def sum_input_sats(tx, in_maps):
+        total = 0
+        used = 0
+
+        # witness_utxo key type is 0x01, value = TxOut (8 sat + varint scriptlen + script)
+        def parse_txout(v):
+            if len(v) < 9:
+                return None
+            amt = int.from_bytes(v[0:8], "little")
+            # parse script length varint
+            slen, off = read_varint(v, 8)
+            spk = v[off:off+slen]
+            return amt, spk
+
+        # non_witness_utxo key type is 0x00, value = full previous tx
+        def parse_prev_tx_and_get_vout(prev_tx_bytes, vout_index):
+            pt = parse_tx(prev_tx_bytes)
+            if 0 <= vout_index < len(pt["vout"]):
+                return pt["vout"][vout_index]["value_sat"]
+            return None
+
+        for idx, imap in enumerate(in_maps):
+            got = None
+            for k, v in imap:
+                if not k:
+                    continue
+                if k[0] == 0x01:  # witness_utxo
+                    parsed = parse_txout(v)
+                    if parsed:
+                        got = parsed[0]
+                        break
+            if got is None:
+                prev_tx = None
+                for k, v in imap:
+                    if k and k[0] == 0x00:  # non_witness_utxo
+                        prev_tx = v
+                        break
+                if prev_tx is not None:
+                    got = parse_prev_tx_and_get_vout(prev_tx, tx["vin"][idx]["vout"])
+            if got is not None:
+                total += got
+                used += 1
+
+        return total, used
+
+    # decode base64 psbt
+    try:
+        psbt_bytes = base64.b64decode(psbt_b64, validate=True)
+    except Exception:
+        return jsonify(ok=False, error="Invalid base64 PSBT"), 400
+
+    try:
+        tx, in_maps, out_maps = parse_psbt(psbt_bytes)
+    except Exception as e:
+        return jsonify(ok=False, error=f"PSBT parse failed: {e}"), 400
+
+    # verify OP_RETURN includes challenge string
+    op_returns = extract_opreturn_strings(tx["vout"])
+    if challenge not in op_returns:
+        return jsonify(ok=False, error="Challenge not found in OP_RETURN"), 400
+
+    # verify signed
+    if not all(input_has_sig(im) for im in in_maps):
+        return jsonify(ok=False, error="PSBT not fully signed (missing signatures)"), 400
+
+    total_sat, used_inputs = sum_input_sats(tx, in_maps)
+    total_btc = total_sat / 1e8
+
+    # best-effort response compatible with UI
+    return jsonify(
+        ok=True,
+        verified=True,
+        challenge_id=cid,
+        pubkey=pubkey,
+        unspent_count=len(in_maps),
+        total_sat=total_sat,
+        total_btc=total_btc,
+        inputs_with_amount=used_inputs,
+    ), 200
+# /API_POF_VERIFY_PSBT_V1
