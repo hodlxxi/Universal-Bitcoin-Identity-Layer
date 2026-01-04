@@ -1,4 +1,5 @@
 import hashlib
+import threading
 import json
 import redis
 import redis
@@ -726,6 +727,30 @@ def _oauth_public_allowlist():
 # --- metrics helpers (safe, soft-fail) ---
 PROCESS_START_TIME = time.time()
 
+# DB metrics cache (avoid heavy COUNT(*) on every scrape)
+_DB_METRICS_LOCK = threading.Lock()
+_DB_METRICS_CACHE = {"ts": 0.0, "data": None}
+
+def _db_metrics_counts_cached(ttl_seconds: int = 15):
+    now = time.time()
+    try:
+        with _DB_METRICS_LOCK:
+            data = _DB_METRICS_CACHE.get("data")
+            ts = float(_DB_METRICS_CACHE.get("ts") or 0.0)
+            if data is not None and (now - ts) < ttl_seconds:
+                return data
+    except Exception:
+        # soft-fail: if lock/cache breaks, just compute live
+        pass
+
+    data = _db_metrics_counts()
+    try:
+        with _DB_METRICS_LOCK:
+            _DB_METRICS_CACHE["ts"] = now
+            _DB_METRICS_CACHE["data"] = data
+    except Exception:
+        pass
+    return data
 def _db_metrics_counts():
     """
     Returns a dict of DB row counts. Never raises (soft-fail).
@@ -831,7 +856,7 @@ def metrics():
             "chat_history_size": len(CHAT_HISTORY),
             "active_challenges": len(ACTIVE_CHALLENGES),
             "lnurl_sessions": len(LNURL_SESSIONS),
-                    "db": _db_metrics_counts(),
+                    "db": _db_metrics_counts_cached(),
         }
         return jsonify({"metrics": metrics_data}), 200
     except Exception as e:
