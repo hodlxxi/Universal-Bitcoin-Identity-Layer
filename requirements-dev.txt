@@ -14,7 +14,7 @@ responses==0.24.1
 httpretty==1.1.4
 
 # Redis & Database Testing
-fakeredis==2.32.1
+fakeredis==2.33.0
 pytest-postgresql==5.0.0
 
 # Code Quality
