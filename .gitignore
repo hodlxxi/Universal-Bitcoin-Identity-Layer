@@ -12,7 +12,6 @@ __pycache__/
 dist/
 build/
 .pytest_cache/
-
 # Backups and patches
 *.backup
 *.backup-*
@@ -25,55 +24,39 @@ build/
 **/app.py.from-*
 patch_*.sh
 *_poc_demo.sh
-
 # Logs
 logs/
 *.log
-
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-
 # OS
 .DS_Store
 Thumbs.db
-
 # Database files
 *.db
 *.db-journal
 *.sqlite
 *.sqlite3
-
 # Virtual environment
 venv/
 env/
 ENV/
-
 # Backups and temporary directories
 backups/
 *_backup/
 *.backup/
 cleanup_graveyard*/
-
 # Private keys and secrets (CRITICAL)
 jwks/
-*.pem
-*.key
 *.p12
 *.pfx
-
 # Logs and diagnostics
-*.log
-logs/
-__pycache__/
-
 # Environment files
-.env
 .env.*
 !.env.example
-
 # HODLXXI timestamped backups (common pattern: *.bak.YYYY-..)
 *.bak.*
 *.backup_*
@@ -81,42 +64,35 @@ __pycache__/
 **/*.backup_*
 **/app.py.bak.*
 **/app.py.backup_*
-
 # generated diagnostics / local exports
 endpoint_map.txt
 endpoint_test_results.txt
-
 # runtime secrets/keys
 keys/
-
 # Local archives/backups (never commit)
 _archive_baks/
-
 # --- local-only / not for OSS ---
-_archive_baks/
-backups/
 **/*.bak*
 **/*~
 **/*.swp
 **/*.swo
-
 # Local PoF debug scripts
 pof_*.sh
 app/pof_*.sh
-
 # Local one-off patch/mapping helpers
 app/patch_*.py
 app/map_*.py
-
 # Session notes (local)
 docs/SESSION_*.md
-
 # VPS-local ops/admin helpers (keep local, not OSS)
 hodlxxi-admin.sh
-
 # local/backup artifacts
-*.bak
-*.bak.*
-*.swp
 *.pyc
-__pycache__/
+# --- secrets / local-only ---
+jwt_private.pem
+jwt_public.pem
+# --- backups / junk ---
+cleanup_graveyard_*/
+bitcoinrpc_stub_backup/
+# --- python ---
+.venv/
