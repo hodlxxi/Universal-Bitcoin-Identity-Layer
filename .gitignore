@@ -91,3 +91,22 @@ keys/
 
 # Local archives/backups (never commit)
 _archive_baks/
+
+# --- local-only / not for OSS ---
+_archive_baks/
+backups/
+**/*.bak*
+**/*~
+**/*.swp
+**/*.swo
+
+# Local PoF debug scripts
+pof_*.sh
+app/pof_*.sh
+
+# Local one-off patch/mapping helpers
+app/patch_*.py
+app/map_*.py
+
+# Session notes (local)
+docs/SESSION_*.md
