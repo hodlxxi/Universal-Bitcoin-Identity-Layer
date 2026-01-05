@@ -110,3 +110,6 @@ app/map_*.py
 
 # Session notes (local)
 docs/SESSION_*.md
+
+# VPS-local ops/admin helpers (keep local, not OSS)
+hodlxxi-admin.sh
