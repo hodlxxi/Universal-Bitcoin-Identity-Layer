@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
   <meta name="theme-color" content="#00ff88" />
-  <title>{{ title or "HODLXXI Docs" }}</title>
+  <title>HODLXXI Docs</title>
   <link rel="stylesheet" href="/static/ui_core.css?v=1"/>
   <style>
     :root{
@@ -78,7 +78,7 @@
   <div class="wrap">
     <div class="hdr">
       <div>
-        <h1 class="title">{{ title or "HODLXXI Docs" }}</h1>
+        <h1 class="title">HODLXXI Docs</h1>
         <p class="sub">Public documentation & theory library. Shareable links. Markdown renders at <code>/docs/&lt;slug&gt;</code>.</p>
       </div>
 
@@ -94,39 +94,275 @@
     <div class="grid">
       <div class="card md">
         <div class="k">Markdown</div>
-        {% if md_items %}
-          {% for it in md_items %}
-          <div class="doc" data-h="{{ it.display|lower }}" data-s="{{ it.slug|lower }}" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
-            <div class="h"><a href="/docs/{{ it.slug }}">{{ it.display }}</a></div>
-            {% if it.desc %}<p class="d">{{ it.desc }}</p>{% endif %}
-            <div class="meta">slug: <code>{{ it.slug }}</code>{% if it.size_kb %} · {{ it.size_kb }} KB{% endif %}</div>
+        
+          
+          <div class="doc" data-h="hodlxxi" data-s="readme" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/README">HODLXXI</a></div>
+            <p class="d">HODLXXI is a Bitcoin-native research framework for studying long-term coordination with cryptographic identity, time-locked commitments, and voluntary participation.</p>
+            <div class="meta">slug: <code>README</code> · 2 KB</div>
             <div class="row">
-              <a class="btn" href="/docs/{{ it.slug }}">Open</a>
-              <a class="btn" href="/static/docs/docs/{{ it.slug }}.md">Raw .md</a>
+              <a class="btn" href="/docs/README">Open</a>
+              <a class="btn" href="/static/docs/docs/README.md">Raw .md</a>
             </div>
           </div>
-          {% endfor %}
-        {% else %}
-          <p class="d">No markdown files found.</p>
-        {% endif %}
+          
+          <div class="doc" data-h="what is hodlxxi?" data-s="what_is_hodlxxi" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/what_is_hodlxxi">What Is HODLXXI?</a></div>
+            <p class="d">HODLXXI is a Bitcoin-native identity and trust layer.</p>
+            <div class="meta">slug: <code>what_is_hodlxxi</code> · 5 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/what_is_hodlxxi">Open</a>
+              <a class="btn" href="/static/docs/docs/what_is_hodlxxi.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="about short" data-s="about_short" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/about_short">About Short</a></div>
+            <p class="d">This project is a research-driven design framework informed by</p>
+            <div class="meta">slug: <code>about_short</code> · 2 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/about_short">Open</a>
+              <a class="btn" href="/static/docs/docs/about_short.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="how hodlxxi works" data-s="how_it_works" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/how_it_works">How HODLXXI Works</a></div>
+            <p class="d">HODLXXI combines several Bitcoin-native primitives into a single coordination framework.</p>
+            <div class="meta">slug: <code>how_it_works</code> · 5 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/how_it_works">Open</a>
+              <a class="btn" href="/static/docs/docs/how_it_works.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="system architecture" data-s="architecture" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/architecture">System Architecture</a></div>
+            <p class="d">HODLXXI&#39;s technical architecture integrates Bitcoin primitives into a coordination framework.</p>
+            <div class="meta">slug: <code>architecture</code> · 9 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/architecture">Open</a>
+              <a class="btn" href="/static/docs/docs/architecture.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="frequently asked questions" data-s="faq" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/faq">Frequently Asked Questions</a></div>
+            <p class="d">Honest answers to common questions about HODLXXI.</p>
+            <div class="meta">slug: <code>faq</code> · 7 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/faq">Open</a>
+              <a class="btn" href="/static/docs/docs/faq.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="cryptographic reciprocity theory (crt)" data-s="crt_theory" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/crt_theory">Cryptographic Reciprocity Theory (CRT)</a></div>
+            <p class="d">Cryptographic Reciprocity Theory (CRT) is a framework for constructing systems in which cooperation emerges from rational self-interest over extended time horizons.</p>
+            <div class="meta">slug: <code>crt_theory</code> · 7 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/crt_theory">Open</a>
+              <a class="btn" href="/static/docs/docs/crt_theory.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="principles and invariants" data-s="principles" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/principles">Principles and Invariants</a></div>
+            <p class="d">HODLXXI is governed by a set of structural constraints.</p>
+            <div class="meta">slug: <code>principles</code> · 6 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/principles">Open</a>
+              <a class="btn" href="/static/docs/docs/principles.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="ethics" data-s="ethics" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/ethics">Ethics</a></div>
+            <p class="d">HODLXXI frames ethics as constraints, not enforcement.</p>
+            <div class="meta">slug: <code>ethics</code> · 1 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/ethics">Open</a>
+              <a class="btn" href="/static/docs/docs/ethics.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="threat model and failure modes" data-s="threat_model_and_failure_modes" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/threat_model_and_failure_modes">Threat Model and Failure Modes</a></div>
+            <p class="d">This document describes the threat model assumed by HODLXXI</p>
+            <div class="meta">slug: <code>threat_model_and_failure_modes</code> · 5 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/threat_model_and_failure_modes">Open</a>
+              <a class="btn" href="/static/docs/docs/threat_model_and_failure_modes.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="research status" data-s="research_status" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/research_status">Research Status</a></div>
+            <p class="d">HODLXXI is an ongoing research project.</p>
+            <div class="meta">slug: <code>research_status</code> · 1 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/research_status">Open</a>
+              <a class="btn" href="/static/docs/docs/research_status.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="hodlxxi vs auth0: honest comparison" data-s="auth0_comparison" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/auth0_comparison">HODLXXI vs Auth0: Honest Comparison</a></div>
+            <p class="d">This is an honest comparison, not a sales pitch.</p>
+            <div class="meta">slug: <code>auth0_comparison</code> · 9 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/auth0_comparison">Open</a>
+              <a class="btn" href="/static/docs/docs/auth0_comparison.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="academic references and prior art" data-s="academic_references_and_prior_art" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/academic_references_and_prior_art">Academic References and Prior Art</a></div>
+            <p class="d">This document situates HODLXXI within existing academic,</p>
+            <div class="meta">slug: <code>academic_references_and_prior_art</code> · 5 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/academic_references_and_prior_art">Open</a>
+              <a class="btn" href="/static/docs/docs/academic_references_and_prior_art.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="bibliography" data-s="bibliography" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/bibliography">Bibliography</a></div>
+            <p class="d">**Nakamoto, S. (2008).** *Bitcoin: A Peer-to-Peer Electronic Cash System.*</p>
+            <div class="meta">slug: <code>bibliography</code> · 10 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/bibliography">Open</a>
+              <a class="btn" href="/static/docs/docs/bibliography.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="about the system" data-s="about_system" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/about_system">About the System</a></div>
+            <p class="d">This system is not designed to be correct.</p>
+            <div class="meta">slug: <code>about_system</code> · 2 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/about_system">Open</a>
+              <a class="btn" href="/static/docs/docs/about_system.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="about time (long-horizon orientation)" data-s="about_time" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/about_time">About Time (Long-Horizon Orientation)</a></div>
+            <p class="d">This project operates on time scales</p>
+            <div class="meta">slug: <code>about_time</code> · 1 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/about_time">Open</a>
+              <a class="btn" href="/static/docs/docs/about_time.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="faq for developers" data-s="faq_for_developers" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/faq_for_developers">FAQ for Developers</a></div>
+            <p class="d">This document addresses technical and architectural questions</p>
+            <div class="meta">slug: <code>faq_for_developers</code> · 5 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/faq_for_developers">Open</a>
+              <a class="btn" href="/static/docs/docs/faq_for_developers.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="faq for skeptics and critics" data-s="faq_for_skeptics_and_critics" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/faq_for_skeptics_and_critics">FAQ for Skeptics and Critics</a></div>
+            <p class="d">This document addresses common concerns, misunderstandings,</p>
+            <div class="meta">slug: <code>faq_for_skeptics_and_critics</code> · 4 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/faq_for_skeptics_and_critics">Open</a>
+              <a class="btn" href="/static/docs/docs/faq_for_skeptics_and_critics.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="free energy principle: an interpretive lens" data-s="fep" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/fep">Free Energy Principle: An Interpretive Lens</a></div>
+            <p class="d">⚠️ **DISCLAIMER**</p>
+            <div class="meta">slug: <code>fep</code> · 10 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/fep">Open</a>
+              <a class="btn" href="/static/docs/docs/fep.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="governance" data-s="governance" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/governance">Governance</a></div>
+            <p class="d">HODLXXI does not prescribe a governance mechanism.</p>
+            <div class="meta">slug: <code>governance</code> · 1 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/governance">Open</a>
+              <a class="btn" href="/static/docs/docs/governance.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="hodlxxi" data-s="hodlxxi_readme" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/hodlxxi_readme">HODLXXI</a></div>
+            <p class="d">HODLXXI is a Bitcoin-native research framework</p>
+            <div class="meta">slug: <code>hodlxxi_readme</code> · 2 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/hodlxxi_readme">Open</a>
+              <a class="btn" href="/static/docs/docs/hodlxxi_readme.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="license" data-s="license" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/license">License</a></div>
+            <p class="d">Unless otherwise noted, documentation and reference materials in this repository are provided under the MIT License.</p>
+            <div class="meta">slug: <code>license</code> · 2 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/license">Open</a>
+              <a class="btn" href="/static/docs/docs/license.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="limits" data-s="limits" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/limits">Limits</a></div>
+            <p class="d">This document summarizes the hard limits and uncertainties of HODLXXI.</p>
+            <div class="meta">slug: <code>limits</code> · 2 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/limits">Open</a>
+              <a class="btn" href="/static/docs/docs/limits.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="philosophical appendix" data-s="philosophy" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/philosophy">Philosophical Appendix</a></div>
+            <p class="d">⚠️ **DISCLAIMER**</p>
+            <div class="meta">slug: <code>philosophy</code> · 10 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/philosophy">Open</a>
+              <a class="btn" href="/static/docs/docs/philosophy.md">Raw .md</a>
+            </div>
+          </div>
+          
+          <div class="doc" data-h="what this project is not" data-s="what_this_project_is_not" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/docs/what_this_project_is_not">What This Project Is NOT</a></div>
+            <p class="d">This document exists to prevent misunderstanding.</p>
+            <div class="meta">slug: <code>what_this_project_is_not</code> · 4 KB</div>
+            <div class="row">
+              <a class="btn" href="/docs/what_this_project_is_not">Open</a>
+              <a class="btn" href="/static/docs/docs/what_this_project_is_not.md">Raw .md</a>
+            </div>
+          </div>
+          
+        
       </div>
 
       <div class="card pdf">
         <div class="k">PDF</div>
-        {% if pdf_items %}
-          {% for it in pdf_items %}
-          <div class="doc" data-h="{{ it.name|lower }}" data-s="{{ it.name|lower }}" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
-            <div class="h"><a href="/static/docs/docs/{{ it.name }}">{{ it.name }}</a></div>
+        
+          
+          <div class="doc" data-h="crt_whitepaper_v1.0.pdf" data-s="crt_whitepaper_v1.0.pdf" style="padding:10px 0; border-top:1px solid rgba(255,255,255,.06);">
+            <div class="h"><a href="/static/docs/docs/CRT_Whitepaper_v1.0.pdf">CRT_Whitepaper_v1.0.pdf</a></div>
             <p class="d">Direct static link.</p>
-            <div class="meta">{% if it.size_kb %}{{ it.size_kb }} KB{% endif %}</div>
+            <div class="meta">20 KB</div>
             <div class="row">
-              <a class="btn" href="/static/docs/docs/{{ it.name }}">Open PDF</a>
+              <a class="btn" href="/static/docs/docs/CRT_Whitepaper_v1.0.pdf">Open PDF</a>
             </div>
           </div>
-          {% endfor %}
-        {% else %}
-          <p class="d">No PDFs found.</p>
-        {% endif %}
+          
+        
       </div>
     </div>
   </div>
