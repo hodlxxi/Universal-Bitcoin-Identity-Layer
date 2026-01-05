@@ -36,7 +36,7 @@ types-requests==2.31.0.20231231
 types-python-dateutil==2.8.19.14
 
 # Coverage
-coverage[toml]==7.3.4
+coverage[toml]==7.13.1
 
 # Linting
 autopep8==2.0.4
