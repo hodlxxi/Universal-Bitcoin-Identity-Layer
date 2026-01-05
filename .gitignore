@@ -91,3 +91,12 @@ keys/
 
 # Local archives/backups (never commit)
 _archive_baks/
+# --- secrets / local-only ---
+jwt_private.pem
+jwt_public.pem
+# --- backups / junk ---
+cleanup_graveyard_*/
+bitcoinrpc_stub_backup/
+# --- python ---
+*.pyc
+.venv/
