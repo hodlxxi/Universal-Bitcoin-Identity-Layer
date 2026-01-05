@@ -20,7 +20,7 @@ pytest-postgresql==5.0.0
 # Code Quality
 flake8==6.1.0
 pylint==4.0.4
-mypy==1.7.1
+mypy==1.19.1
 black==23.12.1
 isort==5.13.2
 
