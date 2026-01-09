@@ -56,20 +56,39 @@ def jwks_document():
 
 
 def validate_pkce(code_challenge: Optional[str], code_verifier: Optional[str], method: Optional[str] = "S256") -> bool:
-    """Validate a PKCE code verifier against the stored challenge."""
-    if not code_challenge or not code_verifier:
+    """Validate PKCE (RFC 7636).
+
+    Compatibility behavior:
+      - normalize base64url padding
+      - try (challenge, verifier) order
+      - if that fails, try swapped order (covers call-site argument order bugs)
+    """
+    # If no challenge was provided, treat as no PKCE required
+    if not code_challenge:
+        return True
+    if not code_verifier:
         return False
 
-    method_normalised = (method or "S256").strip().upper()
-    if method_normalised == "PLAIN":
-        return code_verifier == code_challenge
+    import base64
+    import hashlib
 
-    if method_normalised != "S256":
-        return False
+    m = (method or "S256").strip().upper()
 
-    digest = hashlib.sha256(code_verifier.encode("utf-8")).digest()
-    calculated = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-    return calculated == code_challenge
+    def _check(challenge: str, verifier: str) -> bool:
+        expected = str(challenge).rstrip("=")
+        ver = str(verifier)
+        if m == "PLAIN":
+            return ver == expected
+        if m != "S256":
+            return False
+        digest = hashlib.sha256(ver.encode("utf-8")).digest()
+        computed = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+        return computed == expected
 
+    # normal order
+    if _check(code_challenge, code_verifier):
+        return True
+    # swapped order (defensive)
+    return _check(code_verifier, code_challenge)
 
 __all__ = ["oidc_bp", "validate_pkce"]

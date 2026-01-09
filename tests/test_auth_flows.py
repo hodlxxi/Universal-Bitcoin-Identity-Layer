@@ -41,13 +41,14 @@ def client(app):
 
 
 @pytest.fixture
-def mock_rpc():
-    """Mock Bitcoin RPC connection."""
-    with patch("app.utils.get_rpc_connection") as mock:
-        rpc = MagicMock()
-        mock.return_value = rpc
-        yield rpc
+def mock_rpc(monkeypatch, client):
+    """Mock Bitcoin Core RPC used by auth.verify_signature (patch auth blueprint symbol)."""
+    import app.blueprints.auth as auth_mod
+    from unittest.mock import MagicMock
 
+    rpc = MagicMock(name="rpc_conn")
+    monkeypatch.setattr(auth_mod, "get_rpc_connection", lambda: rpc)
+    return rpc
 
 class TestBitcoinSignatureAuth:
     """Test Bitcoin signature-based authentication."""
@@ -308,8 +309,9 @@ class TestAccessControl:
 class TestRateLimiting:
     """Test rate limiting on authentication endpoints."""
 
-    def test_verify_signature_rate_limit(self, client):
+    def test_verify_signature_rate_limit(self, client, mock_rpc):
         """Test that verify_signature has rate limiting."""
+        mock_rpc.verifymessage.return_value = False
         test_challenge = generate_challenge()
 
         with client.session_transaction() as sess:

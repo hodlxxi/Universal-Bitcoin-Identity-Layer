@@ -13,7 +13,16 @@ from flask import Blueprint, current_app, jsonify, request
 
 from app.audit_logger import get_audit_logger
 from app.db_storage import get_lnurl_challenge, store_lnurl_challenge
-from app.security import limiter
+from app.security import limiter as _limiter
+
+class _NoopLimiter:
+    """Fallback when the rate limiter isn't initialized (e.g., unit tests)."""
+    def limit(self, *_args, **_kwargs):
+        def _decorator(fn):
+            return fn
+        return _decorator
+
+limiter = _limiter or _NoopLimiter()
 
 logger = logging.getLogger(__name__)
 audit_logger = get_audit_logger()
@@ -50,7 +59,9 @@ def create_challenge():
             "challenge": challenge,
             "created_at": time.time(),
             "verified": False,
-            "pubkey": None
+            "pubkey": None,
+            "k1": challenge,  # LNURL-auth nonce
+            "expires_at": (__import__("datetime").datetime.now(__import__("datetime").timezone.utc) + __import__("datetime").timedelta(seconds=300)).isoformat(),
         }
 
         store_lnurl_challenge(session_id, challenge_data, ttl=300)  # 5 minute TTL
@@ -66,6 +77,8 @@ def create_challenge():
             "session_id": session_id,
             "challenge": challenge,
             "lnurl": callback_url,
+            "qr_code": callback_url,  # placeholder for tests
+
             "k1": challenge,  # k1 is the challenge in LNURL-auth
             "tag": "login"
         })

@@ -13,6 +13,7 @@ from flask import Blueprint, current_app, jsonify, redirect, request, session, u
 
 from app.audit_logger import get_audit_logger
 from app.security import limiter
+
 from app.utils import (
     derive_legacy_address_from_pubkey,
     generate_challenge,
@@ -29,6 +30,8 @@ auth_bp = Blueprint("auth", __name__)
 
 # Rate limiting decorators
 VERIFY_RATE_LIMIT = "10 per minute"
+import os
+VERIFY_RATE_LIMIT = os.environ.get('HODLXXI_TEST_RATE_LIMIT', VERIFY_RATE_LIMIT)
 LOGIN_RATE_LIMIT = "20 per minute"
 
 

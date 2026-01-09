@@ -42,6 +42,16 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     """
     app = Flask(__name__)
 
+    # Initialize rate limiter BEFORE importing blueprints (decorators bind at import time)
+    try:
+        from app.security import init_rate_limiter
+        init_rate_limiter(app)
+    except Exception:
+        pass
+
+    # Semantic version used by /health and tests
+    app.config.setdefault("APP_VERSION", "1.0.0-beta")
+
     # Load configuration
     cfg = config_override or get_config()
     app.config["APP_CONFIG"] = cfg
@@ -79,6 +89,14 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
         raise
 
     # Register blueprints
+    # Rate limiter must be initialized BEFORE importing blueprints (blueprints use @limiter.limit at import time)
+    try:
+        from app.security import init_rate_limiter
+        init_rate_limiter(app)
+    except Exception:
+        # Tests/minimal setups may intentionally disable the limiter
+        pass
+
     register_blueprints(app)
 
     # Register error handlers
@@ -106,6 +124,10 @@ def register_blueprints(app: Flask) -> None:
     from app.blueprints.bitcoin import bitcoin_bp
     app.register_blueprint(bitcoin_bp, url_prefix="/api")
 
+
+    # Demo blueprint (public test endpoints)
+    from app.blueprints.demo import demo_bp
+    app.register_blueprint(demo_bp, url_prefix="/api/demo")
     # LNURL-Auth blueprint (challenges, callbacks)
     from app.blueprints.lnurl import lnurl_bp
     app.register_blueprint(lnurl_bp, url_prefix="/api/lnurl-auth")
@@ -188,6 +210,7 @@ def register_request_handlers(app: Flask) -> None:
         # Only add HSTS in production with HTTPS
         cfg = app.config.get("APP_CONFIG", {})
         if cfg.get("FORCE_HTTPS") and request.is_secure:
+            response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
 
         return response
 

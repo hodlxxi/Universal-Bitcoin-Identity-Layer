@@ -46,14 +46,25 @@ def client(app):
     return app.test_client()
 
 
-@pytest.fixture
-def mock_rpc():
-    """Mock Bitcoin RPC."""
-    with patch("app.utils.get_rpc_connection") as mock:
-        rpc = MagicMock()
-        mock.return_value = rpc
-        yield rpc
+import pytest
+from unittest.mock import MagicMock
 
+@pytest.fixture
+def mock_rpc(monkeypatch, client):
+    """Mock Bitcoin Core RPC and patch the symbols actually used by the bitcoin blueprint."""
+    import app.utils as utils
+    import app.blueprints.bitcoin as btc
+
+    rpc = MagicMock(name='rpc_conn')
+    # defaults (override per-test as needed)
+    rpc.getblockchaininfo.return_value = {'chain':'main','blocks':800000,'headers':800000,'bestblockhash':'0'*64}
+    rpc.getbalance.return_value = 0.0
+    rpc.listdescriptors.return_value = {'descriptors': []}
+    rpc.listwallets.return_value = []
+
+    monkeypatch.setattr(utils, 'get_rpc_connection', lambda: rpc)
+    monkeypatch.setattr(btc, 'get_rpc_connection', lambda: rpc, raising=False)
+    return rpc
 
 class TestRPCCommands:
     """Test safe RPC command execution."""

@@ -11,6 +11,9 @@ from typing import Any, Dict, Optional
 
 _logger = logging.getLogger("audit")
 
+# Backwards-compatible alias: some code/tests expect `audit_logger` at module scope
+audit_logger = _logger
+
 
 def init_audit_logger():
     """Initialize the audit logger."""
@@ -99,3 +102,16 @@ class AuditLogger:
         if context:
             msg += f" | context={context}"
         self.logger.error(msg)
+# --- compat shim: ensure audit_logger.log_event exists (tests + blueprints expect it) ---
+try:
+    _has = hasattr(audit_logger, "log_event")
+except Exception:
+    _has = False
+
+if not _has:
+    def _log_event(event, **fields):
+        try:
+            audit_logger.info("event=%s fields=%s", event, fields)
+        except Exception:
+            pass
+    audit_logger.log_event = _log_event

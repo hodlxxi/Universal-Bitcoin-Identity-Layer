@@ -10,6 +10,31 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+
+# ------------------------------
+# Ensure limiter exists at import time
+# ------------------------------
+def ensure_limiter_initialized():
+    global limiter
+    try:
+        limiter_obj = globals().get("limiter", None)
+    except Exception:
+        limiter_obj = None
+
+    if limiter_obj is None:
+        try:
+            limiter = Limiter(key_func=get_remote_address)
+        except Exception:
+            # Absolute fallback (should not happen in your env)
+            class _NoopLimiter:
+                def limit(self, *_a, **_k):
+                    def _decorator(fn):
+                        return fn
+                    return _decorator
+            limiter = _NoopLimiter()
+
+ensure_limiter_initialized()
+
 try:  # pragma: no cover - optional dependency
     from flask_talisman import Talisman  # type: ignore
 except ModuleNotFoundError:  # pragma: no cover - fallback for tests
@@ -100,7 +125,7 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
         limit_default = "100/hour"
 
     if cfg.get("RATE_LIMIT_ENABLED") is False:
-        limiter = None
+# limiter configured via init_rate_limiter()
         logger.info("Rate limiting disabled")
     else:
         # ALWAYS use memory:// storage for reliability
@@ -128,3 +153,47 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
         root_logger.addHandler(handler)
 
     return limiter
+
+def init_rate_limiter(app):
+    """Initialize Flask-Limiter using the module-level limiter instance."""
+    enabled = app.config.get("RATE_LIMIT_ENABLED", True)
+    storage_uri = app.config.get("RATE_LIMIT_STORAGE_URI") or "memory://"
+    default_limit = app.config.get("RATE_LIMIT_DEFAULT") or "100/hour"
+
+    # Even when disabled, keep limiter object valid for decorators.
+    try:
+        limiter.init_app(
+            app,
+            storage_uri=storage_uri,
+            default_limits=[default_limit],
+            enabled=enabled,
+        )
+    except TypeError:
+        # older signatures: init_app(app) only
+        limiter.init_app(app)
+
+    try:
+        app.logger.info(
+            f"Rate limiter initialized with {storage_uri} storage (limit: {default_limit}), enabled={enabled}"
+        )
+    except Exception:
+        pass
+
+# ============================================================
+# FINAL SAFETY: ensure limiter is never None (decorators bind at import time)
+# ============================================================
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+    if globals().get("limiter", None) is None:
+        limiter = Limiter(key_func=get_remote_address)
+except Exception:
+    # absolute fallback to avoid import-time crashes
+    class _NoopLimiter:
+        def limit(self, *_a, **_k):
+            def _decorator(fn):
+                return fn
+            return _decorator
+    if globals().get("limiter", None) is None:
+        limiter = _NoopLimiter()
+
