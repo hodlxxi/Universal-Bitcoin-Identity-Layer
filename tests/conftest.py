@@ -22,6 +22,11 @@ def app():
     from app.factory import create_app
     app = create_app()
     app.config.update(TESTING=True)
+    # Isolate Flask-Limiter counters between tests (in-memory storage persists otherwise)
+    import uuid
+    app.config.setdefault("RATELIMIT_KEY_PREFIX", f"test-{uuid.uuid4()}")
+    app.config.setdefault("RATELIMIT_STORAGE_URI", "memory://")
+
     return app
 
 
