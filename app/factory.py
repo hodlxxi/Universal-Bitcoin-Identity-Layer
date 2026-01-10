@@ -42,14 +42,15 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     """
     app = Flask(__name__)
 
-    # TESTING: isolate Flask-Limiter counters between tests (in-memory storage persists)
+    # TESTING/CI: isolate Flask-Limiter counters between tests (memory storage persists otherwise)
     try:
-        if app.config.get("TESTING") or getattr(app, "testing", False):
-            import uuid
+        import os, uuid
+        if os.environ.get("TESTING") == "1" or "PYTEST_CURRENT_TEST" in os.environ or app.config.get("TESTING") or getattr(app, "testing", False):
             app.config.setdefault("RATELIMIT_STORAGE_URI", "memory://")
             app.config.setdefault("RATELIMIT_KEY_PREFIX", f"test-{uuid.uuid4()}")
     except Exception:
         pass
+
 
     # Initialize rate limiter BEFORE importing blueprints (decorators bind at import time)
     try:
