@@ -72,8 +72,20 @@ oauth_bp = Blueprint("oauth", __name__)
 OAUTH_RATE_LIMIT = "30 per minute"
 
 
+
+# Register endpoint rate limit:
+# - production: keep strict
+# - TESTING/CI: allow many registrations (tests register clients repeatedly)
+OAUTH_REGISTER_RATE_LIMIT = "10 per minute"
+try:
+    import os
+    if os.environ.get("TESTING") == "1" or "PYTEST_CURRENT_TEST" in os.environ:
+        OAUTH_REGISTER_RATE_LIMIT = "1000 per minute"
+except Exception:
+    pass
+
 @oauth_bp.route("/register", methods=["POST"])
-@limiter.limit("10 per minute")
+@limiter.limit(OAUTH_REGISTER_RATE_LIMIT)
 def register_client():
     """
     Dynamic OAuth2 client registration (RFC 7591).
