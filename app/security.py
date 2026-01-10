@@ -155,6 +155,16 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
     return limiter
 
 def init_rate_limiter(app):
+
+    # CI/TESTING: isolate rate limit counters per app instance (prevents /oauth/register 429 in CI)
+    try:
+        import os, uuid
+        if os.environ.get("TESTING") == "1" or "PYTEST_CURRENT_TEST" in os.environ or app.config.get("TESTING") or getattr(app, "testing", False):
+            app.config.setdefault("RATELIMIT_STORAGE_URI", "memory://")
+            app.config.setdefault("RATELIMIT_KEY_PREFIX", f"test-{uuid.uuid4()}")
+    except Exception:
+        pass
+
     """Initialize Flask-Limiter using the module-level limiter instance."""
     enabled = app.config.get("RATE_LIMIT_ENABLED", True)
     storage_uri = app.config.get("RATE_LIMIT_STORAGE_URI") or "memory://"
