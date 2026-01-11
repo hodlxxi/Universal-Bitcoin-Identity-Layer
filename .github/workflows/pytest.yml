@@ -2,18 +2,13 @@ name: pytest
 
 on:
   push:
-    branches: ["production", "main", "master"]
+    branches: [ "main", "production" ]
   pull_request:
 
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.12"]
 
     steps:
       - name: Checkout
@@ -22,7 +17,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
           cache: "pip"
 
       - name: Install dependencies
