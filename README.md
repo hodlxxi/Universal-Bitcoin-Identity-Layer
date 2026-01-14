@@ -1,8 +1,8 @@
 # Universal Bitcoin Identity Layer
 
-[![Tests](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/workflows/Tests/badge.svg)](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/actions/workflows/test.yml)
-[![Lint](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/workflows/Lint/badge.svg)](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/actions/workflows/lint.yml)
-[![Security](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/workflows/Security/badge.svg)](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/actions/workflows/security.yml)
+[![pytest](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/actions/workflows/pytest.yml/badge.svg?branch=main)](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/actions/workflows/pytest.yml)
+[![lint](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/actions/workflows/lint.yml)
+[![security](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/actions/workflows/security.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
