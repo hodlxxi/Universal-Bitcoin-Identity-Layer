@@ -530,7 +530,7 @@ def store_pof_challenge(challenge_id: str, challenge_data: Dict) -> None:
     """Store Proof of Funds challenge."""
     with session_scope() as session:
         # TTL seconds for fallback expires_at
-        ttl = challenge_data.get('ttl') or 300
+        ttl = challenge_data.get("ttl") or 300
 
         challenge_kwargs = {
             "challenge_id": challenge_id,
