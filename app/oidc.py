@@ -91,4 +91,5 @@ def validate_pkce(code_challenge: Optional[str], code_verifier: Optional[str], m
     # swapped order (defensive)
     return _check(code_verifier, code_challenge)
 
+
 __all__ = ["oidc_bp", "validate_pkce"]

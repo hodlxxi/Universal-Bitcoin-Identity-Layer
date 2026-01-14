@@ -15,12 +15,16 @@ from flask import Blueprint, current_app, jsonify, request
 from app.audit_logger import get_audit_logger
 from app.security import limiter as _limiter
 
+
 class _NoopLimiter:
     """Fallback when the rate limiter isn't initialized (e.g., unit tests)."""
+
     def limit(self, *_args, **_kwargs):
         def _decorator(fn):
             return fn
+
         return _decorator
+
 
 limiter = _limiter or _NoopLimiter()
 
@@ -62,22 +66,14 @@ def rpc_command(cmd: str):
     }
 
     if cmd not in SAFE_COMMANDS:
-        audit_logger.log_event(
-            "bitcoin.rpc_blocked",
-            command=cmd,
-            ip=request.remote_addr
-        )
+        audit_logger.log_event("bitcoin.rpc_blocked", command=cmd, ip=request.remote_addr)
         return jsonify({"error": f"Command '{cmd}' not allowed"}), 403
 
     try:
         rpc = get_rpc_connection()
         result = getattr(rpc, cmd)()
 
-        audit_logger.log_event(
-            "bitcoin.rpc_success",
-            command=cmd,
-            ip=request.remote_addr
-        )
+        audit_logger.log_event("bitcoin.rpc_success", command=cmd, ip=request.remote_addr)
 
         return jsonify({"result": result})
 
@@ -134,22 +130,11 @@ def verify_proof_of_funds():
                 break
 
         if not has_challenge:
-            return jsonify({
-                "verified": False,
-                "error": "Challenge not found in OP_RETURN"
-            }), 400
+            return jsonify({"verified": False, "error": "Challenge not found in OP_RETURN"}), 400
 
-        audit_logger.log_event(
-            "bitcoin.proof_of_funds_verified",
-            amount=str(verified_amount),
-            ip=request.remote_addr
-        )
+        audit_logger.log_event("bitcoin.proof_of_funds_verified", amount=str(verified_amount), ip=request.remote_addr)
 
-        return jsonify({
-            "verified": True,
-            "amount_btc": str(verified_amount),
-            "challenge_verified": True
-        })
+        return jsonify({"verified": True, "amount_btc": str(verified_amount), "challenge_verified": True})
 
     except Exception as e:
         logger.error(f"Proof of funds verification failed: {e}", exc_info=True)
@@ -197,14 +182,13 @@ def list_descriptors():
         rpc = get_rpc_connection()
         descriptors = rpc.listdescriptors()
         result = descriptors
-        cfg = current_app.config.get('APP_CONFIG', {}) or {}
-        if str(cfg.get('FLASK_ENV', '')).lower() == 'production':
-            if isinstance(result, dict) and 'descriptors' in result:
-                for d in (result.get('descriptors') or []):
-                    if isinstance(d, dict) and isinstance(d.get('desc'), str):
-                        for marker in ('xprv','tprv','yprv','zprv','vprv','uprv'):
-                            d['desc'] = d['desc'].replace(marker, '[REDACTED]')
-
+        cfg = current_app.config.get("APP_CONFIG", {}) or {}
+        if str(cfg.get("FLASK_ENV", "")).lower() == "production":
+            if isinstance(result, dict) and "descriptors" in result:
+                for d in result.get("descriptors") or []:
+                    if isinstance(d, dict) and isinstance(d.get("desc"), str):
+                        for marker in ("xprv", "tprv", "yprv", "zprv", "vprv", "uprv"):
+                            d["desc"] = d["desc"].replace(marker, "[REDACTED]")
 
         # Filter sensitive information in production
         cfg = current_app.config.get("APP_CONFIG", {})
@@ -242,10 +226,14 @@ def create_pof_challenge():
     challenge_id = str(uuid.uuid4())
     challenge = f"HODLXXI:POF:{int(time.time())}:{challenge_id}"
 
-    return jsonify({
-        "ok": True,
-        "challenge_id": challenge_id,
-        "challenge": challenge,
-        "expires_in": 300,
-    }), 200
-
+    return (
+        jsonify(
+            {
+                "ok": True,
+                "challenge_id": challenge_id,
+                "challenge": challenge,
+                "expires_in": 300,
+            }
+        ),
+        200,
+    )

@@ -372,33 +372,33 @@ class ProofOfFunds(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    
+
     # Verification details
     total_btc = Column(Float, nullable=False)  # Total BTC verified
     address_count = Column(Integer, nullable=False)  # Number of addresses verified
     privacy_level = Column(String(20), nullable=False, default="threshold")
     # Privacy levels: 'boolean', 'threshold', 'aggregate', 'exact'
-    
+
     # Status and timing
     status = Column(String(20), nullable=False, default="pending")
     # Status: 'pending', 'verified', 'expired', 'revoked'
     verified_at = Column(DateTime, default=utc_now)
     expires_at = Column(DateTime)  # Optional expiry
-    
+
     # Shareable certificate
     certificate_id = Column(String(32), unique=True, index=True)
-    
+
     # Metadata
     created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
-    
+
     # Relationship
     user = relationship("User", backref="proof_of_funds")
-    
+
     __table_args__ = (
         Index("idx_pof_status", "status"),
         Index("idx_pof_verified_at", "verified_at"),
     )
-    
+
     def __repr__(self):
         return f"<ProofOfFunds(user_id={self.user_id}, btc={self.total_btc}, level={self.privacy_level})>"

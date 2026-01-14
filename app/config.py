@@ -106,9 +106,7 @@ def get_config() -> AppConfig:
         or os.getenv("OIDC_ISSUER")
         or os.getenv("FLASK_SERVER_NAME")
         or "http://localhost:5000",
-        "JWT_AUDIENCE": os.getenv("JWT_AUDIENCE")
-        or os.getenv("OAUTH_AUDIENCE")
-        or "hodlxxi",
+        "JWT_AUDIENCE": os.getenv("JWT_AUDIENCE") or os.getenv("OAUTH_AUDIENCE") or "hodlxxi",
         "JWKS_DIR": os.getenv("JWKS_DIR", "keys"),
         "JWT_EXPIRATION_HOURS": _get_env_int("JWT_EXPIRATION_HOURS", 24),
         "TOKEN_TTL": _get_env_int("TOKEN_TTL", 3600),

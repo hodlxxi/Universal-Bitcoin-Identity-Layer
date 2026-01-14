@@ -13,7 +13,6 @@ from flask import Blueprint, current_app, jsonify, redirect, request, session, u
 
 from app.audit_logger import get_audit_logger
 from app.security import limiter
-
 from app.utils import (
     derive_legacy_address_from_pubkey,
     generate_challenge,
@@ -31,7 +30,8 @@ auth_bp = Blueprint("auth", __name__)
 # Rate limiting decorators
 VERIFY_RATE_LIMIT = "10 per minute"
 import os
-VERIFY_RATE_LIMIT = os.environ.get('HODLXXI_TEST_RATE_LIMIT', VERIFY_RATE_LIMIT)
+
+VERIFY_RATE_LIMIT = os.environ.get("HODLXXI_TEST_RATE_LIMIT", VERIFY_RATE_LIMIT)
 LOGIN_RATE_LIMIT = "20 per minute"
 
 
@@ -45,11 +45,7 @@ def logout():
     """
     pubkey = session.get("logged_in_pubkey")
     if pubkey:
-        audit_logger.log_event(
-            "auth.logout",
-            pubkey=pubkey,
-            ip=request.remote_addr
-        )
+        audit_logger.log_event("auth.logout", pubkey=pubkey, ip=request.remote_addr)
 
     session.clear()
     return redirect(url_for("auth.login"))
@@ -76,55 +72,32 @@ def verify_signature():
 
     # Validate challenge
     if "challenge" not in session or session["challenge"] != challenge:
-        audit_logger.log_event(
-            "auth.verify_failed",
-            reason="invalid_challenge",
-            ip=request.remote_addr
-        )
-        return jsonify({
-            "verified": False,
-            "error": "Invalid or expired challenge"
-        }), 400
+        audit_logger.log_event("auth.verify_failed", reason="invalid_challenge", ip=request.remote_addr)
+        return jsonify({"verified": False, "error": "Invalid or expired challenge"}), 400
 
     # Check challenge timestamp (10 minute expiry)
     challenge_age = time.time() - session.get("challenge_timestamp", 0)
     if challenge_age > 600:
-        audit_logger.log_event(
-            "auth.verify_failed",
-            reason="challenge_expired",
-            ip=request.remote_addr
-        )
-        return jsonify({
-            "verified": False,
-            "error": "Challenge expired (10 minute limit)"
-        }), 400
+        audit_logger.log_event("auth.verify_failed", reason="challenge_expired", ip=request.remote_addr)
+        return jsonify({"verified": False, "error": "Challenge expired (10 minute limit)"}), 400
 
     # Validate signature presence
     if not signature:
-        return jsonify({
-            "verified": False,
-            "error": "Signature is required"
-        }), 400
+        return jsonify({"verified": False, "error": "Signature is required"}), 400
 
     # Get RPC connection for signature verification
     try:
         rpc_conn = get_rpc_connection()
     except Exception as e:
         logger.error(f"RPC connection failed: {e}")
-        return jsonify({
-            "verified": False,
-            "error": "Authentication service temporarily unavailable"
-        }), 503
+        return jsonify({"verified": False, "error": "Authentication service temporarily unavailable"}), 503
 
     matched_pubkey: Optional[str] = None
 
     # Case 1: Specific pubkey provided
     if pubkey_hex:
         if not re.fullmatch(r"[0-9a-fA-F]{66}", pubkey_hex):
-            return jsonify({
-                "verified": False,
-                "error": "Public key must be 66 hex characters"
-            }), 400
+            return jsonify({"verified": False, "error": "Public key must be 66 hex characters"}), 400
 
         try:
             derived_addr = derive_legacy_address_from_pubkey(pubkey_hex)
@@ -132,21 +105,12 @@ def verify_signature():
                 matched_pubkey = pubkey_hex
             else:
                 audit_logger.log_event(
-                    "auth.verify_failed",
-                    reason="invalid_signature",
-                    pubkey=pubkey_hex,
-                    ip=request.remote_addr
+                    "auth.verify_failed", reason="invalid_signature", pubkey=pubkey_hex, ip=request.remote_addr
                 )
-                return jsonify({
-                    "verified": False,
-                    "error": "Invalid signature"
-                }), 403
+                return jsonify({"verified": False, "error": "Invalid signature"}), 403
         except Exception as e:
             logger.error(f"Signature verification error: {e}")
-            return jsonify({
-                "verified": False,
-                "error": str(e)
-            }), 500
+            return jsonify({"verified": False, "error": str(e)}), 500
 
     # Case 2: No pubkey, try SPECIAL_USERS
     else:
@@ -161,15 +125,8 @@ def verify_signature():
                 continue
 
         if not matched_pubkey:
-            audit_logger.log_event(
-                "auth.verify_failed",
-                reason="no_matching_special_user",
-                ip=request.remote_addr
-            )
-            return jsonify({
-                "verified": False,
-                "error": "Invalid signature"
-            }), 403
+            audit_logger.log_event("auth.verify_failed", reason="no_matching_special_user", ip=request.remote_addr)
+            return jsonify({"verified": False, "error": "Invalid signature"}), 403
 
     # Determine access level
     if not pubkey_hex:  # Matched a special user
@@ -186,22 +143,12 @@ def verify_signature():
 
     # Audit log successful authentication
     audit_logger.log_event(
-        "auth.verify_success",
-        pubkey=matched_pubkey,
-        access_level=access_level,
-        ip=request.remote_addr
+        "auth.verify_success", pubkey=matched_pubkey, access_level=access_level, ip=request.remote_addr
     )
 
-    logger.info(
-        f"Successful authentication: pubkey={matched_pubkey}, "
-        f"access_level={access_level}"
-    )
+    logger.info(f"Successful authentication: pubkey={matched_pubkey}, " f"access_level={access_level}")
 
-    return jsonify({
-        "verified": True,
-        "access_level": access_level,
-        "pubkey": matched_pubkey
-    })
+    return jsonify({"verified": True, "access_level": access_level, "pubkey": matched_pubkey})
 
 
 @auth_bp.route("/guest_login", methods=["POST"])
@@ -230,11 +177,7 @@ def guest_login():
         label = guest_pins.get(pin)
 
         if not label:
-            audit_logger.log_event(
-                "auth.guest_login_failed",
-                reason="invalid_pin",
-                ip=request.remote_addr
-            )
+            audit_logger.log_event("auth.guest_login_failed", reason="invalid_pin", ip=request.remote_addr)
             return jsonify({"error": "Invalid PIN"}), 403
 
         session["logged_in_pubkey"] = f"guest_{pin}"
@@ -242,16 +185,13 @@ def guest_login():
         session["access_level"] = "guest"
         session.permanent = True
 
-        audit_logger.log_event(
-            "auth.guest_login_success",
-            label=label,
-            ip=request.remote_addr
-        )
+        audit_logger.log_event("auth.guest_login_success", label=label, ip=request.remote_addr)
 
         return jsonify({"ok": True, "label": label})
 
     # Anonymous guest
     import uuid
+
     guest_id = str(uuid.uuid4())[:8]
     label = f"Guest_{guest_id}"
 
@@ -260,11 +200,7 @@ def guest_login():
     session["access_level"] = "guest"
     session.permanent = False  # Session cookie only
 
-    audit_logger.log_event(
-        "auth.guest_login_success",
-        label=label,
-        ip=request.remote_addr
-    )
+    audit_logger.log_event("auth.guest_login_success", label=label, ip=request.remote_addr)
 
     return jsonify({"ok": True, "label": label})
 
@@ -273,6 +209,7 @@ def guest_login():
 def login():
     """Login page with authentication options."""
     from flask import render_template_string
+
     html = """
 <!DOCTYPE html>
 <html lang="en">

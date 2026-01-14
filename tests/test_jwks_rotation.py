@@ -17,12 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from app.jwks import (
-    ensure_rsa_keypair,
-    get_key_by_kid,
-    get_signing_key,
-    rotate_keys_manually,
-)
+from app.jwks import ensure_rsa_keypair, get_key_by_kid, get_signing_key, rotate_keys_manually
 
 
 @pytest.fixture
@@ -118,9 +113,7 @@ class TestKeyRotation:
         # Generate multiple keys
         kids = []
         for _ in range(5):
-            _, kid = ensure_rsa_keypair(
-                temp_jwks_dir, rotation_days=0, max_retired_keys=max_retired
-            )
+            _, kid = ensure_rsa_keypair(temp_jwks_dir, rotation_days=0, max_retired_keys=max_retired)
             kids.append(kid)
             time.sleep(0.1)
 
@@ -149,9 +142,7 @@ class TestKeyRotation:
         """Test that newer keys are preserved during rotation."""
         kids = []
         for _ in range(4):
-            _, kid = ensure_rsa_keypair(
-                temp_jwks_dir, rotation_days=0, max_retired_keys=2
-            )
+            _, kid = ensure_rsa_keypair(temp_jwks_dir, rotation_days=0, max_retired_keys=2)
             kids.append(kid)
             time.sleep(0.1)
 
@@ -268,9 +259,7 @@ class TestLegacyKeyMigration:
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.asymmetric import rsa
 
-        private_key = rsa.generate_private_key(
-            public_exponent=65537, key_size=2048, backend=default_backend()
-        )
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
         pem_bytes = private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
@@ -293,9 +282,7 @@ class TestLegacyKeyMigration:
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.asymmetric import rsa
 
-        private_key = rsa.generate_private_key(
-            public_exponent=65537, key_size=2048, backend=default_backend()
-        )
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
         pem_bytes = private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,

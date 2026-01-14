@@ -1,15 +1,17 @@
-from pathlib import Path
 import re
+from pathlib import Path
+
 import markdown
 from flask import abort, render_template
 
-STATIC_DOCS_DIR = (Path(__file__).resolve().parent / "static" / "docs" / "docs")
+STATIC_DOCS_DIR = Path(__file__).resolve().parent / "static" / "docs" / "docs"
 
 DOC_ALIASES = {
     "manifesto": "about_short",
     "about": "what_is_hodlxxi",
     "what": "what_is_hodlxxi",
 }
+
 
 def register_docs_routes(app):
     @app.route("/docs/<slug>")

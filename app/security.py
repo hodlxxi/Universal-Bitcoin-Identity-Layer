@@ -30,8 +30,11 @@ def ensure_limiter_initialized():
                 def limit(self, *_a, **_k):
                     def _decorator(fn):
                         return fn
+
                     return _decorator
+
             limiter = _NoopLimiter()
+
 
 ensure_limiter_initialized()
 
@@ -75,10 +78,7 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)  # type: ignore[assignment]
 
     default_force_https = (
-        str(cfg.get("FLASK_ENV") or os.getenv("FLASK_ENV", "development"))
-        .strip()
-        .lower()
-        == "production"
+        str(cfg.get("FLASK_ENV") or os.getenv("FLASK_ENV", "development")).strip().lower() == "production"
     )
     force_https = _as_bool(cfg.get("FORCE_HTTPS"), default_force_https)
     # Allow explicit override via environment for local debugging (DEV ONLY)
@@ -87,11 +87,8 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
         force_https = False
         logger.warning("DISABLE_FORCE_HTTPS set: disabling HTTPS enforcement for local debugging.")
 
-
     if not force_https and default_force_https:
-        logger.warning(
-            "FORCE_HTTPS disabled while FLASK_ENV=production – ensure this is intentional before deploying."
-        )
+        logger.warning("FORCE_HTTPS disabled while FLASK_ENV=production – ensure this is intentional before deploying.")
     elif force_https:
         logger.debug("HTTPS enforcement enabled")
     csp = {
@@ -107,10 +104,10 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
     if Talisman is not None:
         Talisman(
             app,
-    force_https=False,
-    strict_transport_security=False,
-    frame_options=None,
-    x_xss_protection=False,
+            force_https=False,
+            strict_transport_security=False,
+            frame_options=None,
+            x_xss_protection=False,
             force_file_save=False,
             content_security_policy=csp,
             session_cookie_secure=True,
@@ -125,7 +122,7 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
         limit_default = "100/hour"
 
     if cfg.get("RATE_LIMIT_ENABLED") is False:
-# limiter configured via init_rate_limiter()
+        # limiter configured via init_rate_limiter()
         logger.info("Rate limiting disabled")
     else:
         # ALWAYS use memory:// storage for reliability
@@ -146,20 +143,27 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
     if not any(isinstance(handler, logging.StreamHandler) for handler in root_logger.handlers):
         handler = logging.StreamHandler()
         fmt = (
-            "{\"level\":\"%(levelname)s\",\"msg\":\"%(message)s\",\"name\":\"%(name)s\",\"path\":\"%(pathname)s\","
-            "\"lineno\":%(lineno)d}"
+            '{"level":"%(levelname)s","msg":"%(message)s","name":"%(name)s","path":"%(pathname)s",'
+            '"lineno":%(lineno)d}'
         )
         handler.setFormatter(logging.Formatter(fmt))
         root_logger.addHandler(handler)
 
     return limiter
 
-def init_rate_limiter(app):
 
+def init_rate_limiter(app):
     # CI/TESTING: isolate rate limit counters per app instance (prevents /oauth/register 429 in CI)
     try:
-        import os, uuid
-        if os.environ.get("TESTING") == "1" or "PYTEST_CURRENT_TEST" in os.environ or app.config.get("TESTING") or getattr(app, "testing", False):
+        import os
+        import uuid
+
+        if (
+            os.environ.get("TESTING") == "1"
+            or "PYTEST_CURRENT_TEST" in os.environ
+            or app.config.get("TESTING")
+            or getattr(app, "testing", False)
+        ):
             app.config.setdefault("RATELIMIT_STORAGE_URI", "memory://")
             app.config.setdefault("RATELIMIT_KEY_PREFIX", f"test-{uuid.uuid4()}")
     except Exception:
@@ -189,12 +193,14 @@ def init_rate_limiter(app):
     except Exception:
         pass
 
+
 # ============================================================
 # FINAL SAFETY: ensure limiter is never None (decorators bind at import time)
 # ============================================================
 try:
     from flask_limiter import Limiter
     from flask_limiter.util import get_remote_address
+
     if globals().get("limiter", None) is None:
         limiter = Limiter(key_func=get_remote_address)
 except Exception:
@@ -203,7 +209,8 @@ except Exception:
         def limit(self, *_a, **_k):
             def _decorator(fn):
                 return fn
+
             return _decorator
+
     if globals().get("limiter", None) is None:
         limiter = _NoopLimiter()
-

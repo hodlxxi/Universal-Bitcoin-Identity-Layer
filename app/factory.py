@@ -44,17 +44,24 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
 
     # TESTING/CI: isolate Flask-Limiter counters between tests (memory storage persists otherwise)
     try:
-        import os, uuid
-        if os.environ.get("TESTING") == "1" or "PYTEST_CURRENT_TEST" in os.environ or app.config.get("TESTING") or getattr(app, "testing", False):
+        import os
+        import uuid
+
+        if (
+            os.environ.get("TESTING") == "1"
+            or "PYTEST_CURRENT_TEST" in os.environ
+            or app.config.get("TESTING")
+            or getattr(app, "testing", False)
+        ):
             app.config.setdefault("RATELIMIT_STORAGE_URI", "memory://")
             app.config.setdefault("RATELIMIT_KEY_PREFIX", f"test-{uuid.uuid4()}")
     except Exception:
         pass
 
-
     # Initialize rate limiter BEFORE importing blueprints (decorators bind at import time)
     try:
         from app.security import init_rate_limiter
+
         init_rate_limiter(app)
     except Exception:
         pass
@@ -75,13 +82,13 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
         max_retired = cfg.get("JWKS_MAX_RETIRED_KEYS", 3)
 
         jwks_doc, jwt_kid = ensure_rsa_keypair(
-            cfg["JWKS_DIR"],
-            rotation_days=rotation_days,
-            max_retired_keys=max_retired
+            cfg["JWKS_DIR"], rotation_days=rotation_days, max_retired_keys=max_retired
         )
         app.config["JWKS_DOCUMENT"] = jwks_doc
         app.config["JWT_KID"] = jwt_kid
-        logger.info(f"✅ JWKS initialized: kid={jwt_kid}, keys={len(jwks_doc.get('keys', []))}, rotation={rotation_days}d")
+        logger.info(
+            f"✅ JWKS initialized: kid={jwt_kid}, keys={len(jwks_doc.get('keys', []))}, rotation={rotation_days}d"
+        )
     except Exception as e:
         logger.error(f"❌ JWKS initialization failed: {e}")
         raise
@@ -102,6 +109,7 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     # Rate limiter must be initialized BEFORE importing blueprints (blueprints use @limiter.limit at import time)
     try:
         from app.security import init_rate_limiter
+
         init_rate_limiter(app)
     except Exception:
         # Tests/minimal setups may intentionally disable the limiter
@@ -124,35 +132,42 @@ def register_blueprints(app: Flask) -> None:
 
     # OIDC discovery and JWKS endpoints (already exists)
     from app.oidc import oidc_bp
+
     app.register_blueprint(oidc_bp)
 
     # Authentication blueprint (login, logout, signature verification)
     from app.blueprints.auth import auth_bp
+
     app.register_blueprint(auth_bp)
 
     # Bitcoin operations blueprint (RPC, descriptors, wallets)
     from app.blueprints.bitcoin import bitcoin_bp
-    app.register_blueprint(bitcoin_bp, url_prefix="/api")
 
+    app.register_blueprint(bitcoin_bp, url_prefix="/api")
 
     # Demo blueprint (public test endpoints)
     from app.blueprints.demo import demo_bp
+
     app.register_blueprint(demo_bp, url_prefix="/api/demo")
     # LNURL-Auth blueprint (challenges, callbacks)
     from app.blueprints.lnurl import lnurl_bp
+
     app.register_blueprint(lnurl_bp, url_prefix="/api/lnurl-auth")
 
     # OAuth2/OIDC blueprint (token, authorize, introspect, revoke)
     from app.blueprints.oauth import oauth_bp
+
     app.register_blueprint(oauth_bp, url_prefix="/oauth")
 
     # Admin/operations blueprint (health, metrics, TURN)
     from app.blueprints.admin import admin_bp
+
     app.register_blueprint(admin_bp)
 
     # UI/frontend blueprint (dashboard, playground, chat)
     from app.blueprints.ui import ui_bp
     from app.dev_routes import dev_bp
+
     app.register_blueprint(ui_bp)
     # Developer Platform
     app.register_blueprint(dev_bp)

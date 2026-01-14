@@ -4,7 +4,6 @@ Utility functions for Bitcoin Identity Layer
 Shared helper functions for authentication, Bitcoin operations, and cryptography.
 """
 
-import base58
 import hashlib
 import os
 import re
@@ -14,6 +13,7 @@ from decimal import Decimal
 from hashlib import sha256
 from typing import Optional, Tuple
 
+import base58
 from bitcoinrpc.authproxy import AuthServiceProxy
 
 
@@ -162,7 +162,7 @@ def extract_script_from_any_descriptor(descriptor: str) -> Optional[str]:
         Hex-encoded script or None
     """
     # Fast-path: raw(<script>) descriptor
-    s = (descriptor or '').strip()
+    s = (descriptor or "").strip()
     m = re.search(r"\braw\(([^)]+)\)", s)
     if m:
         return m.group(1)

@@ -2214,14 +2214,17 @@ def dashboard():
     access_level = session.get("access_level", "guest")
 
     if not pubkey:
-        return """
+        return (
+            """
         <html>
         <body>
             <h1>Not Authenticated</h1>
             <p>Please <a href="/login">login</a> first.</p>
         </body>
         </html>
-        """, 401
+        """,
+            401,
+        )
 
     html = f"""
 <!DOCTYPE html>

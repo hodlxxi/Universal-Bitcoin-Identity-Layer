@@ -1,11 +1,11 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Optional, Dict
+from typing import Dict, Optional
 
-from flask import current_app, session, redirect, url_for
+from flask import current_app, redirect, session, url_for
 
-DEFAULT_LOGIN_COST_SATS = 0          # set >0 via app.config["LOGIN_COST_SATS"] to enable sats-metered login
-DEFAULT_TRIAL_DAYS = 7               # initial free trial window (days)
+DEFAULT_LOGIN_COST_SATS = 0  # set >0 via app.config["LOGIN_COST_SATS"] to enable sats-metered login
+DEFAULT_TRIAL_DAYS = 7  # initial free trial window (days)
 
 # In-memory store: pubkey -> UbidUser
 _USERS: Dict[str, "UbidUser"] = {}
@@ -21,6 +21,7 @@ class UbidUser:
     - sats_balance    : for sats-metered login or API usage
     - membership_expires_at : optional expiry for membership
     """
+
     pubkey: str
     plan: str = "free_trial"
     sats_balance: int = 0

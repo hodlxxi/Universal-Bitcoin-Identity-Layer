@@ -1,0 +1,15 @@
+[flake8]
+max-line-length = 120
+extend-ignore = E203,W503,F401,F811,E402,E501,W291,F841,E722
+exclude =
+    venv,
+    .venv,
+    __pycache__,
+    .pytest_cache,
+    _archive_baks,
+    backups,
+    app/blueprints.bak*,
+    app/app.py
+    app/blueprints/ui.py
+    app/map_app_surface.py
+    app/patch_*.py

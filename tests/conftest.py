@@ -4,26 +4,25 @@ Pytest configuration and shared fixtures for HODLXXI tests.
 
 import os
 import tempfile
+import time
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, Mock
-
-import pytest
-
-
-import time
 
 # ------------------------------
 # Flask app + test client fixtures
 # ------------------------------
 import pytest
 
+
 @pytest.fixture
 def app():
     from app.factory import create_app
+
     app = create_app()
     app.config.update(TESTING=True)
     # Isolate Flask-Limiter counters between tests (in-memory storage persists otherwise)
     import uuid
+
     app.config.setdefault("RATELIMIT_KEY_PREFIX", f"test-{uuid.uuid4()}")
     app.config.setdefault("RATELIMIT_STORAGE_URI", "memory://")
 
@@ -56,8 +55,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 # Global RPC mocking (tests)
 # ------------------------------
 import sys
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
+
 
 @pytest.fixture
 def mock_rpc(monkeypatch, client):
@@ -77,6 +78,7 @@ def mock_rpc(monkeypatch, client):
     rpc.verifymessage.return_value = True
 
     import app.utils as utils
+
     monkeypatch.setattr(utils, "get_rpc_connection", lambda: rpc)
 
     # Patch any already-imported app.* module that grabbed get_rpc_connection into its globals
@@ -91,10 +93,12 @@ def mock_rpc(monkeypatch, client):
 
     return rpc
 
+
 # ------------------------------
 # Common fixtures used by integration tests
 # ------------------------------
 import pytest
+
 
 @pytest.fixture
 def sample_pubkey() -> str:

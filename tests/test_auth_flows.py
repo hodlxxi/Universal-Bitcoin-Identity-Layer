@@ -43,12 +43,14 @@ def client(app):
 @pytest.fixture
 def mock_rpc(monkeypatch, client):
     """Mock Bitcoin Core RPC used by auth.verify_signature (patch auth blueprint symbol)."""
-    import app.blueprints.auth as auth_mod
     from unittest.mock import MagicMock
+
+    import app.blueprints.auth as auth_mod
 
     rpc = MagicMock(name="rpc_conn")
     monkeypatch.setattr(auth_mod, "get_rpc_connection", lambda: rpc)
     return rpc
+
 
 class TestBitcoinSignatureAuth:
     """Test Bitcoin signature-based authentication."""

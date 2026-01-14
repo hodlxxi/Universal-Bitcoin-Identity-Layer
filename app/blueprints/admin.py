@@ -6,7 +6,7 @@ Provides monitoring and operational endpoints for infrastructure health.
 
 import logging
 import time
-from typing import Dict, Any
+from typing import Any, Dict
 
 from flask import Blueprint, Response, current_app, jsonify
 from prometheus_client import CollectorRegistry, Counter, Gauge, generate_latest
@@ -20,16 +20,9 @@ admin_bp = Blueprint("admin", __name__)
 # Prometheus metrics
 registry = CollectorRegistry()
 request_counter = Counter(
-    "http_requests_total",
-    "Total HTTP requests",
-    ["method", "endpoint", "status"],
-    registry=registry
+    "http_requests_total", "Total HTTP requests", ["method", "endpoint", "status"], registry=registry
 )
-active_connections = Gauge(
-    "active_connections",
-    "Number of active connections",
-    registry=registry
-)
+active_connections = Gauge("active_connections", "Number of active connections", registry=registry)
 
 
 @admin_bp.route("/health", methods=["GET"])
@@ -60,7 +53,7 @@ def health():
     status = "healthy" if current_app.config.get("TESTING") else ("healthy" if rpc_ok else "unhealthy")
 
     payload = {
-        "timestamp": __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat().replace("+00:00","Z"),
+        "timestamp": __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat().replace("+00:00", "Z"),
         "status": status,
         "version": (current_app.config.get("APP_VERSION") or __import__("os").environ.get("APP_VERSION") or "dev"),
         "ok": (status == "healthy"),
@@ -71,6 +64,7 @@ def health():
 
     code = 200 if status == "healthy" else 503
     return jsonify(payload), code
+
 
 @admin_bp.route("/health/live")
 def liveness():
@@ -94,6 +88,7 @@ def readiness():
     try:
         # Check critical dependencies
         from app.database import get_db
+
         db = get_db()
         db.execute("SELECT 1")
         return jsonify({"status": "ready"}), 200
@@ -111,8 +106,9 @@ def metrics():
       - content-type: application/json
       - top-level keys include: timestamp, application, metrics
     """
-    from flask import current_app
     import time as _time
+
+    from flask import current_app
 
     # uptime
     started = current_app.config.get("START_TIME")
@@ -126,11 +122,13 @@ def metrics():
         rpc = get_rpc_connection()
         info = rpc.getblockchaininfo()
         if isinstance(info, dict):
-            bitcoin.update({
-                "chain": info.get("chain"),
-                "blocks": info.get("blocks"),
-                "headers": info.get("headers"),
-            })
+            bitcoin.update(
+                {
+                    "chain": info.get("chain"),
+                    "blocks": info.get("blocks"),
+                    "headers": info.get("headers"),
+                }
+            )
     except Exception as e:
         bitcoin["rpc_ok"] = False
         bitcoin["error"] = str(e)
@@ -148,6 +146,7 @@ def metrics():
         },
     }
     return jsonify(payload), 200
+
 
 @admin_bp.route("/metrics/prometheus")
 def metrics_prometheus():
@@ -179,10 +178,10 @@ def turn_credentials():
     Returns:
         JSON with TURN server configuration
     """
-    import os
+    import base64
     import hashlib
     import hmac
-    import base64
+    import os
     from time import time
 
     try:
@@ -195,22 +194,21 @@ def turn_credentials():
 
         # Generate time-limited credentials
         username = str(int(time() + 86400))  # Valid for 24 hours
-        password = base64.b64encode(
-            hmac.new(
-                turn_secret.encode(),
-                username.encode(),
-                hashlib.sha1
-            ).digest()
-        ).decode()
+        password = base64.b64encode(hmac.new(turn_secret.encode(), username.encode(), hashlib.sha1).digest()).decode()
 
-        return jsonify({
-            "urls": [
-                f"turn:{turn_host}:{turn_port}?transport=udp",
-                f"turn:{turn_host}:{turn_port}?transport=tcp",
-            ],
-            "username": username,
-            "credential": password
-        }), 200
+        return (
+            jsonify(
+                {
+                    "urls": [
+                        f"turn:{turn_host}:{turn_port}?transport=udp",
+                        f"turn:{turn_host}:{turn_port}?transport=tcp",
+                    ],
+                    "username": username,
+                    "credential": password,
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         logger.error(f"TURN credentials failed: {e}", exc_info=True)

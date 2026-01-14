@@ -4,13 +4,16 @@ Database connection and session management for HODLXXI.
 Production-grade PostgreSQL and Redis connections with pooling.
 """
 
-from flask import g
 import sqlite3  # or your actual DB engine
 
+from flask import g
+
+
 def get_db():
-    if 'db' not in g:
-        g.db = sqlite3.connect('/srv/ubid/ubid.db')  # or your actual DB path
+    if "db" not in g:
+        g.db = sqlite3.connect("/srv/ubid/ubid.db")  # or your actual DB path
     return g.db
+
 
 import logging
 import os
@@ -92,8 +95,7 @@ def init_database(echo: bool = False, create_tables: bool = False) -> None:
         )
 
     # Create engine with appropriate configuration for the backend
-    _engine = create_engine(db_url, **engine_kwargs, pool_reset_on_return=None  # EVENTLET_POOLRESET_V2
-)
+    _engine = create_engine(db_url, **engine_kwargs, pool_reset_on_return=None)  # EVENTLET_POOLRESET_V2
 
     # Add connection pool listeners for better error handling
     @event.listens_for(Pool, "connect")
@@ -232,7 +234,8 @@ def init_redis() -> None:
             socket_connect_timeout=5,
             socket_timeout=5,
             max_connections=50,
-            health_check_interval=30)
+            health_check_interval=30,
+        )
 
         # Test connection
         _redis_client.ping()

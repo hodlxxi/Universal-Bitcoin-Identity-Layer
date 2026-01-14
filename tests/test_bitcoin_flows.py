@@ -46,25 +46,33 @@ def client(app):
     return app.test_client()
 
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
+
 
 @pytest.fixture
 def mock_rpc(monkeypatch, client):
     """Mock Bitcoin Core RPC and patch the symbols actually used by the bitcoin blueprint."""
-    import app.utils as utils
     import app.blueprints.bitcoin as btc
+    import app.utils as utils
 
-    rpc = MagicMock(name='rpc_conn')
+    rpc = MagicMock(name="rpc_conn")
     # defaults (override per-test as needed)
-    rpc.getblockchaininfo.return_value = {'chain':'main','blocks':800000,'headers':800000,'bestblockhash':'0'*64}
+    rpc.getblockchaininfo.return_value = {
+        "chain": "main",
+        "blocks": 800000,
+        "headers": 800000,
+        "bestblockhash": "0" * 64,
+    }
     rpc.getbalance.return_value = 0.0
-    rpc.listdescriptors.return_value = {'descriptors': []}
+    rpc.listdescriptors.return_value = {"descriptors": []}
     rpc.listwallets.return_value = []
 
-    monkeypatch.setattr(utils, 'get_rpc_connection', lambda: rpc)
-    monkeypatch.setattr(btc, 'get_rpc_connection', lambda: rpc, raising=False)
+    monkeypatch.setattr(utils, "get_rpc_connection", lambda: rpc)
+    monkeypatch.setattr(btc, "get_rpc_connection", lambda: rpc, raising=False)
     return rpc
+
 
 class TestRPCCommands:
     """Test safe RPC command execution."""
@@ -142,9 +150,7 @@ class TestProofOfFunds:
                 "vout": [
                     {
                         "value": 0.0,
-                        "scriptPubKey": {
-                            "asm": "OP_RETURN test_challenge_12345"
-                        },
+                        "scriptPubKey": {"asm": "OP_RETURN test_challenge_12345"},
                     }
                 ],
             }
@@ -194,18 +200,14 @@ class TestProofOfFunds:
         mock_psbt = {
             "tx": {
                 "vin": [{"txid": "a" * 64, "vout": 0}],
-                "vout": [
-                    {"value": 0.0, "scriptPubKey": {"asm": "OP_RETURN challenge"}}
-                ],
+                "vout": [{"value": 0.0, "scriptPubKey": {"asm": "OP_RETURN challenge"}}],
             }
         }
 
         mock_rpc.decodepsbt.return_value = mock_psbt
         mock_rpc.gettxout.return_value = None  # UTXO spent
 
-        response = client.post(
-            "/api/verify", json={"psbt": "cHNidF8...", "challenge": "challenge"}
-        )
+        response = client.post("/api/verify", json={"psbt": "cHNidF8...", "challenge": "challenge"})
 
         assert response.status_code == 200
         data = json.loads(response.data)
@@ -235,9 +237,7 @@ class TestScriptDecoding:
 
         mock_rpc.decodescript.return_value = mock_decoded
 
-        response = client.post(
-            "/api/decode_raw_script", json={"script": "76a914" + "ab" * 20 + "88ac"}
-        )
+        response = client.post("/api/decode_raw_script", json={"script": "76a914" + "ab" * 20 + "88ac"})
 
         assert response.status_code == 200
         data = json.loads(response.data)
@@ -292,11 +292,7 @@ class TestDescriptorManagement:
         """Test that private keys are filtered in production."""
         app.config["APP_CONFIG"]["FLASK_ENV"] = "production"
 
-        mock_descriptors = {
-            "descriptors": [
-                {"desc": "wpkh([fingerprint]xprv...)#checksum", "active": True}
-            ]
-        }
+        mock_descriptors = {"descriptors": [{"desc": "wpkh([fingerprint]xprv...)#checksum", "active": True}]}
 
         mock_rpc.listdescriptors.return_value = mock_descriptors
 
@@ -404,9 +400,7 @@ class TestBitcoinIntegration:
         assert response1.status_code == 200
 
         # 2. List descriptors
-        mock_rpc.listdescriptors.return_value = {
-            "descriptors": [{"desc": "wpkh(...)", "active": True}]
-        }
+        mock_rpc.listdescriptors.return_value = {"descriptors": [{"desc": "wpkh(...)", "active": True}]}
         response2 = client.get("/api/descriptors")
         assert response2.status_code == 200
 
@@ -424,9 +418,7 @@ class TestBitcoinIntegration:
         mock_rpc.decodepsbt.return_value = {
             "tx": {
                 "vin": [{"txid": "a" * 64, "vout": 0}],
-                "vout": [
-                    {"value": 0.0, "scriptPubKey": {"asm": f"OP_RETURN {challenge}"}}
-                ],
+                "vout": [{"value": 0.0, "scriptPubKey": {"asm": f"OP_RETURN {challenge}"}}],
             }
         }
 
@@ -434,9 +426,7 @@ class TestBitcoinIntegration:
         mock_rpc.gettxout.return_value = {"value": 2.5, "confirmations": 10}
 
         # Submit proof
-        response = client.post(
-            "/api/verify", json={"psbt": "cHNidF8...", "challenge": challenge}
-        )
+        response = client.post("/api/verify", json={"psbt": "cHNidF8...", "challenge": challenge})
 
         assert response.status_code == 200
         data = json.loads(response.data)

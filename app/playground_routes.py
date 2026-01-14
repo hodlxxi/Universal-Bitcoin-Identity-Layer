@@ -1,13 +1,4 @@
-from flask import (
-    Blueprint,
-    render_template,
-    request,
-    jsonify,
-    session,
-    redirect,
-    url_for,
-    current_app,
-)
+from flask import Blueprint, current_app, jsonify, redirect, render_template, request, session, url_for
 
 playground_bp = Blueprint("playground", __name__)
 
@@ -21,11 +12,7 @@ def playground():
     logged_in_pubkey = session.get("logged_in_pubkey", "")
     access_level = session.get("access_level", "guest")
 
-    issuer = (
-        current_app.config.get("PUBLIC_ISSUER")
-        or current_app.config.get("ISSUER")
-        or request.url_root.rstrip("/")
-    )
+    issuer = current_app.config.get("PUBLIC_ISSUER") or current_app.config.get("ISSUER") or request.url_root.rstrip("/")
 
     # which tab to show first: legacy / api / lnurl / oauth / pof
     initial_tab = request.args.get("tab", "legacy")
@@ -49,6 +36,7 @@ def pof_entry():
 
 
 # OPTIONAL: keep your stats/activity demo if you like
+
 
 @playground_bp.route("/api/playground/stats")
 def playground_stats():

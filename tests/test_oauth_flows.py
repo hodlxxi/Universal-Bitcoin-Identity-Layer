@@ -232,11 +232,7 @@ class TestPKCE:
         """Test authorization with PKCE S256 challenge."""
         # Generate PKCE verifier and challenge
         verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
-        challenge = (
-            base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
-            .rstrip(b"=")
-            .decode()
-        )
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
 
         with client.session_transaction() as sess:
             sess["logged_in_pubkey"] = "02" + "a" * 64
@@ -259,11 +255,7 @@ class TestPKCE:
         """Test token exchange with PKCE verification."""
         # Generate PKCE parameters
         verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
-        challenge = (
-            base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
-            .rstrip(b"=")
-            .decode()
-        )
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
 
         # 1. Get authorization code with PKCE
         with client.session_transaction() as sess:
@@ -305,11 +297,7 @@ class TestPKCE:
         """Test token exchange with wrong PKCE verifier."""
         # Generate PKCE with correct challenge
         correct_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
-        challenge = (
-            base64.urlsafe_b64encode(hashlib.sha256(correct_verifier.encode()).digest())
-            .rstrip(b"=")
-            .decode()
-        )
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(correct_verifier.encode()).digest()).rstrip(b"=").decode()
 
         # Get authorization code
         with client.session_transaction() as sess:

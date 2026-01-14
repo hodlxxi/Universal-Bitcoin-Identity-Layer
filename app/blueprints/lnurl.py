@@ -15,12 +15,16 @@ from app.audit_logger import get_audit_logger
 from app.db_storage import get_lnurl_challenge, store_lnurl_challenge
 from app.security import limiter as _limiter
 
+
 class _NoopLimiter:
     """Fallback when the rate limiter isn't initialized (e.g., unit tests)."""
+
     def limit(self, *_args, **_kwargs):
         def _decorator(fn):
             return fn
+
         return _decorator
+
 
 limiter = _limiter or _NoopLimiter()
 
@@ -61,27 +65,27 @@ def create_challenge():
             "verified": False,
             "pubkey": None,
             "k1": challenge,  # LNURL-auth nonce
-            "expires_at": (__import__("datetime").datetime.now(__import__("datetime").timezone.utc) + __import__("datetime").timedelta(seconds=300)).isoformat(),
+            "expires_at": (
+                __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+                + __import__("datetime").timedelta(seconds=300)
+            ).isoformat(),
         }
 
         store_lnurl_challenge(session_id, challenge_data, ttl=300)  # 5 minute TTL
 
-        audit_logger.log_event(
-            "lnurl.challenge_created",
-            session_id=session_id,
-            ip=request.remote_addr
-        )
+        audit_logger.log_event("lnurl.challenge_created", session_id=session_id, ip=request.remote_addr)
 
         # Return LNURL parameters
-        return jsonify({
-            "session_id": session_id,
-            "challenge": challenge,
-            "lnurl": callback_url,
-            "qr_code": callback_url,  # placeholder for tests
-
-            "k1": challenge,  # k1 is the challenge in LNURL-auth
-            "tag": "login"
-        })
+        return jsonify(
+            {
+                "session_id": session_id,
+                "challenge": challenge,
+                "lnurl": callback_url,
+                "qr_code": callback_url,  # placeholder for tests
+                "k1": challenge,  # k1 is the challenge in LNURL-auth
+                "tag": "login",
+            }
+        )
 
     except Exception as e:
         logger.error(f"LNURL challenge creation failed: {e}", exc_info=True)
@@ -110,38 +114,27 @@ def lnurl_callback(session_id: str):
     key = request.args.get("key")
 
     if not all([k1, sig, key]):
-        return jsonify({
-            "status": "ERROR",
-            "reason": "Missing required parameters"
-        }), 400
+        return jsonify({"status": "ERROR", "reason": "Missing required parameters"}), 400
 
     try:
         # Retrieve challenge
         challenge_data = get_lnurl_challenge(session_id)
 
         if not challenge_data:
-            return jsonify({
-                "status": "ERROR",
-                "reason": "Invalid or expired session"
-            }), 404
+            return jsonify({"status": "ERROR", "reason": "Invalid or expired session"}), 404
 
         # Verify challenge matches
         if challenge_data["challenge"] != k1:
             audit_logger.log_event(
-                "lnurl.verify_failed",
-                session_id=session_id,
-                reason="challenge_mismatch",
-                ip=request.remote_addr
+                "lnurl.verify_failed", session_id=session_id, reason="challenge_mismatch", ip=request.remote_addr
             )
-            return jsonify({
-                "status": "ERROR",
-                "reason": "Challenge mismatch"
-            }), 403
+            return jsonify({"status": "ERROR", "reason": "Challenge mismatch"}), 403
 
         # Verify signature
         # In production, implement proper secp256k1 signature verification
         # For now, we trust the signature (this should be replaced)
         import hashlib
+
         message_hash = hashlib.sha256(k1.encode()).hexdigest()
 
         # Update challenge as verified
@@ -151,23 +144,13 @@ def lnurl_callback(session_id: str):
 
         store_lnurl_challenge(session_id, challenge_data, ttl=300)
 
-        audit_logger.log_event(
-            "lnurl.verify_success",
-            session_id=session_id,
-            pubkey=key,
-            ip=request.remote_addr
-        )
+        audit_logger.log_event("lnurl.verify_success", session_id=session_id, pubkey=key, ip=request.remote_addr)
 
-        return jsonify({
-            "status": "OK"
-        })
+        return jsonify({"status": "OK"})
 
     except Exception as e:
         logger.error(f"LNURL callback failed: {e}", exc_info=True)
-        return jsonify({
-            "status": "ERROR",
-            "reason": str(e)
-        }), 500
+        return jsonify({"status": "ERROR", "reason": str(e)}), 500
 
 
 @lnurl_bp.route("/check/<session_id>", methods=["GET"])
@@ -186,15 +169,14 @@ def check_verification(session_id: str):
         challenge_data = get_lnurl_challenge(session_id)
 
         if not challenge_data:
-            return jsonify({
-                "verified": False,
-                "error": "Session not found or expired"
-            }), 404
+            return jsonify({"verified": False, "error": "Session not found or expired"}), 404
 
-        return jsonify({
-            "verified": challenge_data.get("verified", False),
-            "pubkey": challenge_data.get("pubkey") if challenge_data.get("verified") else None
-        })
+        return jsonify(
+            {
+                "verified": challenge_data.get("verified", False),
+                "pubkey": challenge_data.get("pubkey") if challenge_data.get("verified") else None,
+            }
+        )
 
     except Exception as e:
         logger.error(f"Verification check failed: {e}")
@@ -228,11 +210,7 @@ def lnurl_params():
         base_url = cfg.get("LNURL_BASE_URL", "http://localhost:5000")
         callback_url = f"{base_url}/api/lnurl-auth/callback/{session_id}"
 
-        return jsonify({
-            "tag": "login",
-            "k1": challenge_data["challenge"],
-            "callback": callback_url
-        })
+        return jsonify({"tag": "login", "k1": challenge_data["challenge"], "callback": callback_url})
 
     except Exception as e:
         logger.error(f"LNURL params failed: {e}")

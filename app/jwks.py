@@ -63,9 +63,7 @@ def _load_or_generate_key(priv_path: str) -> Tuple[rsa.RSAPrivateKey, bytes]:
         with open(priv_path, "rb") as fh:
             pem_bytes = fh.read()
         try:
-            private_key = serialization.load_pem_private_key(
-                pem_bytes, password=None, backend=default_backend()
-            )
+            private_key = serialization.load_pem_private_key(pem_bytes, password=None, backend=default_backend())
             return private_key, pem_bytes
         except ValueError:
             pass
@@ -141,9 +139,7 @@ def _list_all_keys(jwks_dir: str) -> List[Tuple[str, str, rsa.RSAPrivateKey]]:
         try:
             with open(legacy_path, "rb") as fh:
                 pem_bytes = fh.read()
-            private_key = serialization.load_pem_private_key(
-                pem_bytes, password=None, backend=default_backend()
-            )
+            private_key = serialization.load_pem_private_key(pem_bytes, password=None, backend=default_backend())
             # Generate kid for legacy key
             kid = str(int(os.path.getmtime(legacy_path)))
             keys.append((kid, legacy_path, private_key))
@@ -158,9 +154,7 @@ def _list_all_keys(jwks_dir: str) -> List[Tuple[str, str, rsa.RSAPrivateKey]]:
 
             with open(key_path, "rb") as fh:
                 pem_bytes = fh.read()
-            private_key = serialization.load_pem_private_key(
-                pem_bytes, password=None, backend=default_backend()
-            )
+            private_key = serialization.load_pem_private_key(pem_bytes, password=None, backend=default_backend())
             keys.append((kid, key_path, private_key))
         except Exception as e:
             logger.warning(f"Failed to load key {key_path}: {e}")
@@ -168,11 +162,7 @@ def _list_all_keys(jwks_dir: str) -> List[Tuple[str, str, rsa.RSAPrivateKey]]:
     return keys
 
 
-def ensure_rsa_keypair(
-    jwks_dir: str,
-    rotation_days: int = 90,
-    max_retired_keys: int = 3
-) -> Tuple[Dict[str, Any], str]:
+def ensure_rsa_keypair(jwks_dir: str, rotation_days: int = 90, max_retired_keys: int = 3) -> Tuple[Dict[str, Any], str]:
     """
     Ensure RSA keypairs exist with automatic rotation support.
 
@@ -239,8 +229,8 @@ def ensure_rsa_keypair(
 
     # Limit retired keys
     if len(all_keys) > max_retired_keys + 1:
-        retired_keys = all_keys[max_retired_keys + 1:]
-        all_keys = all_keys[:max_retired_keys + 1]
+        retired_keys = all_keys[max_retired_keys + 1 :]
+        all_keys = all_keys[: max_retired_keys + 1]
 
         # Remove old key files
         for kid, key_path, _ in retired_keys:

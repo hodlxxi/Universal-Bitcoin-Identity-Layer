@@ -135,7 +135,7 @@ def store_oauth_client(client_id: str, client_data: Dict) -> None:
                 init_data["metadata_json"] = init_data.pop("metadata")
             # Avoid duplicate kwarg: client_id is passed explicitly and may also exist in init_data
             init_data = dict(init_data)
-            init_data.pop('client_id', None)
+            init_data.pop("client_id", None)
             # Only pass model-known fields to SQLAlchemy (prevents invalid kwarg crashes)
             allowed = set(OAuthClient.__table__.columns.keys())
             init_data = {k: v for k, v in init_data.items() if k in allowed}
@@ -205,7 +205,13 @@ def store_oauth_code(code: str, code_data: Dict, ttl=None, **kwargs) -> None:
             scope=code_data.get("scope"),
             code_challenge=code_data.get("code_challenge"),
             code_challenge_method=code_data.get("code_challenge_method"),
-            expires_at=datetime.fromisoformat(code_data.get("expires_at") or (__import__("datetime").datetime.now(__import__("datetime").timezone.utc) + __import__("datetime").timedelta(seconds=(ttl or 600))).isoformat()),
+            expires_at=datetime.fromisoformat(
+                code_data.get("expires_at")
+                or (
+                    __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+                    + __import__("datetime").timedelta(seconds=(ttl or 600))
+                ).isoformat()
+            ),
         )
         session.add(oauth_code)
 
@@ -463,7 +469,13 @@ def store_lnurl_challenge(session_id: str, challenge_data: Dict, ttl=None, **kwa
         challenge_kwargs = {
             "session_id": session_id,
             "k1": (challenge_data.get("k1") or challenge_data.get("challenge")),
-            "expires_at": datetime.fromisoformat(challenge_data.get("expires_at") or (__import__("datetime").datetime.now(__import__("datetime").timezone.utc) + __import__("datetime").timedelta(seconds=(ttl or 300))).isoformat()),
+            "expires_at": datetime.fromisoformat(
+                challenge_data.get("expires_at")
+                or (
+                    __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+                    + __import__("datetime").timedelta(seconds=ttl)
+                ).isoformat()
+            ),
             "callback_url": challenge_data.get("callback_url"),
         }
 
@@ -517,13 +529,22 @@ def update_lnurl_challenge(session_id: str, pubkey: str) -> None:
 def store_pof_challenge(challenge_id: str, challenge_data: Dict) -> None:
     """Store Proof of Funds challenge."""
     with session_scope() as session:
+        # TTL seconds for fallback expires_at
+        ttl = challenge_data.get('ttl') or 300
+
         challenge_kwargs = {
             "challenge_id": challenge_id,
             "pubkey": challenge_data["pubkey"],
             "challenge_message": challenge_data["challenge"],
             "threshold": challenge_data.get("threshold"),
             "privacy_level": challenge_data.get("privacy_level", "boolean"),
-            "expires_at": datetime.fromisoformat(challenge_data.get("expires_at") or (__import__("datetime").datetime.now(__import__("datetime").timezone.utc) + __import__("datetime").timedelta(seconds=(ttl or 300))).isoformat()),
+            "expires_at": datetime.fromisoformat(
+                challenge_data.get("expires_at")
+                or (
+                    __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+                    + __import__("datetime").timedelta(seconds=ttl)
+                ).isoformat()
+            ),
         }
 
         if "metadata" in challenge_data:

@@ -7,33 +7,31 @@ Implements OAuth 2.0 and OpenID Connect flows with PKCE.
 import logging
 import secrets
 import time
-from typing import Optional
 from datetime import datetime, timedelta, timezone
-from datetime import datetime, timezone
+from typing import Optional
 
 from flask import Blueprint, current_app, jsonify, redirect, request, session
 
 from app.audit_logger import get_audit_logger
-from app.db_storage import (
-    delete_oauth_code,
-    get_oauth_client,
-    get_oauth_code,
-    store_oauth_client,
-    store_oauth_code,
-)
+from app.db_storage import delete_oauth_code, get_oauth_client, get_oauth_code, store_oauth_client, store_oauth_code
 from app.oidc import validate_pkce
 from app.security import limiter as _limiter
 
+
 class _NoopLimiter:
     """Fallback when the rate limiter isn't initialized (e.g., unit tests)."""
+
     def limit(self, *_args, **_kwargs):
         def _decorator(fn):
             return fn
+
         return _decorator
+
 
 limiter = _limiter or _NoopLimiter()
 
 from app.tokens import issue_rs256_jwt as _issue_rs256_jwt
+
 
 def issue_jwt_compat(*, subject=None, sub=None, claims=None, **kwargs):
     """
@@ -56,13 +54,14 @@ def issue_jwt_compat(*, subject=None, sub=None, claims=None, **kwargs):
     merged_claims.update(kwargs)
 
     # Map OAuth-style `audience` to JWT `aud` (tests expect aud == client_id)
-    if 'aud' not in merged_claims and 'audience' in merged_claims:
-        merged_claims['aud'] = merged_claims.pop('audience')
+    if "aud" not in merged_claims and "audience" in merged_claims:
+        merged_claims["aud"] = merged_claims.pop("audience")
     # Don't leak config flags into JWT claims
-    merged_claims.pop('cfg', None)
-    merged_claims.pop('id_token', None)
+    merged_claims.pop("cfg", None)
+    merged_claims.pop("id_token", None)
 
     return _issue_rs256_jwt(sub=sub, claims=merged_claims or None)
+
 
 logger = logging.getLogger(__name__)
 audit_logger = get_audit_logger()
@@ -72,17 +71,18 @@ oauth_bp = Blueprint("oauth", __name__)
 OAUTH_RATE_LIMIT = "30 per minute"
 
 
-
 # Register endpoint rate limit:
 # - production: keep strict
 # - TESTING/CI: allow many registrations (tests register clients repeatedly)
 OAUTH_REGISTER_RATE_LIMIT = "10 per minute"
 try:
     import os
+
     if os.environ.get("TESTING") == "1" or "PYTEST_CURRENT_TEST" in os.environ:
         OAUTH_REGISTER_RATE_LIMIT = "1000 per minute"
 except Exception:
     pass
+
 
 @oauth_bp.route("/register", methods=["POST"])
 @limiter.limit(OAUTH_REGISTER_RATE_LIMIT)
@@ -123,7 +123,7 @@ def register_client():
             "response_types": data.get("response_types", ["code"]),
             "client_type": "free",  # Default tier
             "is_active": True,
-            "created_at": datetime.now(timezone.utc).replace(tzinfo=None)
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
         }
 
         store_oauth_client(client_id, client_data)
@@ -132,19 +132,24 @@ def register_client():
             "oauth.client_registered",
             client_id=client_id,
             client_name=client_data["client_name"],
-            ip=request.remote_addr
+            ip=request.remote_addr,
         )
 
         # Return client credentials (RFC 7591 response)
-        return jsonify({
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "client_name": client_data["client_name"],
-            "redirect_uris": redirect_uris,
-            "grant_types": client_data["grant_types"],
-            "response_types": client_data["response_types"],
-            "client_id_issued_at": int(time.time())
-        }), 201
+        return (
+            jsonify(
+                {
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "client_name": client_data["client_name"],
+                    "redirect_uris": redirect_uris,
+                    "grant_types": client_data["grant_types"],
+                    "response_types": client_data["response_types"],
+                    "client_id_issued_at": int(time.time()),
+                }
+            ),
+            201,
+        )
 
     except Exception as e:
         logger.error(f"Client registration failed: {e}", exc_info=True)
@@ -179,16 +184,15 @@ def authorize():
 
     # Validate required parameters
     if not all([response_type, client_id, redirect_uri]):
-        return jsonify({
-            "error": "invalid_request",
-            "error_description": "Missing required parameters"
-        }), 400
+        return jsonify({"error": "invalid_request", "error_description": "Missing required parameters"}), 400
 
     if response_type != "code":
-        return jsonify({
-            "error": "unsupported_response_type",
-            "error_description": "Only 'code' response_type is supported"
-        }), 400
+        return (
+            jsonify(
+                {"error": "unsupported_response_type", "error_description": "Only 'code' response_type is supported"}
+            ),
+            400,
+        )
 
     try:
         # Validate client
@@ -198,20 +202,15 @@ def authorize():
         if not client:
             try:
                 from app.storage import get_oauth_client as _get_oauth_client
+
                 client = _get_oauth_client(client_id)
             except Exception:
                 pass
         if not client:
             audit_logger.log_event(
-                "oauth.authorize_failed",
-                reason="invalid_client",
-                client_id=client_id,
-                ip=request.remote_addr
+                "oauth.authorize_failed", reason="invalid_client", client_id=client_id, ip=request.remote_addr
             )
-            return jsonify({
-                "error": "invalid_client",
-                "error_description": "Client not found"
-            }), 401
+            return jsonify({"error": "invalid_client", "error_description": "Client not found"}), 401
 
         # Validate redirect_uri
         if redirect_uri not in client.get("redirect_uris", []):
@@ -220,12 +219,9 @@ def authorize():
                 reason="invalid_redirect_uri",
                 client_id=client_id,
                 redirect_uri=redirect_uri,
-                ip=request.remote_addr
+                ip=request.remote_addr,
             )
-            return jsonify({
-                "error": "invalid_request",
-                "error_description": "Invalid redirect_uri"
-            }), 400
+            return jsonify({"error": "invalid_request", "error_description": "Invalid redirect_uri"}), 400
 
         # Check if user is authenticated
         user_pubkey = session.get("logged_in_pubkey")
@@ -246,17 +242,13 @@ def authorize():
             "user_pubkey": user_pubkey,
             "code_challenge": code_challenge,
             "code_challenge_method": code_challenge_method,
-            "created_at": datetime.now(timezone.utc).replace(tzinfo=None)
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
         }
 
         store_oauth_code(auth_code, code_data, ttl=600)  # 10 minute expiry
 
         audit_logger.log_event(
-            "oauth.authorize_success",
-            client_id=client_id,
-            user_pubkey=user_pubkey,
-            scope=scope,
-            ip=request.remote_addr
+            "oauth.authorize_success", client_id=client_id, user_pubkey=user_pubkey, scope=scope, ip=request.remote_addr
         )
 
         # Redirect back to client with authorization code
@@ -268,10 +260,7 @@ def authorize():
 
     except Exception as e:
         logger.error(f"Authorization failed: {e}", exc_info=True)
-        return jsonify({
-            "error": "server_error",
-            "error_description": str(e)
-        }), 500
+        return jsonify({"error": "server_error", "error_description": str(e)}), 500
 
 
 @oauth_bp.route("/token", methods=["POST"])
@@ -299,16 +288,18 @@ def token():
     code_verifier = request.form.get("code_verifier")
 
     if grant_type != "authorization_code":
-        return jsonify({
-            "error": "unsupported_grant_type",
-            "error_description": "Only authorization_code grant type is supported"
-        }), 400
+        return (
+            jsonify(
+                {
+                    "error": "unsupported_grant_type",
+                    "error_description": "Only authorization_code grant type is supported",
+                }
+            ),
+            400,
+        )
 
     if not all([code, redirect_uri, client_id, client_secret]):
-        return jsonify({
-            "error": "invalid_request",
-            "error_description": "Missing required parameters"
-        }), 400
+        return jsonify({"error": "invalid_request", "error_description": "Missing required parameters"}), 400
 
     try:
         # Validate client credentials
@@ -318,76 +309,59 @@ def token():
         if not client:
             try:
                 from app.storage import get_oauth_client as _get_oauth_client
+
                 client = _get_oauth_client(client_id)
             except Exception:
                 pass
         if not client or client.get("client_secret") != client_secret:
             audit_logger.log_event(
-                "oauth.token_failed",
-                reason="invalid_client",
-                client_id=client_id,
-                ip=request.remote_addr
+                "oauth.token_failed", reason="invalid_client", client_id=client_id, ip=request.remote_addr
             )
-            return jsonify({
-                "error": "invalid_client",
-                "error_description": "Invalid client credentials"
-            }), 401
+            return jsonify({"error": "invalid_client", "error_description": "Invalid client credentials"}), 401
 
         # Retrieve and validate authorization code
         code_data = get_oauth_code(code)
         if not code_data:
             audit_logger.log_event(
-                "oauth.token_failed",
-                reason="invalid_code",
-                client_id=client_id,
-                ip=request.remote_addr
+                "oauth.token_failed", reason="invalid_code", client_id=client_id, ip=request.remote_addr
             )
-            return jsonify({
-                "error": "invalid_grant",
-                "error_description": "Invalid or expired authorization code"
-            }), 400
+            return (
+                jsonify({"error": "invalid_grant", "error_description": "Invalid or expired authorization code"}),
+                400,
+            )
 
         # Validate code belongs to this client
         if code_data["client_id"] != client_id:
             delete_oauth_code(code)
-            return jsonify({
-                "error": "invalid_grant",
-                "error_description": "Authorization code was issued to different client"
-            }), 400
+            return (
+                jsonify(
+                    {"error": "invalid_grant", "error_description": "Authorization code was issued to different client"}
+                ),
+                400,
+            )
 
         # Validate redirect_uri matches
         if code_data["redirect_uri"] != redirect_uri:
             delete_oauth_code(code)
-            return jsonify({
-                "error": "invalid_grant",
-                "error_description": "Redirect URI mismatch"
-            }), 400
+            return jsonify({"error": "invalid_grant", "error_description": "Redirect URI mismatch"}), 400
 
         # Validate PKCE if used
         if code_data.get("code_challenge"):
             if not code_verifier:
                 delete_oauth_code(code)
-                return jsonify({
-                    "error": "invalid_request",
-                    "error_description": "code_verifier required for PKCE"
-                }), 400
+                return (
+                    jsonify({"error": "invalid_request", "error_description": "code_verifier required for PKCE"}),
+                    400,
+                )
 
             if not validate_pkce(
-                code_verifier,
-                code_data["code_challenge"],
-                code_data.get("code_challenge_method", "S256")
+                code_verifier, code_data["code_challenge"], code_data.get("code_challenge_method", "S256")
             ):
                 delete_oauth_code(code)
                 audit_logger.log_event(
-                    "oauth.token_failed",
-                    reason="pkce_validation_failed",
-                    client_id=client_id,
-                    ip=request.remote_addr
+                    "oauth.token_failed", reason="pkce_validation_failed", client_id=client_id, ip=request.remote_addr
                 )
-                return jsonify({
-                    "error": "invalid_grant",
-                    "error_description": "PKCE validation failed"
-                }), 400
+                return jsonify({"error": "invalid_grant", "error_description": "PKCE validation failed"}), 400
 
         # Code is valid - delete it (one-time use)
         delete_oauth_code(code)
@@ -397,49 +371,35 @@ def token():
         # Back-compat: DB layer stores user_id; older code expects user_pubkey
         user_pubkey = code_data.get("user_pubkey") or code_data.get("user_id")
         if not user_pubkey:
-            audit_logger.log_event("oauth.token_failed", reason="missing_user", client_id=client_id, ip=request.remote_addr)
+            audit_logger.log_event(
+                "oauth.token_failed", reason="missing_user", client_id=client_id, ip=request.remote_addr
+            )
             return jsonify({"error": "invalid_grant", "error_description": "Missing user for authorization code"}), 400
         scope = code_data["scope"]
 
         # Issue RS256 JWT access token
-        access_token = issue_jwt_compat(
-            subject=user_pubkey,
-            audience=client_id,
-            scope=scope,
-            cfg=cfg
-        )
+        access_token = issue_jwt_compat(subject=user_pubkey, audience=client_id, scope=scope, cfg=cfg)
 
         # Issue ID token (OpenID Connect)
-        id_token = issue_jwt_compat(
-            subject=user_pubkey,
-            audience=client_id,
-            scope=scope,
-            cfg=cfg,
-            id_token=True
-        )
+        id_token = issue_jwt_compat(subject=user_pubkey, audience=client_id, scope=scope, cfg=cfg, id_token=True)
 
         audit_logger.log_event(
-            "oauth.token_issued",
-            client_id=client_id,
-            user_pubkey=user_pubkey,
-            scope=scope,
-            ip=request.remote_addr
+            "oauth.token_issued", client_id=client_id, user_pubkey=user_pubkey, scope=scope, ip=request.remote_addr
         )
 
-        return jsonify({
-            "access_token": access_token,
-            "id_token": id_token,
-            "token_type": "Bearer",
-            "expires_in": cfg.get("JWT_EXPIRATION_HOURS", 24) * 3600,
-            "scope": scope
-        })
+        return jsonify(
+            {
+                "access_token": access_token,
+                "id_token": id_token,
+                "token_type": "Bearer",
+                "expires_in": cfg.get("JWT_EXPIRATION_HOURS", 24) * 3600,
+                "scope": scope,
+            }
+        )
 
     except Exception as e:
         logger.error(f"Token issuance failed: {e}", exc_info=True)
-        return jsonify({
-            "error": "server_error",
-            "error_description": str(e)
-        }), 500
+        return jsonify({"error": "server_error", "error_description": str(e)}), 500
 
 
 @oauth_bp.route("/introspect", methods=["POST"])
@@ -469,8 +429,9 @@ def introspect():
 
     # Decode token (no signature verification); enforce exp manually
     try:
-        import jwt
         import time as _time
+
+        import jwt
 
         claims = jwt.decode(
             token,
@@ -482,15 +443,19 @@ def introspect():
         if exp is not None and int(exp) < int(_time.time()):
             return jsonify({"active": False}), 200
 
-        return jsonify({
-            "active": True,
-            "sub": claims.get("sub"),
-            "exp": claims.get("exp"),
-            "iat": claims.get("iat"),
-            "scope": claims.get("scope"),
-        }), 200
+        return (
+            jsonify(
+                {
+                    "active": True,
+                    "sub": claims.get("sub"),
+                    "exp": claims.get("exp"),
+                    "iat": claims.get("iat"),
+                    "scope": claims.get("scope"),
+                }
+            ),
+            200,
+        )
 
     except Exception as err:
         logger.warning("Token introspection failed: %s", err)
         return jsonify({"active": False}), 200
-
