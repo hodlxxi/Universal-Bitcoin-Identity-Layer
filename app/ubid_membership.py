@@ -1,14 +1,16 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 from flask import current_app, redirect, session, url_for
 
-DEFAULT_LOGIN_COST_SATS = 0  # set >0 via app.config["LOGIN_COST_SATS"] to enable sats-metered login
+DEFAULT_LOGIN_COST_SATS = 0  # legacy global override (prefer PAYG_ACTION_COSTS)
 DEFAULT_TRIAL_DAYS = 7  # initial free trial window (days)
+DEFAULT_PAYG_ACTION_COSTS = {"login": 1, "pof": 1, "other": 1}
 
 # In-memory store: pubkey -> UbidUser
 _USERS: Dict[str, "UbidUser"] = {}
+_PENDING_INVOICES: Dict[str, Dict[str, object]] = {}
 
 
 @dataclass
@@ -17,15 +19,17 @@ class UbidUser:
     In-memory pubkey-based HODLXXI account.
 
     - pubkey          : primary cryptographic identity
-    - plan            : 'free_trial', 'paid', 'admin', 'expired', etc.
+    - plan            : 'free', 'paid', 'admin', 'expired', etc.
     - sats_balance    : for sats-metered login or API usage
     - membership_expires_at : optional expiry for membership
+    - payg_enabled    : pay-as-you-go billing
     """
 
     pubkey: str
-    plan: str = "free_trial"
+    plan: str = "free"
     sats_balance: int = 0
     membership_expires_at: Optional[datetime] = None
+    payg_enabled: bool = False
     created_at: datetime = field(default_factory=datetime.utcnow)
     last_login_at: datetime = field(default_factory=datetime.utcnow)
 
@@ -43,6 +47,93 @@ def ensure_membership_tables():
     In this in-memory version there is nothing to create.
     """
     return
+
+
+def get_user(pubkey: str) -> Optional[UbidUser]:
+    """Return an in-memory user for the given pubkey, if present."""
+    return _USERS.get(pubkey)
+
+
+def set_payg(pubkey: str, enabled: bool) -> UbidUser:
+    """Enable or disable pay-as-you-go for a user."""
+    user = _USERS.get(pubkey)
+    if user is None:
+        user = UbidUser(pubkey=pubkey)
+        _USERS[pubkey] = user
+    user.payg_enabled = enabled
+    if enabled and user.plan == "free_trial":
+        user.plan = "free"
+    return user
+
+
+def add_sats(pubkey: str, amount_sats: int) -> UbidUser:
+    """Credit sats to the user's balance."""
+    user = _USERS.get(pubkey)
+    if user is None:
+        user = UbidUser(pubkey=pubkey)
+        _USERS[pubkey] = user
+    user.sats_balance += max(int(amount_sats), 0)
+    return user
+
+
+def _get_action_costs() -> Dict[str, int]:
+    override = current_app.config.get("PAYG_ACTION_COSTS")
+    if isinstance(override, dict):
+        return {**DEFAULT_PAYG_ACTION_COSTS, **override}
+    return DEFAULT_PAYG_ACTION_COSTS
+
+
+def charge_action(pubkey: str, action: str) -> Tuple[bool, str]:
+    """Charge a pay-as-you-go action if enabled. Returns (ok, message)."""
+    user = _USERS.get(pubkey)
+    if not user or not user.payg_enabled:
+        return True, "free"
+
+    costs = _get_action_costs()
+    cost = int(costs.get(action, costs.get("other", 0)))
+    if cost <= 0:
+        return True, "free"
+
+    if user.sats_balance < cost:
+        session["needs_topup"] = True
+        return False, "insufficient_balance"
+
+    user.sats_balance -= cost
+    session.pop("needs_topup", None)
+    return True, "charged"
+
+
+def create_payg_invoice(pubkey: str, amount_sats: int, memo: str) -> Tuple[str, str]:
+    """Create a Lightning invoice for pay-as-you-go balance topups."""
+    from app.payments.ln import create_invoice
+
+    amount_sats = max(int(amount_sats), 0)
+    payment_request, invoice_id = create_invoice(
+        amount_sats=amount_sats,
+        memo=memo,
+        user_pubkey=pubkey,
+    )
+    _PENDING_INVOICES[invoice_id] = {
+        "pubkey": pubkey,
+        "amount_sats": amount_sats,
+        "created_at": datetime.utcnow(),
+    }
+    return payment_request, invoice_id
+
+
+def settle_payg_invoice(invoice_id: str) -> Tuple[bool, Optional[UbidUser]]:
+    """Check invoice status and credit the balance if paid."""
+    if invoice_id not in _PENDING_INVOICES:
+        return False, None
+
+    from app.payments.ln import check_invoice_paid
+
+    if not check_invoice_paid(invoice_id):
+        return False, None
+
+    entry = _PENDING_INVOICES.pop(invoice_id)
+    user = add_sats(entry["pubkey"], int(entry["amount_sats"]))
+    return True, user
 
 
 def _touch_membership_expiry(user: UbidUser) -> None:
@@ -80,16 +171,23 @@ def on_successful_login(pubkey: str) -> UbidUser:
     # For this in-memory version, just use pubkey as "user_id"
     session["user_id"] = pubkey
     session["plan"] = user.plan
+    session["payg_enabled"] = user.payg_enabled
 
-    # Optional sats-metered login
-    cost = int(current_app.config.get("LOGIN_COST_SATS", DEFAULT_LOGIN_COST_SATS))
-    if cost > 0:
-        if user.sats_balance < cost:
-            # not enough sats; mark for topup
+    # Optional pay-as-you-go login charge
+    if user.payg_enabled:
+        ok, _ = charge_action(pubkey, "login")
+        if not ok:
             session["needs_topup"] = True
-        else:
-            user.sats_balance -= cost
-            session.pop("needs_topup", None)
+    else:
+        # Legacy global cost if enabled
+        cost = int(current_app.config.get("LOGIN_COST_SATS", DEFAULT_LOGIN_COST_SATS))
+        if cost > 0:
+            if user.sats_balance < cost:
+                # not enough sats; mark for topup
+                session["needs_topup"] = True
+            else:
+                user.sats_balance -= cost
+                session.pop("needs_topup", None)
 
     return user
 

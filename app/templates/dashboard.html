@@ -264,13 +264,24 @@
                     <strong>{{ user.plan or 'unknown' }}</strong>
                     {% if user.plan == 'paid' or user.plan == 'admin' %}
                         <span class="badge-plan">Paid Dev</span>
-                    {% elif user.plan == 'free_trial' %}
-                        <span class="badge-plan free">Free Trial</span>
+                    {% elif user.plan == 'free' %}
+                        <span class="badge-plan free">Free</span>
+                    {% endif %}
+                    {% if user.payg_enabled %}
+                        <span class="badge-plan" style="margin-left:0.5rem;">Pay‑as‑you‑go</span>
                     {% endif %}
                 </p>
 
                 <p class="label" style="margin-top:0.6rem;">Sats balance</p>
                 <p class="value"><strong>{{ user.sats_balance }}</strong></p>
+                <p class="label" style="margin-top:0.6rem;">Billing</p>
+                <p class="value">
+                    {% if user.payg_enabled %}
+                        1 sat per login / PoF / paid action
+                    {% else %}
+                        Free mode (no charges)
+                    {% endif %}
+                </p>
 
                 {% if user.membership_expires_at %}
                     <p class="label" style="margin-top:0.6rem;">Membership expires</p>

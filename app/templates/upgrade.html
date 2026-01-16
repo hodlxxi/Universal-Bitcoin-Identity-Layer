@@ -205,6 +205,56 @@
         .note strong {
             color: var(--orange);
         }
+
+        .status-banner {
+            margin-top: 1rem;
+            padding: 0.85rem 1rem;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            background: rgba(0, 255, 136, 0.08);
+            color: var(--fg);
+            font-size: 0.92rem;
+        }
+
+        .status-banner.error {
+            border-color: rgba(255, 59, 48, 0.5);
+            background: rgba(255, 59, 48, 0.08);
+            color: #ffd6d1;
+        }
+
+        .invoice-card {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            border-radius: 14px;
+            border: 1px solid rgba(59, 130, 246, 0.4);
+            background: rgba(10, 14, 20, 0.65);
+        }
+
+        .invoice-field {
+            font-family: "Fira Mono", "SFMono-Regular", ui-monospace, monospace;
+            font-size: 0.85rem;
+            word-break: break-all;
+            margin-top: 0.5rem;
+            color: var(--muted);
+        }
+
+        .inline-inputs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            align-items: center;
+            margin-top: 0.75rem;
+        }
+
+        .inline-inputs input {
+            flex: 1;
+            min-width: 180px;
+            padding: 0.65rem 0.75rem;
+            border-radius: 10px;
+            border: 1px solid rgba(0, 255, 136, 0.25);
+            background: rgba(0, 0, 0, 0.4);
+            color: var(--fg);
+        }
     </style>
 </head>
 <body>
@@ -247,32 +297,57 @@
                 {% endif %}
             </div>
 
+            {% if message %}
+                <div class="status-banner">{{ message }}</div>
+            {% endif %}
+            {% if error %}
+                <div class="status-banner error">{{ error }}</div>
+            {% endif %}
+
             <form method="post">
                 <div class="plans">
                     <label>
-                        <input type="radio" name="plan" value="paid" checked>
-                        <strong>Dev membership (paid)</strong> — full HODLXXI dev dashboard access.
+                        <input type="radio" name="billing_mode" value="free"
+                               {% if not user or not user.payg_enabled %}checked{% endif %}>
+                        <strong>Free account</strong> — login with your real Bitcoin key, no charge.
                     </label>
                     <label>
-                        <input type="radio" name="plan" value="free_trial">
-                        <strong>Free trial (limited)</strong> — try features before committing.
+                        <input type="radio" name="billing_mode" value="payg"
+                               {% if user and user.payg_enabled %}checked{% endif %}>
+                        <strong>Pay‑as‑you‑go</strong> — 1 sat per login, PoF proof, and other paid actions.
                     </label>
                 </div>
 
                 <p class="note">
-                    <strong>Note:</strong> This is currently a demo.
-                    Submitting will mark your account as <em>paid</em> in the database.
-                    Lightning payment integration is coming soon.
+                    <strong>Note:</strong> Pay‑as‑you‑go only applies to real Bitcoin keys (no guests).
+                    Top up your balance with Lightning, then actions are billed at 1 sat each.
                 </p>
 
                 <button class="btn btn-primary" type="submit">
-                    Confirm &amp; Activate
+                    Save Billing Preference
                 </button>
                 <button class="btn btn-ghost" type="button"
                         onclick="window.location.href='{{ url_for('playground_page') }}'">
                     Back to Playground
                 </button>
             </form>
+
+            <div class="invoice-card">
+                <h3 style="margin-top:0;">Add sats to your balance</h3>
+                <p class="note" style="margin-top:0.4rem;">
+                    Create a Lightning invoice to top up your pay‑as‑you‑go balance.
+                </p>
+                <div class="inline-inputs">
+                    <input id="topupAmount" type="number" min="10" placeholder="Top-up amount (sats)">
+                    <button class="btn btn-primary" type="button" onclick="createTopupInvoice()">Create invoice</button>
+                </div>
+
+                <div id="invoiceOutput" class="invoice-field" style="display:none;"></div>
+                <div class="inline-inputs" style="margin-top:0.5rem;">
+                    <button class="btn btn-ghost" type="button" onclick="checkTopupInvoice()">Check payment</button>
+                    <span id="invoiceStatus" class="note" style="margin:0;"></span>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -341,6 +416,63 @@
         resize();
         raf = requestAnimationFrame(draw);
     })();
+    </script>
+
+    <script>
+    let activeInvoiceId = null;
+
+    async function createTopupInvoice() {
+        const amountInput = document.getElementById('topupAmount');
+        const amount = Number(amountInput.value || 0);
+        const output = document.getElementById('invoiceOutput');
+        const status = document.getElementById('invoiceStatus');
+        status.textContent = '';
+
+        if (!amount || amount < 10) {
+            status.textContent = 'Minimum top-up is 10 sats.';
+            return;
+        }
+
+        const resp = await fetch('/api/billing/create-invoice', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({amount_sats: amount})
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+            status.textContent = data.error || 'Failed to create invoice.';
+            return;
+        }
+
+        activeInvoiceId = data.invoice_id;
+        output.style.display = 'block';
+        output.textContent = data.payment_request;
+        status.textContent = `Invoice ready for ${data.amount_sats} sats.`;
+    }
+
+    async function checkTopupInvoice() {
+        const status = document.getElementById('invoiceStatus');
+        if (!activeInvoiceId) {
+            status.textContent = 'Create an invoice first.';
+            return;
+        }
+
+        const resp = await fetch('/api/billing/check-invoice', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({invoice_id: activeInvoiceId})
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+            status.textContent = data.error || 'Unable to check invoice.';
+            return;
+        }
+        if (data.paid) {
+            status.textContent = `Payment confirmed. Balance: ${data.sats_balance ?? 0} sats.`;
+        } else {
+            status.textContent = 'Payment not seen yet.';
+        }
+    }
     </script>
 </body>
 </html>
