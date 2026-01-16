@@ -22,7 +22,7 @@ cd deployment
 sudo bash deploy-production.sh
 ```
 
-> **Heads up:** The automation expects Gunicorn to run `wsgi:create_app()` under the `hodlxxi` user.  If you swap process managers or change service names, update the generated unit files before running the script.
+> **Heads up:** The automation expects Gunicorn to run `app.app:app` under the `hodlxxi` user.  If you swap process managers or change service names, update the generated unit files before running the script.
 
 ## Manual Flow
 
@@ -31,7 +31,7 @@ If you need granular control or want to audit each step, execute the helpers ind
 1. **Security Hardening** – `sudo bash security-hardening.sh`
    - Configures UFW, Fail2ban, system users, and filesystem permissions.
 2. **Reverse Proxy & TLS** – Install Nginx + Certbot and apply `nginx-hodlxxi.conf` (customise server names and upstreams to match your domain and port).
-3. **App Service** – Install/enable your process manager unit.  The provided scripts expect `/etc/systemd/system/app.service` invoking `gunicorn --config /srv/app/scripts/gunicorn.conf.py wsgi:create_app()`.
+3. **App Service** – Install/enable your process manager unit.  The provided scripts expect `/etc/systemd/system/app.service` invoking `gunicorn --config /srv/app/scripts/gunicorn.conf.py app.app:app`.
 4. **Backups** – `sudo bash setup-automated-backups.sh` installs `/usr/local/bin/hodlxxi-backup.sh` and related cron/systemd timers targeting `/backup/hodlxxi`.
 
 Review and adapt the scripts before running them against production systems—especially if you run multiple services on the same machine.
