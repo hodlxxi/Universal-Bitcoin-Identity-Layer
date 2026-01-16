@@ -7129,58 +7129,6 @@ def special_login():
     return jsonify(error="Invalid signature for all special users", verified=False), 403
 
 
-# ---- Legacy message-signature verification (JSON-only) ----
-# DEPRECATED: old signature flow, kept only for reference.
-# @app.route("/verify_signature", methods=["POST"])
-def verify_signature_legacy():
-    from flask import jsonify, request, session
-    data = request.get_json(silent=True) or {}
-    pubkey = (data.get("pubkey") or "").strip()  # compressed hex (02/03...)
-    signature = (data.get("signature") or "").strip()  # wallet base64 (Electrum/Sparrow/Core)
-    challenge = (data.get("challenge") or "").strip()  # shown on the Legacy tab
-
-    # Basic input
-    if not signature or not challenge:
-        return jsonify(error="Missing signature or challenge"), 400
-
-    # Must match the session challenge injected into the Legacy tab
-    sess = session.get("challenge")
-    if not sess or sess != challenge:
-        return jsonify(error="Invalid or expired challenge"), 400
-
-    if not pubkey:
-        return jsonify(error="Pubkey required"), 400  # (can add recovery later if you want it optional)
-
-    # Verify like your API: derive legacy address from pubkey and ask Bitcoin Core to verify
-    try:
-        rpc = get_rpc_connection()
-        addr = derive_legacy_address_from_pubkey(pubkey)
-        ok = rpc.verifymessage(addr, signature, challenge)
-        if not ok:
-            return jsonify(error="Invalid signature"), 403
-    except Exception as e:
-        return jsonify(error=f"Signature verification failed: {e}"), 500
-
-    # Access level (same rule you use in /api/verify)
-    try:
-        in_total, out_total = get_save_and_check_balances_for_pubkey(pubkey)
-        ratio = (out_total / in_total) if in_total > 0 else 0
-        access = "full" if ratio >= 1 else "limited"
-    except Exception:
-        access = "limited"
-
-    # Set session / cookies exactly like API
-    payload = {
-        "ok": True,
-        "verified": True,
-        "pubkey": pubkey,
-        "access_level": access,
-    }
-    resp = jsonify(payload)
-    resp = _finish_login(resp, pubkey, access)  # your helper used in /api/verify
-    return resp
-
-
 def _finish_login(resp, pubkey: str, level: str = "limited"):
     """Sets session, and (best-effort) sets OAuth cookies for convenience."""
     # Create/update user in membership system
