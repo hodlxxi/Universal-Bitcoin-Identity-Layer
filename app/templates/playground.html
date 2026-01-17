@@ -7,7 +7,25 @@
     <title>🎮 HODLXXI Playground - Test All Auth Methods</title>
 
     <!-- React 18 -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+
+<script>
+// GUEST_LABEL_PRETTY_PK_V1: show guest_label for current (PIN) guest in presence UI + anywhere else truncation is used
+function prettyPk(pk) {
+  try {
+    const ds = (document && document.body && document.body.dataset) ? document.body.dataset : {};
+    const myPk = ds.loggedIn || ds.loggedInPubkey || "";
+    const myLabel = ds.guestLabel || "";
+    if (myLabel && myPk && pk === myPk) return myLabel;
+  } catch (e) {}
+
+  if (!pk) return "";
+  // default truncation
+  if (pk.length <= 22) return pk;
+  return prettyPk(pk);
+}
+</script>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
@@ -427,7 +445,7 @@
     <div class="top-cta-text">
         {% if session.logged_in_pubkey %}
             <span class="top-cta-pill">✅ Logged in</span>
-            <span class="mono">{{ session.logged_in_pubkey[:18] }}…</span>
+            <span class="mono">{{ session.get("guest_label") or (session.logged_in_pubkey[:18] ~ "…") }}</span>
 
         {% else %}
             <span class="top-cta-pill">🎮 Playground</span>
@@ -443,7 +461,7 @@
 
 
     <div id="root"
-         data-logged-in="{{ session.get('logged_in_pubkey', '') }}"
+         data-logged-in="{{ session.get('logged_in_pubkey', '') }}" data-guest-label="{{ session.get('guest_label', '') }}"
          data-access-level="{{ session.get('access_level', 'guest') }}"
          data-issuer="{{ issuer }}"
          data-initial-tab="{{ initial_tab or 'legacy' }}">

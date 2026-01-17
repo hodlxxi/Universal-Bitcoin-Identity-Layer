@@ -502,6 +502,8 @@ def _pop_auth_code_pkce(code: str):
 
 EXPIRY_SECONDS = 45
 ACTIVE_SOCKETS: Dict[str, str] = {}
+ONLINE_USER_META = {}  # pubkey -> {'role': <role>, 'label': <label>}
+
 ONLINE_USERS: Set[str] = set()
 CHAT_HISTORY: List[Dict[str, any]] = []
 
@@ -1232,6 +1234,11 @@ def generate_challenge():
 # --- Minimal login/guest/dev helpers ---------------------------------
 @app.before_request
 def check_auth():
+    # GUEST_LOGIN_ALLOWLIST_V2: allow unauthenticated PIN/guest login endpoint
+    from flask import request
+    if request.path == '/guest_login':
+        return None
+
 
     # PUBLIC PREVIEW ROUTES (no login required)
     from flask import request as flask_request
@@ -1280,10 +1287,6 @@ def check_auth():
         or p.startswith("/api/playground") or p.startswith("/api/pof/") \
         or p.startswith("/play") \
     ):
-        return None
-
-    auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
         return None
 
     # 1.6) Public paths (no session required)
@@ -1379,14 +1382,31 @@ def on_connect(auth=None):
     ONLINE_META[pubkey] = role
 
     # Use emit() not socketio.emit()
-    emit("user:joined", {"pubkey": pubkey, "role": role}, broadcast=True)
-    
+    # PRESENCE_LABEL_BROADCAST_V2: attach label to presence join payload (PIN guests)
+    label = None
+    try:
+        if session.get('login_method') == 'pin_guest':
+            label = session.get('guest_label')
+    except Exception:
+        label = None
+    try:
+        ONLINE_USER_META[pubkey] = {'role': role, 'label': label}
+    except Exception:
+        pass
+    emit('user:joined', {'pubkey': pubkey, 'role': role, 'label': label}, broadcast=True)
     online_list = [
         {"pubkey": pk, "role": ONLINE_META.get(pk, "limited")} 
         for pk in ONLINE_USERS
     ]
-    emit("online:list", online_list, broadcast=True)
-
+    # PRESENCE_LABEL_BROADCAST_V2: ensure online:list items include label when available
+    try:
+        for it in online_list:
+            if isinstance(it, dict) and 'pubkey' in it and 'label' not in it:
+                meta = ONLINE_USER_META.get(it['pubkey'], {})
+                it['label'] = meta.get('label')
+    except Exception:
+        pass
+    emit('online:list', online_list, broadcast=True)
 @socketio.on("disconnect")
 def on_disconnect(*args, **kwargs):
     sid = request.sid
@@ -1405,10 +1425,15 @@ def on_disconnect(*args, **kwargs):
             {"pubkey": pk, "role": ONLINE_META.get(pk, "limited")} 
             for pk in ONLINE_USERS
         ]
-        emit("online:list", online_list, broadcast=True)
-
-
-
+        # PRESENCE_LABEL_BROADCAST_V2: ensure online:list items include label when available
+        try:
+            for it in online_list:
+                if isinstance(it, dict) and 'pubkey' in it and 'label' not in it:
+                    meta = ONLINE_USER_META.get(it['pubkey'], {})
+                    it['label'] = meta.get('label')
+        except Exception:
+            pass
+        emit('online:list', online_list, broadcast=True)
 def purge_old_messages():
     """Keep only messages newer than EXPIRY_SECONDS."""
     import time
@@ -2545,12 +2570,145 @@ def chat():
       window.location.href = hash ? base + hash : base;
     }
 
+    // PRESENCE_APPLY_LABELS_GLOBAL_V1: global helper to apply server-broadcast labels to presence DOM chips
+
+    try {
+
+      window.__applyPresenceLabels = window.__applyPresenceLabels || function() {
+
+        try {
+
+          const lm = window.__labelByPubkey || {};
+
+          const entries = Object.entries(lm).filter(([pk, lbl]) => pk && lbl);
+
+          if (!entries.length) return 0;
+
+
+          const tails = entries.map(([pk, lbl]) => {
+
+            const s = String(pk);
+
+            return { t8: s.slice(-8), t6: s.slice(-6), lbl: String(lbl) };
+
+          });
+
+
+          let changed = 0;
+
+          document.querySelectorAll('span,div,li,p,a,button').forEach((el) => {
+
+            try {
+
+              if (!el || (el.children && el.children.length)) return;
+
+              const txt = (el.textContent || '').trim();
+
+              if (!txt) return;
+
+              if (!(txt.includes('…') || txt.includes('...'))) return;
+
+              if (txt.length > 32) return;
+
+
+              for (const x of tails) {
+
+                if ((x.t8 && txt.endsWith(x.t8)) || (x.t6 && txt.endsWith(x.t6))) {
+
+                  el.textContent = x.lbl;
+
+                  changed += 1;
+
+                  break;
+
+                }
+
+              }
+
+            } catch(e) {}
+
+          });
+
+          return changed;
+
+        } catch(e) {}
+
+        return 0;
+
+      };
+
+
+      // Observe future rerenders (React)
+
+      if (!window.__presenceLabelObserver) {
+
+        window.__presenceLabelObserver = new MutationObserver(() => {
+
+          try {
+
+            clearTimeout(window.__presenceLabelTO);
+
+            window.__presenceLabelTO = setTimeout(() => {
+
+              try { window.__applyPresenceLabels && window.__applyPresenceLabels(); } catch(e) {}
+
+            }, 50);
+
+          } catch(e) {}
+
+        });
+
+        try {
+
+          window.__presenceLabelObserver.observe(document.body, { childList:true, subtree:true, characterData:true });
+
+        } catch(e) {}
+
+      }
+
+    } catch(e) {}
+
+
     function shortKey(pk) {
+
+  // PRESENCE_LABELMAP_FRONTEND_V1: prefer server-broadcast labels for ANY user (so everyone sees Guest-HOST)
+  try {
+    const lm = window.__labelByPubkey || {};
+    const lbl = lm[pk];
+    if (lbl) return lbl;
+  } catch(e) {}
+
+      // APP_PRESENCE_GUEST_LABEL_SHORTKEY_V1: show Guest-* label for current PIN guest instead of truncating pubkey
+
+      try {
+
+        const my = window.__myPubkey || '';
+
+        const gl = window.__guestLabel || '';
+
+        if (gl && my && pk === my) return gl;
+
+      } catch(e) {}
+  // GUEST_LABEL_UI_V1: show guest label for current (PIN) guest instead of truncated pubkey
+  if (window.__myPubkey === undefined) {
+    var ds = (document && document.body && document.body.dataset) ? document.body.dataset : {};
+    window.__myPubkey = ds.loggedInPubkey || ds.loggedIn || "";
+    window.__guestLabel = ds.guestLabel || "";
+  }
+  if (window.__guestLabel && window.__myPubkey && pk === window.__myPubkey) return window.__guestLabel;
+
       if (!pk) return "";
       return pk.length > 18 ? pk.slice(0,10) + "…" + pk.slice(-6) : pk;
     }
 
     function displayName(pk) {
+      // PRESENCE_DISPLAYNAME_LABELMAP_V1: prefer server-broadcast labels for ANY user (PIN guests, etc.)
+      try {
+        const lm = window.__labelByPubkey || {};
+        const lbl = lm[pk];
+        if (lbl) return lbl;
+      } catch(e) {}
+
       if (!pk) return "anon";
       if (SPECIAL_NAMES && SPECIAL_NAMES[pk]) return SPECIAL_NAMES[pk];
       const last4 = pk.slice(-4);
@@ -2649,7 +2807,7 @@ def chat():
             <span class="user-dot"></span>
             <div style="min-width:0;">
               <div class="user-name">${displayName(pk).replace(/</g,'&lt;')}</div>
-              ${isMe ? `<div class="user-tag">you</div>` : `<div class="user-sub">${isGuest ? "guest" : ("…"+pk.slice(-4))}</div>`}
+              ${isMe ? `<div class="user-tag">you</div>` : `<div class="user-sub">${shortKey(pk)}</div><!-- PRESENCE_USER_SUB_USE_SHORTKEY_V1 -->`}
             </div>
           </div>
           <button class="user-btn" type="button">@</button>
@@ -2711,10 +2869,236 @@ def chat():
 
     socket.on('chat:message', renderMessage);
 
-    socket.on('online:list', (payload) => renderUserList(extractPubkeys(payload)));
+    // APP_PRESENCE_ONLINE_CACHE_V1: cache latest payload so we can re-render once guest_label arrives
+
+    // APP_PRESENCE_GUEST_LABEL_INIT_V1: fetch guest_label for current session so presence UI can show Guest-HOST
+
+    (function(){
+
+      if (window.__guestLabelInit) return; window.__guestLabelInit = true;
+
+      try {
+
+        const ds = (document.body && document.body.dataset) ? document.body.dataset : {};
+
+        window.__myPubkey = window.__myPubkey || ds.myPubkey || ds.loggedInPubkey || ds.loggedIn || '';
+
+        window.__guestLabel = window.__guestLabel || ds.guestLabel || '';
+
+      } catch(e) {}
+
+      try {
+
+        fetch('/api/debug/session', { credentials: 'same-origin' })
+
+          .then(r => r.json())
+
+          .then(d => {
+
+            if (!d) return;
+
+            window.__myPubkey = d.pubkey || window.__myPubkey || '';
+
+            window.__guestLabel = d.guest_label || d.guestLabel || window.__guestLabel || '';
+        // APP_PRESENCE_DOM_APPLY_GUESTLABEL_V1: persist to dataset + update rendered presence chips immediately
+        try {
+          if (document && document.body && document.body.dataset) {
+            document.body.dataset.guestLabel = window.__guestLabel || '';
+          // APP_PRESENCE_FORCE_GUESTLABEL_DOMFIX_V2: best-effort DOM fix for presence chips that still show truncated pubkey like …59cb
+          try {
+            window.__applyGuestLabelPresence = window.__applyGuestLabelPresence || function() {
+              try {
+                const my = (window.__myPubkey || '').trim();
+                const gl = (window.__guestLabel || '').trim();
+                if (!my || !gl) return;
+
+                const tail8 = my.slice(-8);
+                const tail6 = my.slice(-6);
+                const tail4 = my.slice(-4);
+
+                // Find likely presence/userlist containers
+                const roots = [];
+                document.querySelectorAll('[id],[class]').forEach((el) => {
+                  const s = ((el.id || '') + ' ' + (el.className || '')).toLowerCase();
+                  if (s.includes('online') || s.includes('presence') || s.includes('userlist') || s.includes('user-list') || s.includes('users')) {
+                    roots.push(el);
+                  }
+                });
+                if (!roots.length) roots.push(document.body);
+
+                // Only touch leaf nodes that contain ellipsis and end with our tail
+                const tryTails = (tails) => {
+                  let changed = 0;
+                  roots.slice(0, 10).forEach((root) => {
+                    root.querySelectorAll('*').forEach((el) => {
+                      try {
+                        if (!el || (el.children && el.children.length)) return;
+                        const txt = (el.textContent || '').trim();
+                        if (!txt) return;
+                        if (!(txt.includes('…') || txt.includes('...'))) return;
+                        if (tails.some(t => t && txt.endsWith(t))) {
+                          el.textContent = gl;
+                          changed += 1;
+                        }
+                      } catch(e) {}
+                    });
+                  });
+                  return changed;
+                };
+
+                // Prefer longer tails first (less collision), then fallback to tail4
+                if (tryTails([tail8, tail6]) === 0) {
+                  // Only apply tail4 replacement if the text is short-ish (chip), to avoid accidental matches
+                  roots.slice(0, 10).forEach((root) => {
+                    root.querySelectorAll('*').forEach((el) => {
+                      try {
+                        if (!el || (el.children && el.children.length)) return;
+                        const txt = (el.textContent || '').trim();
+                        if (!txt) return;
+                        if (txt.length > 20) return;
+                        if (!(txt.includes('…') || txt.includes('...'))) return;
+                        if (tail4 && txt.endsWith(tail4)) el.textContent = gl;
+                      } catch(e) {}
+                    });
+                  });
+                }
+              } catch(e) {}
+            };
+          } catch(e) {}
+
+          // Run now + again shortly (covers “render happens after fetch” timing)
+          try { window.__applyGuestLabelPresence && window.__applyGuestLabelPresence(); } catch(e) {}
+          try { setTimeout(() => window.__applyGuestLabelPresence && window.__applyGuestLabelPresence(), 250); } catch(e) {}
+          try { setTimeout(() => window.__applyGuestLabelPresence && window.__applyGuestLabelPresence(), 1000); } catch(e) {}
+
+          }
+        } catch(e) {}
+        try {
+          const my = window.__myPubkey || '';
+          const gl = window.__guestLabel || '';
+          if (my && gl) {
+            document.querySelectorAll('[data-pubkey]').forEach((el) => {
+              try {
+                if (el && el.dataset && el.dataset.pubkey === my) {
+                  el.textContent = gl;
+                }
+              } catch(e) {}
+            });
+          }
+        } catch(e) {}
+
+
+            // Re-render online list if we already drew it
+
+            if (window.__guestLabel && window.__lastOnlinePayload && typeof renderUserList === 'function' && typeof extractPubkeys === 'function') {
+
+              try { renderUserList(extractPubkeys(window.__lastOnlinePayload)); } catch(e) {}
+
+            }
+
+          })
+
+          .catch(() => {});
+
+      } catch(e) {}
+
+    })();
+
+
+    socket.on('online:list', (payload) => {
+      // PRESENCE_LABELMAP_SOCKET_V2: build label map from server payload so everyone renders Guest-* labels
+      // PRESENCE_DOM_LABEL_APPLY_V1: apply label map to any presence chips that still show truncated pubkey like …59cb
+      try {
+        window.__applyPresenceLabels = window.__applyPresenceLabels || function() {
+          try {
+            const lm = window.__labelByPubkey || {};
+            const entries = Object.entries(lm).filter(([pk, lbl]) => pk && lbl);
+            if (!entries.length) return;
+
+            // precompute tails
+            const tails = entries.map(([pk, lbl]) => {
+              const s = String(pk);
+              return { t8: s.slice(-8), t6: s.slice(-6), lbl: String(lbl) };
+            });
+
+            // scan leaf nodes likely used as chips
+            document.querySelectorAll('span,div,li,p,a,button').forEach((el) => {
+              try {
+                if (!el || (el.children && el.children.length)) return;
+                const txt = (el.textContent || '').trim();
+                if (!txt) return;
+                if (!(txt.includes('…') || txt.includes('...'))) return;
+                if (txt.length > 32) return; // avoid touching paragraphs
+
+                for (const x of tails) {
+                  if ((x.t8 && txt.endsWith(x.t8)) || (x.t6 && txt.endsWith(x.t6))) {
+                    el.textContent = x.lbl;
+                    break;
+                  }
+                }
+              } catch(e) {}
+            });
+          } catch(e) {}
+        };
+
+        // observe re-renders (React / DOM updates)
+        if (!window.__presenceLabelObserver) {
+          window.__presenceLabelObserver = new MutationObserver(() => {
+            try {
+              clearTimeout(window.__presenceLabelTO);
+              window.__presenceLabelTO = setTimeout(() => {
+                try { window.__applyPresenceLabels && window.__applyPresenceLabels(); } catch(e) {}
+              }, 50);
+            } catch(e) {}
+          });
+          try {
+            window.__presenceLabelObserver.observe(document.body, { childList:true, subtree:true, characterData:true });
+          } catch(e) {}
+        }
+
+        // run now and shortly after
+        try { window.__applyPresenceLabels(); } catch(e) {}
+        try { setTimeout(() => window.__applyPresenceLabels && window.__applyPresenceLabels(), 50); } catch(e) {}
+        try { setTimeout(() => window.__applyPresenceLabels && window.__applyPresenceLabels(), 250); } catch(e) {}
+      } catch(e) {}
+
+      try {
+        const list = Array.isArray(payload) ? payload : (payload ? [payload] : []);
+        window.__labelByPubkey = window.__labelByPubkey || {};
+        list.forEach((x) => {
+          try {
+            if (x && typeof x === 'object' && x.pubkey && x.label) {
+              window.__labelByPubkey[x.pubkey] = x.label;
+            }
+          } catch(e) {}
+        });
+      } catch(e) {}
+
+      try { window.__labelByPubkey = window.__labelByPubkey || {}; (payload||[]).forEach((x)=>{ if(x && typeof x==='object' && x.pubkey && x.label){ window.__labelByPubkey[x.pubkey]=x.label; } }); } catch(e) {}
+
+
+      try { window.__lastOnlinePayload = payload; } catch (e) {}
+
+      renderUserList(extractPubkeys(payload));
+
+      try { window.__applyGuestLabelPresence && window.__applyGuestLabelPresence(); } catch(e) {}
+    });
+
     socket.on('user:list',   (payload) => renderUserList(extractPubkeys(payload)));
 
     socket.on('user:joined', (payload) => {
+      // PRESENCE_LABELMAP_SOCKET_V2: also capture label on incremental join events
+      try { window.__applyPresenceLabels && window.__applyPresenceLabels(); } catch(e) {}
+
+      try {
+        if (payload && typeof payload === 'object' && payload.pubkey && payload.label) {
+          window.__labelByPubkey = window.__labelByPubkey || {};
+          window.__labelByPubkey[payload.pubkey] = payload.label;
+        }
+      } catch(e) {}
+
+      try { if(payload && payload.pubkey && payload.label){ window.__labelByPubkey = window.__labelByPubkey || {}; window.__labelByPubkey[payload.pubkey]=payload.label; } } catch(e) {}
+
       const [pk] = extractPubkeys([payload]);
       if (!pk || !userListEl) return;
       const existing = Array.from(userListEl.querySelectorAll('.user-item')).map(li => li.dataset.pubkey);
@@ -4473,29 +4857,88 @@ def verify_signature():
 
 @app.route("/guest_login", methods=["POST"])
 def guest_login():
-    """Guest or PIN login with clear identity separation"""
+    """PIN guest login (stable identity) + random guest fallback."""
     import hashlib
-    data = request.get_json(silent=True) or {}
-    pin = (data.get("pin") or "").strip()
+    import secrets
+    import os
+    import re as _re
+    from flask import request, jsonify, session
+
+    # already logged in
     if session.get("logged_in_pubkey"):
-        return jsonify({"ok": True, "label": session.get("guest_label")})
+        return jsonify(ok=True, label=session.get("guest_label"), already_logged_in=True), 200
+
+    data = request.get_json(silent=True) or {}
+    pin = (request.form.get("pin") or request.values.get("pin") or data.get("pin") or "").strip().lower()
+
+    # Parse GUEST_STATIC_PINS env: "9ca5:9ca5,e923:HOST,..."
+    raw = (os.getenv("GUEST_STATIC_PINS", "") or "").strip()
+    pins = {}
+    for part in _re.split(r"[,\s]+", raw):
+        part = (part or "").strip()
+        if not part:
+            continue
+        if ":" in part:
+            k, v = part.split(":", 1)
+            k = (k or "").strip().lower()
+            v = (v or "").strip()
+            if k:
+                pins[k] = v or k
+        else:
+            k = part.strip().lower()
+            if k:
+                pins[k] = k
+
+    # --- PIN login: stable identity ---
     if pin:
-        label = GUEST_PINS.get(pin)
+        label = pins.get(pin)
         if not label:
-            return jsonify({"error": "Invalid PIN"}), 403
-        guest_id = f"guest-pin-{hashlib.sha256(pin.encode()).hexdigest()[:16]}"
+            return jsonify(ok=False, error="Invalid PIN"), 403
+
+        guest_id = f"guest-pin-{hashlib.sha256(pin.encode('utf-8')).hexdigest()[:16]}"
         session["logged_in_pubkey"] = guest_id
-        session["logged_in_privkey"] = None
-        session["guest_label"] = label
-        session["login_method"] = "pin"
-    else:
-        rand_id = uuid.uuid4().hex[:12]
-        session["logged_in_pubkey"] = f"guest-random-{rand_id}"
-        session["logged_in_privkey"] = None
-        session["guest_label"] = f"Guest-{rand_id[:6]}"
-        session["login_method"] = "random_guest"
-    session.permanent = True
-    return jsonify({"ok": True, "label": session["guest_label"]})
+        session["access_level"] = "limited"
+        session["login_method"] = "pin_guest"
+        session["guest_label"] = f"Guest-{label}"
+
+        return jsonify(ok=True, label=session["guest_label"], pubkey=guest_id, login_method="pin_guest"), 200
+
+    # --- Random guest fallback (no pin provided) ---
+    rid = secrets.token_hex(6)
+    guest_id = f"guest-random-{rid}"
+    session["logged_in_pubkey"] = guest_id
+    session["access_level"] = "limited"
+    session["login_method"] = "random_guest"
+    session["guest_label"] = f"Guest-{rid}"
+    return jsonify(ok=True, label=session["guest_label"], pubkey=guest_id, login_method="random_guest"), 200
+
+def _guest_static_pins_map():
+    """
+    Parse GUEST_STATIC_PINS env like:
+      "9ca5:9ca5,e923:HOST,4f96:4f96"
+    Returns dict: {pin_lower: label}
+    """
+    import os
+    import re
+    raw = (os.getenv("GUEST_STATIC_PINS", "") or "").strip()
+    if not raw:
+        return {}
+    out = {}
+    for part in re.split(r"[,\s]+", raw):
+        part = (part or "").strip()
+        if not part:
+            continue
+        if ":" in part:
+            k, v = part.split(":", 1)
+            k = (k or "").strip().lower()
+            v = (v or "").strip()
+            if k:
+                out[k] = v or k
+        else:
+            k = part.strip().lower()
+            if k:
+                out[k] = k
+    return out
 
 
 # ---- Special Login ----
@@ -9268,8 +9711,19 @@ def playground():
 # API_DEBUG_SESSION_ALIAS_V1
 @app.route("/api/debug/session", methods=["GET"])
 def api_debug_session_alias():
-    """Compat endpoint: some frontend code calls /api/debug/session."""
-    return api_whoami()
+    """Debug: return current session identity info."""
+    from flask import jsonify, session
+
+    pubkey = session.get("logged_in_pubkey")
+    return jsonify(
+        ok=True,
+        logged_in=bool(pubkey),
+        pubkey=pubkey,
+        access_level=session.get("access_level"),
+        login_method=session.get("login_method"),
+        guest_label=session.get("guest_label"),
+    ), 200
+
 # /API_DEBUG_SESSION_ALIAS_V1
 
 
