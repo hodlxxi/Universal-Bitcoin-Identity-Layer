@@ -221,12 +221,10 @@ def create_invoice_route():
         if amount_sats == 0:
             return jsonify({"error": "Cannot create invoice for free plan"}), 400
 
-        import secrets
-
         from app.payments.ln import create_invoice
 
-        invoice_id = f"inv_{secrets.token_urlsafe(16)}"
-        payment_request = f"lnbc{amount_sats}n1p{secrets.token_urlsafe(100)}"
+        memo = f"HODLXXI plan upgrade ({plan_info['name']})"
+        payment_request, invoice_id = create_invoice(amount_sats, memo, user_pubkey)
 
         with session_scope() as db_session:
             db_session.execute(

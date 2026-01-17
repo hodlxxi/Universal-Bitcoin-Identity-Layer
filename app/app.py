@@ -79,15 +79,20 @@ from flask import make_response
 
 from .ubid_membership import (
     UbidUser,
+    charge_action,
+    create_payg_invoice,
+    get_user,
     on_successful_login,
     require_paid_user,
+    set_payg,
+    settle_payg_invoice,
 )
 
 
 
 # --- Simple in-memory user view object for dashboard/upgrade ---
 class SimpleUser:
-    def __init__(self, pubkey, plan="free_trial", sats_balance=0, expires_at=None):
+    def __init__(self, pubkey, plan="free", sats_balance=0, expires_at=None):
         self.pubkey = pubkey
         self.plan = plan
         self.sats_balance = sats_balance
@@ -548,6 +553,8 @@ app.config.setdefault('SESSION_COOKIE_DOMAIN', '.hodlxxi.com')
 app.config.setdefault('SESSION_COOKIE_SECURE', True)
 app.config.setdefault('SESSION_COOKIE_SAMESITE', 'Lax')
 # /COOKIE_DOMAIN_V1
+app.config.setdefault("PAYG_ACTION_COSTS", {"login": 1, "pof": 1, "other": 1})
+app.config.setdefault("PAYG_MIN_TOPUP_SATS", 10)
 
 # === DOCS_ROUTES_REGISTER_V1 ===
 try:
@@ -9431,6 +9438,92 @@ def api_debug_session_alias():
 # /API_DEBUG_SESSION_ALIAS_V1
 
 
+@app.route("/upgrade", methods=["GET", "POST"])
+def upgrade():
+    logged_in_pubkey = session.get("logged_in_pubkey")
+    user = get_user(logged_in_pubkey) if logged_in_pubkey else None
+    message = None
+    error = None
+
+    if request.method == "POST":
+        if not logged_in_pubkey:
+            return redirect(url_for("login", next="/upgrade"))
+        if str(logged_in_pubkey).startswith("guest-"):
+            error = "Guests must login with a real Bitcoin key to enable billing."
+        else:
+            billing_mode = (request.form.get("billing_mode") or "free").strip()
+            if billing_mode not in {"free", "payg"}:
+                error = "Invalid billing mode."
+            else:
+                user = set_payg(logged_in_pubkey, billing_mode == "payg")
+                if billing_mode == "free":
+                    user.plan = "free"
+                message = "Billing preference updated."
+
+    return render_template(
+        "upgrade.html",
+        user=user,
+        logged_in_pubkey=logged_in_pubkey,
+        message=message,
+        error=error,
+    )
+
+
+@app.route("/api/billing/create-invoice", methods=["POST"])
+def api_billing_create_invoice():
+    logged_in_pubkey = session.get("logged_in_pubkey")
+    if not logged_in_pubkey:
+        return jsonify({"ok": False, "error": "Login required."}), 401
+    if str(logged_in_pubkey).startswith("guest-"):
+        return jsonify({"ok": False, "error": "Guests cannot create invoices."}), 403
+
+    data = request.get_json() or {}
+    try:
+        amount_sats = int(data.get("amount_sats") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "amount_sats must be an integer."}), 400
+    min_topup = int(app.config.get("PAYG_MIN_TOPUP_SATS", 10))
+    if amount_sats < min_topup:
+        return jsonify({"ok": False, "error": f"Minimum top-up is {min_topup} sats."}), 400
+
+    memo = f"HODLXXI pay-as-you-go topup ({amount_sats} sats)"
+    payment_request, invoice_id = create_payg_invoice(logged_in_pubkey, amount_sats, memo)
+
+    return jsonify(
+        {
+            "ok": True,
+            "invoice_id": invoice_id,
+            "payment_request": payment_request,
+            "amount_sats": amount_sats,
+        }
+    )
+
+
+@app.route("/api/billing/check-invoice", methods=["POST"])
+def api_billing_check_invoice():
+    logged_in_pubkey = session.get("logged_in_pubkey")
+    if not logged_in_pubkey:
+        return jsonify({"ok": False, "error": "Login required."}), 401
+    if str(logged_in_pubkey).startswith("guest-"):
+        return jsonify({"ok": False, "error": "Guests cannot check invoices."}), 403
+
+    data = request.get_json() or {}
+    invoice_id = (data.get("invoice_id") or "").strip()
+    if not invoice_id:
+        return jsonify({"ok": False, "error": "invoice_id required."}), 400
+
+    paid, user = settle_payg_invoice(invoice_id)
+    if not user:
+        user = get_user(logged_in_pubkey)
+    return jsonify(
+        {
+            "ok": True,
+            "paid": paid,
+            "sats_balance": user.sats_balance if user else None,
+        }
+    )
+
+
 
 # API_POF_VERIFY_PSBT_V1
 @app.route("/api/pof/verify_psbt", methods=["POST"])
@@ -9458,6 +9551,11 @@ def api_pof_verify_psbt():
         spk = (session.get("logged_in_pubkey") or "").strip()
         if spk:
             pubkey = spk
+    spk = (session.get("logged_in_pubkey") or "").strip()
+    if spk and pubkey and pubkey == spk:
+        ok, reason = charge_action(pubkey, "pof")
+        if not ok:
+            return jsonify(ok=False, error="Pay-as-you-go balance too low.", reason=reason), 402
 
     # ACTIVE_CHALLENGES must exist in your app (it does in your /api/challenge flow)
     ch = ACTIVE_CHALLENGES.get(cid) if "ACTIVE_CHALLENGES" in globals() else None
