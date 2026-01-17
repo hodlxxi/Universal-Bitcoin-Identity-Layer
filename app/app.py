@@ -699,7 +699,7 @@ def metrics():
             "chat_history_size": len(CHAT_HISTORY),
             "active_challenges": len(ACTIVE_CHALLENGES),
             "lnurl_sessions": len(LNURL_SESSIONS),
-                    "db": _db_metrics_counts_cached(),
+                    "db": (_db_metrics_counts_cached() if "_db_metrics_counts_cached" in globals() else {}),
         }
         return jsonify({"metrics": metrics_data}), 200
     except Exception as e:
@@ -8447,8 +8447,7 @@ def metrics_prometheus():
         ]
         
         # DB totals (always emitted; 0 if unavailable)
-        db = _db_metrics_counts_cached()
-
+        db = _db_metrics_counts_cached() if "_db_metrics_counts_cached" in globals() else {}
         def _emit_gauge(name: str, help_text: str, value) -> None:
             try:
                 v = int(value or 0)
