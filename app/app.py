@@ -9731,6 +9731,11 @@ def api_debug_session_alias():
 def upgrade():
     logged_in_pubkey = session.get("logged_in_pubkey")
     user = get_user(logged_in_pubkey) if logged_in_pubkey else None
+    # UPGRADE_ENSURE_USER_V1
+    # get_user() is in-memory; after a restart it may be empty even for a real-key session.
+    if logged_in_pubkey and not str(logged_in_pubkey).startswith("guest-") and user is None:
+        user = set_payg(logged_in_pubkey, False)
+
     message = None
     error = None
 
@@ -9760,6 +9765,31 @@ def upgrade():
 
 @app.route("/api/billing/create-invoice", methods=["POST"])
 def api_billing_create_invoice():
+    from flask import request, jsonify, session, current_app
+    import os
+    from urllib.parse import urlparse
+    import psycopg2
+
+    def _pg_connect():
+        dsn = (
+            os.getenv("DATABASE_URL")
+            or current_app.config.get("DATABASE_URL")
+            or current_app.config.get("SQLALCHEMY_DATABASE_URI")
+        )
+        if dsn:
+            dsn = dsn.strip()
+            if dsn.startswith("postgres://"):
+                dsn = "postgresql://" + dsn[len("postgres://"):]
+            return psycopg2.connect(dsn)
+
+        # fallback to PG* envs
+        host = os.getenv("PGHOST", "127.0.0.1")
+        port = int(os.getenv("PGPORT", "5432"))
+        user = os.getenv("PGUSER", "hodlxxi")
+        password = os.getenv("PGPASSWORD", "")
+        dbname = os.getenv("PGDATABASE", "hodlxxi")
+        return psycopg2.connect(host=host, port=port, user=user, password=password, dbname=dbname)
+
     logged_in_pubkey = session.get("logged_in_pubkey")
     if not logged_in_pubkey:
         return jsonify({"ok": False, "error": "Login required."}), 401
@@ -9771,12 +9801,37 @@ def api_billing_create_invoice():
         amount_sats = int(data.get("amount_sats") or 0)
     except (TypeError, ValueError):
         return jsonify({"ok": False, "error": "amount_sats must be an integer."}), 400
-    min_topup = int(app.config.get("PAYG_MIN_TOPUP_SATS", 10))
+
+    min_topup = int(current_app.config.get("PAYG_MIN_TOPUP_SATS", 10))
     if amount_sats < min_topup:
         return jsonify({"ok": False, "error": f"Minimum top-up is {min_topup} sats."}), 400
 
     memo = f"HODLXXI pay-as-you-go topup ({amount_sats} sats)"
     payment_request, invoice_id = create_payg_invoice(logged_in_pubkey, amount_sats, memo)
+
+    # Persist invoice in Postgres so you can settle by DB status even without Lightning.
+    try:
+        with _pg_connect() as conn:
+            with conn.cursor() as cur:
+                # ensure user row exists
+                cur.execute("select 1 from ubid_users where pubkey=%s limit 1", (logged_in_pubkey,))
+                if cur.fetchone() is None:
+                    cur.execute(
+                        "insert into ubid_users (pubkey, plan, sats_balance, membership_expires_at, created_at, last_login_at, payg_enabled) "
+                        "values (%s, 'free', 0, null, now(), now(), true)",
+                        (logged_in_pubkey,),
+                    )
+
+                # insert payment row if missing
+                cur.execute("select 1 from payments where invoice_id=%s limit 1", (invoice_id,))
+                if cur.fetchone() is None:
+                    cur.execute(
+                        "insert into payments (user_pubkey, invoice_id, payment_request, amount_sats, status, plan, created_at, expires_at, metadata) "
+                        "values (%s, %s, %s, %s, 'pending', 'payg', now(), now() + interval '1 hour', '{}'::jsonb)",
+                        (logged_in_pubkey, invoice_id, payment_request, amount_sats),
+                    )
+    except Exception:
+        current_app.logger.exception("billing: failed to persist invoice to Postgres")
 
     return jsonify(
         {
@@ -9790,6 +9845,30 @@ def api_billing_create_invoice():
 
 @app.route("/api/billing/check-invoice", methods=["POST"])
 def api_billing_check_invoice():
+    from flask import request, jsonify, session, current_app
+    import os
+    import json
+    import psycopg2
+
+    def _pg_connect():
+        dsn = (
+            os.getenv("DATABASE_URL")
+            or current_app.config.get("DATABASE_URL")
+            or current_app.config.get("SQLALCHEMY_DATABASE_URI")
+        )
+        if dsn:
+            dsn = dsn.strip()
+            if dsn.startswith("postgres://"):
+                dsn = "postgresql://" + dsn[len("postgres://"):]
+            return psycopg2.connect(dsn)
+
+        host = os.getenv("PGHOST", "127.0.0.1")
+        port = int(os.getenv("PGPORT", "5432"))
+        user = os.getenv("PGUSER", "hodlxxi")
+        password = os.getenv("PGPASSWORD", "")
+        dbname = os.getenv("PGDATABASE", "hodlxxi")
+        return psycopg2.connect(host=host, port=port, user=user, password=password, dbname=dbname)
+
     logged_in_pubkey = session.get("logged_in_pubkey")
     if not logged_in_pubkey:
         return jsonify({"ok": False, "error": "Login required."}), 401
@@ -9801,17 +9880,56 @@ def api_billing_check_invoice():
     if not invoice_id:
         return jsonify({"ok": False, "error": "invoice_id required."}), 400
 
-    paid, user = settle_payg_invoice(invoice_id)
-    if not user:
-        user = get_user(logged_in_pubkey)
-    return jsonify(
-        {
-            "ok": True,
-            "paid": paid,
-            "sats_balance": user.sats_balance if user else None,
-        }
-    )
+    try:
+        with _pg_connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "select p.user_pubkey, p.amount_sats, p.status, "
+                    "coalesce((p.metadata->>'credited')::boolean,false) as credited, "
+                    "coalesce(u.sats_balance,0) as sats_balance "
+                    "from payments p left join ubid_users u on u.pubkey=p.user_pubkey "
+                    "where p.invoice_id=%s limit 1",
+                    (invoice_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({"ok": False, "error": "Unknown invoice_id"}), 404
 
+                inv_pubkey, amt, status, credited, sats_balance = row
+
+                if inv_pubkey != logged_in_pubkey:
+                    return jsonify({"ok": False, "error": "Invoice does not belong to current user"}), 403
+
+                status = (status or "").lower()
+                paid = (status == "paid")
+
+                # If not marked paid in DB, ask LN backend (will be False in stub mode).
+                if not paid:
+                    try:
+                        from app.payments.ln import check_invoice_paid
+                        if check_invoice_paid(invoice_id):
+                            cur.execute("update payments set status='paid', paid_at=now() where invoice_id=%s", (invoice_id,))
+                            paid = True
+                    except Exception:
+                        current_app.logger.exception("billing: check_invoice_paid failed")
+
+                # If paid and not yet credited, credit once (idempotent).
+                if paid and not credited:
+                    cur.execute(
+                        "update ubid_users set sats_balance = coalesce(sats_balance,0) + %s where pubkey=%s",
+                        (int(amt or 0), logged_in_pubkey),
+                    )
+                    cur.execute(
+                        "update payments set metadata = coalesce(metadata,'{}'::jsonb) || %s::jsonb where invoice_id=%s",
+                        (json.dumps({"credited": True, "credited_at": "now"}), invoice_id),
+                    )
+                    cur.execute("select coalesce(sats_balance,0) from ubid_users where pubkey=%s", (logged_in_pubkey,))
+                    sats_balance = int(cur.fetchone()[0])
+
+        return jsonify({"ok": True, "paid": bool(paid), "sats_balance": int(sats_balance)})
+    except Exception:
+        current_app.logger.exception("billing: check-invoice failed")
+        return jsonify({"ok": False, "error": "Internal error"}), 500
 
 
 # API_POF_VERIFY_PSBT_V1

@@ -1,3 +1,9 @@
+{# UPGRADE_TEMPLATE_SAFE_DEFAULTS_V1 #}
+{% set plan = (plan if user else 'free') %}
+{% set sats_balance = (sats_balance if user else 0) %}
+{% set payg_enabled = (payg_enabled if user else false) %}
+{% set membership_expires_at = (membership_expires_at if user else none) %}
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -267,7 +273,7 @@
                 ✅ Logged in as {{ user.pubkey[:18] }}…
             </span>
             <button class="top-cta-btn"
-                    onclick="window.location.href='{{ url_for('dev_dashboard') }}'">
+                    onclick="window.location.href='{{ url_for('dev.dashboard') }}'">
                 Open my HODLXXI dashboard
             </button>
         {% else %}
@@ -308,12 +314,12 @@
                 <div class="plans">
                     <label>
                         <input type="radio" name="billing_mode" value="free"
-                               {% if not user or not user.payg_enabled %}checked{% endif %}>
+                               {% if not user or not payg_enabled %}checked{% endif %}>
                         <strong>Free account</strong> — login with your real Bitcoin key, no charge.
                     </label>
                     <label>
                         <input type="radio" name="billing_mode" value="payg"
-                               {% if user and user.payg_enabled %}checked{% endif %}>
+                               {% if user and payg_enabled %}checked{% endif %}>
                         <strong>Pay‑as‑you‑go</strong> — 1 sat per login, PoF proof, and other paid actions.
                     </label>
                 </div>
@@ -327,7 +333,7 @@
                     Save Billing Preference
                 </button>
                 <button class="btn btn-ghost" type="button"
-                        onclick="window.location.href='{{ url_for('playground_page') }}'">
+                        onclick="window.location.href='{{ url_for('playground') }}'">
                     Back to Playground
                 </button>
             </form>

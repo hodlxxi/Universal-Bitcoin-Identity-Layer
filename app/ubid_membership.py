@@ -218,7 +218,7 @@ def require_paid_user():
     user = require_login()
     if user is None:
         # endpoint for /playground is 'playground_page' in your app
-        return None, redirect(url_for("playground_page"))
+        return None, redirect(url_for("playground"))
 
     # update plan if membership expired
     now = datetime.utcnow()
