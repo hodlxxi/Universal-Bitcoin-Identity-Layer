@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Account • HODLXXI</title>
+
+  {# If you already have a base CSS file, include it here #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+
+  <style>
+    /* Minimal “matrix-ish” styling that should blend with your existing theme */
+    .wrap { max-width: 980px; margin: 0 auto; padding: 24px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 900px){ .row { grid-template-columns: 1fr; } }
+
+    .card {
+      border: 1px solid rgba(0,255,128,.35);
+      box-shadow: 0 0 18px rgba(0,255,128,.18);
+      border-radius: 14px;
+      padding: 16px;
+      background: rgba(0,0,0,.55);
+      backdrop-filter: blur(6px);
+    }
+    .h { font-size: 18px; margin: 0 0 8px 0; }
+    .muted { opacity: .78; font-size: 13px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .k { opacity:.8; }
+    .v { font-weight: 600; }
+
+    .pill {
+      display:inline-flex; align-items:center; gap:8px;
+      border:1px solid rgba(0,255,128,.35);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+    .pill .dot { width:8px; height:8px; border-radius:50%; background: rgba(0,255,128,.8); box-shadow: 0 0 10px rgba(0,255,128,.6); }
+    .pill.warn .dot { background: rgba(255,180,0,.9); box-shadow: 0 0 10px rgba(255,180,0,.6); }
+    .pill.bad .dot { background: rgba(255,60,60,.9); box-shadow: 0 0 10px rgba(255,60,60,.6); }
+
+    .btn {
+      cursor: pointer;
+      border: 1px solid rgba(0,255,128,.35);
+      background: rgba(0,0,0,.45);
+      color: rgba(220,255,240,.95);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-weight: 600;
+    }
+    .btn:hover { box-shadow: 0 0 18px rgba(0,255,128,.18); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .stack { display:flex; flex-direction:column; gap:10px; }
+    .inline { display:flex; gap:10px; flex-wrap: wrap; align-items:center; }
+
+    .table { width: 100%; border-collapse: collapse; }
+    .table th, .table td { text-align:left; padding: 10px 8px; border-bottom: 1px solid rgba(0,255,128,.18); }
+    .table th { font-size: 12px; opacity: .8; }
+
+    .input {
+      width: 180px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(0,255,128,.35);
+      background: rgba(0,0,0,.45);
+      color: rgba(220,255,240,.95);
+    }
+
+    .notice { padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(0,255,128,.25); }
+    .notice.warn { border-color: rgba(255,180,0,.45); }
+    .notice.bad  { border-color: rgba(255,60,60,.45); }
+    pre.qr { white-space: pre-wrap; word-break: break-all; font-size: 12px; opacity: .9; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="inline" style="justify-content:space-between; margin-bottom:14px;">
+      <div class="inline">
+        <div class="pill" id="planPill"><span class="dot"></span><span id="planText">Plan</span></div>
+        <div class="pill" id="paygPill"><span class="dot"></span><span id="paygText">PAYG</span></div>
+      </div>
+      <div class="inline">
+        <button class="btn" onclick="location.href='{{ url_for('playground') }}'">Playground</button>
+        <button class="btn" onclick="location.href='{{ url_for('upgrade') }}'">Billing</button>
+        <button class="btn" onclick="location.href='{{ url_for('logout') }}'">Sign out</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="card">
+        <h2 class="h">Account</h2>
+        <div class="stack">
+          <div><span class="k">Pubkey:</span> <span class="mono v" id="pubkey">…</span></div>
+          <div><span class="k">Plan:</span> <span class="v" id="plan">…</span></div>
+          <div><span class="k">Sats balance:</span> <span class="v" id="balance">…</span></div>
+
+          <div class="inline" style="margin-top:6px;">
+            <label class="inline" style="gap:8px;">
+              <input type="checkbox" id="paygEnabled" onchange="togglePayg()" />
+              <span class="v">Pay-as-you-go enabled</span>
+            </label>
+            <span class="muted">(Metered actions consume sats.)</span>
+          </div>
+
+          <div id="needsTopup" class="notice warn" style="display:none;">
+            Balance is low. Top up to continue metered actions.
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="h">Top up sats</h2>
+
+        <div class="stack">
+          <div class="inline">
+            <input class="input" id="topupAmount" type="number" min="1" step="1" value="1000" />
+            <button class="btn" id="btnCreate" onclick="createInvoice()">Create invoice</button>
+            <button class="btn" id="btnCheck" onclick="checkInvoice()" disabled>Check invoice</button>
+          </div>
+
+          <div id="invBox" class="notice" style="display:none;">
+            <div class="muted">Invoice ID</div>
+            <div class="mono v" id="invoiceId"></div>
+            <div class="muted" style="margin-top:8px;">Payment request</div>
+            <pre class="qr mono" id="payreq"></pre>
+          </div>
+
+          <div id="invStatus" class="notice" style="display:none;"></div>
+
+          <div class="muted">
+            Note: until Lightning backend is configured, invoices may be “stubbed” for testing.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h2 class="h">Recent invoices</h2>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Invoice</th>
+            <th>Amount</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Paid</th>
+          </tr>
+        </thead>
+        <tbody id="paymentsBody">
+          <tr><td colspan="5" class="muted">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+let currentInvoiceId = null;
+
+function shortPubkey(pk){
+  if(!pk) return "";
+  if(pk.length <= 16) return pk;
+  return pk.slice(0, 10) + "…" + pk.slice(-10);
+}
+
+function setPill(pillId, textId, label, state){
+  const pill = document.getElementById(pillId);
+  const txt = document.getElementById(textId);
+  txt.textContent = label;
+
+  pill.classList.remove("warn","bad");
+  // state: ok|warn|bad
+  if(state === "warn") pill.classList.add("warn");
+  if(state === "bad") pill.classList.add("bad");
+}
+
+async function loadSummary(){
+  const r = await fetch("/api/account/summary", { credentials: "include" });
+  if(!r.ok){
+    // If not logged in you’ll probably get 401 -> redirect
+    location.href = "/login?next=/account";
+    return;
+  }
+  const j = await r.json();
+
+  document.getElementById("pubkey").textContent = shortPubkey(j.pubkey);
+  document.getElementById("plan").textContent = j.plan || "free";
+  document.getElementById("balance").textContent = (j.sats_balance ?? 0).toString();
+
+  const payg = !!j.payg_enabled;
+  document.getElementById("paygEnabled").checked = payg;
+
+  // pills
+  const plan = (j.plan || "free").toLowerCase();
+  if(plan === "admin" || plan === "pro" || plan === "paid"){
+    setPill("planPill", "planText", `Plan: ${plan}`, "ok");
+  } else {
+    setPill("planPill", "planText", `Plan: ${plan}`, "warn");
+  }
+  setPill("paygPill", "paygText", payg ? "PAYG: on" : "PAYG: off", payg ? "ok" : "warn");
+
+  const needs = !!j.needs_topup;
+  document.getElementById("needsTopup").style.display = needs ? "block" : "none";
+
+  renderPayments(j.recent_payments || []);
+}
+
+function renderPayments(rows){
+  const tb = document.getElementById("paymentsBody");
+  tb.innerHTML = "";
+  if(!rows.length){
+    tb.innerHTML = `<tr><td colspan="5" class="muted">No invoices yet.</td></tr>`;
+    return;
+  }
+  for(const p of rows){
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="mono">${p.invoice_id || ""}</td>
+      <td>${p.amount_sats ?? ""}</td>
+      <td>${p.status || ""}</td>
+      <td class="muted">${p.created_at || ""}</td>
+      <td class="muted">${p.paid_at || ""}</td>
+    `;
+    tb.appendChild(tr);
+  }
+}
+
+async function togglePayg(){
+  const enabled = document.getElementById("paygEnabled").checked;
+  const r = await fetch("/api/account/set-payg", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ enabled })
+  });
+  const j = await r.json();
+  if(!r.ok || !j.ok){
+    alert(j.error || "Failed to update PAYG");
+  }
+  await loadSummary();
+}
+
+function showStatus(msg, kind){
+  const el = document.getElementById("invStatus");
+  el.style.display = "block";
+  el.classList.remove("warn","bad");
+  if(kind === "warn") el.classList.add("warn");
+  if(kind === "bad") el.classList.add("bad");
+  el.textContent = msg;
+}
+
+async function createInvoice(){
+  const amt = parseInt(document.getElementById("topupAmount").value || "0", 10);
+  document.getElementById("btnCreate").disabled = true;
+
+  try{
+    const r = await fetch("/api/billing/create-invoice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ amount_sats: amt })
+    });
+    const j = await r.json();
+    if(!r.ok || !j.ok){
+      showStatus(j.error || "Failed to create invoice", "bad");
+      return;
+    }
+    currentInvoiceId = j.invoice_id;
+
+    document.getElementById("invBox").style.display = "block";
+    document.getElementById("invoiceId").textContent = j.invoice_id;
+    document.getElementById("payreq").textContent = j.payment_request;
+
+    document.getElementById("btnCheck").disabled = false;
+    showStatus("Invoice created. Pay it, then click “Check invoice”.", "warn");
+    await loadSummary();
+  } finally {
+    document.getElementById("btnCreate").disabled = false;
+  }
+}
+
+async function checkInvoice(){
+  if(!currentInvoiceId){
+    showStatus("No invoice created yet.", "warn");
+    return;
+  }
+  document.getElementById("btnCheck").disabled = true;
+  try{
+    const r = await fetch("/api/billing/check-invoice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ invoice_id: currentInvoiceId })
+    });
+    const j = await r.json();
+    if(!r.ok || !j.ok){
+      showStatus(j.error || "Failed to check invoice", "bad");
+      return;
+    }
+    if(j.paid){
+      showStatus("Paid ✅ Balance credited.", "ok");
+    } else {
+      showStatus("Not paid yet. Try again in a moment.", "warn");
+    }
+    await loadSummary();
+  } finally {
+    document.getElementById("btnCheck").disabled = false;
+  }
+}
+
+loadSummary();
+</script>
+</body>
+</html>

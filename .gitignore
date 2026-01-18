@@ -113,3 +113,10 @@ docs/SESSION_*.md
 
 # VPS-local ops/admin helpers (keep local, not OSS)
 hodlxxi-admin.sh
+
+# local/backup artifacts
+*.bak
+*.bak.*
+*.swp
+*.pyc
+__pycache__/

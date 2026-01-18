@@ -90,7 +90,7 @@ from .ubid_membership import (
 
 
 
-# --- Simple in-memory user view object for dashboard/upgrade ---
+# --- Simple in-memory user view object for dashboardupgrade ---
 class SimpleUser:
     def __init__(self, pubkey, plan="free", sats_balance=0, expires_at=None):
         self.pubkey = pubkey
@@ -9761,6 +9761,134 @@ def upgrade():
         message=message,
         error=error,
     )
+
+@app.route("/account", methods=["GET"])
+def account_page():
+    logged_in_pubkey = session.get("logged_in_pubkey")
+    if not logged_in_pubkey:
+        return redirect(url_for("login", next="/account"))
+    if str(logged_in_pubkey).startswith("guest-"):
+        # guests can’t manage billing; push them to login with real key
+        return redirect(url_for("login", next="/account"))
+    return render_template("account.html")
+
+
+def _pg_connect_for_account():
+    import os
+    import psycopg2
+    from flask import current_app
+
+    dsn = (
+        os.getenv("DATABASE_URL")
+        or current_app.config.get("DATABASE_URL")
+        or current_app.config.get("SQLALCHEMY_DATABASE_URI")
+    )
+    if dsn:
+        dsn = dsn.strip()
+        if dsn.startswith("postgres://"):
+            dsn = "postgresql://" + dsn[len("postgres://"):]
+        return psycopg2.connect(dsn)
+
+    host = os.getenv("PGHOST", "127.0.0.1")
+    port = int(os.getenv("PGPORT", "5432"))
+    user = os.getenv("PGUSER", "hodlxxi")
+    password = os.getenv("PGPASSWORD", "")
+    dbname = os.getenv("PGDATABASE", "hodlxxi")
+    return psycopg2.connect(host=host, port=port, user=user, password=password, dbname=dbname)
+
+
+@app.route("/api/account/summary", methods=["GET"])
+def api_account_summary():
+    logged_in_pubkey = session.get("logged_in_pubkey")
+    if not logged_in_pubkey:
+        return jsonify({"ok": False, "error": "Login required"}), 401
+    if str(logged_in_pubkey).startswith("guest-"):
+        return jsonify({"ok": False, "error": "Guests have no account"}), 403
+
+    # pull from Postgres
+    plan = "free"
+    sats_balance = 0
+    payg_enabled = False
+    membership_expires_at = None
+    recent = []
+
+    try:
+        with _pg_connect_for_account() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "select plan, sats_balance, payg_enabled, membership_expires_at "
+                    "from ubid_users where pubkey=%s limit 1",
+                    (logged_in_pubkey,),
+                )
+                row = cur.fetchone()
+                if row:
+                    plan, sats_balance, payg_enabled, membership_expires_at = row
+
+                cur.execute(
+                    "select invoice_id, amount_sats, status, created_at, paid_at "
+                    "from payments where user_pubkey=%s "
+                    "order by id desc limit 12",
+                    (logged_in_pubkey,),
+                )
+                for (invoice_id, amount_sats, status, created_at, paid_at) in cur.fetchall():
+                    recent.append(
+                        {
+                            "invoice_id": invoice_id,
+                            "amount_sats": int(amount_sats) if amount_sats is not None else None,
+                            "status": status,
+                            "created_at": created_at.isoformat() if created_at else None,
+                            "paid_at": paid_at.isoformat() if paid_at else None,
+                        }
+                    )
+    except Exception:
+        current_app.logger.exception("account: failed to load summary")
+
+    return jsonify(
+        {
+            "ok": True,
+            "pubkey": logged_in_pubkey,
+            "plan": plan,
+            "sats_balance": int(sats_balance or 0),
+            "payg_enabled": bool(payg_enabled),
+            "membership_expires_at": membership_expires_at.isoformat() if membership_expires_at else None,
+            "needs_topup": bool(session.get("needs_topup")),
+            "recent_payments": recent,
+        }
+    )
+
+
+@app.route("/api/account/set-payg", methods=["POST"])
+def api_account_set_payg():
+    logged_in_pubkey = session.get("logged_in_pubkey")
+    if not logged_in_pubkey:
+        return jsonify({"ok": False, "error": "Login required"}), 401
+    if str(logged_in_pubkey).startswith("guest-"):
+        return jsonify({"ok": False, "error": "Guests cannot enable PAYG"}), 403
+
+    data = request.get_json() or {}
+    enabled = bool(data.get("enabled"))
+
+    try:
+        with _pg_connect_for_account() as conn:
+            with conn.cursor() as cur:
+                # ensure row exists
+                cur.execute("select 1 from ubid_users where pubkey=%s limit 1", (logged_in_pubkey,))
+                if cur.fetchone() is None:
+                    cur.execute(
+                        "insert into ubid_users (pubkey, plan, sats_balance, membership_expires_at, created_at, last_login_at, payg_enabled) "
+                        "values (%s, 'free', 0, null, now(), now(), %s)",
+                        (logged_in_pubkey, enabled),
+                    )
+                else:
+                    cur.execute(
+                        "update ubid_users set payg_enabled=%s where pubkey=%s",
+                        (enabled, logged_in_pubkey),
+                    )
+        session["payg_enabled"] = enabled
+        return jsonify({"ok": True, "payg_enabled": enabled})
+    except Exception:
+        current_app.logger.exception("account: failed to set payg")
+        return jsonify({"ok": False, "error": "internal error"}), 500
 
 
 @app.route("/api/billing/create-invoice", methods=["POST"])
