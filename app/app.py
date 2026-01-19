@@ -729,6 +729,11 @@ TURN_TTL = int(os.getenv("TURN_TTL", "3600"))
 
 @app.route("/turn_credentials")
 def turn_credentials():
+    # Require a logged-in session to prevent TURN credential scraping/abuse
+    from flask import session
+    if not (session.get("logged_in_pubkey") or "").strip():
+        return jsonify({"error": "Not logged in"}), 401
+
     if not TURN_SECRET:
         return jsonify({"error": "TURN not configured"}), 500
     username = str(int(time.time()) + TURN_TTL)
@@ -7192,9 +7197,9 @@ def _public_guard_for_lnurl():
     if p in PUBLIC_API_PATHS or any(p.startswith(pref) for pref in PUBLIC_API_PREFIXES):
         return None
 
+    # NOTE: Do NOT treat a Bearer header as authenticated.
+    # If you later add real token auth, validate the token explicitly here.
     auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        return None
 
     # Fallback: require session for other /api/*
     if p.startswith("/api/") and not (p.startswith("/api/playground") or p.startswith("/api/playground/") or p.startswith("/api/pof/")) and not session.get("logged_in_pubkey"):
