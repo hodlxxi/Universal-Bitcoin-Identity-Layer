@@ -688,6 +688,12 @@ def health():
 
 @app.route("/metrics")
 def metrics():
+    # METRICS_GUARD_V1
+    from flask import request, session
+    ra = (request.remote_addr or '').strip()
+    if ra not in ('127.0.0.1', '::1') and session.get('access_level') != 'full':
+        return jsonify(error='Forbidden'), 403
+
     # SAFE_METRICS_ACTIVE_CHALLENGES_FALLBACK
     # Some deployments removed/renamed ACTIVE_CHALLENGES; avoid NameError in /metrics
     ACTIVE_CHALLENGES = globals().get('ACTIVE_CHALLENGES', {}) or {}
@@ -8797,6 +8803,12 @@ if limiter:
 
 @app.route("/metrics/prometheus")
 def metrics_prometheus():
+    # PROM_METRICS_GUARD_V1
+    from flask import request, session
+    ra = (request.remote_addr or '').strip()
+    if ra not in ('127.0.0.1', '::1') and session.get('access_level') != 'full':
+        return ('Forbidden\n', 403, {'Content-Type':'text/plain; charset=utf-8'})
+
 
     # SAFE_METRICS_ACTIVE_CHALLENGES_FALLBACK
     ACTIVE_CHALLENGES = globals().get("ACTIVE_CHALLENGES", {}) or {}
@@ -9717,6 +9729,11 @@ def playground():
 @app.route("/api/debug/session", methods=["GET"])
 def api_debug_session_alias():
     """Debug: return current session identity info."""
+    # DEBUG_SESSION_GUARD_V1: production safety — require full access
+    guard = require_full_access_json()
+    if guard:
+        return guard
+
     from flask import jsonify, session
 
     pubkey = session.get("logged_in_pubkey")
