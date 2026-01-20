@@ -67,6 +67,17 @@ The service exposes:
 - `/metrics/prometheus` for Prometheus scrapers
 - `/health` basic liveness probe
 
+### Docker Compose quick start
+
+If you want a production-like stack without installing Postgres/Redis/Bitcoin Core locally, use the bundled Compose file:
+
+```bash
+cp env.example .env
+docker compose up --build
+```
+
+The Postgres, Redis, and Bitcoin services wait for health checks before the Flask app starts. Mounts for `./app`, `./logs`, and `./keys` ensure code edits and generated keys persist on the host. See `docs/DEV_ONBOARDING_CHECKLIST.md` for the full onboarding flow and smoke tests.
+
 See [`TESTING.md`](TESTING.md) for pytest, mypy, and linting guidance.
 
 ---

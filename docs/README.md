@@ -58,6 +58,8 @@ psql hodlxxi < schema.sql
 gunicorn -k eventlet -w 1 -b 127.0.0.1:5000 wsgi:app
 ```
 
+New contributors can also follow the containerized workflow in [`DEV_ONBOARDING_CHECKLIST.md`](DEV_ONBOARDING_CHECKLIST.md) to spin up Postgres, Redis, Bitcoin Core (regtest), and the Flask app with one `docker compose up --build` command.
+
 ### For Operators
 See **SYSTEM_ARCHITECTURE.md** → "Deployment Architecture"
 
