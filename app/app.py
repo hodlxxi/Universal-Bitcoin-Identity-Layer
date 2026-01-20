@@ -725,20 +725,6 @@ def _oauth_public_allowlist():
         return None
 
 
-# ============================================================================
-# HEALTH CHECK & MONITORING ENDPOINTS
-# ============================================================================
-
-    IMPORTANT:
-    - Must never block on Bitcoin RPC or other external deps.
-    - You run a single eventlet worker (-w 1), so a slow /health can freeze the whole app.
-    Use separate readiness/deep endpoints for DB/RPC checks if needed.
-    """
-    import time
-    from flask import jsonify
-    return jsonify(ok=True, status="ok", ts=int(time.time())), 200
-
-
 # --- metrics helpers (safe, soft-fail) ---
 PROCESS_START_TIME = time.time()
 
