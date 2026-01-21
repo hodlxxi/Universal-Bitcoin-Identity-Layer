@@ -10465,6 +10465,10 @@ def _auth_diag_401403(resp):
                 return ('Forbidden', 403)
 
             if request.path.startswith(("/api/", "/dev/")) or request.path in ("/account","/accounts","/upgrade"):
+                # Dev dashboard: hide completely unless full (no login redirect)
+                if request.path.rstrip("/") == "/dev/dashboard" and session.get("access_level") != "full":
+                    return ("Forbidden", 403)
+
                 app.logger.warning(
                     "AUTH_DIAG %s %s -> %s session_keys=%s",
                     request.method, request.path, resp.status_code, list(getattr(session, "keys", lambda: [])())
