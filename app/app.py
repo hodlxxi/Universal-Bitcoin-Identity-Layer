@@ -10353,3 +10353,133 @@ def api_pof_verify_psbt():
         inputs_with_amount=used_inputs,
     ), 200
 # /API_POF_VERIFY_PSBT_V1
+
+
+# UPGRADE_ENDPOINT_V2
+# Render the real Upgrade UI (upgrade.html). Keeps endpoint name 'upgrade'.
+@app.route("/upgrade", methods=["GET", "POST"])
+def upgrade():
+    from flask import session, request, redirect, render_template
+
+    if not session.get("logged_in_pubkey"):
+        return redirect(f"/login?next={request.path}")
+
+    pk = session.get("logged_in_pubkey") or ""
+    short_pk = (pk[:12] + "…") if isinstance(pk, str) and len(pk) > 12 else pk
+
+    return render_template(
+        "upgrade.html",
+        pubkey=pk,
+        short_pk=short_pk,
+        access_level=session.get("access_level", "limited"),
+        guest_label=session.get("guest_label"),
+    )
+
+
+
+# HODLXXI_ACCOUNT_RESTORE_V3
+# ACCAUNT_TYPO_BEFORE_AUTH_V3
+# Fix common typo BEFORE auth guards so next= uses /account
+@app.before_request
+def _fix_accaunt_typo_before_auth_v3():
+    from flask import request, redirect
+    if request.path == "/accaunt":
+        return redirect("/account", code=301)
+    if request.path == "/accaunts":
+        return redirect("/accounts", code=301)
+
+
+# RESTORE_ACCOUNT_ROUTE_V3
+@app.route("/account", methods=["GET"])
+def account():
+    from flask import session, request, redirect, render_template
+    from jinja2 import TemplateNotFound
+    from werkzeug.routing import BuildError
+
+    if not session.get("logged_in_pubkey"):
+        return redirect(f"/login?next={request.path}")
+
+    # Render but never allow template endpoint mistakes to crash production
+    try:
+        pk = session.get("logged_in_pubkey") or ""
+        short_pk = (pk[:12] + "…") if isinstance(pk, str) and len(pk) > 12 else pk
+        return render_template(
+            "account.html",
+            pubkey=pk,
+            short_pk=short_pk,
+            access_level=session.get("access_level", "limited"),
+            guest_label=session.get("guest_label"),
+        )
+    except (TemplateNotFound, BuildError) as e:
+        pub = session.get("logged_in_pubkey", "")
+        lvl = session.get("access_level", "")
+        return (
+            "<!doctype html><html><head><meta charset='utf-8'><title>Account</title></head>"
+            "<body style='font-family:system-ui;padding:24px'>"
+            "<h1>Account</h1>"
+            f"<p><b>pubkey</b>: {pub}</p>"
+            f"<p><b>access</b>: {lvl}</p>"
+            f"<p style='color:#b00'><b>Template/endpoint issue</b>: {e}</p>"
+            "<p>/account route restored. Fix account.html url_for() endpoint names.</p>"
+            "</body></html>"
+        )
+
+
+# === Compat routes (restore legacy UI + billing API paths) ===
+try:
+    _rules = {r.rule for r in app.url_map.iter_rules()}
+
+    if "/accounts" not in _rules:
+        from app.blueprints.accounts_page import bp as _accounts_bp
+        app.register_blueprint(_accounts_bp)
+
+    # Templates call /api/billing/* but current endpoints live under /dev/billing/*
+    if ("/api/billing/create-invoice" not in _rules) and ("/dev/billing/create-invoice" in _rules):
+        from app.blueprints.billing_api_compat import bp as _billing_bp
+        app.register_blueprint(_billing_bp)
+
+except Exception as _e:
+    try:
+        app.logger.exception("Compat route registration failed: %s", _e)
+    except Exception:
+        pass
+
+
+# === AUTH_DIAG_401403_V1 ===
+@app.after_request
+def _auth_diag_401403(resp):
+    try:
+        from flask import request, session
+        if resp.status_code in (401, 403):
+            # log only interesting paths to avoid noise
+            if request.path.startswith(("/api/", "/dev/")) or request.path in ("/account","/accounts","/upgrade"):
+                app.logger.warning(
+                    "AUTH_DIAG %s %s -> %s session_keys=%s",
+                    request.method, request.path, resp.status_code, list(getattr(session, "keys", lambda: [])())
+                )
+    except Exception:
+        pass
+    return resp
+
+
+# === ACCOUNT_API_COMPAT_V1 ===
+# account.html calls /api/account/summary and /api/account/set-payg from a logged-in browser session.
+# If those endpoints are missing or require bearer/dev auth, the UI will "kick" to /login.
+def _account_api_compat_v1():
+    """Register /api/account/* endpoints used by account.html (DB-backed)."""
+    try:
+        from app.blueprints.account_api_compat import bp as _acct_api_bp
+        app.register_blueprint(_acct_api_bp)
+        app.logger.info("account_api_compat: registered DB-backed /api/account/*")
+    except Exception as _e:
+        try:
+            app.logger.exception("account_api_compat registration failed: %s", _e)
+        except Exception:
+            pass
+
+
+# Ensure account API compat is registered
+try:
+    _account_api_compat_v1()
+except Exception:
+    pass
