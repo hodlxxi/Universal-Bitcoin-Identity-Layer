@@ -442,9 +442,10 @@
         const resp = await fetch('/api/billing/create-invoice', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({amount_sats: amount})
+            body: JSON.stringify({ billing_mode: "payg", amount_sats: amount})
         });
         const data = await resp.json();
+        window.__last_invoice_id = data.get ? null : (data.invoice_id || window.__last_invoice_id);
         if (!data.ok) {
             status.textContent = data.error || 'Failed to create invoice.';
             return;
