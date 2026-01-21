@@ -5,6 +5,7 @@ from functools import wraps
 from typing import Dict, List
 
 from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
+from flask import abort
 from sqlalchemy import text
 
 from app.database import session_scope
@@ -162,6 +163,10 @@ def get_usage_stats(client_id: str, days: int = 30) -> Dict:
 @dev_bp.route("/dashboard")
 @require_login
 def dashboard():
+    # Full users only
+    if session.get('access_level') != 'full':
+        abort(403)
+
     """Developer console dashboard."""
     user_pubkey = session.get("logged_in_pubkey")
 
