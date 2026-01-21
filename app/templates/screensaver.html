@@ -274,7 +274,13 @@
 
       <!-- DEV / OAUTH -->
       <div class="nav-page" data-page="dev">
+        {% if session.get("access_level") == "full" %}
+        {% if session.get("access_level") == "full" %}
+        {% if session.get("access_level") == "full" %}
         <a class="nav-item" href="/dev/dashboard">Dev Dashboard</a>
+{% endif %}
+{% endif %}
+{% endif %}
         <a class="nav-item" href="/.well-known/openid-configuration">OIDC Discovery</a>
         <a class="nav-item" href="/oauth/clients">OAuth Clients</a>
         <a class="nav-item" href="/oauth/jwks.json">JWKS</a>
