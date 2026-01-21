@@ -268,14 +268,18 @@
 
     <!-- Top CTA bar (same style family as Playground) -->
     <div class="top-cta">
-        {% if user and user.pubkey %}
+        {% set active_pubkey = (session.get('logged_in_pubkey') or logged_in_pubkey or (user.pubkey if user and user.pubkey else None)) %}
+        {% if active_pubkey %}
             <span class="top-cta-text">
-                ✅ Logged in as {{ user.pubkey[:18] }}…
+                ✅ Logged in as {{ active_pubkey[:18] }}…
             </span>
             <button class="top-cta-btn"
-                    onclick="window.location.href='{{ url_for('dev.dashboard') }}'">
-                Open my HODLXXI dashboard
+                    onclick="window.location.href='/account'">
+                Open my account
             </button>
+            {% if session.get('access_level') == 'full' %}
+              <a class="top-cta-btn" style="margin-left:10px;" href="/dev/dashboard">Dev</a>
+            {% endif %}
         {% else %}
             <span class="top-cta-text">
                 You need to be logged in to upgrade your HODLXXI membership.
@@ -442,9 +446,10 @@
         const resp = await fetch('/api/billing/create-invoice', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({amount_sats: amount})
+            body: JSON.stringify({ billing_mode: "payg", amount_sats: amount})
         });
         const data = await resp.json();
+        window.__last_invoice_id = data.get ? null : (data.invoice_id || window.__last_invoice_id);
         if (!data.ok) {
             status.textContent = data.error || 'Failed to create invoice.';
             return;

@@ -83,7 +83,7 @@
       </div>
       <div class="inline">
         <button class="btn" onclick="location.href='{{ url_for('playground') }}'">Playground</button>
-        <button class="btn" onclick="location.href='{{ url_for('upgrade') }}'">Billing</button>
+        <button class="btn" onclick="location.href='/upgrade'">Billing</button>
         <button class="btn" onclick="location.href='{{ url_for('logout') }}'">Sign out</button>
       </div>
     </div>
@@ -177,9 +177,13 @@ function setPill(pillId, textId, label, state){
 
 async function loadSummary(){
   const r = await fetch("/api/account/summary", { credentials: "include" });
+  if(r.status === 401){
+    // not logged in -> redirect back here after login
+    location.href = "/login?next=" + encodeURIComponent(location.pathname);
+    return;
+  }
   if(!r.ok){
-    // If not logged in you’ll probably get 401 -> redirect
-    location.href = "/login?next=/account";
+    console.warn("Account summary fetch failed:", r.status);
     return;
   }
   const j = await r.json();
@@ -259,7 +263,7 @@ async function createInvoice(){
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ amount_sats: amt })
+      body: JSON.stringify({ amount_sats: amt, billing_mode: "payg" })
     });
     const j = await r.json();
     if(!r.ok || !j.ok){

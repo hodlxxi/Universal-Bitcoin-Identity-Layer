@@ -72,3 +72,10 @@ keys/
 
 # Local archives/backups (never commit)
 _archive_baks/
+
+# local recovery copies
+*.BROKEN.*
+*.SAVED_BAD.*
+
+# local VPS backups
+_vps_backups/
