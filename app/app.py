@@ -708,6 +708,16 @@ def health():
     except Exception as e:  # pragma: no cover - defensive
         logger.error(f"Health check failed: {e}", exc_info=True)
         return jsonify({"status": "unhealthy", "error": str(e)}), 500
+# --- Dev dashboard hard block (must run before any login redirect gates) ---
+@app.before_request
+def _dev_dashboard_full_only():
+    # Always hide dev dashboard unless full (even if not logged in)
+    if request.path.rstrip("/") == "/dev/dashboard" and session.get("access_level") != "full":
+        from flask import make_response as _make_response
+        return _make_response("Forbidden", 403)
+# ------------------------------------------------------------------------
+
+
 
 
 @app.before_request
@@ -9348,6 +9358,8 @@ def metrics_prometheus():
 
 @app.after_request
 def apply_security_headers(response):
+    from flask import make_response as _make_response
+    response = _make_response(response)
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
   #  response.headers["Content-Security-Policy"] = "default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.tailwindcss.com; connect-src 'self' wss: ws: https: http:; font-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; frame-ancestors 'none'"
     return response
