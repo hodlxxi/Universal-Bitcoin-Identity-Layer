@@ -76,3 +76,7 @@ _archive_baks/
 # local recovery copies
 *.BROKEN.*
 *.SAVED_BAD.*
+
+# local backups
+_vps_backups/
+_archive_baks/_local_not_for_git/
