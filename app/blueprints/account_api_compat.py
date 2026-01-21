@@ -3,10 +3,12 @@ import os, uuid, json
 
 bp = Blueprint("account_api_compat", __name__)
 
+
 def _require_session_json():
     if not session.get("logged_in_pubkey"):
         return jsonify({"ok": False, "error": "not_logged_in"}), 401
     return None
+
 
 def _get_pg_dsn():
     dsn = (
@@ -21,19 +23,24 @@ def _get_pg_dsn():
     dsn = dsn.replace("postgresql+psycopg://", "postgresql://")
     return dsn
 
+
 def _pg_connect():
     dsn = _get_pg_dsn()
     if not dsn:
         raise RuntimeError("No DATABASE_URL / SQLALCHEMY_DATABASE_URI found")
     try:
         import psycopg2
+
         return psycopg2.connect(dsn)
     except Exception:
         import psycopg
+
         return psycopg.connect(dsn)
+
 
 def _iso(dt):
     return dt.isoformat() if dt else None
+
 
 def _rb(cur):
     try:
@@ -41,15 +48,16 @@ def _rb(cur):
     except Exception:
         pass
 
+
 def _fetch_payg_from_users(cur, pk):
     # users.metadata is json in your schema; cast to jsonb for operator support
     cur.execute(
-        "select coalesce((metadata::jsonb->>'payg_enabled')::boolean,false) "
-        "from users where pubkey=%s limit 1",
+        "select coalesce((metadata::jsonb->>'payg_enabled')::boolean,false) " "from users where pubkey=%s limit 1",
         (pk,),
     )
     row = cur.fetchone()
     return bool(row[0]) if row is not None else None
+
 
 def _upsert_payg_into_users(cur, pk, enabled):
     # If the user row doesn't exist yet, create it (id is varchar(36), so uuid string is perfect)
@@ -66,6 +74,7 @@ def _upsert_payg_into_users(cur, pk, enabled):
         """,
         (new_id, pk, json.dumps({"payg_enabled": enabled}), enabled),
     )
+
 
 @bp.route("/api/account/summary", methods=["GET"])
 def account_summary():
@@ -128,31 +137,36 @@ def account_summary():
                     "limit 10",
                     (pk,),
                 )
-                for invoice_id, amount_sats, status, created_at, paid_at in (cur.fetchall() or []):
-                    recent_payments.append({
-                        "invoice_id": invoice_id,
-                        "amount_sats": int(amount_sats) if amount_sats is not None else None,
-                        "status": status,
-                        "created_at": _iso(created_at),
-                        "paid_at": _iso(paid_at),
-                    })
+                for invoice_id, amount_sats, status, created_at, paid_at in cur.fetchall() or []:
+                    recent_payments.append(
+                        {
+                            "invoice_id": invoice_id,
+                            "amount_sats": int(amount_sats) if amount_sats is not None else None,
+                            "status": status,
+                            "created_at": _iso(created_at),
+                            "paid_at": _iso(paid_at),
+                        }
+                    )
 
     except Exception as e:
         current_app.logger.warning("account_summary db fallback: %s", e)
 
     needs_topup = bool(payg_enabled and sats_balance <= 0)
 
-    return jsonify({
-        "ok": True,
-        "pubkey": pk,
-        "access_level": access_level,
-        "guest_label": guest_label,
-        "plan": plan,
-        "sats_balance": sats_balance,
-        "payg_enabled": payg_enabled,
-        "needs_topup": needs_topup,
-        "recent_payments": recent_payments,
-    })
+    return jsonify(
+        {
+            "ok": True,
+            "pubkey": pk,
+            "access_level": access_level,
+            "guest_label": guest_label,
+            "plan": plan,
+            "sats_balance": sats_balance,
+            "payg_enabled": payg_enabled,
+            "needs_topup": needs_topup,
+            "recent_payments": recent_payments,
+        }
+    )
+
 
 @bp.route("/api/account/set-payg", methods=["POST"])
 def set_payg():

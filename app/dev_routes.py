@@ -164,7 +164,7 @@ def get_usage_stats(client_id: str, days: int = 30) -> Dict:
 @require_login
 def dashboard():
     # Full users only
-    if session.get('access_level') != 'full':
+    if session.get("access_level") != "full":
         abort(403)
 
     """Developer console dashboard."""
@@ -225,21 +225,25 @@ def create_invoice_route():
             else:
                 return jsonify({"error": "Invalid plan"}), 400
         # PAYG is a billing mode; reuse base plan limits/pricing tables
-        plan_key = 'free' if plan == 'payg' else plan
+        plan_key = "free" if plan == "payg" else plan
         plan_info = PLANS.get(plan_key)
         if not plan_info:
-            return jsonify({'error': 'Invalid plan'}), 400
-        amount_raw = (data.get('amount_sats') or data.get('amount') or request.form.get('amount_sats') or request.form.get('amount') or 0)
+            return jsonify({"error": "Invalid plan"}), 400
+        amount_raw = (
+            data.get("amount_sats")
+            or data.get("amount")
+            or request.form.get("amount_sats")
+            or request.form.get("amount")
+            or 0
+        )
         try:
             amount_sats = int(amount_raw)
         except Exception:
-            return jsonify({'error': 'amount_sats must be an integer'}), 400
+            return jsonify({"error": "amount_sats must be an integer"}), 400
         if amount_sats <= 0:
-            return jsonify({'error': 'amount_sats must be > 0'}), 400
-
+            return jsonify({"error": "amount_sats must be > 0"}), 400
 
         if plan == "free":
-
             return jsonify({"error": "Cannot create invoice for free plan"}), 400
 
         from app.payments.ln import create_invoice
@@ -367,4 +371,3 @@ WHERE user_pubkey = :pubkey
     except Exception as e:
         logger.error(f"Invoice check error: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
-

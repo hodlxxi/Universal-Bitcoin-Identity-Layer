@@ -40,6 +40,7 @@ from flask import (
     flash,
 )
 from flask_socketio import SocketIO, emit
+
 # === Added for production hardening ===
 import jwt
 import redis as redis_client
@@ -71,10 +72,9 @@ from app.security import init_security, limiter
 from app.tokens import issue_rs256_jwt
 from app.pof_routes import pof_bp, pof_api_bp
 from app.dev_routes import dev_bp
-#from app.playground_routes import playground_bp   # <-- ADD THIS
+
+# from app.playground_routes import playground_bp   # <-- ADD THIS
 from flask import make_response
-
-
 
 
 from .ubid_membership import (
@@ -87,7 +87,6 @@ from .ubid_membership import (
     set_payg,
     settle_payg_invoice,
 )
-
 
 
 # --- Simple in-memory user view object for dashboardupgrade ---
@@ -118,11 +117,13 @@ class SimpleUser:
 # We fix that by wrapping the dict in a tiny adapter class.
 #
 
+
 class _LegacyClientWrapperClientType:
     """
     Gives us client.client_type.value even if the DB just stored
     "free"/"paid"/"premium" as a plain string.
     """
+
     def __init__(self, raw_type: str | None):
         self.value = raw_type or "free"
 
@@ -131,6 +132,7 @@ class _LegacyClientWrapper:
     """
     Wrap the raw DB row and expose attributes the legacy code expects.
     """
+
     def __init__(self, raw: dict | None):
         raw = raw or {}
         self._raw = raw
@@ -236,6 +238,7 @@ class _StorageAdapter:
 # single shared instance the rest of the code will call
 GLOBAL_STORAGE = _StorageAdapter()
 
+
 def get_storage():
     return GLOBAL_STORAGE
 
@@ -277,9 +280,7 @@ if FLASK_SECRET_KEY:
     logger.info("Using Flask secret key from configuration")
 else:
     FLASK_SECRET_KEY = secrets.token_urlsafe(32)
-    logger.warning(
-        "FLASK_SECRET_KEY not provided – generated ephemeral key for local development."
-    )
+    logger.warning("FLASK_SECRET_KEY not provided – generated ephemeral key for local development.")
 
 RPC_USER = os.getenv("RPC_USER", "")
 RPC_PASS = os.getenv("RPC_PASSWORD", "")
@@ -359,10 +360,14 @@ if JWT_ALG == "RS256":
             JWT_KID = keys[0].get("kid")
     try:
         private_key = serialization.load_pem_private_key(private_pem.encode("utf-8"), password=None)
-        JWT_VERIFYING_KEY = private_key.public_key().public_bytes(
-            serialization.Encoding.PEM,
-            serialization.PublicFormat.SubjectPublicKeyInfo,
-        ).decode("utf-8")
+        JWT_VERIFYING_KEY = (
+            private_key.public_key()
+            .public_bytes(
+                serialization.Encoding.PEM,
+                serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+            .decode("utf-8")
+        )
     except Exception as exc:
         logger.warning(f"Failed to derive public key from RSA private key: {exc}")
         JWT_VERIFYING_KEY = private_pem
@@ -401,12 +406,14 @@ def decode_jwt(token: str, **kwargs):
 REGISTRY = CollectorRegistry()
 oauth_tokens_issued = Counter("oauth_tokens_issued_total", "Total tokens issued", registry=REGISTRY)
 
+
 class SafeRedis:
     """Wrapper for Redis that gracefully handles connection failures"""
+
     def __init__(self, redis_client):
         self._redis = redis_client
         self._is_available = redis_client is not None
-    
+
     def _safe_call(self, method_name, *args, **kwargs):
         if not self._is_available:
             return None
@@ -417,24 +424,32 @@ class SafeRedis:
             logger.debug(f"Redis {method_name} failed: {e}")
             self._is_available = False
             return None
-    
+
     def ping(self):
-        return self._safe_call('ping')
+        return self._safe_call("ping")
+
     def get(self, key):
-        return self._safe_call('get', key)
+        return self._safe_call("get", key)
+
     def set(self, key, value, ex=None, px=None, nx=False, xx=False):
-        return self._safe_call('set', key, value, ex=ex, px=px, nx=nx, xx=xx)
+        return self._safe_call("set", key, value, ex=ex, px=px, nx=nx, xx=xx)
+
     def setex(self, key, time, value):
-        return self._safe_call('setex', key, time, value)
+        return self._safe_call("setex", key, time, value)
+
     def delete(self, *keys):
-        return self._safe_call('delete', *keys)
+        return self._safe_call("delete", *keys)
+
     def sadd(self, name, *values):
-        return self._safe_call('sadd', name, *values)
+        return self._safe_call("sadd", name, *values)
+
     def smembers(self, name):
-        return self._safe_call('smembers', name) or set()
+        return self._safe_call("smembers", name) or set()
+
     def __getattr__(self, name):
         def method(*args, **kwargs):
             return self._safe_call(name, *args, **kwargs)
+
         return method
 
 
@@ -459,6 +474,7 @@ except Exception as e:
     playground_redis = SafeRedis(None)
     logger.error("playground_redis failed to connect!")
     playground_redis = None
+
 
 def _store_auth_code_pkce(code: str, payload: dict, ttl: int = 600) -> None:
     try:
@@ -559,19 +575,21 @@ _cookie_name = os.getenv("SESSION_COOKIE_NAME")
 if _cookie_name:
     app.config["SESSION_COOKIE_NAME"] = _cookie_name
 # COOKIE_DOMAIN_V1
-app.config.setdefault('SESSION_COOKIE_DOMAIN', '.hodlxxi.com')
-app.config.setdefault('SESSION_COOKIE_SECURE', True)
-app.config.setdefault('SESSION_COOKIE_SAMESITE', 'Lax')
+app.config.setdefault("SESSION_COOKIE_DOMAIN", ".hodlxxi.com")
+app.config.setdefault("SESSION_COOKIE_SECURE", True)
+app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
 # /COOKIE_DOMAIN_V1
 
 # === DOCS_ROUTES_REGISTER_V1 ===
 try:
     from .docs_routes import register_docs_routes
+
     register_docs_routes(app)
 except Exception as _e:
     # Docs are non-critical; do not break service if something is misconfigured.
     app.logger.warning(f"Docs routes not registered: {_e}")
 # === /DOCS_ROUTES_REGISTER_V1 ===
+
 
 @app.route("/screensaver")
 def screensaver():
@@ -581,6 +599,7 @@ def screensaver():
 @app.route("/api/public/status")
 def api_public_status():
     import time
+
     now = int(time.time())
     iso = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(now))
 
@@ -593,12 +612,14 @@ def api_public_status():
     except Exception as e:
         err = str(e)
 
-    return jsonify({
-        "server_time_epoch": now,
-        "server_time_utc": iso,
-        "block_height": height,
-        "error": err,
-    })
+    return jsonify(
+        {
+            "server_time_epoch": now,
+            "server_time_utc": iso,
+            "block_height": height,
+            "error": err,
+        }
+    )
 
 
 # Redis client
@@ -615,7 +636,7 @@ app.register_blueprint(pof_bp)
 app.register_blueprint(oidc_bp)
 app.register_blueprint(pof_api_bp)
 app.register_blueprint(dev_bp, url_prefix="/dev")
-#app.register_blueprint(playground_bp)
+# app.register_blueprint(playground_bp)
 
 OAUTH_PATH_PREFIXES = ("/oauth/", "/oauthx/")
 OAUTH_PUBLIC_PATHS = (
@@ -643,13 +664,11 @@ socketio = SocketIO(
     app,
     ping_interval=25,
     ping_timeout=60,
-
     cors_allowed_origins=SOCKETIO_CORS,
     async_mode=SOCKETIO_ASYNC_MODE,
     logger=True,
-    engineio_logger=True
+    engineio_logger=True,
 )
-
 
 
 # ACTIVE_CHALLENGES (OLD - replaced by pof_enhanced) = {}
@@ -663,14 +682,6 @@ socketio = SocketIO(
 def default_error_handler(e):
     """Handle SocketIO errors"""
     logger.error(f"SocketIO error: {e}", exc_info=True)
-
-
-
-
-
-
-
-
 
 
 # ============================================================================
@@ -708,16 +719,19 @@ def health():
     except Exception as e:  # pragma: no cover - defensive
         logger.error(f"Health check failed: {e}", exc_info=True)
         return jsonify({"status": "unhealthy", "error": str(e)}), 500
+
+
 # --- Dev dashboard hard block (must run before any login redirect gates) ---
 @app.before_request
 def _dev_dashboard_full_only():
     # Always hide dev dashboard unless full (even if not logged in)
     if request.path.rstrip("/") == "/dev/dashboard" and session.get("access_level") != "full":
         from flask import make_response as _make_response
+
         return _make_response("Forbidden", 403)
+
+
 # ------------------------------------------------------------------------
-
-
 
 
 @app.before_request
@@ -726,7 +740,8 @@ def _oauth_public_allowlist():
     # This allowlist is only meant for OAuth/OIDC endpoints.
     # Do NOT enforce login here for the rest of the site.
     from flask import request
-    _p = (request.path or "/")
+
+    _p = request.path or "/"
     if not (
         _p.startswith("/oauth/")
         or _p.startswith("/oauthx/")
@@ -750,6 +765,7 @@ PROCESS_START_TIME = time.time()
 _DB_METRICS_LOCK = threading.Lock()
 _DB_METRICS_CACHE = {"ts": 0.0, "data": None}
 
+
 def _db_metrics_counts_cached(ttl_seconds: int = 15):
     now = time.time()
     try:
@@ -770,6 +786,8 @@ def _db_metrics_counts_cached(ttl_seconds: int = 15):
     except Exception:
         pass
     return data
+
+
 def _db_metrics_counts():
     """
     Returns a dict of DB row counts. Never raises (soft-fail).
@@ -783,9 +801,9 @@ def _db_metrics_counts():
 
     # best-effort connection params
     dbname = os.getenv("PGDATABASE") or os.getenv("DB_NAME") or "hodlxxi"
-    user   = os.getenv("PGUSER") or os.getenv("DB_USER") or "hodlxxi"
-    host   = os.getenv("PGHOST") or os.getenv("DB_HOST") or None
-    port   = os.getenv("PGPORT") or os.getenv("DB_PORT") or None
+    user = os.getenv("PGUSER") or os.getenv("DB_USER") or "hodlxxi"
+    host = os.getenv("PGHOST") or os.getenv("DB_HOST") or None
+    port = os.getenv("PGPORT") or os.getenv("DB_PORT") or None
     password = os.getenv("PGPASSWORD") or os.getenv("DB_PASSWORD") or None
 
     dsn = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
@@ -796,13 +814,17 @@ def _db_metrics_counts():
             conn = psycopg2.connect(dsn, connect_timeout=2)
         else:
             kwargs = {"dbname": dbname, "user": user, "connect_timeout": 2}
-            if host: kwargs["host"] = host
-            if port: kwargs["port"] = int(port)
-            if password: kwargs["password"] = password
+            if host:
+                kwargs["host"] = host
+            if port:
+                kwargs["port"] = int(port)
+            if password:
+                kwargs["password"] = password
             conn = psycopg2.connect(**kwargs)
 
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("""
+            cur.execute(
+                """
                 
 select
   -- totals
@@ -846,7 +868,8 @@ select
   (select count(*) from payments where created_at > now() - interval '24 hours')                            as payments_24h,
   (select count(*) from payments where paid_at is not null and paid_at > now() - interval '24 hours')       as payments_paid_24h
 
-            """)
+            """
+            )
             row = cur.fetchone() or {}
             # cast Decimals/ints cleanly if needed
             return {k: int(row[k]) if row.get(k) is not None else 0 for k in row.keys()}
@@ -858,13 +881,16 @@ select
                 conn.close()
         except Exception:
             pass
+
+
 # --- end metrics helpers ---
+
 
 @app.route("/metrics")
 def metrics():
     # SAFE_METRICS_ACTIVE_CHALLENGES_FALLBACK
     # Some deployments removed/renamed ACTIVE_CHALLENGES; avoid NameError in /metrics
-    ACTIVE_CHALLENGES = globals().get('ACTIVE_CHALLENGES', {}) or {}
+    ACTIVE_CHALLENGES = globals().get("ACTIVE_CHALLENGES", {}) or {}
 
     """Metrics endpoint for monitoring"""
     try:
@@ -875,7 +901,7 @@ def metrics():
             "chat_history_size": len(CHAT_HISTORY),
             "active_challenges": len(ACTIVE_CHALLENGES),
             "lnurl_sessions": len(LNURL_SESSIONS),
-                    "db": _db_metrics_counts_cached(),
+            "db": _db_metrics_counts_cached(),
         }
         return jsonify({"metrics": metrics_data}), 200
     except Exception as e:
@@ -905,6 +931,7 @@ TURN_TTL = int(os.getenv("TURN_TTL", "3600"))
 def turn_credentials():
     # Require a logged-in session to prevent TURN credential scraping/abuse
     from flask import session
+
     if not (session.get("logged_in_pubkey") or "").strip():
         return jsonify({"error": "Not logged in"}), 401
 
@@ -1033,8 +1060,6 @@ def rtc_hangup(data):
         logger.error(f"Error in rtc_hangup: {e}", exc_info=True)
 
 
-
-
 # --- Group Video Call Handlers (rooms + generic signaling) ---
 
 
@@ -1081,10 +1106,7 @@ def rtc_join_room(data):
         # Current peers (excluding the joiner)
         current_peers = [p for p in room["pubkeys"] if p != pubkey]
 
-        logger.info(
-            f"User {truncate_key(pubkey)} joined room {room_id}. "
-            f"Participants: {len(room['pubkeys'])}"
-        )
+        logger.info(f"User {truncate_key(pubkey)} joined room {room_id}. " f"Participants: {len(room['pubkeys'])}")
 
         # Send the room peer list ONLY to the joiner
         emit(
@@ -1111,9 +1133,7 @@ def rtc_join_room(data):
                     break
 
             if other_pubkey:
-                logger.info(
-                    f"Auto-inviting {truncate_key(other_pubkey)} to join {room_id}"
-                )
+                logger.info(f"Auto-inviting {truncate_key(other_pubkey)} to join {room_id}")
                 payload = {"room_id": room_id, "from": pubkey}
                 for sid in sids_for_pubkey(other_pubkey):
                     emit("rtc:call_invite", payload, room=sid)
@@ -1223,6 +1243,7 @@ def rtc_signal(data):
 def rtc_invite(data):
     """Forward call invitation to specific user"""
     from flask_socketio import emit
+
     to_pubkey = data.get("to")
     room_id = data.get("room_id")
     from_pubkey = session.get("logged_in_pubkey")
@@ -1231,6 +1252,7 @@ def rtc_invite(data):
     # Use sids_for_pubkey like other handlers
     for sid in sids_for_pubkey(to_pubkey):
         emit("rtc:invite", {"room_id": room_id, "from": from_pubkey, "from_name": from_pubkey[-8:]}, room=sid)
+
 
 def _broadcast_chat_message(text: str):
     """Shared logic to append to history and broadcast to all clients."""
@@ -1376,11 +1398,12 @@ def get_rpc_connection():
     url = f"http://{rpc_user}:{rpc_pass}@{rpc_host}:{rpc_port}/wallet/{rpc_wallet}"
 
     return AuthServiceProxy(url, timeout=60)
+
+
 # ============================================================================
 # POF ENHANCED SYSTEM - Initialized after get_rpc_connection is defined
 # ============================================================================
 # pof_service = integrate_pof_routes(app, socketio, get_rpc_connection)
-
 
 
 def derive_legacy_address_from_pubkey(pubkey_hex):
@@ -1397,13 +1420,13 @@ def derive_legacy_address_from_pubkey(pubkey_hex):
     address = base58.b58encode(vbyte + chksum).decode()
     return address
 
+
 # CHALLENGE_STORE_V1
 # In-memory login/PoF challenge store (single worker/eventlet).
 # If you scale workers, move this to Redis.
 ACTIVE_CHALLENGES = {}
 CHALLENGE_TTL_SECONDS = 300
 # /CHALLENGE_STORE_V1
-
 
 
 def generate_challenge():
@@ -1413,9 +1436,9 @@ def generate_challenge():
 # --- Minimal login/guest/dev helpers ---------------------------------
 @app.before_request
 def check_auth():
-
     # PUBLIC PREVIEW ROUTES (no login required)
     from flask import request as flask_request
+
     # ALLOW_POF_API_V1
     # These endpoints are safe to hit without redirecting users to login,
     # and are used by the Playground/PoF flows.
@@ -1430,7 +1453,6 @@ def check_auth():
     if flask_request.path.startswith("/api/lnurl-auth/"):
         return None
     # /ALLOW_POF_API_V1
-
 
     if flask_request.path in ("/new-index", "/new-keyauth", "/new-signup", "/docs2", "/screensaver"):
         return None
@@ -1457,9 +1479,10 @@ def check_auth():
         or p.startswith("/static/")
         or p == "/dashboard"
         or p == "/playground"
-        or p.startswith("/p/") \
-        or p.startswith("/api/playground") or p.startswith("/api/pof/") \
-        or p.startswith("/play") \
+        or p.startswith("/p/")
+        or p.startswith("/api/playground")
+        or p.startswith("/api/pof/")
+        or p.startswith("/play")
     ):
         return None
 
@@ -1486,12 +1509,12 @@ def check_auth():
         "/login",
         "/logout",
         "/metrics",
-        "/metrics/prometheus",        "/pof/verify",
+        "/metrics/prometheus",
+        "/pof/verify",
         "/pof/verify/",
         "/api/challenge",
-        "/api/verify",        "/pof/verify",
-
-
+        "/api/verify",
+        "/pof/verify",
     }
     if p in PUBLIC_PATHS or p.startswith("/docs/"):
         return None
@@ -1502,7 +1525,6 @@ def check_auth():
         "logout",
         "verify_signature",
         "guest_login",
-
         "static",
         "convert_wif",
         "decode_raw_script",
@@ -1544,6 +1566,8 @@ def check_auth():
             return jsonify(ok=False, error="Not logged in"), 401
         nxt = request.full_path if request.query_string else request.path
         return redirect(url_for("login", next=nxt))
+
+
 @socketio.on("connect")
 def on_connect(auth=None):
     pubkey = session.get("logged_in_pubkey", "")
@@ -1560,28 +1584,27 @@ def on_connect(auth=None):
     # PRESENCE_LABEL_BROADCAST_V2: attach label to presence join payload (PIN guests)
     label = None
     try:
-        if session.get('login_method') == 'pin_guest':
-            label = session.get('guest_label')
+        if session.get("login_method") == "pin_guest":
+            label = session.get("guest_label")
     except Exception:
         label = None
     try:
-        ONLINE_USER_META[pubkey] = {'role': role, 'label': label}
+        ONLINE_USER_META[pubkey] = {"role": role, "label": label}
     except Exception:
         pass
-    emit('user:joined', {'pubkey': pubkey, 'role': role, 'label': label}, broadcast=True)
-    online_list = [
-        {"pubkey": pk, "role": ONLINE_META.get(pk, "limited")} 
-        for pk in ONLINE_USERS
-    ]
+    emit("user:joined", {"pubkey": pubkey, "role": role, "label": label}, broadcast=True)
+    online_list = [{"pubkey": pk, "role": ONLINE_META.get(pk, "limited")} for pk in ONLINE_USERS]
     # PRESENCE_LABEL_BROADCAST_V2: ensure online:list items include label when available
     try:
         for it in online_list:
-            if isinstance(it, dict) and 'pubkey' in it and 'label' not in it:
-                meta = ONLINE_USER_META.get(it['pubkey'], {})
-                it['label'] = meta.get('label')
+            if isinstance(it, dict) and "pubkey" in it and "label" not in it:
+                meta = ONLINE_USER_META.get(it["pubkey"], {})
+                it["label"] = meta.get("label")
     except Exception:
         pass
-    emit('online:list', online_list, broadcast=True)
+    emit("online:list", online_list, broadcast=True)
+
+
 @socketio.on("disconnect")
 def on_disconnect(*args, **kwargs):
     sid = request.sid
@@ -1592,23 +1615,22 @@ def on_disconnect(*args, **kwargs):
     if pubkey not in ACTIVE_SOCKETS.values():
         ONLINE_USERS.discard(pubkey)
         ONLINE_META.pop(pubkey, None)
-        
+
         # Use emit() not socketio.emit()
         emit("user:left", {"pubkey": pubkey}, broadcast=True)
-        
-        online_list = [
-            {"pubkey": pk, "role": ONLINE_META.get(pk, "limited")} 
-            for pk in ONLINE_USERS
-        ]
+
+        online_list = [{"pubkey": pk, "role": ONLINE_META.get(pk, "limited")} for pk in ONLINE_USERS]
         # PRESENCE_LABEL_BROADCAST_V2: ensure online:list items include label when available
         try:
             for it in online_list:
-                if isinstance(it, dict) and 'pubkey' in it and 'label' not in it:
-                    meta = ONLINE_USER_META.get(it['pubkey'], {})
-                    it['label'] = meta.get('label')
+                if isinstance(it, dict) and "pubkey" in it and "label" not in it:
+                    meta = ONLINE_USER_META.get(it["pubkey"], {})
+                    it["label"] = meta.get("label")
         except Exception:
             pass
-        emit('online:list', online_list, broadcast=True)
+        emit("online:list", online_list, broadcast=True)
+
+
 def purge_old_messages():
     """Keep only messages newer than EXPIRY_SECONDS."""
     import time
@@ -5022,12 +5044,14 @@ def verify_signature():
         user.plan,
     )
 
-    return jsonify({
-        "verified": True,
-        "access_level": session["access_level"],
-        "pubkey": matched_pubkey,
-        "plan": user.plan,
-    })
+    return jsonify(
+        {
+            "verified": True,
+            "access_level": session["access_level"],
+            "pubkey": matched_pubkey,
+            "plan": user.plan,
+        }
+    )
 
 
 @app.route("/guest_login", methods=["POST"])
@@ -5087,6 +5111,7 @@ def guest_login():
     session["guest_label"] = f"Guest-{rid}"
     return jsonify(ok=True, label=session["guest_label"], pubkey=guest_id, login_method="random_guest"), 200
 
+
 def _guest_static_pins_map():
     """
     Parse GUEST_STATIC_PINS env like:
@@ -5095,6 +5120,7 @@ def _guest_static_pins_map():
     """
     import os
     import re
+
     raw = (os.getenv("GUEST_STATIC_PINS", "") or "").strip()
     if not raw:
         return {}
@@ -5118,8 +5144,6 @@ def _guest_static_pins_map():
 
 # ---- Special Login ----
 SPECIAL_USERS = [p.strip() for p in os.getenv("SPECIAL_USERS", "").split(",") if p.strip()]
-
-
 
 
 def get_save_and_check_balances(
@@ -5878,6 +5902,7 @@ textarea{
                     <button id="btnExplorer" class="btn-icon">🔍 Explorer</button>
                     <button id="btnOnboard"  class="btn-icon">🔧 Onboard</button>
                     <button id="btnChat"     class="btn-icon">💬 Chat</button>
+                    <button id="btnScreensaver" class="btn-icon">🖥️ Screensaver</button>
                     <button id="btnExit"     class="btn-icon exit">🚪 Exit</button>
                 </div>
             </div>
@@ -6692,15 +6717,22 @@ textarea{
             window.open(url, '_blank', 'noopener,noreferrer');
         }
 
-        document.getElementById('btnExplorer').addEventListener('click', () => openPanel('explorer'));
-        document.getElementById('btnOnboard') .addEventListener('click', () => openPanel('onboard'));
-        document.getElementById('btnChat')    .addEventListener('click', () => {
-            window.open("{{ url_for('chat') }}", '_blank', 'noopener,noreferrer');
-        });
-        document.getElementById('btnExit')    .addEventListener('click', () => {
-            window.location.href = "{{ url_for('logout') }}";
-        });
+document.getElementById('btnExplorer').addEventListener('click', () => openPanel('explorer'));
 
+const btnScreensaver = document.getElementById('btnScreensaver');
+if (btnScreensaver) {
+    btnScreensaver.addEventListener('click', () => {
+        window.open('/screensaver', '_blank', 'noopener,noreferrer');
+    });
+}
+
+document.getElementById('btnOnboard').addEventListener('click', () => openPanel('onboard'));
+document.getElementById('btnChat').addEventListener('click', () => {
+    window.open("{{ url_for('chat') }}", '_blank', 'noopener,noreferrer');
+});
+document.getElementById('btnExit').addEventListener('click', () => {
+    window.location.href = "{{ url_for('logout') }}";
+});
         function switchPanelByHash() {
             const h = (location.hash || '').slice(1);
             const showId =
@@ -7327,24 +7359,24 @@ def _public_guard_for_lnurl():
     # --- allow playground + playground static assets without auth ---
     # this keeps only playground and its static dir public
     # Allow PoF public routes
-    if p.startswith('/pof/certificate/'):
+    if p.startswith("/pof/certificate/"):
         return None
 
     # PUBLIC_GUARD_ALLOW_POF_V1
     # Allow PoF pages (viral/public)
-    if p.startswith('/pof/'):
+    if p.startswith("/pof/"):
         return None
 
     # Allow public docs/pages
-    if p == '/' or p.startswith('/screensaver'):
+    if p == "/" or p.startswith("/screensaver"):
         return None
-    if p.startswith('/docs') or p.startswith('/docs/'):
+    if p.startswith("/docs") or p.startswith("/docs/"):
         return None
-    if p in ('/new-index','/new-keyauth','/new-signup','/docs2'):
+    if p in ("/new-index", "/new-keyauth", "/new-signup", "/docs2"):
         return None
     # /PUBLIC_GUARD_ALLOW_POF_V1
 
-    if p.startswith('/playground') or p.startswith('/playground/') or p.startswith('/static/playground'):
+    if p.startswith("/playground") or p.startswith("/playground/") or p.startswith("/static/playground"):
         return None
 
     # Always allow static + login/oidc pages
@@ -7372,7 +7404,16 @@ def _public_guard_for_lnurl():
     auth = request.headers.get("Authorization", "")
 
     # Fallback: require session for other /api/*
-    if p.startswith("/api/") and not (p.startswith("/api/playground") or p.startswith("/api/playground/") or p.startswith("/api/pof/")) and not p.startswith("/api/public/") and not session.get("logged_in_pubkey"):
+    if (
+        p.startswith("/api/")
+        and not (
+            p.startswith("/api/playground")
+            or p.startswith("/api/playground/")
+            or p.startswith("/api/pof/")
+        )
+        and not p.startswith("/api/public/")
+        and not session.get("logged_in_pubkey")
+    ):
         return jsonify({"error": "Not logged in", "ok": False}), 401
 
     return None
@@ -7417,6 +7458,7 @@ def is_valid_pubkey(pubkey: str) -> bool:
     except Exception:
         return False
 
+
 # WHOAMI_V1
 @app.route("/api/whoami", methods=["GET"])
 def api_whoami():
@@ -7428,6 +7470,8 @@ def api_whoami():
         access_level=session.get("access_level", "limited"),
         login_method=session.get("login_method", ""),
     )
+
+
 # /WHOAMI_V1
 @app.route("/api/challenge", methods=["POST"])
 def api_challenge():
@@ -7460,12 +7504,13 @@ def api_challenge():
     return jsonify(ok=True, challenge_id=cid, challenge=challenge, expires_in=300)
 
 
-
 # ALIAS_PLAYGROUND_POF_CHALLENGE_V1
 @app.route("/api/playground/pof/challenge", methods=["POST", "OPTIONS"])
 def api_playground_pof_challenge():
     """Backward-compatible alias for older front-end code."""
     return api_challenge()
+
+
 # /ALIAS_PLAYGROUND_POF_CHALLENGE_V1
 @app.route("/api/verify", methods=["POST"])
 def api_verify():
@@ -7548,12 +7593,13 @@ def api_verify():
     return resp
 
 
-
 # ALIAS_PLAYGROUND_POF_VERIFY_V1
 @app.route("/api/playground/pof/verify", methods=["POST", "OPTIONS"])
 def api_playground_pof_verify():
     """Backward-compatible alias for older front-end code."""
     return api_verify()
+
+
 # /ALIAS_PLAYGROUND_POF_VERIFY_V1
 @app.route("/special_login", methods=["POST"])
 def special_login():
@@ -7595,6 +7641,7 @@ def special_login():
 # @app.route("/verify_signature", methods=["POST"])
 def verify_signature_legacy():
     from flask import jsonify, request, session
+
     data = request.get_json(silent=True) or {}
     pubkey = (data.get("pubkey") or "").strip()  # compressed hex (02/03...)
     signature = (data.get("signature") or "").strip()  # wallet base64 (Electrum/Sparrow/Core)
@@ -7817,6 +7864,7 @@ def root_redirect():
     - everyone else   -> /screensaver
     """
     from flask import session, redirect, url_for
+
     try:
         if session.get("logged_in_pubkey"):
             return redirect(url_for("home"))
@@ -7824,7 +7872,9 @@ def root_redirect():
         pass
     return redirect("/screensaver", code=302)
 
+
 from enum import Enum
+
 
 class ClientType(Enum):
     FREE = "free"
@@ -7835,6 +7885,7 @@ class ClientType(Enum):
 from dataclasses import dataclass, field
 from typing import List, Set, Optional
 from datetime import datetime
+
 
 @dataclass
 class ClientCredentials:
@@ -7853,11 +7904,11 @@ class ClientCredentials:
 # ----------------------------------------------------------------------------
 
 
-
 # OAuth/OIDC in-memory stores (use Redis for production)
 CLIENT_STORE = {}
 # auth code store is used by cleanup_expired_data() and token flows
-AUTH_CODE_STORE = globals().get('AUTH_CODE_STORE', {})
+AUTH_CODE_STORE = globals().get("AUTH_CODE_STORE", {})
+
 
 class ClientManager:
     @staticmethod
@@ -7953,7 +8004,11 @@ class ClientManager:
                         allowed_scopes=redis_client.allowed_scopes,
                         redirect_uris=redis_client.redirect_uris,
                         payment_expiry=None,
-                        created_at=redis_client.created_at if isinstance(redis_client.created_at, datetime) else datetime.fromtimestamp(redis_client.created_at) if redis_client.created_at else datetime.utcnow(),
+                        created_at=redis_client.created_at
+                        if isinstance(redis_client.created_at, datetime)
+                        else datetime.fromtimestamp(redis_client.created_at)
+                        if redis_client.created_at
+                        else datetime.utcnow(),
                     )
         except Exception as e:
             logger.warning(f"⚠️  Redis lookup failed: {e}")
@@ -8098,7 +8153,6 @@ class OAuthServer:
         refresh_token: Optional[str] = None,
         code_verifier: Optional[str] = None,
     ) -> dict:
-
         client = self.client_manager.authenticate_client(client_id, client_secret)
         if not client:
             return {"error": "invalid_client"}
@@ -8115,9 +8169,7 @@ class OAuthServer:
 
         return {"error": "unsupported_grant_type"}
 
-    def _handle_code_grant(
-        self, code: str, client: ClientCredentials, code_verifier: Optional[str] = None
-    ) -> dict:
+    def _handle_code_grant(self, code: str, client: ClientCredentials, code_verifier: Optional[str] = None) -> dict:
         code_data = _pop_auth_code_pkce(code)
 
         if not code_data:
@@ -8818,14 +8870,12 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
 """
 
 
-
 # ============================================================================
 # ROUTES: LANDING PAGE
 # ============================================================================
 
 
 @app.route("/oidc")
-
 def landing_page():
     """Serve the KeyAuth BTC OIDC landing page"""
     # Get the issuer URL dynamically
@@ -8840,60 +8890,67 @@ def landing_page():
 # PREVIEW ROUTES (template-based pages)
 # ----------------------------------------------------------------------------
 
+
 @app.get("/new-index")
 def new_index_preview():
     base = request.url_root.rstrip("/")
     from flask import render_template
+
     return render_template("index.html", issuer=base)
+
 
 @app.get("/new-keyauth")
 def new_keyauth_preview():
     base = request.url_root.rstrip("/")
     from flask import render_template
+
     return render_template("keyauth.html", issuer=base)
+
 
 @app.get("/new-signup")
 def new_signup_preview():
     base = request.url_root.rstrip("/")
     from flask import render_template
+
     return render_template("signup.html", issuer=base)
 
-# ROUTES: ADDITIONAL PAGES
-# ============================================================================
+    # ROUTES: ADDITIONAL PAGES
+    # ============================================================================
 
-
-
-# @app.route("/playground/", defaults={'path': ''})
-# @app.route("/playground/<path:path>")
-# def playground(path):
-#     playground_dir = 'static/playground'
-#     if path == '':
-#         resp = make_response(send_from_directory(playground_dir, 'index.html'))
-#     else:
-#         resp = make_response(send_from_directory(playground_dir, path))
-#     
-#     # FORCE override CSP for playground - remove any existing CSP
-#     if 'Content-Security-Policy' in resp.headers:
-#         del resp.headers['Content-Security-Policy']
-#     if 'Content-Security-Policy-Report-Only' in resp.headers:
-#         del resp.headers['Content-Security-Policy-Report-Only']    
+    # @app.route("/playground/", defaults={'path': ''})
+    # @app.route("/playground/<path:path>")
+    # def playground(path):
+    #     playground_dir = 'static/playground'
+    #     if path == '':
+    #         resp = make_response(send_from_directory(playground_dir, 'index.html'))
+    #     else:
+    #         resp = make_response(send_from_directory(playground_dir, path))
+    #
+    #     # FORCE override CSP for playground - remove any existing CSP
+    #     if 'Content-Security-Policy' in resp.headers:
+    #         del resp.headers['Content-Security-Policy']
+    #     if 'Content-Security-Policy-Report-Only' in resp.headers:
+    #         del resp.headers['Content-Security-Policy-Report-Only']
     # Set very permissive CSP
-    resp.headers['Content-Security-Policy'] = "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline';"
-    
+    resp.headers[
+        "Content-Security-Policy"
+    ] = "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline';"
+
     return resp
 
-#@app.route("/playground", methods=["GET"])
-#def playground():
-            # Serve static playground to avoid Jinja parsing issues
- #   logged_in = session.get('logged_in_pubkey', '')
-  #  access_level = session.get('access_level', 'limited')
 
-    # Serve the prebuilt static HTML (bypass Jinja)
-   # return send_from_directory('static', 'playground.html')
+# @app.route("/playground", methods=["GET"])
+# def playground():
+# Serve static playground to avoid Jinja parsing issues
+#   logged_in = session.get('logged_in_pubkey', '')
+#  access_level = session.get('access_level', 'limited')
+
+# Serve the prebuilt static HTML (bypass Jinja)
+# return send_from_directory('static', 'playground.html')
+
 
 @app.route("/oauth/register", methods=["POST"])
 def oauth_register():
-
     # --- ownership + stricter anon throttling ---
     from flask import session, request
     import time
@@ -8903,10 +8960,10 @@ def oauth_register():
 
     # Simple extra throttle for anonymous registrations (in-memory, per-process)
     if not my_pubkey:
-        ip = (request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.remote_addr or "unknown")
+        ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.remote_addr or "unknown"
         now = time.time()
         window = 3600  # 1 hour
-        limit = 10     # anon register max 10/hour per IP
+        limit = 10  # anon register max 10/hour per IP
         bucket = getattr(oauth_register, "_anon_bucket", {})
         times = [t for t in bucket.get(ip, []) if (now - t) < window]
         if len(times) >= limit:
@@ -9015,7 +9072,6 @@ if limiter:
 
 @app.route("/metrics/prometheus")
 def metrics_prometheus():
-
     # SAFE_METRICS_ACTIVE_CHALLENGES_FALLBACK
     ACTIVE_CHALLENGES = globals().get("ACTIVE_CHALLENGES", {}) or {}
     """
@@ -9040,9 +9096,11 @@ def metrics_prometheus():
             _connect = None
             try:
                 import psycopg  # psycopg3
+
                 _connect = psycopg.connect
             except Exception:
                 import psycopg2  # psycopg2
+
                 _connect = psycopg2.connect
 
             # DSN from env (best), else build from common PG vars
@@ -9050,9 +9108,9 @@ def metrics_prometheus():
             if not dsn:
                 host = os.getenv("PGHOST", os.getenv("DB_HOST", "127.0.0.1"))
                 port = os.getenv("PGPORT", os.getenv("DB_PORT", "5432"))
-                db   = os.getenv("PGDATABASE", os.getenv("DB_NAME", "hodlxxi"))
+                db = os.getenv("PGDATABASE", os.getenv("DB_NAME", "hodlxxi"))
                 user = os.getenv("PGUSER", os.getenv("DB_USER", "hodlxxi"))
-                pw   = os.getenv("PGPASSWORD", os.getenv("DB_PASSWORD", ""))
+                pw = os.getenv("PGPASSWORD", os.getenv("DB_PASSWORD", ""))
 
                 if pw:
                     dsn = f"postgresql://{user}:{pw}@{host}:{port}/{db}"
@@ -9063,6 +9121,7 @@ def metrics_prometheus():
             try:
                 cur = conn.cursor()
                 try:
+
                     def q(sql: str) -> int:
                         cur.execute(sql)
                         row = cur.fetchone()
@@ -9074,22 +9133,25 @@ def metrics_prometheus():
                     db_counts["chat_messages_total"] = q("select count(*) from chat_messages;")
                     db_counts["oauth_tokens_total"] = q("select count(*) from oauth_tokens;")
                 finally:
-                    try: cur.close()
-                    except Exception: pass
+                    try:
+                        cur.close()
+                    except Exception:
+                        pass
             finally:
-                try: conn.close()
-                except Exception: pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
         except Exception as e:
             logger.warning(f"Prometheus DB metrics unavailable: {e}")
             db_counts = {}
 
-
-
         # --- base prometheus content from existing registry (if available) ---
         base_text = ""
         try:
             from prometheus_client import generate_latest, CONTENT_TYPE_LATEST  # type: ignore
+
             base_text = generate_latest().decode("utf-8", errors="ignore")
         except Exception:
             CONTENT_TYPE_LATEST = "text/plain; version=0.0.4; charset=utf-8"
@@ -9111,7 +9173,7 @@ def metrics_prometheus():
             "# TYPE hodlxxi_active_challenges gauge",
             f"hodlxxi_active_challenges {len((globals().get('ACTIVE_CHALLENGES', {}) or {}))}",
         ]
-        
+
         # DB totals (always emitted; 0 if unavailable)
         db = _db_metrics_counts_cached()
 
@@ -9120,15 +9182,20 @@ def metrics_prometheus():
                 v = int(value or 0)
             except Exception:
                 v = 0
-            lines.extend([
-                f"# HELP {name} {help_text}",
-                f"# TYPE {name} gauge",
-                f"{name} {v}",
-            ])
+            lines.extend(
+                [
+                    f"# HELP {name} {help_text}",
+                    f"# TYPE {name} gauge",
+                    f"{name} {v}",
+                ]
+            )
 
         # DB health
-        _emit_gauge("hodlxxi_db_up", "Database reachable for metrics query (1=up, 0=down)",
-                    0 if (isinstance(db, dict) and db.get("db_error")) else 1)
+        _emit_gauge(
+            "hodlxxi_db_up",
+            "Database reachable for metrics query (1=up, 0=down)",
+            0 if (isinstance(db, dict) and db.get("db_error")) else 1,
+        )
 
         # Totals
         for key, help_text in [
@@ -9153,25 +9220,20 @@ def metrics_prometheus():
             ("logins_5m", "Users with last_login in last 5 minutes"),
             ("logins_1h", "Users with last_login in last 1 hour"),
             ("logins_24h", "Users with last_login in last 24 hours"),
-
             ("chat_5m", "Chat messages in last 5 minutes"),
             ("chat_1h", "Chat messages in last 1 hour"),
             ("chat_24h", "Chat messages in last 24 hours"),
-
             ("lnurl_created_5m", "LNURL challenges created in last 5 minutes"),
             ("lnurl_created_1h", "LNURL challenges created in last 1 hour"),
             ("lnurl_created_24h", "LNURL challenges created in last 24 hours"),
             ("lnurl_verified_24h", "LNURL challenges verified in last 24 hours"),
-
             ("pof_created_5m", "PoF challenges created in last 5 minutes"),
             ("pof_created_1h", "PoF challenges created in last 1 hour"),
             ("pof_created_24h", "PoF challenges created in last 24 hours"),
             ("pof_verified_24h", "PoF challenges verified in last 24 hours"),
-
             ("oauth_tokens_5m", "OAuth tokens created in last 5 minutes"),
             ("oauth_tokens_1h", "OAuth tokens created in last 1 hour"),
             ("oauth_tokens_24h", "OAuth tokens created in last 24 hours"),
-
             ("payments_24h", "Payments created in last 24 hours"),
             ("payments_paid_24h", "Payments paid in last 24 hours"),
         ]:
@@ -9211,9 +9273,11 @@ def metrics_prometheus():
             _connect = None
             try:
                 import psycopg  # psycopg3
+
                 _connect = psycopg.connect
             except Exception:
                 import psycopg2  # psycopg2
+
                 _connect = psycopg2.connect
 
             # DSN from env (best), else build from common PG vars
@@ -9221,9 +9285,9 @@ def metrics_prometheus():
             if not dsn:
                 host = os.getenv("PGHOST", os.getenv("DB_HOST", "127.0.0.1"))
                 port = os.getenv("PGPORT", os.getenv("DB_PORT", "5432"))
-                db   = os.getenv("PGDATABASE", os.getenv("DB_NAME", "hodlxxi"))
+                db = os.getenv("PGDATABASE", os.getenv("DB_NAME", "hodlxxi"))
                 user = os.getenv("PGUSER", os.getenv("DB_USER", "hodlxxi"))
-                pw   = os.getenv("PGPASSWORD", os.getenv("DB_PASSWORD", ""))
+                pw = os.getenv("PGPASSWORD", os.getenv("DB_PASSWORD", ""))
 
                 if pw:
                     dsn = f"postgresql://{user}:{pw}@{host}:{port}/{db}"
@@ -9234,6 +9298,7 @@ def metrics_prometheus():
             try:
                 cur = conn.cursor()
                 try:
+
                     def q(sql: str) -> int:
                         cur.execute(sql)
                         row = cur.fetchone()
@@ -9245,22 +9310,25 @@ def metrics_prometheus():
                     db_counts["chat_messages_total"] = q("select count(*) from chat_messages;")
                     db_counts["oauth_tokens_total"] = q("select count(*) from oauth_tokens;")
                 finally:
-                    try: cur.close()
-                    except Exception: pass
+                    try:
+                        cur.close()
+                    except Exception:
+                        pass
             finally:
-                try: conn.close()
-                except Exception: pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
         except Exception as e:
             logger.warning(f"Prometheus DB metrics unavailable: {e}")
             db_counts = {}
 
-
-
         # --- base prometheus content from existing registry (if available) ---
         base_text = ""
         try:
             from prometheus_client import generate_latest, CONTENT_TYPE_LATEST  # type: ignore
+
             base_text = generate_latest().decode("utf-8", errors="ignore")
         except Exception:
             CONTENT_TYPE_LATEST = "text/plain; version=0.0.4; charset=utf-8"
@@ -9282,23 +9350,29 @@ def metrics_prometheus():
             "# TYPE hodlxxi_active_challenges gauge",
             f"hodlxxi_active_challenges {len((globals().get('ACTIVE_CHALLENGES', {}) or {}))}",
         ]
-        
+
         # DB totals (always emitted; 0 if unavailable)
         db = _db_metrics_counts_cached() if "_db_metrics_counts_cached" in globals() else {}
+
         def _emit_gauge(name: str, help_text: str, value) -> None:
             try:
                 v = int(value or 0)
             except Exception:
                 v = 0
-            lines.extend([
-                f"# HELP {name} {help_text}",
-                f"# TYPE {name} gauge",
-                f"{name} {v}",
-            ])
+            lines.extend(
+                [
+                    f"# HELP {name} {help_text}",
+                    f"# TYPE {name} gauge",
+                    f"{name} {v}",
+                ]
+            )
 
         # DB health
-        _emit_gauge("hodlxxi_db_up", "Database reachable for metrics query (1=up, 0=down)",
-                    0 if (isinstance(db, dict) and db.get("db_error")) else 1)
+        _emit_gauge(
+            "hodlxxi_db_up",
+            "Database reachable for metrics query (1=up, 0=down)",
+            0 if (isinstance(db, dict) and db.get("db_error")) else 1,
+        )
 
         # Totals
         for key, help_text in [
@@ -9323,25 +9397,20 @@ def metrics_prometheus():
             ("logins_5m", "Users with last_login in last 5 minutes"),
             ("logins_1h", "Users with last_login in last 1 hour"),
             ("logins_24h", "Users with last_login in last 24 hours"),
-
             ("chat_5m", "Chat messages in last 5 minutes"),
             ("chat_1h", "Chat messages in last 1 hour"),
             ("chat_24h", "Chat messages in last 24 hours"),
-
             ("lnurl_created_5m", "LNURL challenges created in last 5 minutes"),
             ("lnurl_created_1h", "LNURL challenges created in last 1 hour"),
             ("lnurl_created_24h", "LNURL challenges created in last 24 hours"),
             ("lnurl_verified_24h", "LNURL challenges verified in last 24 hours"),
-
             ("pof_created_5m", "PoF challenges created in last 5 minutes"),
             ("pof_created_1h", "PoF challenges created in last 1 hour"),
             ("pof_created_24h", "PoF challenges created in last 24 hours"),
             ("pof_verified_24h", "PoF challenges verified in last 24 hours"),
-
             ("oauth_tokens_5m", "OAuth tokens created in last 5 minutes"),
             ("oauth_tokens_1h", "OAuth tokens created in last 1 hour"),
             ("oauth_tokens_24h", "OAuth tokens created in last 24 hours"),
-
             ("payments_24h", "Payments created in last 24 hours"),
             ("payments_paid_24h", "Payments paid in last 24 hours"),
         ]:
@@ -9357,17 +9426,21 @@ def metrics_prometheus():
         logger.error(f"Prometheus metrics endpoint failed: {e}", exc_info=True)
         return Response("# ERROR generating metrics\n", mimetype="text/plain"), 500
 
+
 @app.after_request
 def apply_security_headers(response):
     from flask import make_response as _make_response
+
     response = _make_response(response)
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-  #  response.headers["Content-Security-Policy"] = "default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.tailwindcss.com; connect-src 'self' wss: ws: https: http:; font-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; frame-ancestors 'none'"
+    #  response.headers["Content-Security-Policy"] = "default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.tailwindcss.com; connect-src 'self' wss: ws: https: http:; font-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; frame-ancestors 'none'"
     return response
+
 
 # ============================================================================
 # ROUTES: LNURL-AUTH
 # ============================================================================
+
 
 @app.route("/api/lnurl-auth/create", methods=["GET", "POST"])
 def lnurl_create():
@@ -9557,10 +9630,10 @@ def docs_viewer_v2():
 
     return render_template("docs_viewer.html", items=items)
 
+
 @app.route("/docs")
 @app.route("/docs/")
 def docs_alias():
-
     # === DOCS_INDEX_DYNAMIC_V1: dynamic docs index from /static/docs/docs ===
     import os
     import re as _re
@@ -9666,11 +9739,10 @@ def docs_alias():
     # === /DOCS_INDEX_DYNAMIC_V1 ===
 
 
-
-
 @app.route("/docs.json")
 def docs_json_alias():
     return redirect(url_for("oauthx_docs"), code=302)
+
 
 @app.route("/oauthx/docs")
 def oauthx_docs():
@@ -9784,9 +9856,9 @@ def oauth_introspect():
 def cleanup_expired_data():
     # Defensive: some stores may be defined later / conditionally
     g = globals()
-    g.setdefault('AUTH_CODE_STORE', {})
-    if 'LNURL_SESSION_STORE' not in g:
-        g['LNURL_SESSION_STORE'] = g.get('LNURL_SESSIONS', {}) or {}
+    g.setdefault("AUTH_CODE_STORE", {})
+    if "LNURL_SESSION_STORE" not in g:
+        g["LNURL_SESSION_STORE"] = g.get("LNURL_SESSIONS", {}) or {}
 
     # Guard: app can import before stores are defined (gunicorn boot)
     global AUTH_CODE_STORE
@@ -9832,6 +9904,7 @@ def cleanup_expired_data():
 # Flask 3+: before_first_request was removed. Run cleanup once via before_request.
 _cleanup_once = {"done": False}
 
+
 @app.before_request
 def _run_cleanup_once():
     if _cleanup_once.get("done"):
@@ -9846,6 +9919,7 @@ def _run_cleanup_once():
             pass
     return None
 
+
 def _deferred_cleanup_expired_data():
     try:
         cleanup_expired_data()
@@ -9854,6 +9928,7 @@ def _deferred_cleanup_expired_data():
             logger.warning(f"deferred cleanup_expired_data failed: {e}", exc_info=True)
         except Exception:
             print(f"deferred cleanup_expired_data failed: {e}")
+
 
 # ============================================================================
 # ADDITIONAL HELPER ROUTES
@@ -9867,7 +9942,7 @@ def list_clients():
     import psycopg
 
     pubkey = session.get("logged_in_pubkey", "")
-    level  = session.get("access_level")
+    level = session.get("access_level")
 
     if not pubkey:
         return jsonify(ok=False, error="Not logged in", clients=[]), 401
@@ -9877,39 +9952,46 @@ def list_clients():
     if not dsn:
         host = os.getenv("PGHOST", os.getenv("DB_HOST", "127.0.0.1"))
         port = os.getenv("PGPORT", os.getenv("DB_PORT", "5432"))
-        db   = os.getenv("PGDATABASE", os.getenv("DB_NAME", "hodlxxi"))
+        db = os.getenv("PGDATABASE", os.getenv("DB_NAME", "hodlxxi"))
         user = os.getenv("PGUSER", os.getenv("DB_USER", "hodlxxi"))
-        pw   = os.getenv("PGPASSWORD", os.getenv("DB_PASSWORD", ""))
+        pw = os.getenv("PGPASSWORD", os.getenv("DB_PASSWORD", ""))
         dsn = f"postgresql://{user}:{pw}@{host}:{port}/{db}" if pw else f"postgresql://{user}@{host}:{port}/{db}"
 
     def _jsonish(v):
-        if v is None: return None
-        if isinstance(v, (dict, list, int, float, bool)): return v
+        if v is None:
+            return None
+        if isinstance(v, (dict, list, int, float, bool)):
+            return v
         if isinstance(v, str):
             t = v.strip()
             if (t.startswith("{") and t.endswith("}")) or (t.startswith("[") and t.endswith("]")):
-                try: return json.loads(t)
-                except Exception: return v
+                try:
+                    return json.loads(t)
+                except Exception:
+                    return v
             return v
         return v
 
     # Full users can view all clients; others see owned + NULL-owned (legacy)
-    is_full = (level == "full")
+    is_full = level == "full"
 
     try:
         with psycopg.connect(dsn) as conn:
             with conn.cursor() as cur:
                 if is_full:
-                    cur.execute("""
+                    cur.execute(
+                        """
                         select client_id, client_name, redirect_uris, grant_types, response_types,
                                scope, token_endpoint_auth_method, created_at, metadata, is_active,
                                owner_pubkey, plan
                         from oauth_clients
                         order by created_at desc
                         limit 200
-                    """)
+                    """
+                    )
                 else:
-                    cur.execute("""
+                    cur.execute(
+                        """
                         select client_id, client_name, redirect_uris, grant_types, response_types,
                                scope, token_endpoint_auth_method, created_at, metadata, is_active,
                                owner_pubkey, plan
@@ -9917,32 +9999,47 @@ def list_clients():
                         where owner_pubkey = %s or owner_pubkey is null
                         order by created_at desc
                         limit 200
-                    """, (pubkey,))
+                    """,
+                        (pubkey,),
+                    )
                 rows = cur.fetchall()
 
         clients = []
-        for (client_id, client_name, redirect_uris, grant_types, response_types,
-             scope, token_auth, created_at, metadata, is_active, owner_pubkey, plan) in rows:
-            clients.append({
-                "client_id": client_id,
-                "client_name": client_name,
-                "redirect_uris": _jsonish(redirect_uris) or [],
-                "grant_types": _jsonish(grant_types) or [],
-                "response_types": _jsonish(response_types) or [],
-                "scope": scope,
-                "token_endpoint_auth_method": token_auth,
-                "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at),
-                "metadata": _jsonish(metadata) or {},
-                "is_active": bool(is_active) if is_active is not None else True,
-                "owner_pubkey": owner_pubkey,
-                "plan": plan or "free",
-            })
+        for (
+            client_id,
+            client_name,
+            redirect_uris,
+            grant_types,
+            response_types,
+            scope,
+            token_auth,
+            created_at,
+            metadata,
+            is_active,
+            owner_pubkey,
+            plan,
+        ) in rows:
+            clients.append(
+                {
+                    "client_id": client_id,
+                    "client_name": client_name,
+                    "redirect_uris": _jsonish(redirect_uris) or [],
+                    "grant_types": _jsonish(grant_types) or [],
+                    "response_types": _jsonish(response_types) or [],
+                    "scope": scope,
+                    "token_endpoint_auth_method": token_auth,
+                    "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at),
+                    "metadata": _jsonish(metadata) or {},
+                    "is_active": bool(is_active) if is_active is not None else True,
+                    "owner_pubkey": owner_pubkey,
+                    "plan": plan or "free",
+                }
+            )
 
         return jsonify(ok=True, clients=clients, count=len(clients), ts=time.time()), 200
 
     except Exception as e:
         return jsonify(ok=False, error=f"DB query failed: {e}", clients=[]), 500
-
 
 
 @app.route("/oauth/clients/<client_id>", methods=["GET"])
@@ -9959,7 +10056,7 @@ def oauth_client_detail(client_id):
     import psycopg
 
     pubkey = session.get("logged_in_pubkey") or ""
-    level  = session.get("access_level") or ""
+    level = session.get("access_level") or ""
 
     if not pubkey:
         resp = jsonify(ok=False, error="Not logged in")
@@ -9971,26 +10068,30 @@ def oauth_client_detail(client_id):
         resp.headers["Cache-Control"] = "no-store"
         return resp, 403
 
-    admins = {x.strip() for x in (os.getenv("OAUTH_CLIENTS_ADMIN_PUBKEYS","")).split(",") if x.strip()}
-    is_admin = (pubkey in admins)
+    admins = {x.strip() for x in (os.getenv("OAUTH_CLIENTS_ADMIN_PUBKEYS", "")).split(",") if x.strip()}
+    is_admin = pubkey in admins
 
     dsn = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or ""
     if not dsn:
         host = os.getenv("PGHOST", os.getenv("DB_HOST", "127.0.0.1"))
         port = os.getenv("PGPORT", os.getenv("DB_PORT", "5432"))
-        db   = os.getenv("PGDATABASE", os.getenv("DB_NAME", "hodlxxi"))
+        db = os.getenv("PGDATABASE", os.getenv("DB_NAME", "hodlxxi"))
         user = os.getenv("PGUSER", os.getenv("DB_USER", "hodlxxi"))
-        pw   = os.getenv("PGPASSWORD", os.getenv("DB_PASSWORD", ""))
+        pw = os.getenv("PGPASSWORD", os.getenv("DB_PASSWORD", ""))
         dsn = f"postgresql://{user}:{pw}@{host}:{port}/{db}" if pw else f"postgresql://{user}@{host}:{port}/{db}"
 
     def _jsonish(v):
-        if v is None: return None
-        if isinstance(v, (dict, list, int, float, bool)): return v
+        if v is None:
+            return None
+        if isinstance(v, (dict, list, int, float, bool)):
+            return v
         if isinstance(v, str):
             t = v.strip()
             if (t.startswith("{") and t.endswith("}")) or (t.startswith("[") and t.endswith("]")):
-                try: return json.loads(t)
-                except Exception: return v
+                try:
+                    return json.loads(t)
+                except Exception:
+                    return v
             return v
         return v
 
@@ -10023,20 +10124,23 @@ def oauth_client_detail(client_id):
         resp.headers["Cache-Control"] = "no-store"
         return resp, 403
 
-    resp = jsonify(ok=True, client={
-        "client_id": r[0],
-        "client_name": r[1],
-        "redirect_uris": _jsonish(r[2]) or [],
-        "grant_types": _jsonish(r[3]) or [],
-        "response_types": _jsonish(r[4]) or [],
-        "scope": r[5],
-        "token_endpoint_auth_method": r[6],
-        "created_at": (r[7].isoformat() if getattr(r[7], "isoformat", None) else str(r[7])),
-        "metadata": _jsonish(r[8]) or {},
-        "is_active": bool(r[9]),
-        "owner_pubkey": owner,
-        "plan": r[11] or "free",
-    })
+    resp = jsonify(
+        ok=True,
+        client={
+            "client_id": r[0],
+            "client_name": r[1],
+            "redirect_uris": _jsonish(r[2]) or [],
+            "grant_types": _jsonish(r[3]) or [],
+            "response_types": _jsonish(r[4]) or [],
+            "scope": r[5],
+            "token_endpoint_auth_method": r[6],
+            "created_at": (r[7].isoformat() if getattr(r[7], "isoformat", None) else str(r[7])),
+            "metadata": _jsonish(r[8]) or {},
+            "is_active": bool(r[9]),
+            "owner_pubkey": owner,
+            "plan": r[11] or "free",
+        },
+    )
     resp.headers["Cache-Control"] = "no-store"
     return resp, 200
 
@@ -10053,10 +10157,10 @@ def oauth_client_rotate_secret(client_id):
     import psycopg
 
     pubkey = session.get("logged_in_pubkey") or ""
-    level  = session.get("access_level") or ""
+    level = session.get("access_level") or ""
 
-    admins = {x.strip() for x in (os.getenv("OAUTH_CLIENTS_ADMIN_PUBKEYS","")).split(",") if x.strip()}
-    is_admin = (pubkey in admins)
+    admins = {x.strip() for x in (os.getenv("OAUTH_CLIENTS_ADMIN_PUBKEYS", "")).split(",") if x.strip()}
+    is_admin = pubkey in admins
 
     if not pubkey:
         resp = jsonify(ok=False, error="Not logged in")
@@ -10071,9 +10175,9 @@ def oauth_client_rotate_secret(client_id):
     if not dsn:
         host = os.getenv("PGHOST", os.getenv("DB_HOST", "127.0.0.1"))
         port = os.getenv("PGPORT", os.getenv("DB_PORT", "5432"))
-        db   = os.getenv("PGDATABASE", os.getenv("DB_NAME", "hodlxxi"))
+        db = os.getenv("PGDATABASE", os.getenv("DB_NAME", "hodlxxi"))
         user = os.getenv("PGUSER", os.getenv("DB_USER", "hodlxxi"))
-        pw   = os.getenv("PGPASSWORD", os.getenv("DB_PASSWORD", ""))
+        pw = os.getenv("PGPASSWORD", os.getenv("DB_PASSWORD", ""))
         dsn = f"postgresql://{user}:{pw}@{host}:{port}/{db}" if pw else f"postgresql://{user}@{host}:{port}/{db}"
 
     new_secret = secrets.token_urlsafe(32)
@@ -10102,15 +10206,18 @@ def oauth_client_rotate_secret(client_id):
 def playground():
     # Public demo page
     from flask import render_template
+
     return render_template("playground.html")
+
 
 # API_DEBUG_SESSION_ALIAS_V1
 @app.route("/api/debug/session", methods=["GET"])
 def api_debug_session_alias():
     """Compat endpoint: some frontend code calls /api/debug/session."""
     return api_whoami()
-# /API_DEBUG_SESSION_ALIAS_V1
 
+
+# /API_DEBUG_SESSION_ALIAS_V1
 
 
 # API_POF_VERIFY_PSBT_V1
@@ -10161,13 +10268,13 @@ def api_pof_verify_psbt():
     # -------- PSBT parsing helpers (minimal BIP174) --------
     def read_varint(b, i):
         n = b[i]
-        if n < 0xfd:
-            return n, i+1
-        if n == 0xfd:
-            return int.from_bytes(b[i+1:i+3], "little"), i+3
-        if n == 0xfe:
-            return int.from_bytes(b[i+1:i+5], "little"), i+5
-        return int.from_bytes(b[i+1:i+9], "little"), i+9
+        if n < 0xFD:
+            return n, i + 1
+        if n == 0xFD:
+            return int.from_bytes(b[i + 1 : i + 3], "little"), i + 3
+        if n == 0xFE:
+            return int.from_bytes(b[i + 1 : i + 5], "little"), i + 5
+        return int.from_bytes(b[i + 1 : i + 9], "little"), i + 9
 
     def read_kv_map(b, i):
         m = []
@@ -10175,11 +10282,13 @@ def api_pof_verify_psbt():
             if i >= len(b):
                 raise ValueError("truncated psbt map")
             if b[i] == 0x00:
-                return m, i+1
+                return m, i + 1
             klen, i = read_varint(b, i)
-            key = b[i:i+klen]; i += klen
+            key = b[i : i + klen]
+            i += klen
             vlen, i = read_varint(b, i)
-            val = b[i:i+vlen]; i += vlen
+            val = b[i : i + vlen]
+            i += vlen
             m.append((key, val))
         # unreachable
 
@@ -10217,29 +10326,36 @@ def api_pof_verify_psbt():
     def parse_tx(tx_bytes):
         # minimal tx parser (handles segwit marker if present)
         i = 0
-        version = int.from_bytes(tx_bytes[i:i+4], "little"); i += 4
+        version = int.from_bytes(tx_bytes[i : i + 4], "little")
+        i += 4
 
         segwit = False
-        if i+2 <= len(tx_bytes) and tx_bytes[i] == 0x00 and tx_bytes[i+1] == 0x01:
+        if i + 2 <= len(tx_bytes) and tx_bytes[i] == 0x00 and tx_bytes[i + 1] == 0x01:
             segwit = True
             i += 2
 
         vin_n, i = read_varint(tx_bytes, i)
         vin = []
         for _ in range(vin_n):
-            txid_le = tx_bytes[i:i+32]; i += 32
-            vout = int.from_bytes(tx_bytes[i:i+4], "little"); i += 4
+            txid_le = tx_bytes[i : i + 32]
+            i += 32
+            vout = int.from_bytes(tx_bytes[i : i + 4], "little")
+            i += 4
             slen, i = read_varint(tx_bytes, i)
-            script = tx_bytes[i:i+slen]; i += slen
-            seq = tx_bytes[i:i+4]; i += 4
+            script = tx_bytes[i : i + slen]
+            i += slen
+            seq = tx_bytes[i : i + 4]
+            i += 4
             vin.append({"txid_le": txid_le, "vout": vout, "scriptSig": script, "sequence": seq})
 
         vout_n, i = read_varint(tx_bytes, i)
         vout_list = []
         for _ in range(vout_n):
-            amt_sat = int.from_bytes(tx_bytes[i:i+8], "little"); i += 8
+            amt_sat = int.from_bytes(tx_bytes[i : i + 8], "little")
+            i += 8
             pklen, i = read_varint(tx_bytes, i)
-            spk = tx_bytes[i:i+pklen]; i += pklen
+            spk = tx_bytes[i : i + pklen]
+            i += pklen
             vout_list.append({"value_sat": amt_sat, "scriptPubKey": spk})
 
         # skip witness if present
@@ -10250,32 +10366,35 @@ def api_pof_verify_psbt():
                     ilen, i = read_varint(tx_bytes, i)
                     i += ilen
 
-        locktime = int.from_bytes(tx_bytes[i:i+4], "little") if i+4 <= len(tx_bytes) else 0
+        locktime = int.from_bytes(tx_bytes[i : i + 4], "little") if i + 4 <= len(tx_bytes) else 0
         return {"version": version, "vin": vin, "vout": vout_list, "locktime": locktime}
 
     def extract_opreturn_strings(vout_list):
         out = []
         for o in vout_list:
             spk = o["scriptPubKey"]
-            if not spk or spk[0] != 0x6a:  # OP_RETURN
+            if not spk or spk[0] != 0x6A:  # OP_RETURN
                 continue
             j = 1
             if j >= len(spk):
                 continue
-            op = spk[j]; j += 1
-            if op <= 0x4b:
+            op = spk[j]
+            j += 1
+            if op <= 0x4B:
                 n = op
-            elif op == 0x4c:
-                if j >= len(spk): 
+            elif op == 0x4C:
+                if j >= len(spk):
                     continue
-                n = spk[j]; j += 1
-            elif op == 0x4d:
-                if j+1 >= len(spk):
+                n = spk[j]
+                j += 1
+            elif op == 0x4D:
+                if j + 1 >= len(spk):
                     continue
-                n = int.from_bytes(spk[j:j+2], "little"); j += 2
+                n = int.from_bytes(spk[j : j + 2], "little")
+                j += 2
             else:
                 continue
-            data = spk[j:j+n]
+            data = spk[j : j + n]
             try:
                 out.append(data.decode("utf-8", errors="strict"))
             except Exception:
@@ -10305,7 +10424,7 @@ def api_pof_verify_psbt():
             amt = int.from_bytes(v[0:8], "little")
             # parse script length varint
             slen, off = read_varint(v, 8)
-            spk = v[off:off+slen]
+            spk = v[off : off + slen]
             return amt, spk
 
         # non_witness_utxo key type is 0x00, value = full previous tx
@@ -10363,16 +10482,21 @@ def api_pof_verify_psbt():
     total_btc = total_sat / 1e8
 
     # best-effort response compatible with UI
-    return jsonify(
-        ok=True,
-        verified=True,
-        challenge_id=cid,
-        pubkey=pubkey,
-        unspent_count=len(in_maps),
-        total_sat=total_sat,
-        total_btc=total_btc,
-        inputs_with_amount=used_inputs,
-    ), 200
+    return (
+        jsonify(
+            ok=True,
+            verified=True,
+            challenge_id=cid,
+            pubkey=pubkey,
+            unspent_count=len(in_maps),
+            total_sat=total_sat,
+            total_btc=total_btc,
+            inputs_with_amount=used_inputs,
+        ),
+        200,
+    )
+
+
 # /API_POF_VERIFY_PSBT_V1
 
 
@@ -10397,13 +10521,13 @@ def upgrade():
     )
 
 
-
 # HODLXXI_ACCOUNT_RESTORE_V3
 # ACCAUNT_TYPO_BEFORE_AUTH_V3
 # Fix common typo BEFORE auth guards so next= uses /account
 @app.before_request
 def _fix_accaunt_typo_before_auth_v3():
     from flask import request, redirect
+
     if request.path == "/accaunt":
         return redirect("/account", code=301)
     if request.path == "/accaunts":
@@ -10452,11 +10576,13 @@ try:
 
     if "/accounts" not in _rules:
         from app.blueprints.accounts_page import bp as _accounts_bp
+
         app.register_blueprint(_accounts_bp)
 
     # Templates call /api/billing/* but current endpoints live under /dev/billing/*
     if ("/api/billing/create-invoice" not in _rules) and ("/dev/billing/create-invoice" in _rules):
         from app.blueprints.billing_api_compat import bp as _billing_bp
+
         app.register_blueprint(_billing_bp)
 
 except Exception as _e:
@@ -10471,12 +10597,16 @@ except Exception as _e:
 def _auth_diag_401403(resp):
     try:
         from flask import request, session
+
         if resp.status_code in (401, 403):
             # log only interesting paths to avoid noise
-            if request.path.startswith(("/api/", "/dev/")) or request.path in ("/account","/accounts","/upgrade"):
+            if request.path.startswith(("/api/", "/dev/")) or request.path in ("/account", "/accounts", "/upgrade"):
                 app.logger.warning(
                     "AUTH_DIAG %s %s -> %s session_keys=%s",
-                    request.method, request.path, resp.status_code, list(getattr(session, "keys", lambda: [])())
+                    request.method,
+                    request.path,
+                    resp.status_code,
+                    list(getattr(session, "keys", lambda: [])()),
                 )
     except Exception:
         pass
@@ -10490,6 +10620,7 @@ def _account_api_compat_v1():
     """Register /api/account/* endpoints used by account.html (DB-backed)."""
     try:
         from app.blueprints.account_api_compat import bp as _acct_api_bp
+
         app.register_blueprint(_acct_api_bp)
         app.logger.info("account_api_compat: registered DB-backed /api/account/*")
     except Exception as _e:
@@ -10509,4 +10640,5 @@ except Exception:
 @app.route("/playground/")
 def playground_slash_alias():
     from flask import redirect
+
     return redirect("/playground", code=308)

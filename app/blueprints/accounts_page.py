@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, session, redirect, url_for
 
 bp = Blueprint("accounts_page", __name__)
 
+
 @bp.route("/accounts", methods=["GET"])
 def accounts():
     if not session.get("logged_in_pubkey"):
