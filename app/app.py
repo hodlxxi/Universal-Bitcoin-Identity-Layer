@@ -550,6 +550,14 @@ def truncate_key(key: str, head: int = 6, tail: int = 4) -> str:
 
 app = Flask(__name__)
 
+# Cookie domain: allow sessions to work across apex + www
+_cookie_domain = os.getenv("SESSION_COOKIE_DOMAIN")
+if _cookie_domain:
+    app.config["SESSION_COOKIE_DOMAIN"] = _cookie_domain
+
+_cookie_name = os.getenv("SESSION_COOKIE_NAME")
+if _cookie_name:
+    app.config["SESSION_COOKIE_NAME"] = _cookie_name
 # COOKIE_DOMAIN_V1
 app.config.setdefault('SESSION_COOKIE_DOMAIN', '.hodlxxi.com')
 app.config.setdefault('SESSION_COOKIE_SECURE', True)
