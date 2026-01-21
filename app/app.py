@@ -10503,3 +10503,9 @@ try:
     _account_api_compat_v1()
 except Exception:
     pass
+
+
+@app.route("/playground/")
+def playground_slash_alias():
+    from flask import redirect
+    return redirect("/playground", code=308)
