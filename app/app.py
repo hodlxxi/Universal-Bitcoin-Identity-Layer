@@ -10462,7 +10462,7 @@ def _auth_diag_401403(resp):
             # log only interesting paths to avoid noise
             # Hard-block Dev Dashboard unless full access (hide endpoint)
             if request.path.rstrip('/') == '/dev/dashboard' and session.get('access_level') != 'full':
-                abort(403)
+                return ('Forbidden', 403)
 
             if request.path.startswith(("/api/", "/dev/")) or request.path in ("/account","/accounts","/upgrade"):
                 app.logger.warning(
