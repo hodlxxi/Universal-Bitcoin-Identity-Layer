@@ -274,9 +274,12 @@
                 ✅ Logged in as {{ active_pubkey[:18] }}…
             </span>
             <button class="top-cta-btn"
-                    onclick="window.location.href='{{ url_for('dev.dashboard') }}'">
-                Open my HODLXXI dashboard
+                    onclick="window.location.href='/account'">
+                Open my account
             </button>
+            {% if session.get('access_level') == 'full' %}
+              <a class="top-cta-btn" style="margin-left:10px;" href="/dev/dashboard">Dev</a>
+            {% endif %}
         {% else %}
             <span class="top-cta-text">
                 You need to be logged in to upgrade your HODLXXI membership.
