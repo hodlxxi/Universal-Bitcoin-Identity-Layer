@@ -21,7 +21,7 @@ function prettyPk(pk) {
   if (!pk) return "";
   // default truncation
   if (pk.length <= 22) return pk;
-  return prettyPk(pk);
+  return pk.slice(0, 10) + "…" + pk.slice(-10);
 }
 </script>
 
@@ -685,7 +685,7 @@ function prettyPk(pk) {
                 setResult(data);
 
                 if (data.verified) {
-                    setTimeout(() => window.location.href = '/app', 2000);
+                    // stay on /playground (auto-redirect to /app disabled)
                 }
             } catch (err) {
                 setResult({ error: err.message });
@@ -799,7 +799,7 @@ function prettyPk(pk) {
                 setResult(data);
 
                 if (data.verified) {
-                    setTimeout(() => window.location.href = '/app', 2000);
+                    // stay on /playground (auto-redirect to /app disabled)
                 }
             } catch (err) {
                 setResult({ error: err.message });
@@ -923,7 +923,7 @@ function prettyPk(pk) {
                                     message: '✓ Authentication successful!',
                                     success: true
                                 });
-                                setTimeout(() => window.location.href = '/app', 2000);
+                                // stay on /playground (auto-redirect to /app disabled)
                             }
                         } catch (err) {
                             console.error('Polling error:', err);

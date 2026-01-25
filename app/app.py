@@ -4307,7 +4307,7 @@ def login():
     function getRedirectUrl() {
       const params = new URLSearchParams(window.location.search);
       const next = params.get("next");
-      return next || "/app";
+      return next || "/account";
     }
 
     function showTab(which) {
