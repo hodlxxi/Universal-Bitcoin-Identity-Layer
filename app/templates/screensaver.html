@@ -338,7 +338,7 @@
       document.getElementById("hudTime").textContent = `${hh}:${mm}:${ss}`;
       document.getElementById("hudDate").textContent = d.toLocaleDateString();
     }
-    setInterval(tickClock, 250);
+    setInterval(tickClock, 1000);
     tickClock();
 
     // poll status (block height etc.)
@@ -359,7 +359,7 @@
           pollFail > 2 ? "status: offline" : "status: retry";
       }
     }
-    setInterval(pollStatus, 5000);
+    setInterval(pollStatus, 15000);
     pollStatus();
 
     // fullscreen on click/tap (debounced to avoid double-click conflict)
@@ -583,7 +583,7 @@ if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 40){
       }
     }
     
-    setInterval(updateNavData, 1000);
+    setInterval(updateNavData, 5000);
     updateNavData();
   })();
   </script>
