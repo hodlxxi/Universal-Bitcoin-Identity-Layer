@@ -1458,7 +1458,7 @@ def check_auth():
         or p == "/dashboard"
         or p == "/playground"
         or p.startswith("/p/") \
-        or p.startswith("/api/playground") or p.startswith("/api/pof/") \
+        or p.startswith("/api/playground") or p in ("/api/pof/stats", "/api/pof/stats/") \
         or p.startswith("/play") \
     ):
         return None
@@ -7372,7 +7372,15 @@ def _public_guard_for_lnurl():
     auth = request.headers.get("Authorization", "")
 
     # Fallback: require session for other /api/*
-    if p.startswith("/api/") and not (p.startswith("/api/playground") or p.startswith("/api/playground/") or p.startswith("/api/pof/")) and not p.startswith("/api/public/") and not session.get("logged_in_pubkey"):
+    # Public allow-list:
+    #  - /api/public/*
+    #  - /api/playground/*
+    #  - /api/pof/stats (public stats only)
+    if p.startswith("/api/") and not (
+        p.startswith("/api/public/")
+        or p.startswith("/api/playground")
+        or p in ("/api/pof/stats", "/api/pof/stats/")
+    ) and not session.get("logged_in_pubkey"):
         return jsonify({"error": "Not logged in", "ok": False}), 401
 
     return None
