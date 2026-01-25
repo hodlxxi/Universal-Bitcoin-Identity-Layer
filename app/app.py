@@ -1530,7 +1530,8 @@ def check_auth():
         "oidc_alias",
         "explorer_page",
         "verify_pubkey_and_list",
-    }
+            "api_public_status",
+}
     if not endpoint_base:
         return None
 
@@ -1539,7 +1540,7 @@ def check_auth():
 
     # 3) Everything else requires a logged-in session
     if not session.get("logged_in_pubkey"):
-        if (p.startswith("/api/") and not p.startswith("/api/playground")) or p.endswith("/set_labels_from_zpub"):
+        if (p.startswith("/api/") and not p.startswith("/api/playground") and not p.startswith("/api/public/")) or p.endswith("/set_labels_from_zpub"):
             return jsonify(ok=False, error="Not logged in"), 401
         nxt = request.full_path if request.query_string else request.path
         return redirect(url_for("login", next=nxt))
@@ -7371,7 +7372,7 @@ def _public_guard_for_lnurl():
     auth = request.headers.get("Authorization", "")
 
     # Fallback: require session for other /api/*
-    if p.startswith("/api/") and not (p.startswith("/api/playground") or p.startswith("/api/playground/") or p.startswith("/api/pof/")) and not session.get("logged_in_pubkey"):
+    if p.startswith("/api/") and not (p.startswith("/api/playground") or p.startswith("/api/playground/") or p.startswith("/api/pof/")) and not p.startswith("/api/public/") and not session.get("logged_in_pubkey"):
         return jsonify({"error": "Not logged in", "ok": False}), 401
 
     return None
