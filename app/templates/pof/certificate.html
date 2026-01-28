@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PoF Certificate | HODLXXI</title>
+
+  <!-- POF_CERT_UI_V2 -->
+  <style>
+    :root{
+      --bg:#0b0f10;
+      --panel: rgba(17, 23, 26, 0.92);
+      --panel2:#0e1315;
+      --fg:#e6f1ef;
+      --muted:#8a9da4;
+      --accent:#00ff88;
+      --orange:#f7931a;
+      --border:#0f2a24;
+      --border2:#255244;
+      --shadow: 0 0 22px rgba(0,255,136,.14);
+      --radius: 18px;
+    }
+
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      min-height:100vh;
+      background:var(--bg);
+      color:var(--fg);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,Arial,sans-serif;
+      text-rendering: optimizeLegibility;
+      overflow-x:hidden;
+    }
+
+    #matrix-bg{
+      position:fixed; inset:0;
+      width:100%; height:100%;
+      z-index:0;
+      pointer-events:none;
+      opacity:.9;
+    }
+
+    @media (prefers-reduced-motion: reduce){
+      #matrix-bg{display:none !important;}
+    }
+
+    .wrap{
+      position:relative;
+      z-index:1;
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 3.2rem 1.25rem 2rem;
+    }
+
+    .topbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:1rem;
+      margin-bottom: 1rem;
+    }
+
+    .brand{
+      display:flex; align-items:center; gap:.75rem;
+      text-decoration:none;
+      color:var(--fg);
+    }
+
+    .brand .dot{
+      width:10px; height:10px; border-radius:999px;
+      background:var(--accent);
+      box-shadow: 0 0 18px rgba(0,255,136,.5);
+    }
+
+    .brand .name{
+      font-weight:800;
+      letter-spacing:.06em;
+      text-transform:uppercase;
+      font-size:.92rem;
+      color:var(--accent);
+    }
+
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:.45rem;
+      padding:.35rem .7rem;
+      border-radius:999px;
+      border:1px solid rgba(0,255,136,.55);
+      background: rgba(6,95,70,.24);
+      color:#bbf7d0;
+      font-size:.78rem;
+      letter-spacing:.06em;
+      text-transform:uppercase;
+      white-space:nowrap;
+    }
+
+    .card{
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 1.6rem 1.6rem 1.25rem;
+      backdrop-filter: blur(6px);
+    }
+
+    .hero{
+      display:grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: 1.25rem;
+      align-items: start;
+      margin-bottom: 1.1rem;
+    }
+
+    .title{
+      margin: .15rem 0 .45rem;
+      font-size: 1.85rem;
+      line-height:1.15;
+      color: var(--accent);
+      text-shadow: 0 0 20px rgba(0,255,136,.22);
+    }
+
+    .subtitle{
+      margin:0;
+      color: var(--muted);
+      line-height: 1.55;
+      max-width: 60ch;
+      font-size: 1.02rem;
+    }
+
+    .badgeBox{
+      background: var(--panel2);
+      border: 1px solid var(--border2);
+      border-radius: 16px;
+      padding: 1.1rem;
+      text-align:center;
+    }
+
+    .emoji{
+      font-size: 3.15rem;
+      line-height:1;
+      filter: drop-shadow(0 0 18px rgba(0,255,136,.15));
+    }
+
+    .status{
+      margin-top:.7rem;
+      font-weight:800;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      font-size: .95rem;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:.45rem;
+    }
+
+    .status .ok{
+      display:inline-flex;
+      width: 22px; height: 22px;
+      align-items:center; justify-content:center;
+      border-radius: 999px;
+      background: rgba(0,255,136,.18);
+      border: 1px solid rgba(0,255,136,.5);
+      color: var(--accent);
+      font-size: .9rem;
+    }
+
+    .tierName{
+      margin:.35rem 0 0;
+      color: var(--muted);
+      font-size: .95rem;
+    }
+
+    .grid{
+      display:grid;
+      grid-template-columns: repeat(4, minmax(0,1fr));
+      gap: .85rem;
+      margin-top: 1.2rem;
+    }
+
+    .stat{
+      background: var(--panel2);
+      border: 1px solid var(--border2);
+      border-radius: 14px;
+      padding: .9rem .95rem;
+      min-height: 76px;
+    }
+
+    .stat .k{
+      color: var(--muted);
+      font-size: .78rem;
+      letter-spacing:.05em;
+      text-transform:uppercase;
+      margin-bottom:.35rem;
+    }
+
+    .stat .v{
+      font-weight:800;
+      font-size: 1.05rem;
+      color: var(--fg);
+      line-height:1.2;
+      word-break: break-word;
+    }
+
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      letter-spacing: .02em;
+    }
+
+    .explain{
+      margin-top: 1.1rem;
+      padding-top: 1.1rem;
+      border-top: 1px solid rgba(37,82,68,.7);
+      color: var(--muted);
+      line-height: 1.65;
+      font-size: .98rem;
+    }
+
+    .foot{
+      margin-top: 1rem;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 1rem;
+      flex-wrap:wrap;
+    }
+
+    .certId{
+      display:flex;
+      align-items:center;
+      gap:.55rem;
+      padding:.55rem .75rem;
+      border-radius: 12px;
+      border: 1px solid rgba(0,255,136,.22);
+      background: rgba(0,0,0,.22);
+      color: var(--fg);
+      font-size: .92rem;
+    }
+
+    .btnRow{
+      display:flex;
+      gap:.6rem;
+      flex-wrap:wrap;
+    }
+
+    .btn{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:.45rem;
+      padding:.7rem 1rem;
+      border-radius: 999px;
+      text-decoration:none;
+      font-weight:800;
+      font-size:.95rem;
+      border: 1px solid transparent;
+      cursor:pointer;
+      user-select:none;
+      transition: transform .15s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease;
+      white-space:nowrap;
+    }
+
+    .btnPrimary{
+      background: var(--accent);
+      color: #000;
+    }
+    .btnPrimary:hover{
+      transform: translateY(-1px);
+      box-shadow: 0 0 22px rgba(0,255,136,.28);
+    }
+
+    .btnGhost{
+      background: transparent;
+      color: var(--accent);
+      border-color: rgba(0,255,136,.55);
+    }
+    .btnGhost:hover{
+      background: rgba(0,255,136,.08);
+      transform: translateY(-1px);
+    }
+
+    .btnOrange{
+      background: rgba(247,147,26,.14);
+      color: #ffd7a8;
+      border-color: rgba(247,147,26,.5);
+    }
+    .btnOrange:hover{
+      box-shadow: 0 0 22px rgba(247,147,26,.18);
+      transform: translateY(-1px);
+    }
+
+    .footerMark{
+      margin-top: 1.35rem;
+      text-align:center;
+      color: rgba(230,241,239,.65);
+      font-size: .85rem;
+      letter-spacing:.06em;
+      text-transform:uppercase;
+    }
+
+    @media (max-width: 860px){
+      .hero{grid-template-columns: 1fr; }
+      .grid{grid-template-columns: repeat(2, minmax(0,1fr));}
+    }
+    @media (max-width: 520px){
+      .wrap{padding-top: 2.3rem;}
+      .card{padding: 1.25rem;}
+      .title{font-size: 1.55rem;}
+      .grid{grid-template-columns: 1fr;}
+      .btn{width: 100%;}
+      .btnRow{width:100%;}
+      .foot{width:100%;}
+      .certId{width:100%; justify-content:space-between;}
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="matrix-bg"></canvas>
+
+  <div class="wrap">
+    <div class="topbar">
+      <a class="brand" href="https://hodlxxi.com/pof/">
+        <span class="dot"></span>
+        <span class="name">HODLXXI</span>
+      </a>
+      <span class="pill">Proof of Funds • Certificate</span>
+    </div>
+
+    <div class="card">
+      <div class="hero">
+        <div>
+          <h1 class="title">Bitcoin Proof of Funds Certificate</h1>
+          <p class="subtitle">
+            This shareable certificate proves the holder controlled the verified Bitcoin balance at the time of verification
+            via cryptographic signature checks.
+          </p>
+
+          <div class="grid">
+            <div class="stat">
+              <div class="k">Verified Holdings</div>
+              <div class="v">{{ formatted_amount }}</div>
+            </div>
+            <div class="stat">
+              <div class="k">Addresses Verified</div>
+              <div class="v">{{ pof.address_count }}</div>
+            </div>
+            <div class="stat">
+              <div class="k">Privacy Level</div>
+              <div class="v">{{ (pof.privacy_level or '')|capitalize }}</div>
+            </div>
+            <div class="stat">
+              <div class="k">Verified On</div>
+              <div class="v">{{ pof.verified_at.strftime('%Y-%m-%d') if pof.verified_at else '' }}</div>
+            </div>
+
+            <div class="stat" style="grid-column: 1 / -1;">
+              <div class="k">User</div>
+              <div class="v mono">{{ (user.public_key if user and user.public_key else (user.id if user else pof.user_id)) }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="badgeBox">
+          <div class="emoji">{{ tier['emoji'] }}</div>
+          <div class="status">
+            <span class="ok">✓</span>
+            <span>{{ tier['name'] }} Status</span>
+          </div>
+          <div class="tierName">Verified via HODLXXI PoF</div>
+        </div>
+      </div>
+
+      <div class="explain">
+        The verification checks that a cryptographic signature matches the holder’s addresses, proving control at verification time.
+        This does not reveal private keys and does not imply custody.
+      </div>
+
+      <div class="foot">
+        <div class="certId mono">
+          <span style="color:var(--muted);">Certificate ID</span>
+          <span id="certIdText">{{ pof.certificate_id }}</span>
+        </div>
+
+        <div class="btnRow">
+          <a class="btn btnOrange" href="{{ twitter_url }}" target="_blank" rel="noopener">🐦 Tweet</a>
+          <button class="btn btnGhost" id="copyBtn" type="button">🔗 Copy Link</button>
+          <a class="btn btnPrimary" href="https://hodlxxi.com/pof/verify">⚡ Verify Yours</a>
+        </div>
+      </div>
+
+      <div class="footerMark">hodlxxi.com • Bitcoin Identity & Authentication Layer</div>
+    </div>
+  </div>
+
+  <script>
+    // Copy Link
+    (function(){
+      const btn = document.getElementById("copyBtn");
+      if (!btn) return;
+      btn.addEventListener("click", async () => {
+        try{
+          await navigator.clipboard.writeText(window.location.href);
+          const old = btn.textContent;
+          btn.textContent = "✅ Copied";
+          setTimeout(()=> btn.textContent = old, 1200);
+        }catch(e){
+          alert("Copy failed. Link: " + window.location.href);
+        }
+      });
+    })();
+
+    // Matrix BG (lightweight)
+    (function () {
+      const canvas = document.getElementById('matrix-bg');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const CHARS = ['0','1'];
+      let w=0,h=0,cols=0,ys=[],raf=null;
+
+      function resize(){
+        const dpr = Math.max(1, Math.min(window.devicePixelRatio||1, 2));
+        w = Math.floor(window.innerWidth * dpr);
+        h = Math.floor(window.innerHeight * dpr);
+        canvas.width = w; canvas.height = h;
+        canvas.style.width = window.innerWidth+'px';
+        canvas.style.height = window.innerHeight+'px';
+        ctx.setTransform(1,0,0,1,0,0);
+        ctx.scale(dpr,dpr);
+
+        cols = Math.floor(window.innerWidth / 16);
+        ys = Array.from({length: cols}, () => Math.random()*window.innerHeight);
+      }
+
+      function step(){
+        ctx.fillStyle = "rgba(11,15,16,0.08)";
+        ctx.fillRect(0,0,window.innerWidth, window.innerHeight);
+
+        ctx.font = "14px ui-monospace, Menlo, Monaco, Consolas, monospace";
+        ctx.fillStyle = "rgba(0,255,136,0.35)";
+        for(let i=0;i<cols;i++){
+          const x = i*16;
+          const y = ys[i];
+          const ch = CHARS[(Math.random()*CHARS.length)|0];
+          ctx.fillText(ch, x, y);
+          ys[i] = y + 14 + (Math.random()*18);
+          if (ys[i] > window.innerHeight) ys[i] = 0;
+        }
+        raf = requestAnimationFrame(step);
+      }
+
+      resize();
+      window.addEventListener('resize', resize);
+      step();
+    })();
+  </script>
+</body>
+</html>

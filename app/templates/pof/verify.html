@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PoF Verify | HODLXXI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+    :root{
+      --bg:#0b0f10;
+      --panel:rgba(17,23,26,.92);
+      --border:#0f2a24;
+      --border2:#255244;
+      --fg:#e6f1ef;
+      --muted:#8a9da4;
+      --accent:#00ff88;
+      --danger:#ff3b30;
+      --warn:#f59e0b;
+      --info:#3b82f6;
+
+      --r:14px;
+      --r2:10px;
+      --shadow:0 0 10px rgba(0,255,136,.08);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Roboto",sans-serif;
+    }
+
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{
+      background:var(--bg);
+      color:var(--fg);
+      font-family:var(--sans);
+      min-height:100vh;
+      overflow-x:hidden;
+      text-rendering:optimizeLegibility;
+    }
+
+    #matrix-bg{
+      position:fixed; inset:0; z-index:0; pointer-events:none;
+    }
+    @media (prefers-reduced-motion: reduce){
+      #matrix-bg{display:none!important;}
+    }
+
+    /* Top bar */
+    .topbar{
+      position:sticky; top:0; z-index:12;
+      width:100%;
+      display:flex; justify-content:center;
+      padding:.55rem .9rem;
+      background: radial-gradient(circle at top,
+        rgba(34,197,94,.14) 0,
+        rgba(3,7,18,.96) 45%,
+        rgba(3,7,18,.98) 100%);
+      border-bottom:1px solid rgba(0,255,136,.25);
+      box-shadow:0 18px 35px rgba(0,0,0,.85);
+      backdrop-filter: blur(16px);
+    }
+    .topbar-inner{
+      width:100%;
+      max-width:880px;
+      display:flex; align-items:center; justify-content:space-between;
+      gap:.75rem;
+    }
+    .brand{
+      display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;
+      font-size:.86rem; color:#cbd5f5;
+    }
+    .pill{
+      padding:.18rem .6rem;
+      border-radius:999px;
+      border:1px solid rgba(0,255,136,.6);
+      background:rgba(6,95,70,.65);
+      font-size:.7rem;
+      text-transform:uppercase;
+      letter-spacing:.05em;
+      color:#bbf7d0;
+      white-space:nowrap;
+    }
+    .nav{
+      display:flex; gap:.5rem; flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    a.link, button.link{
+      color:var(--muted);
+      text-decoration:none;
+      font-size:.86rem;
+      border:1px solid rgba(138,157,164,.25);
+      background:rgba(2,6,23,.25);
+      padding:.38rem .62rem;
+      border-radius:999px;
+      transition: .2s ease;
+      cursor:pointer;
+    }
+    a.link:hover, button.link:hover{
+      color:var(--accent);
+      border-color:rgba(0,255,136,.45);
+      background:rgba(0,255,136,.06);
+    }
+
+    /* Layout */
+    #root{
+      position:relative; z-index:1;
+      max-width:880px;
+      margin:0 auto;
+      padding:1.25rem 1.1rem 2rem;
+    }
+
+    .hero{
+      margin-top:.75rem;
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:var(--r);
+      padding:1.35rem 1.25rem;
+      box-shadow:var(--shadow);
+    }
+    .hero h1{
+      font-size:1.55rem;
+      color:var(--accent);
+      text-shadow:0 0 18px rgba(0,255,136,.25);
+      margin-bottom:.35rem;
+    }
+    .hero p{color:var(--muted); line-height:1.55;}
+    .hero .sub{
+      margin-top:.75rem;
+      display:flex; flex-wrap:wrap; gap:.5rem;
+      align-items:center;
+    }
+    .hint{
+      color:var(--muted);
+      font-size:.9rem;
+    }
+    .hint a{ color:var(--accent); text-decoration:none; }
+    .hint a:hover{ text-decoration:underline; }
+
+    .card{
+      margin-top:1rem;
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:var(--r);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+    }
+
+    /* Steps as simple sections (keep .step for your JS) */
+    .step{
+      padding:1.05rem 1.1rem;
+      border-top:1px solid rgba(15,42,36,.6);
+    }
+    .step:first-child{border-top:none;}
+    .step.inactive{opacity:.55;}
+    .step.active{ box-shadow: inset 0 0 0 1px rgba(0,255,136,.14); }
+
+    .stephead{
+      display:flex; align-items:baseline; justify-content:space-between;
+      gap:.75rem; flex-wrap:wrap;
+      margin-bottom:.55rem;
+    }
+    .stephead h3{
+      font-size:1rem;
+      font-weight:650;
+      color:var(--fg);
+    }
+    .stephead .kicker{
+      font-size:.82rem;
+      color:var(--muted);
+    }
+
+    label{display:block; color:var(--muted); font-size:.9rem; margin:.25rem 0 .4rem;}
+
+    input, textarea{
+      width:100%;
+      background:#0e1315;
+      color:var(--fg);
+      border:1px solid var(--border2);
+      padding:.72rem .8rem;
+      border-radius:10px;
+      font-family:var(--mono);
+      font-size:.9rem;
+    }
+    textarea{min-height:150px; resize:vertical;}
+    input:focus, textarea:focus{
+      outline:none;
+      border-color:var(--accent);
+      box-shadow:0 0 0 3px rgba(0,255,136,.18);
+    }
+    ::placeholder{color:#4b5563;}
+
+    .row{
+      display:flex; gap:.7rem; flex-wrap:wrap; align-items:center;
+      margin-top:.75rem;
+    }
+
+    .btn{
+      appearance:none;
+      border:none;
+      cursor:pointer;
+      border-radius:999px;
+      padding:.72rem 1.1rem;
+      font-weight:650;
+      font-size:.92rem;
+      transition:.2s ease;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:.45rem;
+      background:var(--accent);
+      color:#000;
+    }
+    .btn:hover{ transform: translateY(-1px); box-shadow:0 0 18px rgba(0,255,136,.35); }
+    .btn:disabled{
+      background:#374151; color:#9ca3af;
+      cursor:not-allowed; box-shadow:none; transform:none;
+    }
+    .btn.secondary{
+      background:transparent;
+      color:var(--accent);
+      border:1px solid rgba(0,255,136,.55);
+    }
+    .btn.secondary:hover{ background:rgba(0,255,136,.06); }
+
+    /* Privacy pills */
+    .privacy{
+      display:flex; flex-wrap:wrap; gap:.55rem;
+      margin-top:.5rem;
+    }
+    .privacy input{display:none;}
+    .privacy label{
+      margin:0;
+      cursor:pointer;
+      user-select:none;
+      border:1px solid rgba(138,157,164,.22);
+      background:rgba(2,6,23,.25);
+      color:var(--muted);
+      border-radius:999px;
+      padding:.42rem .72rem;
+      font-size:.85rem;
+      transition:.2s ease;
+    }
+    .privacy label:hover{
+      border-color:rgba(0,255,136,.45);
+      background:rgba(0,255,136,.06);
+      color:var(--fg);
+    }
+    .privacy label.selected{
+      border-color:rgba(0,255,136,.75);
+      background:rgba(0,255,136,.08);
+      color:var(--accent);
+      box-shadow:0 0 12px rgba(0,255,136,.18);
+    }
+
+    /* Compact code blocks */
+    .monoBox{
+      background:#020617;
+      border:1px solid rgba(17,24,39,.9);
+      border-radius:12px;
+      padding:1.9rem .8rem .75rem;
+      overflow:auto;
+      font-family:var(--mono);
+      font-size:.85rem;
+      color:var(--accent);
+      margin-top:.55rem;
+      position:relative;
+    }
+        .monoBox .copy{
+      position:absolute;
+      top:.45rem; right:.45rem;
+      min-height:40px;
+      padding:.45rem .75rem;
+      border-radius:999px;
+      border:1px solid rgba(0,255,136,.55);
+      background:rgba(0,255,136,.10);
+      color:var(--accent);
+      font-family:var(--sans);
+      font-size:.82rem;
+      cursor:pointer;
+      touch-action: manipulation;
+    }
+    .monoBox .copy:hover{ background:rgba(0,255,136,.14); }
+
+    .monoBox pre{
+      white-space:pre-wrap;
+      overflow-wrap:anywhere;
+    }
+details{
+      margin-top:.75rem;
+      border:1px solid rgba(37,82,68,.55);
+      border-radius:12px;
+      background:rgba(2,6,23,.25);
+      padding:.7rem .8rem;
+    }
+    summary{
+      cursor:pointer;
+      color:var(--muted);
+      font-size:.9rem;
+    }
+    summary strong{ color:var(--fg); }
+
+    /* Alerts + results */
+    .alert{
+      margin-top:.75rem;
+      padding:.85rem .95rem;
+      border-radius:12px;
+      font-size:.92rem;
+      border:1px solid transparent;
+      background:rgba(2,6,23,.35);
+    }
+    .alert.info{ border-color:rgba(59,130,246,.65); color:#bfdbfe; background:rgba(59,130,246,.08); }
+    .alert.warn{ border-color:rgba(245,158,11,.6); color:#fed7aa; background:rgba(245,158,11,.08); }
+    .alert.err{ border-color:rgba(239,68,68,.7); color:#fecaca; background:rgba(239,68,68,.08); }
+
+    .loading{
+      text-align:center;
+      padding:1.35rem .5rem;
+      color:var(--muted);
+    }
+    .spinner{
+      border:4px solid #111827;
+      border-top:4px solid var(--accent);
+      border-radius:50%;
+      width:44px;
+      height:44px;
+      animation:spin 1s linear infinite;
+      margin:0 auto .85rem;
+    }
+    @keyframes spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
+
+    @media (max-width: 720px){
+      #root{ padding:1rem .85rem 1.6rem; }
+      .topbar-inner{ flex-direction:column; align-items:flex-start; }
+      .nav{ width:100%; justify-content:flex-start; }
+      .btn{ width:100%; }
+      .row{ gap:.5rem; }
+
+      /* MOBILE_COPY_V1 */
+      .monoBox{ padding:.75rem .8rem; }
+      .monoBox .copy{
+        position:static;
+        width:100%;
+        min-height:44px;
+        padding:.62rem .85rem;
+        font-size:.92rem;
+        border-radius:12px;
+        margin-bottom:.55rem;
+      }
+
+    }
+  </style>
+</head>
+
+<body data-access-level="{{ session.get('access_level','') }}" data-logged-in-pubkey="{{ session.get('logged_in_pubkey','') }}">
+  <canvas id="matrix-bg" aria-hidden="true"></canvas>
+
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="pill">HODLXXI</span>
+        <span><strong style="color:var(--accent)">PoF Verify</strong> · PSBT + OP_RETURN challenge</span>
+      </div>
+      <div class="nav">
+        <a class="link" href="/pof/">Whale tiers</a>
+        <a class="link" href="/pof/leaderboard">Leaderboard</a>
+      </div>
+    </div>
+  </div>
+
+  <div id="root">
+    <div class="hero">
+      <h1>🐋 Proof of Funds</h1>
+      <p>Generate a challenge, sign a PSBT that commits it (OP_RETURN), and verify. No private keys ever leave your wallet.</p>
+      <div class="sub">
+        <span class="hint">Want the tier chart? It lives on <a href="/pof/">/pof/</a>.</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <!-- Step 1 -->
+      <div class="step active" id="step1">
+        <div class="stephead">
+          <h3>1) Request challenge</h3>
+          <span class="kicker">Identifier: pubkey / npub / any string</span>
+        </div>
+        <label for="pubkeyId">Identifier</label>
+        <input id="pubkeyId" type="text" placeholder="npub1... or 02ab... or your-handle" value="" />
+        <div class="row">
+          <button class="btn" onclick="getChallenge()">Generate challenge</button>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="step inactive" id="step2">
+        <div class="stephead">
+          <h3>2) Privacy level</h3>
+          <span class="kicker">Public display policy</span>
+        </div>
+
+        <div class="privacy" id="privacyPills">
+          <label class="selected">
+            <input type="radio" name="privacy" value="boolean" checked />
+            🔒 Boolean
+          </label>
+          <label>
+            <input type="radio" name="privacy" value="threshold" />
+            🐋 Whale tier
+          </label>
+          <label>
+            <input type="radio" name="privacy" value="aggregate" />
+            📊 Aggregate
+          </label>
+          <label>
+            <input type="radio" name="privacy" value="exact" />
+            💯 Exact
+          </label>
+        </div>
+
+        <div class="alert info">
+          Tip: “Whale tier” reveals only the tier label. Full tier definitions are on <a href="/pof/" style="color:var(--accent);text-decoration:none;">/pof/</a>.
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="step inactive" id="step3">
+        <div class="stephead">
+          <h3>3) Create & sign PSBT</h3>
+          <span class="kicker">Paste signed PSBT to verify</span>
+        </div>
+
+        <div class="alert info">
+          <div style="font-weight:650; margin-bottom:.35rem;">Challenge</div>
+          <div class="monoBox" id="challengeBox">
+            <button class="copy" type="button" onclick="copyText('challengeText')">Copy</button>
+            <pre id="challengeText" style="white-space:pre-wrap; margin:0;"></pre>
+          </div>
+
+          <div style="margin-top:.65rem; display:grid; gap:.55rem;">
+            <div>
+              <div style="color:var(--muted); font-size:.85rem;">challenge_id</div>
+              <div class="monoBox">
+                <button class="copy" type="button" onclick="copyText('challengeId')">Copy</button>
+                <pre id="challengeId" style="margin:0;"></pre>
+              </div>
+            </div>
+            <div>
+              <div style="color:var(--muted); font-size:.85rem;">OP_RETURN hex</div>
+              <div class="monoBox">
+                <button class="copy" type="button" onclick="copyText('challengeHex')">Copy</button>
+                <pre id="challengeHex" style="margin:0;"></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <details>
+          <summary><strong>Bitcoin Core commands</strong> (click to expand)</summary>
+          <div class="monoBox" style="margin-top:.65rem;">
+            <pre id="psbtInstructions" style="margin:0; white-space:pre;"></pre>
+          </div>
+        </details>
+
+        <label for="psbtInput" style="margin-top:.9rem;">Signed PSBT</label>
+        <textarea id="psbtInput" placeholder="cHNidP8BA..."></textarea>
+
+        <div class="row">
+          <button class="btn" onclick="submitPSBT()">Verify</button>
+          <button class="btn secondary" type="button" onclick="resetFlow()">Start over</button>
+        </div>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="step inactive" id="step4">
+        <div class="stephead">
+          <h3>Result</h3>
+          <span class="kicker">Verification response</span>
+        </div>
+        <div id="results"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Matrix Background Animation (unchanged) -->
+  <script>
+    (function () {
+      const canvas = document.getElementById('matrix-bg');
+      if (!canvas) return;
+
+      const ctx = canvas.getContext('2d');
+      const CHARS = ['0','1'];
+      let width=0, height=0, particles=[], raf=null;
+
+      function resize(){
+        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+        const cssW = window.innerWidth;
+        const cssH = window.innerHeight;
+
+        canvas.width = Math.floor(cssW * dpr);
+        canvas.height = Math.floor(cssH * dpr);
+        canvas.style.width = cssW + 'px';
+        canvas.style.height = cssH + 'px';
+
+        ctx.setTransform(1,0,0,1,0,0);
+        ctx.scale(dpr,dpr);
+
+        width = cssW; height = cssH;
+        particles = [];
+        for (let i=0;i<400;i++){
+          particles.push({ x:(Math.random()-0.5)*width, y:(Math.random()-0.5)*height, z:Math.random()*800+100 });
+        }
+        ctx.fillStyle='rgba(0,0,0,1)';
+        ctx.fillRect(0,0,width,height);
+      }
+
+      function draw(){
+        ctx.fillStyle='rgba(0,0,0,0.25)';
+        ctx.fillRect(0,0,width,height);
+        ctx.fillStyle='#00ff88';
+
+        for (const p of particles){
+          const scale = 200 / p.z;
+          const x2 = width/2 + p.x * scale;
+          const y2 = height/2 + p.y * scale;
+          const size = Math.max(8*scale, 1);
+          ctx.font = size + 'px monospace';
+          ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
+
+          p.z -= 5;
+          if (p.z < 1){
+            p.x = (Math.random()-0.5)*width;
+            p.y = (Math.random()-0.5)*height;
+            p.z = 800;
+          }
+        }
+        raf = requestAnimationFrame(draw);
+      }
+
+      function onVis(){
+        if (document.hidden){
+          if (raf){ cancelAnimationFrame(raf); raf=null; }
+        } else {
+          if (!raf) raf = requestAnimationFrame(draw);
+        }
+      }
+
+      window.addEventListener('resize', resize);
+      document.addEventListener('visibilitychange', onVis);
+      resize();
+      raf = requestAnimationFrame(draw);
+    })();
+  </script>
+
+  <!-- Existing PoF JS (logic unchanged; minimal wiring tweaks) -->
+  <script>
+    let currentChallengeId = null;
+    let currentChallenge = null;
+
+    document.addEventListener('DOMContentLoaded', function () {
+      // AUTO_FILL_POF_PUBKEY_V1
+      try {
+        const b = document.body;
+        const spk = (b && b.dataset && b.dataset.loggedInPubkey) ? b.dataset.loggedInPubkey : '';
+        const el = document.getElementById('pubkeyId');
+        if (el && !el.value.trim() && spk) el.value = spk;
+      } catch (e) {}
+      // /AUTO_FILL_POF_PUBKEY_V1
+
+      // Privacy pill selection (replaces .privacy-option)
+      document.querySelectorAll('#privacyPills label').forEach(lbl => {
+        lbl.addEventListener('click', function(){
+          document.querySelectorAll('#privacyPills label').forEach(x => x.classList.remove('selected'));
+          this.classList.add('selected');
+          const input = this.querySelector('input[type="radio"]');
+          if (input) input.checked = true;
+        });
+      });
+    });
+
+    function showStep(stepNum) {
+      document.querySelectorAll('.step').forEach((step, index) => {
+        if (index + 1 === stepNum) {
+          step.classList.remove('inactive');
+          step.classList.add('active');
+        } else if (index + 1 < stepNum) {
+          step.classList.remove('active', 'inactive');
+        } else {
+          step.classList.remove('active');
+          step.classList.add('inactive');
+        }
+      });
+    }
+
+    function copyText(id){
+      try{
+        const el = document.getElementById(id);
+        const t = (el && (el.textContent || el.innerText) || '').trim();
+        if (!t) return;
+
+        const btn = (window.event && window.event.target && window.event.target.closest)
+          ? window.event.target.closest('button')
+          : null;
+
+        const flash = (msg) => {
+          if (!btn) return;
+          const old = btn.textContent;
+          btn.textContent = msg;
+          btn.disabled = true;
+          setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 900);
+        };
+
+        const fallbackCopy = () => {
+          try{
+            const ta = document.createElement('textarea');
+            ta.value = t;
+            ta.setAttribute('readonly','');
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            ta.setSelectionRange(0, ta.value.length);
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            flash('Copied ✓');
+            if (navigator.vibrate) navigator.vibrate(20);
+          }catch(e){
+            flash('Select & Copy');
+          }
+        };
+
+        if (navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(t).then(() => {
+            flash('Copied ✓');
+            if (navigator.vibrate) navigator.vibrate(20);
+          }).catch(fallbackCopy);
+        } else {
+          fallbackCopy();
+        }
+      }catch(e){}
+    }
+
+    // GET_CHALLENGE_V2 (unchanged endpoints + behavior)
+    async function getChallenge() {
+      const pubkeyId = (document.getElementById('pubkeyId')?.value || '').trim();
+      if (!pubkeyId) {
+        alert('Please paste your pubkey (66-hex compressed or npub1...)');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/challenge', {
+          credentials: 'include',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pubkey: pubkeyId })
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.error) {
+          alert('Error: ' + (data.error || data.message || ('HTTP ' + response.status)));
+          return;
+        }
+        if (!data.challenge_id || !data.challenge) {
+          alert('Error: bad challenge response');
+          return;
+        }
+
+        currentChallengeId = data.challenge_id;
+        currentChallenge = data.challenge;
+
+        const elText = document.getElementById('challengeText');
+        if (elText) elText.textContent = currentChallenge;
+
+        const elCid = document.getElementById('challengeId');
+        if (elCid) elCid.textContent = currentChallengeId;
+
+        const challengeHex = Array.from(currentChallenge)
+          .map(c => c.charCodeAt(0).toString(16).padStart(2, '0'))
+          .join('');
+
+        const elHex = document.getElementById('challengeHex');
+        if (elHex) elHex.textContent = challengeHex;
+
+        const instructions = `# 1) Get your UTXOs
+UTXOS=$(bitcoin-cli listunspent)
+
+# 2) Create unsigned PSBT with challenge as OP_RETURN
+PSBT=$(bitcoin-cli createpsbt "$(echo $UTXOS | jq '[.[] | {txid,vout}]')" \\
+  '[{"data":"${challengeHex}"}]')
+
+# 3) Sign the PSBT
+SIGNED=$(bitcoin-cli walletprocesspsbt "$PSBT")
+
+# 4) Extract the signed PSBT
+echo "$SIGNED" | jq -r .psbt
+
+# Paste the output into "Signed PSBT" above.`;
+
+        const inst = document.getElementById('psbtInstructions');
+        if (inst) inst.textContent = instructions;
+
+        showStep(2);
+        showStep(3);
+
+      } catch (error) {
+        alert('Error generating challenge: ' + (error?.message || error));
+      }
+    }
+
+    async function submitPSBT() {
+      const psbtRaw = (document.getElementById('psbtInput')?.value || '');
+      const psbtClean = (psbtRaw || '').toString().trim().replace(/\s+/g, "");
+
+      if (!psbtClean) {
+        alert('Please provide a signed PSBT');
+        return;
+      }
+      if (!currentChallengeId) {
+        alert('No active challenge. Please click "Generate challenge" first.');
+        return;
+      }
+
+      const privacyLevel = (document.querySelector('input[name="privacy"]:checked')?.value || 'full');
+
+      document.getElementById('results').innerHTML = `
+        <div class="loading">
+          <div class="spinner"></div>
+          <div>Verifying cryptographic proof…</div>
+        </div>
+      `;
+      showStep(4);
+
+      try {
+        const response = await fetch('/api/pof/verify_psbt', {
+          credentials: 'include',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            challenge_id: currentChallengeId,
+            pubkey: (document.getElementById('pubkeyId')?.value || '').trim(),
+            psbt: psbtClean,
+            privacy: privacyLevel
+          })
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!(data.ok || data.verified)) {
+          document.getElementById('results').innerHTML = `
+            <div class="alert err">
+              <strong>Verification failed:</strong> ${data.error || data.message || ('HTTP ' + response.status)}
+            </div>
+          `;
+          return;
+        }
+
+        document.getElementById('results').innerHTML = `
+          <div class="alert info" style="border-color:rgba(0,255,136,.6); color:#bbf7d0; background:rgba(0,255,136,.06);">
+            <div style="font-weight:750; font-size:1.05rem; margin-bottom:.25rem;">Verified ✓</div>
+            <div class="hint" style="margin-top:.25rem;"><strong style="color:var(--fg)">challenge_id:</strong> ${data.challenge_id || currentChallengeId}</div>
+            <div class="hint"><strong style="color:var(--fg)">witness_utxo_total_sats:</strong> ${data.witness_utxo_total_sats ?? 'n/a'}</div>
+          </div>
+        `;
+
+      } catch (error) {
+        document.getElementById('results').innerHTML = `
+          <div class="alert err">
+            <strong>Error:</strong> ${error?.message || error}
+          </div>
+        `;
+      }
+    }
+
+    function resetFlow() {
+      document.getElementById('pubkeyId').value = '';
+      document.getElementById('psbtInput').value = '';
+      currentChallengeId = null;
+      currentChallenge = null;
+      document.getElementById('results').innerHTML = '';
+      document.getElementById('challengeText').textContent = '';
+      document.getElementById('challengeId').textContent = '';
+      document.getElementById('challengeHex').textContent = '';
+      document.getElementById('psbtInstructions').textContent = '';
+      // reset privacy selection to boolean
+      try{
+        const first = document.querySelector('#privacyPills label');
+        document.querySelectorAll('#privacyPills label').forEach(x=>x.classList.remove('selected'));
+        if (first) first.classList.add('selected');
+        const r = document.querySelector('#privacyPills input[value="boolean"]');
+        if (r) r.checked = true;
+      }catch(e){}
+      showStep(1);
+    }
+  </script>
+
+  <!-- Presence socket (unchanged) -->
+  <script>
+    (function () {
+      if (window.__HODLXXI_PRESENCE_SOCKET) return;
+      if (!document.cookie || !document.cookie.includes("session=")) return;
+
+      function start() {
+        try {
+          const s = io({
+            path: "/socket.io",
+            transports: ["websocket", "polling"],
+            withCredentials: true
+          });
+          window.__HODLXXI_PRESENCE_SOCKET = s;
+        } catch (e) {}
+      }
+
+      if (typeof io === "function") return start();
+
+      const tag = document.createElement("script");
+      tag.src = "https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.min.js";
+      tag.onload = start;
+      document.head.appendChild(tag);
+    })();
+  </script>
+</body>
+</html>

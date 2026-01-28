@@ -1,0 +1,82 @@
+# Secrets and environment
+.env
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+# Backups and patches
+*.backup
+*.backup-*
+*.bak
+*.bak-*
+*.pre-*.backup
+*.pre-*.bak
+**/app.py.before*
+**/app.py.current-*
+**/app.py.from-*
+patch_*.sh
+*_poc_demo.sh
+# Logs
+logs/
+*.log
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+# OS
+.DS_Store
+Thumbs.db
+# Database files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+# Virtual environment
+venv/
+env/
+ENV/
+# Backups and temporary directories
+backups/
+*_backup/
+*.backup/
+cleanup_graveyard*/
+# Private keys and secrets (CRITICAL)
+jwks/
+*.p12
+*.pfx
+# Logs and diagnostics
+# Environment files
+.env.*
+!.env.example
+# HODLXXI timestamped backups (common pattern: *.bak.YYYY-..)
+*.bak.*
+*.backup_*
+**/*.bak.*
+**/*.backup_*
+**/app.py.bak.*
+**/app.py.backup_*
+# generated diagnostics / local exports
+endpoint_map.txt
+endpoint_test_results.txt
+# runtime secrets/keys
+keys/
+
+# Local archives/backups (never commit)
+_archive_baks/
+
+# local recovery copies
+*.BROKEN.*
+*.SAVED_BAD.*
+
+# local VPS backups
+_vps_backups/
+app/templates/*.bak.*

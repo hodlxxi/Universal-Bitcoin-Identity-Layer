@@ -1,0 +1,489 @@
+{# UPGRADE_TEMPLATE_SAFE_DEFAULTS_V1 #}
+{% set plan = (plan if user else 'free') %}
+{% set sats_balance = (sats_balance if user else 0) %}
+{% set payg_enabled = (payg_enabled if user else false) %}
+{% set membership_expires_at = (membership_expires_at if user else none) %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upgrade — HODLXXI Membership</title>
+    <style>
+        :root {
+            --bg: #0b0f10;
+            --panel: #11171a;
+            --fg: #e6f1ef;
+            --accent: #00ff88;
+            --orange: #f7931a;
+            --red: #ff3b30;
+            --muted: #8a9da4;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Mono", "Menlo", "Courier New", monospace;
+            background: var(--bg);
+            color: var(--fg);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        #matrix-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #matrix-bg { display: none !important; }
+        }
+
+        .top-cta {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1.25rem;
+            background: rgba(0, 0, 0, 0.9);
+            border-bottom: 1px solid var(--accent);
+        }
+
+        .top-cta-text {
+            font-size: 0.9rem;
+            color: var(--accent);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 60vw;
+        }
+
+        .top-cta-btn {
+            margin-left: 1rem;
+            padding: 0.4rem 0.9rem;
+            border-radius: 999px;
+            border: 1px solid var(--accent);
+            background: rgba(0, 0, 0, 0.95);
+            color: var(--accent);
+            font-size: 0.9rem;
+            cursor: pointer;
+            white-space: nowrap;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.35rem;
+        }
+
+        .top-cta-btn:hover {
+            background: var(--accent);
+            color: #000;
+        }
+
+        @media (max-width: 768px) {
+            .top-cta {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+                padding: 0.6rem 0.9rem;
+            }
+
+            .top-cta-text {
+                max-width: 100%;
+                white-space: normal;
+            }
+
+            .top-cta-btn {
+                width: 100%;
+                margin-left: 0;
+            }
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 4.5rem 1.5rem 2.5rem;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding-top: 3.5rem;
+            }
+        }
+
+        .title {
+            font-size: 1.4rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            margin-bottom: 1.5rem;
+            color: var(--accent);
+            text-shadow: 0 0 16px rgba(0,255,136,0.35);
+        }
+
+        .card {
+            padding: 1.75rem;
+            border-radius: 1.1rem;
+            border: 1px solid rgba(0,255,136,0.35);
+            background: rgba(10,20,18,0.94);
+            box-shadow: 0 0 18px rgba(0,255,136,0.28);
+        }
+
+        .mono {
+            font-size: 0.8rem;
+            word-break: break-all;
+            margin: 0.5rem 0 1rem;
+            color: var(--muted);
+        }
+
+        .plans {
+            margin: 1.25rem 0;
+        }
+
+        .plans label {
+            display: block;
+            margin: 0.6rem 0;
+            font-size: 0.95rem;
+            cursor: pointer;
+        }
+
+        .plans input[type="radio"] {
+            margin-right: 0.5rem;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.7rem;
+            border-radius: 999px;
+            border: 1px solid rgba(0,255,136,0.6);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--accent);
+            margin-bottom: 0.75rem;
+        }
+
+        .btn {
+            padding: 0.6rem 1.3rem;
+            border-radius: 999px;
+            border: none;
+            cursor: pointer;
+            margin-right: 0.5rem;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #000;
+            font-weight: 700;
+            box-shadow: 0 0 18px rgba(0,255,136,0.35);
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 0 26px rgba(0,255,136,0.5);
+            transform: translateY(-1px);
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--accent);
+            border: 1px solid rgba(0,255,136,0.5);
+        }
+
+        .btn-ghost:hover {
+            background: rgba(0,255,136,0.08);
+        }
+
+        .note {
+            font-size: 0.9rem;
+            margin: 1rem 0;
+            color: var(--muted);
+        }
+
+        .note strong {
+            color: var(--orange);
+        }
+
+        .status-banner {
+            margin-top: 1rem;
+            padding: 0.85rem 1rem;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            background: rgba(0, 255, 136, 0.08);
+            color: var(--fg);
+            font-size: 0.92rem;
+        }
+
+        .status-banner.error {
+            border-color: rgba(255, 59, 48, 0.5);
+            background: rgba(255, 59, 48, 0.08);
+            color: #ffd6d1;
+        }
+
+        .invoice-card {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            border-radius: 14px;
+            border: 1px solid rgba(59, 130, 246, 0.4);
+            background: rgba(10, 14, 20, 0.65);
+        }
+
+        .invoice-field {
+            font-family: "Fira Mono", "SFMono-Regular", ui-monospace, monospace;
+            font-size: 0.85rem;
+            word-break: break-all;
+            margin-top: 0.5rem;
+            color: var(--muted);
+        }
+
+        .inline-inputs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            align-items: center;
+            margin-top: 0.75rem;
+        }
+
+        .inline-inputs input {
+            flex: 1;
+            min-width: 180px;
+            padding: 0.65rem 0.75rem;
+            border-radius: 10px;
+            border: 1px solid rgba(0, 255, 136, 0.25);
+            background: rgba(0, 0, 0, 0.4);
+            color: var(--fg);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="matrix-bg" aria-hidden="true"></canvas>
+
+    <!-- Top CTA bar (same style family as Playground) -->
+    <div class="top-cta">
+        {% set active_pubkey = (session.get('logged_in_pubkey') or logged_in_pubkey or (user.pubkey if user and user.pubkey else None)) %}
+        {% if active_pubkey %}
+            <span class="top-cta-text">
+                ✅ Logged in as {{ active_pubkey[:18] }}…
+            </span>
+            <button class="top-cta-btn"
+                    onclick="window.location.href='/account'">
+                Open my account
+            </button>
+            {% if session.get('access_level') == 'full' %}
+              <a class="top-cta-btn" style="margin-left:10px;" href="/dev/dashboard">Dev</a>
+            {% endif %}
+        {% else %}
+            <span class="top-cta-text">
+                You need to be logged in to upgrade your HODLXXI membership.
+            </span>
+            <button class="top-cta-btn"
+                    onclick="window.location.href='/login?next=/upgrade'">
+                Sign in / Create account
+            </button>
+        {% endif %}
+    </div>
+
+    <div class="container">
+        <div class="title">Upgrade — HODLXXI Membership</div>
+
+        <div class="card">
+            <div class="badge">Identity Being Upgraded</div>
+            <p>Pubkey / identity:</p>
+            <div class="mono">
+                {% if user and user.pubkey %}
+                    {{ user.pubkey }}
+                {% elif logged_in_pubkey %}
+                    {{ logged_in_pubkey }}
+                {% else %}
+                    (not logged in)
+                {% endif %}
+            </div>
+
+            {% if message %}
+                <div class="status-banner">{{ message }}</div>
+            {% endif %}
+            {% if error %}
+                <div class="status-banner error">{{ error }}</div>
+            {% endif %}
+
+            <form method="post">
+                <div class="plans">
+                    <label>
+                        <input type="radio" name="billing_mode" value="free"
+                               {% if not user or not payg_enabled %}checked{% endif %}>
+                        <strong>Free account</strong> — login with your real Bitcoin key, no charge.
+                    </label>
+                    <label>
+                        <input type="radio" name="billing_mode" value="payg"
+                               {% if user and payg_enabled %}checked{% endif %}>
+                        <strong>Pay‑as‑you‑go</strong> — 1 sat per login, PoF proof, and other paid actions.
+                    </label>
+                </div>
+
+                <p class="note">
+                    <strong>Note:</strong> Pay‑as‑you‑go only applies to real Bitcoin keys (no guests).
+                    Top up your balance with Lightning, then actions are billed at 1 sat each.
+                </p>
+
+                <button class="btn btn-primary" type="submit">
+                    Save Billing Preference
+                </button>
+                <button class="btn btn-ghost" type="button"
+                        onclick="window.location.href='{{ url_for('playground') }}'">
+                    Back to Playground
+                </button>
+            </form>
+
+            <div class="invoice-card">
+                <h3 style="margin-top:0;">Add sats to your balance</h3>
+                <p class="note" style="margin-top:0.4rem;">
+                    Create a Lightning invoice to top up your pay‑as‑you‑go balance.
+                </p>
+                <div class="inline-inputs">
+                    <input id="topupAmount" type="number" min="10" placeholder="Top-up amount (sats)">
+                    <button class="btn btn-primary" type="button" onclick="createTopupInvoice()">Create invoice</button>
+                </div>
+
+                <div id="invoiceOutput" class="invoice-field" style="display:none;"></div>
+                <div class="inline-inputs" style="margin-top:0.5rem;">
+                    <button class="btn btn-ghost" type="button" onclick="checkTopupInvoice()">Check payment</button>
+                    <span id="invoiceStatus" class="note" style="margin:0;"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Optional: reuse the same Matrix animation from Playground for consistency -->
+    <script>
+    (function() {
+        const canvas = document.getElementById('matrix-bg');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const CHARS = ['0','1'];
+        let width = 0, height = 0, particles = [], raf = null;
+
+        function resize() {
+            const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+            const cssW = window.innerWidth, cssH = window.innerHeight;
+            canvas.width = Math.floor(cssW * dpr);
+            canvas.height = Math.floor(cssH * dpr);
+            canvas.style.width = cssW + 'px';
+            canvas.style.height = cssH + 'px';
+            ctx.setTransform(1,0,0,1,0,0);
+            ctx.scale(dpr, dpr);
+            width = cssW; height = cssH;
+            particles = [];
+            for (let i = 0; i < 300; i++) {
+                particles.push({
+                    x: (Math.random() - 0.5) * width,
+                    y: (Math.random() - 0.5) * height,
+                    z: Math.random() * 800 + 100
+                });
+            }
+            ctx.fillStyle = 'rgba(0,0,0,1)';
+            ctx.fillRect(0, 0, width, height);
+        }
+
+        function draw() {
+            ctx.fillStyle = 'rgba(0,0,0,0.25)';
+            ctx.fillRect(0, 0, width, height);
+            ctx.fillStyle = '#00ff88';
+            for (const p of particles) {
+                const scale = 200 / p.z;
+                const x2 = width / 2 + p.x * scale;
+                const y2 = height / 2 + p.y * scale;
+                const size = Math.max(8 * scale, 1);
+                ctx.font = size + 'px monospace';
+                ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
+                p.z -= 5;
+                if (p.z < 1) {
+                    p.x = (Math.random() - 0.5) * width;
+                    p.y = (Math.random() - 0.5) * height;
+                    p.z = 800;
+                }
+            }
+            raf = requestAnimationFrame(draw);
+        }
+
+        function onVis() {
+            if (document.hidden) {
+                if (raf) cancelAnimationFrame(raf), raf = null;
+            } else {
+                if (!raf) raf = requestAnimationFrame(draw);
+            }
+        }
+
+        window.addEventListener('resize', resize);
+        document.addEventListener('visibilitychange', onVis);
+        resize();
+        raf = requestAnimationFrame(draw);
+    })();
+    </script>
+
+    <script>
+    let activeInvoiceId = null;
+
+    async function createTopupInvoice() {
+        const amountInput = document.getElementById('topupAmount');
+        const amount = Number(amountInput.value || 0);
+        const output = document.getElementById('invoiceOutput');
+        const status = document.getElementById('invoiceStatus');
+        status.textContent = '';
+
+        if (!amount || amount < 10) {
+            status.textContent = 'Minimum top-up is 10 sats.';
+            return;
+        }
+
+        const resp = await fetch('/api/billing/create-invoice', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ billing_mode: "payg", amount_sats: amount})
+        });
+        const data = await resp.json();
+        window.__last_invoice_id = data.get ? null : (data.invoice_id || window.__last_invoice_id);
+        if (!data.ok) {
+            status.textContent = data.error || 'Failed to create invoice.';
+            return;
+        }
+
+        activeInvoiceId = data.invoice_id;
+        output.style.display = 'block';
+        output.textContent = data.payment_request;
+        status.textContent = `Invoice ready for ${data.amount_sats} sats.`;
+    }
+
+    async function checkTopupInvoice() {
+        const status = document.getElementById('invoiceStatus');
+        if (!activeInvoiceId) {
+            status.textContent = 'Create an invoice first.';
+            return;
+        }
+
+        const resp = await fetch('/api/billing/check-invoice', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({invoice_id: activeInvoiceId})
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+            status.textContent = data.error || 'Unable to check invoice.';
+            return;
+        }
+        if (data.paid) {
+            status.textContent = `Payment confirmed. Balance: ${data.sats_balance ?? 0} sats.`;
+        } else {
+            status.textContent = 'Payment not seen yet.';
+        }
+    }
+    </script>
+</body>
+</html>

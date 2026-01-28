@@ -1,0 +1,27 @@
+[tool.black]
+line-length = 120
+target-version = ["py312"]
+extend-exclude = '''
+(
+  /app/app\.py
+| /app/blueprints\.bak.*
+| /_archive_baks/
+| /backups/
+| /venv/
+| /\.venv/
+| /__pycache__/
+| /\.pytest_cache/
+)
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 120
+skip_glob = [
+  "app/app.py",
+  "app/blueprints.bak*",
+  "_archive_baks/*",
+  "backups/*",
+  "venv/*",
+  ".venv/*",
+]

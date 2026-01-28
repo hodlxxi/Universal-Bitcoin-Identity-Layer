@@ -1,0 +1,630 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Account • HODLXXI</title>
+
+  <!-- keep your existing global css if you want -->
+  <link rel="stylesheet" href="/static/style.css" />
+
+  <style>
+    :root {
+      --bg: #0b0f10;
+      --panel: #11171a;
+      --fg: #e6f1ef;
+      --accent: #00ff88;
+      --orange: #f7931a;
+      --red: #ff3b30;
+      --blue: #3b82f6;
+      --muted: #8a9da4;
+    }
+
+    * { margin:0; padding:0; box-sizing:border-box; }
+
+    body{
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+      text-rendering: optimizeLegibility;
+    }
+
+    #matrix-bg{
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+    @media (prefers-reduced-motion: reduce){
+      #matrix-bg{ display:none !important; }
+    }
+
+    #root{
+      position: relative;
+      z-index: 1;
+      padding: 4.5rem 2rem 2rem;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    /* --- Top CTA bar (same family as PoF) --- */
+    .top-cta{
+      position: sticky;
+      top: 0;
+      z-index: 12;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      padding: 0.45rem 0.75rem;
+      background: radial-gradient(
+        circle at top,
+        rgba(34, 197, 94, 0.16) 0,
+        rgba(3, 7, 18, 0.96) 45%,
+        rgba(3, 7, 18, 0.98) 100%
+      );
+      border-bottom: 1px solid rgba(0, 255, 136, 0.3);
+      box-shadow: 0 18px 35px rgba(0, 0, 0, 0.9);
+      backdrop-filter: blur(16px);
+    }
+    .top-cta-inner{
+      width: 100%;
+      max-width: 1400px;
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+    .top-cta-text{
+      display:flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.85rem;
+      color: #cbd5f5;
+    }
+    .top-cta-text strong{
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .top-cta-pill{
+      padding: 0.18rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid rgba(0, 255, 136, 0.6);
+      background: rgba(6, 95, 70, 0.7);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #bbf7d0;
+    }
+    .top-cta-actions{
+      display:flex;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      align-items:center;
+      justify-content: flex-end;
+    }
+
+    /* --- Card / header styling --- */
+    .header{
+      background: rgba(17, 23, 26, 0.92);
+      border: 1px solid #0f2a24;
+      border-radius: 14px;
+      padding: 2rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 0 10px rgba(0, 255, 136, 0.08);
+      text-align: center;
+    }
+    .header h1{
+      color: var(--accent);
+      font-size: 2.2rem;
+      margin-bottom: 0.6rem;
+      text-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+    }
+    .header p{
+      color: var(--muted);
+      font-size: 1.0rem;
+      max-width: 720px;
+      margin: 0.25rem auto 0;
+      line-height: 1.55;
+    }
+    .hero-pill{
+      display:inline-flex;
+      padding: 0.3rem 0.9rem;
+      border-radius: 999px;
+      border: 1px solid rgba(0, 255, 136, 0.6);
+      background: rgba(6, 95, 70, 0.28);
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #bbf7d0;
+      margin-bottom: 0.8rem;
+    }
+
+    .card{
+      background: rgba(17, 23, 26, 0.92);
+      border: 1px solid #0f2a24;
+      border-radius: 14px;
+      padding: 1.5rem;
+      margin-bottom: 1.25rem;
+      box-shadow: 0 0 10px rgba(0, 255, 136, 0.08);
+    }
+    .card h2{
+      color: var(--accent);
+      margin-bottom: 1rem;
+      font-size: 1.35rem;
+      text-align: left;
+    }
+
+    /* layout */
+    .grid-2{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      align-items: start;
+    }
+    @media (max-width: 900px){
+      #root{ padding: 3.5rem 1rem 1.5rem; }
+      .grid-2{ grid-template-columns: 1fr; }
+      .top-cta-inner{ flex-direction: column; align-items: flex-start; }
+      .top-cta-actions{ width:100%; justify-content: flex-start; }
+      .header h1{ font-size: 1.7rem; }
+    }
+
+    /* buttons (PoF style) */
+    button, .btn, .hero-cta{
+      background: var(--accent);
+      color: #000;
+      border: none;
+      padding: 0.70rem 1.25rem;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 650;
+      font-size: 0.95rem;
+      text-decoration: none;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap: 0.4rem;
+      transition: all 0.25s;
+    }
+    button:hover, .btn:hover, .hero-cta:hover{
+      box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+      transform: translateY(-2px);
+    }
+    .btn-secondary{
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+    }
+    .btn-secondary:hover{
+      background: rgba(0, 255, 136, 0.08);
+    }
+    button:disabled{ opacity: .55; cursor:not-allowed; transform:none; box-shadow:none; }
+
+    /* misc UI */
+    .muted{ color: var(--muted); }
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    .stack{ display:flex; flex-direction:column; gap: 0.75rem; }
+    .inline{ display:flex; gap: 0.75rem; flex-wrap: wrap; align-items:center; }
+
+    /* plan + payg pills */
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap: 0.5rem;
+      border: 1px solid rgba(0,255,136,.45);
+      border-radius: 999px;
+      padding: 0.32rem 0.65rem;
+      font-size: 0.75rem;
+      color: #bbf7d0;
+      background: rgba(6, 95, 70, 0.20);
+    }
+    .pill .dot{
+      width:8px; height:8px;
+      border-radius:50%;
+      background: rgba(0,255,136,.9);
+      box-shadow: 0 0 10px rgba(0,255,136,.6);
+    }
+    .pill.warn{ border-color: rgba(255,180,0,.55); color: rgba(255,220,160,.95); background: rgba(255,180,0,.08); }
+    .pill.warn .dot{ background: rgba(255,180,0,.95); box-shadow: 0 0 10px rgba(255,180,0,.6); }
+    .pill.bad{ border-color: rgba(255,60,60,.55); color: rgba(255,180,180,.95); background: rgba(255,60,60,.07); }
+    .pill.bad .dot{ background: rgba(255,60,60,.95); box-shadow: 0 0 10px rgba(255,60,60,.6); }
+
+    /* inputs + notices */
+    .input{
+      width: 180px;
+      padding: 0.70rem 0.9rem;
+      border-radius: 12px;
+      border: 1px solid rgba(0,255,136,.45);
+      background: rgba(14, 19, 21, 0.85);
+      color: rgba(230,241,239,.98);
+      outline: none;
+    }
+    .input:focus{
+      border-color: var(--accent);
+      box-shadow: 0 0 18px rgba(0,255,136,.18);
+    }
+
+    .notice{
+      padding: 0.85rem 1rem;
+      border-radius: 12px;
+      border: 1px solid rgba(0,255,136,.25);
+      background: rgba(14, 19, 21, 0.75);
+    }
+    .notice.warn{ border-color: rgba(255,180,0,.55); }
+    .notice.bad { border-color: rgba(255,60,60,.55); }
+
+    /* table */
+    .table{ width:100%; border-collapse: collapse; }
+    .table th, .table td{
+      text-align:left;
+      padding: 0.75rem 0.6rem;
+      border-bottom: 1px solid rgba(0,255,136,.18);
+      vertical-align: top;
+    }
+    .table th{
+      font-size: 0.78rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: rgba(138,157,164,.95);
+    }
+    pre.qr{ white-space: pre-wrap; word-break: break-all; font-size: 0.82rem; opacity: .95; }
+
+    /* checkbox */
+    input[type="checkbox"]{
+      width: 16px; height: 16px;
+      accent-color: var(--accent);
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="matrix-bg" aria-hidden="true"></canvas>
+
+  <div class="top-cta">
+    <div class="top-cta-inner">
+      <div class="top-cta-text">
+        <span class="top-cta-pill">HODLXXI</span>
+        <span><strong>Account</strong> · sats balance · PAYG · invoices</span>
+      </div>
+
+      <div class="top-cta-actions">
+        <button class="btn btn-secondary" onclick="location.href='/playground'">Playground</button>
+        <button class="btn btn-secondary" onclick="location.href='/upgrade'">Billing</button>
+        <button class="btn btn-secondary" onclick="location.href='/logout'">Sign out</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="root">
+    <div class="header">
+      <span class="hero-pill">Billing · PAYG · Lightning (optional)</span>
+      <h1>💳 Account</h1>
+      <p>Manage your plan, check your sats balance, enable pay-as-you-go, and top up via Lightning invoices.</p>
+
+      <div class="inline" style="justify-content:center; margin-top: 1.2rem;">
+        <div class="pill" id="planPill"><span class="dot"></span><span id="planText">Plan</span></div>
+        <div class="pill" id="paygPill"><span class="dot"></span><span id="paygText">PAYG</span></div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h2>Account</h2>
+
+        <div class="stack">
+          <div><span class="muted">Pubkey</span><div class="mono" style="margin-top:0.25rem; font-weight:650;" id="pubkey">…</div></div>
+          <div class="inline" style="gap:1.25rem;">
+            <div style="min-width:160px;">
+              <div class="muted">Plan</div>
+              <div style="margin-top:0.25rem; font-weight:650;" id="plan">…</div>
+            </div>
+            <div style="min-width:160px;">
+              <div class="muted">Sats balance</div>
+              <div style="margin-top:0.25rem; font-weight:650;" id="balance">…</div>
+            </div>
+          </div>
+
+          <div class="notice" style="margin-top:0.25rem;">
+            <label class="inline" style="gap:0.6rem;">
+              <input type="checkbox" id="paygEnabled" onchange="togglePayg()" />
+              <span style="font-weight:650;">Pay-as-you-go enabled</span>
+            </label>
+            <div class="muted" style="margin-top:0.45rem;">Metered actions consume sats when PAYG is on.</div>
+          </div>
+
+          <div id="needsTopup" class="notice warn" style="display:none;">
+            <strong>Low balance.</strong> Top up to continue metered actions.
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Top up sats</h2>
+
+        <div class="stack">
+          <div class="inline">
+            <input class="input" id="topupAmount" type="number" min="1" step="1" value="1000" />
+            <button class="btn" id="btnCreate" onclick="createInvoice()">Create invoice</button>
+            <button class="btn btn-secondary" id="btnCheck" onclick="checkInvoice()" disabled>Check invoice</button>
+          </div>
+
+          <div id="invBox" class="notice" style="display:none;">
+            <div class="muted">Invoice ID</div>
+            <div class="mono" style="font-weight:650; margin-top:0.25rem;" id="invoiceId"></div>
+            <div class="muted" style="margin-top:0.85rem;">Payment request</div>
+            <pre class="qr mono" id="payreq"></pre>
+          </div>
+
+          <div id="invStatus" class="notice" style="display:none;"></div>
+
+          <div class="muted">
+            Note: until Lightning backend is configured, invoices may be “stubbed” for testing.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Recent invoices</h2>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Invoice</th>
+            <th>Amount</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Paid</th>
+          </tr>
+        </thead>
+        <tbody id="paymentsBody">
+          <tr><td colspan="5" class="muted">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Matrix Background Animation (same style as your PoF) -->
+  <script>
+    (function () {
+      const canvas = document.getElementById('matrix-bg');
+      if (!canvas) return;
+
+      const ctx = canvas.getContext('2d');
+      const CHARS = ['0', '1'];
+      let width = 0, height = 0, particles = [], raf = null;
+
+      function resize() {
+        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+        const cssW = window.innerWidth;
+        const cssH = window.innerHeight;
+
+        canvas.width = Math.floor(cssW * dpr);
+        canvas.height = Math.floor(cssH * dpr);
+        canvas.style.width = cssW + 'px';
+        canvas.style.height = cssH + 'px';
+
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+
+        width = cssW;
+        height = cssH;
+        particles = [];
+
+        for (let i = 0; i < 400; i++) {
+          particles.push({
+            x: (Math.random() - 0.5) * width,
+            y: (Math.random() - 0.5) * height,
+            z: Math.random() * 800 + 100
+          });
+        }
+
+        ctx.fillStyle = 'rgba(0,0,0,1)';
+        ctx.fillRect(0, 0, width, height);
+      }
+
+      function draw() {
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = '#00ff88';
+
+        for (const p of particles) {
+          const scale = 200 / p.z;
+          const x2 = width / 2 + p.x * scale;
+          const y2 = height / 2 + p.y * scale;
+          const size = Math.max(8 * scale, 1);
+
+          ctx.font = size + 'px monospace';
+          ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
+
+          p.z -= 5;
+          if (p.z < 1) {
+            p.x = (Math.random() - 0.5) * width;
+            p.y = (Math.random() - 0.5) * height;
+            p.z = 800;
+          }
+        }
+
+        raf = requestAnimationFrame(draw);
+      }
+
+      function onVis() {
+        if (document.hidden) {
+          if (raf) { cancelAnimationFrame(raf); raf = null; }
+        } else {
+          if (!raf) raf = requestAnimationFrame(draw);
+        }
+      }
+
+      window.addEventListener('resize', resize);
+      document.addEventListener('visibilitychange', onVis);
+
+      resize();
+      raf = requestAnimationFrame(draw);
+    })();
+  </script>
+
+  <!-- Your existing logic unchanged -->
+  <script>
+  let currentInvoiceId = null;
+
+  function shortPubkey(pk){
+    if(!pk) return "";
+    if(pk.length <= 16) return pk;
+    return pk.slice(0, 10) + "…" + pk.slice(-10);
+  }
+
+  function setPill(pillId, textId, label, state){
+    const pill = document.getElementById(pillId);
+    const txt = document.getElementById(textId);
+    txt.textContent = label;
+
+    pill.classList.remove("warn","bad");
+    if(state === "warn") pill.classList.add("warn");
+    if(state === "bad") pill.classList.add("bad");
+  }
+
+  async function loadSummary(){
+    const r = await fetch("/api/account/summary", { credentials: "include" });
+    if(r.status === 401){
+      location.href = "/login?next=" + encodeURIComponent(location.pathname);
+      return;
+    }
+    if(!r.ok){
+      console.warn("Account summary fetch failed:", r.status);
+      return;
+    }
+    const j = await r.json();
+
+    document.getElementById("pubkey").textContent = shortPubkey(j.pubkey);
+    document.getElementById("plan").textContent = j.plan || "free";
+    document.getElementById("balance").textContent = (j.sats_balance ?? 0).toString();
+
+    const payg = !!j.payg_enabled;
+    document.getElementById("paygEnabled").checked = payg;
+
+    const plan = (j.plan || "free").toLowerCase();
+    if(plan === "admin" || plan === "pro" || plan === "paid"){
+      setPill("planPill", "planText", `Plan: ${plan}`, "ok");
+    } else {
+      setPill("planPill", "planText", `Plan: ${plan}`, "warn");
+    }
+    setPill("paygPill", "paygText", payg ? "PAYG: on" : "PAYG: off", payg ? "ok" : "warn");
+
+    const needs = !!j.needs_topup;
+    document.getElementById("needsTopup").style.display = needs ? "block" : "none";
+
+    renderPayments(j.recent_payments || []);
+  }
+
+  function renderPayments(rows){
+    const tb = document.getElementById("paymentsBody");
+    tb.innerHTML = "";
+    if(!rows.length){
+      tb.innerHTML = `<tr><td colspan="5" class="muted">No invoices yet.</td></tr>`;
+      return;
+    }
+    for(const p of rows){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="mono">${p.invoice_id || ""}</td>
+        <td>${p.amount_sats ?? ""}</td>
+        <td>${p.status || ""}</td>
+        <td class="muted">${p.created_at || ""}</td>
+        <td class="muted">${p.paid_at || ""}</td>
+      `;
+      tb.appendChild(tr);
+    }
+  }
+
+  async function togglePayg(){
+    const enabled = document.getElementById("paygEnabled").checked;
+    const r = await fetch("/api/account/set-payg", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ enabled })
+    });
+    const j = await r.json();
+    if(!r.ok || !j.ok){
+      alert(j.error || "Failed to update PAYG");
+    }
+    await loadSummary();
+  }
+
+  function showStatus(msg, kind){
+    const el = document.getElementById("invStatus");
+    el.style.display = "block";
+    el.classList.remove("warn","bad");
+    if(kind === "warn") el.classList.add("warn");
+    if(kind === "bad") el.classList.add("bad");
+    el.textContent = msg;
+  }
+
+  async function createInvoice(){
+    const amt = parseInt(document.getElementById("topupAmount").value || "0", 10);
+    document.getElementById("btnCreate").disabled = true;
+
+    try{
+      const r = await fetch("/api/billing/create-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ amount_sats: amt, billing_mode: "payg" })
+      });
+      const j = await r.json();
+      if(!r.ok || !j.ok){
+        showStatus(j.error || "Failed to create invoice", "bad");
+        return;
+      }
+      currentInvoiceId = j.invoice_id;
+
+      document.getElementById("invBox").style.display = "block";
+      document.getElementById("invoiceId").textContent = j.invoice_id;
+      document.getElementById("payreq").textContent = j.payment_request;
+
+      document.getElementById("btnCheck").disabled = false;
+      showStatus("Invoice created. Pay it, then click “Check invoice”.", "warn");
+      await loadSummary();
+    } finally {
+      document.getElementById("btnCreate").disabled = false;
+    }
+  }
+
+  async function checkInvoice(){
+    if(!currentInvoiceId){
+      showStatus("No invoice created yet.", "warn");
+      return;
+    }
+    document.getElementById("btnCheck").disabled = true;
+    try{
+      const r = await fetch("/api/billing/check-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ invoice_id: currentInvoiceId })
+      });
+      const j = await r.json();
+      if(!r.ok || !j.ok){
+        showStatus(j.error || "Failed to check invoice", "bad");
+        return;
+      }
+      if(j.paid){
+        showStatus("Paid ✅ Balance credited.", "ok");
+      } else {
+        showStatus("Not paid yet. Try again in a moment.", "warn");
+      }
+      await loadSummary();
+    } finally {
+      document.getElementById("btnCheck").disabled = false;
+    }
+  }
+
+  loadSummary();
+  </script>
+</body>
+</html>

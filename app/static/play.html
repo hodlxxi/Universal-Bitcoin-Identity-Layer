@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html diverg="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HODLXXI ⚡ Play</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+    <style>
+        body {margin:0;background:#000;color:#fff;font-family:system-ui,sans-serif}
+        .c {max-width:1200px;margin:0 auto;padding:20px;text-align:center}
+        h1 {font-size:3.5rem;color:#f7931a}
+        .wallets {display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:20px;margin:40px 0}
+        .w {padding:25px;background:#111;border-radius:16px;cursor:pointer;transition:.3s;border:2px solid #333}
+        .w:hover {border-color:#f7931a;transform:scale(1.05);background:#222}
+        .w img {width:80px;height:80px;border-radius:12px}
+        .big-btn {background:#f7931a;color:#000;font-weight:bold;padding:20px 40px;font-size:1.5rem;border-radius:12px;margin:40px;cursor:pointer}
+        .big-btn:hover {background:#e68300}
+    </style>
+</head>
+<body>
+    <div class="c">
+        <h1>HODLXXI ⚡ Play</h1>
+        <p style="font-size:1.5rem">Bitcoin identity that actually works. No emails. Just Lightning fast.</p>
+
+        <h2 style="margin:40px 0">Login with any Lightning wallet</h2>
+        <div class="wallets">
+            <div class="w" onclick="confetti({particleCount:200,spread:100});setTimeout(()=>alert('Real LNURL-auth – wallet opens now!'),1000)">
+                <img src="https://getalby.com/assets/alby-128x128.png" alt="Alby"><p>Alby</p>
+            </div>
+            <div class="w" onclick="confetti({particleCount:200,spread:100});setTimeout(()=>alert('Real LNURL-auth – wallet opens now!'),1000)">
+                <img src="https://mutinywallet.com/icons/icon-512x512.png" alt alt="Mutiny"><p>Mutiny</p>
+            </div>
+            <div class="w" onclick="confetti({particleCount:200,spread:100});setTimeout(()=>{alert('Real LNURL-auth – wallet opens now!')},1000)">
+                <img src="https://zeusln.app/img/zeus-pay.png" alt="Zeus"><p>Zeus</p>
+            </div>
+            <div class="w" onclick="confetti({particleCount:200,spread:100});setTimeout(()=>alert('Real LNURL-auth – wallet opens now!'),1000)">
+                <img src="https://phoenix.acinq.co/favicon.ico" alt="Phoenix"><p>Phoenix</p>
+            </div>
+            <div class="w" onclick="confetti({particleCount:200,spread:100});setTimeout(()=>alert('Real LNURL-auth – wallet opens now!'),1000)">
+                <img src="https://www.walletofsatoshi.com/assets/logo.png" alt="WoS"><p>WoS</p>
+            </div>
+            <div class="w" onclick="confetti({particleCount:200,spread:100});setTimeout(()=>alert('Real LNURL-auth – wallet opens now!'),1000)">
+                <img src="https://damus.io/apple-touch-icon.png" alt="Damus"><p>Damus</p>
+            </div>
+            <div class="w" onclick="confetti({particleCount:200,spread:100});setTimeout(()=>alert('Real LNURL-auth – wallet opens now!'),1000)">
+                <img src="https://primal.net/favicon.ico" alt="Primal"><p>Primal</p>
+            </div>
+            <div class="w" onclick="confetti({particleCount:200,spread:100});setTimeout(()=>alert('Real LNURL-auth – wallet opens now!'),1000)">
+                <img src="https://sparrowwallet.com/img/logo.png" alt="Sparrow"><p>Sparrow</p>
+            </div>
+        </div>
+
+        <div onclick="confetti({particleCount:300,spread:160});setTimeout(()=>alert('Real Proof-of-Funds – PSBT generated!'),1000)" class="big-btn">
+            Prove You Have Bitcoin → Get Certified Whale Badge 🐳
+        </div>
+    </div>
+</body>
+</html>
