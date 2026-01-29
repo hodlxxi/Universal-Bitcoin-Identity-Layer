@@ -669,8 +669,8 @@ function prettyPk(pk) {
         }, []);
 
         const handleVerify = async () => {
-            if (!pubkey || !signature) {
-                setResult({ error: 'Both pubkey and signature are required' });
+            if (!signature) {
+                setResult({ error: 'Signature is required (pubkey optional for SPECIAL_USERS)' });
                 return;
             }
 
@@ -679,7 +679,7 @@ function prettyPk(pk) {
                 const res = await fetch('/verify_signature', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pubkey, signature, challenge })
+                    body: JSON.stringify({ pubkey: (pubkey || ''), signature, challenge })
                 });
                 const data = await res.json();
                 setResult(data);
