@@ -4309,7 +4309,7 @@ def login():
 <div id="qrCard" class="qr-card"> <!-- QR_MODAL_WRAPPER_V3 -->
     <div id="qrcode"></div>
 
-    <a id="openInWallet" href="#" target="_blank" rel="noopener">Open in wallet</a>
+    <a id="openInWallet" href="#" rel="noopener">Open in wallet</a>
 
     <!-- Mobile fallback: big tap target -->
     <button class="btn primary" id="openWalletBtn" type="button" style="margin-top:10px; width:100%;">
@@ -4577,7 +4577,7 @@ def login():
 
       // 3) fallback: new tab (some Android cases)
       setTimeout(() => {
-        try {window.open(walletUrl, "_blank");} catch(e) {}
+        try {window.location.href = walletUrl;} catch(e) {}
       }, 120);
     }
 
@@ -5893,7 +5893,7 @@ textarea{
 
             <div class="manifesto-panel">
                 <p class="manifesto-text">
-                    <a href="https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer.git" target="_blank" rel="noopener">
+                    <a href="https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer.git" rel="noopener">
                         This is a Game Theory and Mathematics–driven Design Framework for decentralized financial support
                         networks, leveraging Bitcoin smart contracts and integrating Nostr for social trust. It fosters a system
                         where mutual care, financial incentives, and social responsibility are embedded in every
@@ -6307,7 +6307,6 @@ textarea{
                                   <div class="nostr-info" style="text-align:center;margin:0.5rem 0;">
                                     <strong>Nostr:</strong><br>
                                     <a href="https://advancednostrsearch.vercel.app/?npub=${descriptor.nostr_npub}"
-                                       target="_blank"
                                        style="color:var(--neon-blue); text-decoration:none; display:inline-block; margin-top:0.25rem;">
                                        ${descriptor.nostr_npub_truncated}
                                     </a>
@@ -6731,7 +6730,7 @@ textarea{
         // Small nav helpers for the top icon row
         function openPanel(which) {
             const url = `${location.origin}${location.pathname}#${which}`;
-            window.open(url, '_blank', 'noopener,noreferrer');
+            window.location.href = url;
         }
 
 document.getElementById('btnExplorer').addEventListener('click', () => openPanel('explorer'));
@@ -6739,13 +6738,13 @@ document.getElementById('btnExplorer').addEventListener('click', () => openPanel
 const btnScreensaver = document.getElementById('btnScreensaver');
 if (btnScreensaver) {
     btnScreensaver.addEventListener('click', () => {
-        window.open('/screensaver', '_blank', 'noopener,noreferrer');
+        window.location.href = '/screensaver';
     });
 }
 
 document.getElementById('btnOnboard').addEventListener('click', () => openPanel('onboard'));
 document.getElementById('btnChat').addEventListener('click', () => {
-    window.open("{{ url_for('chat') }}", '_blank', 'noopener,noreferrer');
+    window.location.href = "{{ url_for('chat') }}";
 });
 document.getElementById('btnExit').addEventListener('click', () => {
     window.location.href = "{{ url_for('logout') }}";

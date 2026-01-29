@@ -1057,7 +1057,7 @@ function prettyPk(pk) {
                 state: Math.random().toString(36).slice(2)
             });
             const url = `/oauth/authorize?${params}`;
-            window.open(url, '_blank', 'width=600,height=800');
+            window.location.href = url;
         };
 
         return (
