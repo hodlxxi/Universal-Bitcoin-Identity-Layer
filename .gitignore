@@ -80,3 +80,6 @@ _archive_baks/
 # local VPS backups
 _vps_backups/
 app/templates/*.bak.*
+
+# local backups
+*.bak.*
