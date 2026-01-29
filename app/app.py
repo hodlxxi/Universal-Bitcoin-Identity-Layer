@@ -1450,6 +1450,9 @@ def check_auth():
         "/api/pof/verify_psbt",
     ):
         return None
+
+    if flask_request.path == "/special_login":
+        return None
     if flask_request.path.startswith("/api/lnurl-auth/"):
         return None
     # /ALLOW_POF_API_V1
@@ -4200,6 +4203,11 @@ def login():
         <div id="panelSpecial" class="hidden">
           <label for="specialSignature">Special signature</label>
           <textarea id="specialSignature" rows="4" placeholder="Paste special signature"></textarea>
+  <div style="margin-top:10px;">
+    <div style="opacity:.75;font-size:.9em;margin-bottom:6px;">Challenge (sign this)</div>
+    <textarea class="challenge" id="specialChallenge" rows="2" readonly title="Tap to copy"></textarea>
+    <button class="btn" type="button" onclick="copyText('specialChallenge')">Copy challenge</button>
+  </div>
           <div class="btnrow">
             <button class="btn primary" type="button" onclick="specialLogin()">Verify &amp; Login</button>
           </div>
@@ -4378,6 +4386,13 @@ def login():
           setTimeout(() => (legacyEl.style.opacity = orig), 220);
         }).catch(()=>{});
       });
+    })();
+
+    // Mirror legacy challenge into Special tab
+    (function(){
+      const src = document.getElementById("legacyChallenge");
+      const dst = document.getElementById("specialChallenge");
+      if (src && dst) dst.value = (src.textContent || "").trim();
     })();
 
     // --- Legacy verify ---
