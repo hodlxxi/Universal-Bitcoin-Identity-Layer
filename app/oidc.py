@@ -24,8 +24,6 @@ def well_known_configuration():
     issuer = str(cfg.get("JWT_ISSUER") or request.url_root.rstrip("/"))
     issuer = issuer.rstrip("/")
     base = issuer
-    alg = str(cfg.get("JWT_ALGORITHM") or "RS256").upper()
-
     response = {
         "issuer": issuer,
         "authorization_endpoint": f"{base}/oauth/authorize",
@@ -42,7 +40,7 @@ def well_known_configuration():
             "read_limited",
         ],
         "code_challenge_methods_supported": ["S256", "plain"],
-        "id_token_signing_alg_values_supported": [alg],
+        "id_token_signing_alg_values_supported": ["RS256"],
         "subject_types_supported": ["public"],
     }
     return jsonify(response)

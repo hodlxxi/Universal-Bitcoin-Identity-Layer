@@ -58,12 +58,17 @@ from app.db_storage import (
     get_lnurl_challenge,
     get_oauth_client,
     get_oauth_code,
+    get_oauth_token,
+    get_oauth_token_by_refresh,
     get_session,
+    get_user_by_id,
     get_user_by_pubkey,
     store_lnurl_challenge,
     store_oauth_client,
     store_oauth_code,
+    store_oauth_token,
     store_session,
+    revoke_oauth_token_by_refresh,
 )
 from app.jwks import ensure_rsa_keypair
 from app.utils import get_rpc_connection
@@ -1567,7 +1572,13 @@ def check_auth():
 
     # 3) Everything else requires a logged-in session
     if not session.get("logged_in_pubkey"):
-        if (p.startswith("/api/") and not p.startswith("/api/playground") and not p.startswith("/api/public/")) or p.endswith("/set_labels_from_zpub"):
+        auth_header = request.headers.get("Authorization", "")
+        if (
+            p.startswith("/api/")
+            and not p.startswith("/api/playground")
+            and not p.startswith("/api/public/")
+            and not (p == "/api/demo/protected" and auth_header.startswith("Bearer "))
+        ) or p.endswith("/set_labels_from_zpub"):
             return jsonify(ok=False, error="Not logged in"), 401
         nxt = request.full_path if request.query_string else request.path
         return redirect(url_for("login", next=nxt))
@@ -7415,9 +7426,9 @@ def _public_guard_for_lnurl():
     if p in PUBLIC_API_PATHS or any(p.startswith(pref) for pref in PUBLIC_API_PREFIXES):
         return None
 
-    # NOTE: Do NOT treat a Bearer header as authenticated.
-    # If you later add real token auth, validate the token explicitly here.
     auth = request.headers.get("Authorization", "")
+    if p == "/api/demo/protected" and auth.startswith("Bearer "):
+        return None
 
     # Fallback: require session for other /api/*
 
@@ -8144,11 +8155,15 @@ class OAuthServer:
         if client_data["redirect_uris"] and redirect_uri not in client_data["redirect_uris"]:
             return {"error": "invalid_redirect_uri"}
 
+        user_pubkey = session.get("logged_in_pubkey")
+        if not user_pubkey:
+            return {"error": "login_required"}
         # 4. issue short-lived code
         code = secrets.token_urlsafe(24)
         expires_at = datetime.utcnow() + timedelta(minutes=10)
         code_data = {
             "client_id": client_id,
+            "user_pubkey": user_pubkey,
             "scope": " ".join(requested_scopes),
             "redirect_uri": redirect_uri,
             "state": state,
@@ -8159,7 +8174,7 @@ class OAuthServer:
             "nonce": nonce,
         }
 
-        _store_auth_code_pkce(code, code_data, ttl=600)
+        store_oauth_code(code, code_data, ttl=600)
 
         # the Flask route can either:
         # - return redirect(f"{redirect_uri}?code=...&state=...")
@@ -8194,7 +8209,7 @@ class OAuthServer:
         return {"error": "unsupported_grant_type"}
 
     def _handle_code_grant(self, code: str, client: ClientCredentials, code_verifier: Optional[str] = None) -> dict:
-        code_data = _pop_auth_code_pkce(code)
+        code_data = get_oauth_code(code)
 
         if not code_data:
             return {"error": "invalid_grant", "detail": "code_not_found"}
@@ -8228,28 +8243,43 @@ class OAuthServer:
 
         scope_str = code_data.get("scope", "read_limited")
 
-        access_token = self._gen_access(client, scope_str)
-        refresh_token = self._gen_refresh(client.client_id, scope_str)
+        delete_oauth_code(code)
 
-        now_ts = int(time.time())
+        access_token = secrets.token_urlsafe(32)
+        refresh_token = secrets.token_urlsafe(48)
+
+        user_id = code_data.get("user_id")
+        user = get_user_by_id(user_id) if user_id else None
+        if not user:
+            return {"error": "invalid_grant", "detail": "user_not_found"}
+
+        now = datetime.utcnow()
+        access_expires_at = now + timedelta(seconds=TOKEN_TTL_SECONDS)
+        refresh_expires_at = now + timedelta(days=30)
+        store_oauth_token(
+            str(uuid.uuid4()),
+            {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "Bearer",
+                "client_id": client.client_id,
+                "scope": scope_str,
+                "access_token_expires_at": access_expires_at.isoformat(),
+                "refresh_token_expires_at": refresh_expires_at.isoformat(),
+            },
+        )
+
+        now_ts = int(now.timestamp())
         id_claims = {
+            "iss": ISSUER,
             "aud": client.client_id,
-            "nonce": code_data.get("nonce") or "",
+            "iat": now_ts,
+            "exp": now_ts + TOKEN_TTL_SECONDS,
         }
-        if JWT_ALG == "RS256":
-            id_claims_rs = dict(id_claims)
-            id_claims_rs["iss"] = ISSUER
-            id_token = issue_rs256_jwt(sub=client.client_id, claims=id_claims_rs)
-        else:
-            id_claims.update(
-                {
-                    "iss": ISSUER,
-                    "sub": client.client_id,
-                    "iat": now_ts,
-                    "exp": now_ts + TOKEN_TTL_SECONDS,
-                }
-            )
-            id_token = sign_jwt(id_claims)
+        nonce = code_data.get("nonce")
+        if nonce:
+            id_claims["nonce"] = nonce
+        id_token = issue_rs256_jwt(sub=user["pubkey"], claims=id_claims)
 
         oauth_tokens_issued.inc()
 
@@ -8263,21 +8293,35 @@ class OAuthServer:
         }
 
     def _handle_refresh_grant(self, refresh_token: str, client: ClientCredentials) -> dict:
-        try:
-            payload = decode_jwt(refresh_token)
-        except jwt.InvalidTokenError as e:
-            return {"error": "invalid_grant", "detail": str(e)}
+        token_data = get_oauth_token_by_refresh(refresh_token)
+        if not token_data:
+            return {"error": "invalid_grant", "detail": "refresh_not_found"}
 
-        if payload.get("client_id") != client.client_id:
-            return {"error": "invalid_grant"}
+        if token_data.get("client_id") != client.client_id:
+            return {"error": "invalid_grant", "detail": "client_mismatch"}
 
-        if payload.get("type") != "refresh":
-            return {"error": "invalid_grant"}
+        scope_str = token_data.get("scope", "read_limited")
+        user_id = token_data.get("user_id")
 
-        scope_str = payload.get("scope", "read_limited")
+        new_access = secrets.token_urlsafe(32)
+        new_refresh = secrets.token_urlsafe(48)
 
-        new_access = self._gen_access(client, scope_str)
-        new_refresh = self._gen_refresh(client.client_id, scope_str)
+        now = datetime.utcnow()
+        access_expires_at = now + timedelta(seconds=TOKEN_TTL_SECONDS)
+        refresh_expires_at = now + timedelta(days=30)
+        store_oauth_token(
+            str(uuid.uuid4()),
+            {
+                "access_token": new_access,
+                "refresh_token": new_refresh,
+                "token_type": "Bearer",
+                "client_id": client.client_id,
+                "scope": scope_str,
+                "access_token_expires_at": access_expires_at.isoformat(),
+                "refresh_token_expires_at": refresh_expires_at.isoformat(),
+            },
+        )
+        revoke_oauth_token_by_refresh(refresh_token)
 
         oauth_tokens_issued.inc()
 
@@ -8289,32 +8333,10 @@ class OAuthServer:
         }
 
     def _gen_access(self, client: ClientCredentials, scope_str: str) -> str:
-        now = int(time.time())
-        claims = {
-            "aud": AUDIENCE,
-            "client_id": client.client_id,
-            "client_type": client.client_type.value,
-            "scope": scope_str,
-            "jti": str(uuid.uuid4()),
-            "type": "access",
-            "iss": ISSUER,
-        }
-        if JWT_ALG == "RS256":
-            return issue_rs256_jwt(sub=client.client_id, claims=claims)
-        claims.update({"iat": now, "exp": now + TOKEN_TTL_SECONDS})
-        return sign_jwt(claims)
+        return secrets.token_urlsafe(32)
 
     def _gen_refresh(self, client_id: str, scope_str: str) -> str:
-        now = int(time.time())
-        payload = {
-            "client_id": client_id,
-            "scope": scope_str,
-            "type": "refresh",
-            "iat": now,
-            "exp": now + 30 * 24 * 3600,
-            "jti": str(uuid.uuid4()),
-        }
-        return sign_jwt(payload)
+        return secrets.token_urlsafe(48)
 
 
 # ----------------------------------------------------------------------------
@@ -8375,12 +8397,6 @@ def api_demo_free_v2():
             "message": "limited covenant / liveness / non-sensitive view",
         }
     )
-
-
-@app.route("/api/demo/protected", methods=["GET"])
-@require_scope("read")
-def api_demo_protected_v2():
-    return jsonify({"status": "ok", "tier": "paid", "msg": "full covenant data / requires broader scope"})
 
 
 # ----------------------------------------------------------------------------
@@ -9573,18 +9589,11 @@ def require_oauth_token(required_scope: str):
 
             token_str = auth_header.split(" ", 1)[1]
 
-            try:
-                payload = decode_jwt(token_str, audience=AUDIENCE)
-            except jwt.ExpiredSignatureError:
-                return jsonify({"error": "token_expired"}), 401
-            except jwt.InvalidTokenError as e:
-                return jsonify({"error": "invalid_token", "detail": str(e)}), 401
+            token_data = get_oauth_token(token_str)
+            if not token_data:
+                return jsonify({"error": "invalid_token"}), 401
 
-            # extra: confirm issuer matches what we mint
-            if payload.get("iss") != ISSUER:
-                return jsonify({"error": "invalid_token", "detail": "Invalid issuer"}), 401
-
-            token_scopes = set(payload.get("scope", "").split())
+            token_scopes = set((token_data.get("scope") or "").split())
             if required_scope not in token_scopes:
                 return (
                     jsonify(
@@ -9593,9 +9602,12 @@ def require_oauth_token(required_scope: str):
                     403,
                 )
 
-            request.oauth_payload = payload
-            request.oauth_client_id = payload.get("client_id")
-            request.oauth_scope = payload.get("scope")
+            user = get_user_by_id(token_data.get("user_id")) if token_data.get("user_id") else None
+            request.oauth_payload = token_data
+            request.oauth_client_id = token_data.get("client_id")
+            request.oauth_scope = token_data.get("scope")
+            request.oauth_sub = user.get("pubkey") if user else None
+            request.oauth_pubkey = user.get("pubkey") if user else None
 
             return f(*args, **kwargs)
 
@@ -9603,6 +9615,14 @@ def require_oauth_token(required_scope: str):
         return wrapper
 
     return decorator
+
+
+
+
+@app.route("/api/demo/protected", methods=["GET"])
+@require_oauth_token("read_limited")
+def api_demo_protected_v2():
+    return jsonify({"status": "ok", "tier": "limited", "msg": "requires read_limited scope"})
 
 
 # ============================================================================
@@ -9826,7 +9846,7 @@ def oauthx_docs():
                 "GET /api/demo/protected": {
                     "description": "Demo protected endpoint",
                     "headers": {"Authorization": "Bearer <access_token>"},
-                    "required_scope": "read",
+                    "required_scope": "read_limited",
                 },
             },
             "lnurl_auth": {
@@ -9853,23 +9873,45 @@ def oauth_introspect():
     if not token:
         return jsonify({"active": False}), 400
 
-    try:
-        payload = decode_jwt(token)
+    auth_header = request.headers.get("Authorization", "")
+    client_id = data.get("client_id")
+    client_secret = data.get("client_secret")
+    if auth_header.startswith("Basic "):
+        try:
+            decoded = base64.b64decode(auth_header.split(" ", 1)[1]).decode("utf-8")
+            client_id, client_secret = decoded.split(":", 1)
+        except Exception:
+            return jsonify({"error": "invalid_client"}), 401
 
-        return jsonify(
-            {
-                "active": True,
-                "client_id": payload.get("client_id"),
-                "scope": payload.get("scope"),
-                "exp": payload.get("exp"),
-                "iat": payload.get("iat"),
-                "token_type": payload.get("type"),
-            }
-        )
-    except jwt.ExpiredSignatureError:
-        return jsonify({"active": False, "error": "expired"})
-    except jwt.InvalidTokenError:
-        return jsonify({"active": False, "error": "invalid"})
+    if not client_id or not client_secret:
+        return jsonify({"error": "invalid_client"}), 401
+
+    client = get_oauth_client(client_id)
+    if not client or not secrets.compare_digest(client.get("client_secret", ""), client_secret):
+        return jsonify({"error": "invalid_client"}), 401
+
+    token_data = get_oauth_token(token)
+    if not token_data:
+        return jsonify({"active": False})
+
+    user = get_user_by_id(token_data.get("user_id")) if token_data.get("user_id") else None
+    exp_dt = None
+    try:
+        exp_dt = datetime.fromisoformat(token_data.get("access_token_expires_at"))
+    except Exception:
+        exp_dt = None
+    exp_val = int(exp_dt.timestamp()) if exp_dt else None
+
+    return jsonify(
+        {
+            "active": True,
+            "client_id": token_data.get("client_id"),
+            "scope": token_data.get("scope"),
+            "exp": exp_val,
+            "sub": user.get("pubkey") if user else None,
+            "token_type": token_data.get("token_type", "Bearer"),
+        }
+    )
 
 
 # ============================================================================
