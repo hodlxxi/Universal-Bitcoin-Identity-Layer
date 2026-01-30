@@ -58,8 +58,12 @@ from app.db_storage import (
     get_lnurl_challenge,
     get_oauth_client,
     get_oauth_code,
+    get_oauth_token,
+    get_oauth_token_by_refresh,
     get_session,
+    get_user_by_id,
     get_user_by_pubkey,
+    revoke_oauth_token_by_refresh,
     store_lnurl_challenge,
     store_oauth_client,
     store_oauth_code,
@@ -8131,6 +8135,10 @@ class OAuthServer:
             return {"error": "invalid_redirect_uri"}
 
         # 4. issue short-lived code
+        user_pubkey = (session.get("logged_in_pubkey") or "").strip()
+        if not user_pubkey:
+            return {"error": "login_required", "detail": "User session required for authorization"}
+
         code = secrets.token_urlsafe(24)
         expires_at = datetime.utcnow() + timedelta(minutes=10)
         code_data = {
@@ -8143,9 +8151,10 @@ class OAuthServer:
             "code_challenge": code_challenge,
             "code_challenge_method": code_challenge_method,
             "nonce": nonce,
+            "user_pubkey": user_pubkey,
         }
 
-        _store_auth_code_pkce(code, code_data, ttl=600)
+        store_oauth_code(code, code_data, ttl=600)
 
         # the Flask route can either:
         # - return redirect(f"{redirect_uri}?code=...&state=...")
@@ -8180,7 +8189,7 @@ class OAuthServer:
         return {"error": "unsupported_grant_type"}
 
     def _handle_code_grant(self, code: str, client: ClientCredentials, code_verifier: Optional[str] = None) -> dict:
-        code_data = _pop_auth_code_pkce(code)
+        code_data = get_oauth_code(code)
 
         if not code_data:
             return {"error": "invalid_grant", "detail": "code_not_found"}
@@ -8213,30 +8222,49 @@ class OAuthServer:
                 return {"error": "invalid_grant", "detail": "pkce_mismatch"}
 
         scope_str = code_data.get("scope", "read_limited")
+        user_id = code_data.get("user_id")
+        if not user_id:
+            return {"error": "invalid_grant", "detail": "missing_user"}
+
+        user = get_user_by_id(user_id)
+        if not user:
+            return {"error": "invalid_grant", "detail": "user_not_found"}
 
         access_token = self._gen_access(client, scope_str)
         refresh_token = self._gen_refresh(client.client_id, scope_str)
 
+        now_dt = datetime.utcnow()
+        access_expires_at = now_dt + timedelta(seconds=TOKEN_TTL_SECONDS)
+        refresh_expires_at = now_dt + timedelta(days=30)
+
+        token_id = str(uuid.uuid4())
+        store_oauth_token(
+            token_id,
+            {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "Bearer",
+                "client_id": client.client_id,
+                "user_id": user_id,
+                "scope": scope_str,
+                "access_token_expires_at": access_expires_at.isoformat(),
+                "refresh_token_expires_at": refresh_expires_at.isoformat(),
+            },
+        )
+
         now_ts = int(time.time())
         id_claims = {
             "aud": client.client_id,
-            "nonce": code_data.get("nonce") or "",
+            "iss": ISSUER,
+            "iat": now_ts,
+            "exp": now_ts + TOKEN_TTL_SECONDS,
         }
-        if JWT_ALG == "RS256":
-            id_claims_rs = dict(id_claims)
-            id_claims_rs["iss"] = ISSUER
-            id_token = issue_rs256_jwt(sub=client.client_id, claims=id_claims_rs)
-        else:
-            id_claims.update(
-                {
-                    "iss": ISSUER,
-                    "sub": client.client_id,
-                    "iat": now_ts,
-                    "exp": now_ts + TOKEN_TTL_SECONDS,
-                }
-            )
-            id_token = sign_jwt(id_claims)
+        nonce = code_data.get("nonce")
+        if nonce:
+            id_claims["nonce"] = nonce
+        id_token = issue_rs256_jwt(sub=user["pubkey"], claims=id_claims)
 
+        delete_oauth_code(code)
         oauth_tokens_issued.inc()
 
         return {
@@ -8249,21 +8277,40 @@ class OAuthServer:
         }
 
     def _handle_refresh_grant(self, refresh_token: str, client: ClientCredentials) -> dict:
-        try:
-            payload = decode_jwt(refresh_token)
-        except jwt.InvalidTokenError as e:
-            return {"error": "invalid_grant", "detail": str(e)}
+        token_data = get_oauth_token_by_refresh(refresh_token)
+        if not token_data:
+            return {"error": "invalid_grant", "detail": "refresh_not_found"}
 
-        if payload.get("client_id") != client.client_id:
-            return {"error": "invalid_grant"}
+        if token_data.get("client_id") != client.client_id:
+            return {"error": "invalid_grant", "detail": "client_mismatch"}
 
-        if payload.get("type") != "refresh":
-            return {"error": "invalid_grant"}
-
-        scope_str = payload.get("scope", "read_limited")
+        scope_str = token_data.get("scope", "read_limited")
+        user_id = token_data.get("user_id")
+        if not user_id:
+            return {"error": "invalid_grant", "detail": "missing_user"}
 
         new_access = self._gen_access(client, scope_str)
         new_refresh = self._gen_refresh(client.client_id, scope_str)
+
+        now_dt = datetime.utcnow()
+        access_expires_at = now_dt + timedelta(seconds=TOKEN_TTL_SECONDS)
+        refresh_expires_at = now_dt + timedelta(days=30)
+
+        token_id = str(uuid.uuid4())
+        store_oauth_token(
+            token_id,
+            {
+                "access_token": new_access,
+                "refresh_token": new_refresh,
+                "token_type": "Bearer",
+                "client_id": client.client_id,
+                "user_id": user_id,
+                "scope": scope_str,
+                "access_token_expires_at": access_expires_at.isoformat(),
+                "refresh_token_expires_at": refresh_expires_at.isoformat(),
+            },
+        )
+        revoke_oauth_token_by_refresh(refresh_token)
 
         oauth_tokens_issued.inc()
 
@@ -8275,70 +8322,55 @@ class OAuthServer:
         }
 
     def _gen_access(self, client: ClientCredentials, scope_str: str) -> str:
-        now = int(time.time())
-        claims = {
-            "aud": AUDIENCE,
-            "client_id": client.client_id,
-            "client_type": client.client_type.value,
-            "scope": scope_str,
-            "jti": str(uuid.uuid4()),
-            "type": "access",
-            "iss": ISSUER,
-        }
-        if JWT_ALG == "RS256":
-            return issue_rs256_jwt(sub=client.client_id, claims=claims)
-        claims.update({"iat": now, "exp": now + TOKEN_TTL_SECONDS})
-        return sign_jwt(claims)
+        return secrets.token_urlsafe(32)
 
     def _gen_refresh(self, client_id: str, scope_str: str) -> str:
-        now = int(time.time())
-        payload = {
-            "client_id": client_id,
-            "scope": scope_str,
-            "type": "refresh",
-            "iat": now,
-            "exp": now + 30 * 24 * 3600,
-            "jti": str(uuid.uuid4()),
-        }
-        return sign_jwt(payload)
+        return secrets.token_urlsafe(48)
 
 
 # ----------------------------------------------------------------------------
-# SCOPE CHECK DECORATOR
+# SCOPE CHECK DECORATOR (DB-backed opaque tokens)
 # ----------------------------------------------------------------------------
 
 
-def require_scope(required_scope: str):
-    def outer(fn):
-        def inner(*args, **kwargs):
-            auth = request.headers.get("Authorization", "")
-            if not auth.startswith("Bearer "):
-                return jsonify({"error": "missing_token"}), 401
+def require_oauth_token(required_scope: str):
+    def decorator(f):
+        def wrapper(*args, **kwargs):
+            auth_header = request.headers.get("Authorization", "")
+            if not auth_header.startswith("Bearer "):
+                return jsonify({"error": "unauthorized", "detail": "Missing Bearer token"}), 401
 
-            token_str = auth.split(" ", 1)[1]
+            token_str = auth_header.split(" ", 1)[1]
+            token_data = get_oauth_token(token_str)
+            if not token_data:
+                return jsonify({"error": "invalid_token"}), 401
 
-            try:
-                payload = decode_jwt(token_str, audience=AUDIENCE, issuer=ISSUER)
-            except jwt.InvalidTokenError as e:
-                return jsonify({"error": "invalid_token", "detail": str(e)}), 401
-
-            token_scopes = set((payload.get("scope") or "").split())
+            token_scopes = set((token_data.get("scope") or "").split())
             if required_scope not in token_scopes:
                 return (
                     jsonify(
-                        {"error": "insufficient_scope", "provided": list(token_scopes), "required": required_scope}
+                        {"error": "insufficient_scope", "required": required_scope, "provided": list(token_scopes)}
                     ),
                     403,
                 )
 
-            # stash claims if handler cares
-            request.token_payload = payload
-            return fn(*args, **kwargs)
+            user = get_user_by_id(token_data.get("user_id")) if token_data.get("user_id") else None
+            request.oauth_token = token_data
+            request.oauth_client_id = token_data.get("client_id")
+            request.oauth_scope = token_data.get("scope")
+            request.oauth_sub = user.get("pubkey") if user else None
+            request.oauth_pubkey = request.oauth_sub
 
-        inner.__name__ = fn.__name__
-        return inner
+            return f(*args, **kwargs)
 
-    return outer
+        wrapper.__name__ = f.__name__
+        return wrapper
+
+    return decorator
+
+
+def require_scope(required_scope: str):
+    return require_oauth_token(required_scope)
 
 
 # ----------------------------------------------------------------------------
@@ -8364,49 +8396,9 @@ def api_demo_free_v2():
 
 
 @app.route("/api/demo/protected", methods=["GET"])
-@require_scope("read")
+@require_oauth_token("read_limited")
 def api_demo_protected_v2():
     return jsonify({"status": "ok", "tier": "paid", "msg": "full covenant data / requires broader scope"})
-
-
-# ----------------------------------------------------------------------------
-# OPTIONAL: simple scope-check decorator for your API routes
-# ----------------------------------------------------------------------------
-
-
-def require_scope(required_scope: str):
-    def outer(fn):
-        def inner(*args, **kwargs):
-            # Extract bearer token
-            auth = request.headers.get("Authorization", "")
-            if not auth.startswith("Bearer "):
-                return jsonify({"error": "missing_token"}), 401
-            token_str = auth.split(" ", 1)[1]
-
-            # Verify token
-            try:
-                payload = decode_jwt(token_str, audience=AUDIENCE, issuer=ISSUER)
-            except jwt.InvalidTokenError as e:
-                return jsonify({"error": "invalid_token", "detail": str(e)}), 401
-
-            # Check scope
-            token_scopes = set((payload.get("scope") or "").split())
-            if required_scope not in token_scopes:
-                return (
-                    jsonify(
-                        {"error": "insufficient_scope", "provided": list(token_scopes), "required": required_scope}
-                    ),
-                    403,
-                )
-
-            # Optionally stash payload on request so handlers can use it
-            request.token_payload = payload
-            return fn(*args, **kwargs)
-
-        inner.__name__ = fn.__name__
-        return inner
-
-    return outer
 
 
 # ============================================================================
@@ -9546,52 +9538,6 @@ def lnurl_check(session_id):
 
 
 # ============================================================================
-# ROUTES: PROTECTED DEMO API
-# ============================================================================
-
-
-def require_oauth_token(required_scope: str):
-    def decorator(f):
-        def wrapper(*args, **kwargs):
-            auth_header = request.headers.get("Authorization", "")
-            if not auth_header.startswith("Bearer "):
-                return jsonify({"error": "unauthorized", "detail": "Missing Bearer token"}), 401
-
-            token_str = auth_header.split(" ", 1)[1]
-
-            try:
-                payload = decode_jwt(token_str, audience=AUDIENCE)
-            except jwt.ExpiredSignatureError:
-                return jsonify({"error": "token_expired"}), 401
-            except jwt.InvalidTokenError as e:
-                return jsonify({"error": "invalid_token", "detail": str(e)}), 401
-
-            # extra: confirm issuer matches what we mint
-            if payload.get("iss") != ISSUER:
-                return jsonify({"error": "invalid_token", "detail": "Invalid issuer"}), 401
-
-            token_scopes = set(payload.get("scope", "").split())
-            if required_scope not in token_scopes:
-                return (
-                    jsonify(
-                        {"error": "insufficient_scope", "required": required_scope, "provided": list(token_scopes)}
-                    ),
-                    403,
-                )
-
-            request.oauth_payload = payload
-            request.oauth_client_id = payload.get("client_id")
-            request.oauth_scope = payload.get("scope")
-
-            return f(*args, **kwargs)
-
-        wrapper.__name__ = f.__name__
-        return wrapper
-
-    return decorator
-
-
-# ============================================================================
 # ROUTES: STATUS & HEALTH
 # ============================================================================
 
@@ -9812,7 +9758,7 @@ def oauthx_docs():
                 "GET /api/demo/protected": {
                     "description": "Demo protected endpoint",
                     "headers": {"Authorization": "Bearer <access_token>"},
-                    "required_scope": "read",
+                    "required_scope": "read_limited",
                 },
             },
             "lnurl_auth": {
@@ -9839,23 +9785,43 @@ def oauth_introspect():
     if not token:
         return jsonify({"active": False}), 400
 
-    try:
-        payload = decode_jwt(token)
+    auth = request.authorization
+    client_id = data.get("client_id")
+    client_secret = data.get("client_secret")
+    if auth and auth.type == "basic":
+        client_id = auth.username
+        client_secret = auth.password
 
-        return jsonify(
-            {
-                "active": True,
-                "client_id": payload.get("client_id"),
-                "scope": payload.get("scope"),
-                "exp": payload.get("exp"),
-                "iat": payload.get("iat"),
-                "token_type": payload.get("type"),
-            }
-        )
-    except jwt.ExpiredSignatureError:
-        return jsonify({"active": False, "error": "expired"})
-    except jwt.InvalidTokenError:
-        return jsonify({"active": False, "error": "invalid"})
+    if not client_id or not client_secret:
+        return jsonify({"error": "invalid_client"}), 401
+
+    client = get_oauth_client(client_id)
+    if not client or not secrets.compare_digest(client.get("client_secret", ""), client_secret):
+        return jsonify({"error": "invalid_client"}), 401
+
+    token_data = get_oauth_token(token)
+    if not token_data:
+        return jsonify({"active": False}), 200
+
+    user = get_user_by_id(token_data.get("user_id")) if token_data.get("user_id") else None
+    exp_iso = token_data.get("access_token_expires_at")
+    exp_ts = None
+    if exp_iso:
+        try:
+            exp_ts = int(datetime.fromisoformat(exp_iso).timestamp())
+        except ValueError:
+            exp_ts = None
+
+    return jsonify(
+        {
+            "active": True,
+            "client_id": token_data.get("client_id"),
+            "scope": token_data.get("scope"),
+            "exp": exp_ts,
+            "token_type": token_data.get("token_type", "Bearer"),
+            "sub": user.get("pubkey") if user else None,
+        }
+    )
 
 
 # ============================================================================

@@ -187,14 +187,14 @@ def store_oauth_code(code: str, code_data: Dict, ttl=None, **kwargs) -> None:
         code_data: Code data (client_id, user_id, redirect_uri, scope, expires_at)
     """
     with session_scope() as session:
-        # Create user if doesn't exist
-        user_id = code_data.get("user_id") or code_data.get("user_pubkey") or "test_user"
-        code_data["user_id"] = user_id
-        code_data["user_id"] = user_id
+        user_id = code_data.get("user_id")
+        user_pubkey = code_data.get("user_pubkey")
+        if not user_id and user_pubkey:
+            user_id = create_user(user_pubkey)
+            code_data["user_id"] = user_id
         if user_id:
             user = session.query(User).filter_by(id=user_id).first()
             if not user:
-                # This shouldn't happen, but handle gracefully
                 logger.warning(f"User {user_id} not found for OAuth code")
 
         oauth_code = OAuthCode(
@@ -336,10 +336,54 @@ def get_oauth_token(access_token: str) -> Optional[Dict]:
         }
 
 
+def get_oauth_token_by_refresh(refresh_token: str) -> Optional[Dict]:
+    """
+    Retrieve OAuth2 token by refresh token.
+
+    Args:
+        refresh_token: Refresh token string
+
+    Returns:
+        Token data dictionary or None
+    """
+    with session_scope() as session:
+        token = session.query(OAuthToken).filter_by(refresh_token=refresh_token, is_revoked=False).first()
+
+        if not token:
+            return None
+
+        if token.refresh_token_expires_at and token.refresh_token_expires_at < datetime.utcnow():
+            return None
+
+        return {
+            "id": token.id,
+            "access_token": token.access_token,
+            "refresh_token": token.refresh_token,
+            "token_type": token.token_type,
+            "client_id": token.client_id,
+            "user_id": token.user_id,
+            "scope": token.scope,
+            "created_at": token.created_at.isoformat(),
+            "access_token_expires_at": token.access_token_expires_at.isoformat(),
+            "refresh_token_expires_at": (
+                token.refresh_token_expires_at.isoformat() if token.refresh_token_expires_at else None
+            ),
+            "metadata": token.metadata_json,
+        }
+
+
 def revoke_oauth_token(access_token: str) -> None:
     """Revoke OAuth2 token."""
     with session_scope() as session:
         token = session.query(OAuthToken).filter_by(access_token=access_token).first()
+        if token:
+            token.is_revoked = True
+
+
+def revoke_oauth_token_by_refresh(refresh_token: str) -> None:
+    """Revoke OAuth2 token by refresh token."""
+    with session_scope() as session:
+        token = session.query(OAuthToken).filter_by(refresh_token=refresh_token).first()
         if token:
             token.is_revoked = True
 

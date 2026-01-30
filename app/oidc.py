@@ -25,6 +25,9 @@ def well_known_configuration():
     issuer = issuer.rstrip("/")
     base = issuer
     alg = str(cfg.get("JWT_ALGORITHM") or "RS256").upper()
+    signing_algs = ["RS256"]
+    if alg and alg not in signing_algs:
+        signing_algs.append(alg)
 
     response = {
         "issuer": issuer,
@@ -42,7 +45,7 @@ def well_known_configuration():
             "read_limited",
         ],
         "code_challenge_methods_supported": ["S256", "plain"],
-        "id_token_signing_alg_values_supported": [alg],
+        "id_token_signing_alg_values_supported": signing_algs,
         "subject_types_supported": ["public"],
     }
     return jsonify(response)
