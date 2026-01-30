@@ -8242,9 +8242,6 @@ class OAuthServer:
                 return {"error": "invalid_grant", "detail": "pkce_mismatch"}
 
         scope_str = code_data.get("scope", "read_limited")
-
-        delete_oauth_code(code)
-
         access_token = secrets.token_urlsafe(32)
         refresh_token = secrets.token_urlsafe(48)
 
@@ -8263,12 +8260,15 @@ class OAuthServer:
                 "refresh_token": refresh_token,
                 "token_type": "Bearer",
                 "client_id": client.client_id,
+                "user_id": user_id,
                 "scope": scope_str,
                 "access_token_expires_at": access_expires_at.isoformat(),
                 "refresh_token_expires_at": refresh_expires_at.isoformat(),
             },
         )
 
+
+        delete_oauth_code(code)
         now_ts = int(now.timestamp())
         id_claims = {
             "iss": ISSUER,
