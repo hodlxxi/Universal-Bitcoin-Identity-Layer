@@ -8325,6 +8325,7 @@ class OAuthServer:
                 "refresh_token": new_refresh,
                 "token_type": "Bearer",
                 "client_id": client.client_id,
+                "user_id": user_id,
                 "scope": scope_str,
                 "access_token_expires_at": access_expires_at.isoformat(),
                 "refresh_token_expires_at": refresh_expires_at.isoformat(),
