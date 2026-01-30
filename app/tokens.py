@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import jwt
@@ -40,13 +41,22 @@ def issue_rs256_jwt(sub: str, claims: Optional[Dict[str, Any]] = None) -> str:
     }
     if claims:
         payload.update(claims)
+    if True:
+        # Always prefer RS256 for OIDC id_token when JWKS_DIR is available
+        import os
 
-    if alg == "RS256":
-        private_pem, jwks_doc = ensure_rsa_keypair(str(cfg.get("JWKS_DIR") or "keys"))
-        kid = None
-        keys = jwks_doc.get("keys") if isinstance(jwks_doc, dict) else None
-        if keys and isinstance(keys, list) and keys and isinstance(keys[0], dict):
-            kid = keys[0].get("kid")
+        jwks_dir = str(cfg.get("JWKS_DIR") or "keys")
+        jwks_doc, kid = ensure_rsa_keypair(jwks_dir)
+
+        # Load private key PEM from jwks_dir/private_key_<kid>.pem (or legacy private_key.pem)
+        priv_path = (
+            os.path.join(jwks_dir, f"private_key_{kid}.pem") if kid else os.path.join(jwks_dir, "private_key.pem")
+        )
+        if not os.path.exists(priv_path):
+            legacy = os.path.join(jwks_dir, "private_key.pem")
+            priv_path = legacy
+
+        private_pem = Path(priv_path).read_bytes()
         headers = {"kid": kid} if kid else None
         return jwt.encode(payload, private_pem, algorithm="RS256", headers=headers)
 

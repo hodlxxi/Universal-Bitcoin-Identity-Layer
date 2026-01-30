@@ -447,7 +447,7 @@ document.getElementById('share-twitter-btn')?.addEventListener('click', () => {
     
     // Also open Twitter intent
     const tweetText = encodeURIComponent(`Just proved I'm a ₿${pofSettings.amount}+ holder on @hodlxxi 🐳\n\nNo KYC. No emails. Just cryptographic proof.\n\n${currentUser.proofOfFunds.shareLink}`);
-    window.open(`https://twitter.com/intent/tweet?text=${tweetText}`, '_blank');
+    window.location.href = `https://twitter.com/intent/tweet?text=${tweetText}`;
 });
 
 document.getElementById('copy-link-btn')?.addEventListener('click', () => {
