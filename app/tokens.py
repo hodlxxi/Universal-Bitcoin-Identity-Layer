@@ -42,21 +42,23 @@ def issue_rs256_jwt(sub: str, claims: Optional[Dict[str, Any]] = None) -> str:
     if claims:
         payload.update(claims)
     if True:
-            # Always prefer RS256 for OIDC id_token when JWKS_DIR is available
-            import os
-            jwks_dir = str(cfg.get("JWKS_DIR") or "keys")
-            jwks_doc, kid = ensure_rsa_keypair(jwks_dir)
-    
-            # Load private key PEM from jwks_dir/private_key_<kid>.pem (or legacy private_key.pem)
-            priv_path = os.path.join(jwks_dir, f"private_key_{kid}.pem") if kid else os.path.join(jwks_dir, "private_key.pem")
-            if not os.path.exists(priv_path):
-                legacy = os.path.join(jwks_dir, "private_key.pem")
-                priv_path = legacy
-    
-            private_pem = Path(priv_path).read_bytes()
-            headers = {"kid": kid} if kid else None
-            return jwt.encode(payload, private_pem, algorithm="RS256", headers=headers)
+        # Always prefer RS256 for OIDC id_token when JWKS_DIR is available
+        import os
 
+        jwks_dir = str(cfg.get("JWKS_DIR") or "keys")
+        jwks_doc, kid = ensure_rsa_keypair(jwks_dir)
+
+        # Load private key PEM from jwks_dir/private_key_<kid>.pem (or legacy private_key.pem)
+        priv_path = (
+            os.path.join(jwks_dir, f"private_key_{kid}.pem") if kid else os.path.join(jwks_dir, "private_key.pem")
+        )
+        if not os.path.exists(priv_path):
+            legacy = os.path.join(jwks_dir, "private_key.pem")
+            priv_path = legacy
+
+        private_pem = Path(priv_path).read_bytes()
+        headers = {"kid": kid} if kid else None
+        return jwt.encode(payload, private_pem, algorithm="RS256", headers=headers)
 
     secret = cfg.get("JWT_SECRET", "dev-secret-CHANGE-ME-IN-PRODUCTION")
     signing_key = secret if isinstance(secret, (bytes, bytearray)) else str(secret)

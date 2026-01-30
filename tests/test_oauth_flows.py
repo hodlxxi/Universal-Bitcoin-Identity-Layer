@@ -566,8 +566,6 @@ class TestJWTTokens:
         assert "sub" in data
         assert "exp" in data
 
-
-
     def test_id_token_is_rs256(self, client, registered_client):
         """id_token should be RS256 and include kid when scope includes openid."""
         with client.session_transaction() as sess:
@@ -612,4 +610,3 @@ class TestJWTTokens:
         header = jwt.get_unverified_header(id_token)
         assert header.get("alg") == "RS256"
         assert "kid" in header
-
