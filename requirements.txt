@@ -52,3 +52,4 @@ pytz>=2023.3
 packaging>=23
 eventlet>=0.40.3
 Markdown>=3.6
+psycopg[binary]>=3.1
