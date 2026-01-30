@@ -8158,15 +8158,11 @@ class OAuthServer:
         user_pubkey = session.get("logged_in_pubkey")
         if not user_pubkey:
             return {"error": "login_required"}
-
-        user_id = create_user(user_pubkey)
-
         # 4. issue short-lived code
         code = secrets.token_urlsafe(24)
         expires_at = datetime.utcnow() + timedelta(minutes=10)
         code_data = {
             "client_id": client_id,
-            "user_id": user_id,
             "user_pubkey": user_pubkey,
             "scope": " ".join(requested_scopes),
             "redirect_uri": redirect_uri,
@@ -8267,7 +8263,6 @@ class OAuthServer:
                 "refresh_token": refresh_token,
                 "token_type": "Bearer",
                 "client_id": client.client_id,
-                "user_id": user_id,
                 "scope": scope_str,
                 "access_token_expires_at": access_expires_at.isoformat(),
                 "refresh_token_expires_at": refresh_expires_at.isoformat(),
@@ -8321,7 +8316,6 @@ class OAuthServer:
                 "refresh_token": new_refresh,
                 "token_type": "Bearer",
                 "client_id": client.client_id,
-                "user_id": user_id,
                 "scope": scope_str,
                 "access_token_expires_at": access_expires_at.isoformat(),
                 "refresh_token_expires_at": refresh_expires_at.isoformat(),
@@ -8403,12 +8397,6 @@ def api_demo_free_v2():
             "message": "limited covenant / liveness / non-sensitive view",
         }
     )
-
-
-@app.route("/api/demo/protected", methods=["GET"])
-@require_oauth_token("read_limited")
-def api_demo_protected_v2():
-    return jsonify({"status": "ok", "tier": "limited", "msg": "requires read_limited scope"})
 
 
 # ----------------------------------------------------------------------------
@@ -9627,6 +9615,14 @@ def require_oauth_token(required_scope: str):
         return wrapper
 
     return decorator
+
+
+
+
+@app.route("/api/demo/protected", methods=["GET"])
+@require_oauth_token("read_limited")
+def api_demo_protected_v2():
+    return jsonify({"status": "ok", "tier": "limited", "msg": "requires read_limited scope"})
 
 
 # ============================================================================

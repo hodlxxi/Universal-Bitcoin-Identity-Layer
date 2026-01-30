@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_URL="${BASE_URL:-https://hodlxxi.com}"
+BASE_URL="${BASE_URL:-${BASE:-https://hodlxxi.com}}"
 REDIRECT_URI="${REDIRECT_URI:-https://example.com/callback}"
 CLIENT_NAME="${CLIENT_NAME:-OAuth Demo Client}"
 SCOPE="${SCOPE:-read_limited}"
@@ -15,12 +15,10 @@ require_cmd() {
 
 require_cmd curl
 require_cmd python
+require_cmd jq
 
 json_get() {
-  python - <<PY
-import json,sys
-print(json.load(sys.stdin).get("$1",""))
-PY
+  jq -r --arg k "$1" '.[$k] // ""'
 }
 
 register_payload=$(python - <<PY
