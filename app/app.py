@@ -1469,6 +1469,11 @@ def check_auth():
 
     p = request.path or "/"
 
+    auth_header = request.headers.get("Authorization","")
+    # Bearer API calls should NOT be redirected to /login. Token validation happens in the route.
+    if auth_header.startswith("Bearer ") and p.startswith("/api/"):
+        return None
+
     # Canonicalize legacy dev dashboard URL early
     m = request.method
     endpoint = request.endpoint or ""
