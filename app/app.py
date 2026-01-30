@@ -1578,6 +1578,10 @@ def check_auth():
     # 3) Everything else requires a logged-in session
     if not session.get("logged_in_pubkey"):
         auth_header = request.headers.get("Authorization", "")
+        # Allow Bearer-token API calls without requiring a web session
+        if auth_header.startswith("Bearer ") and p.startswith("/api/"):
+            return None
+        auth_header = request.headers.get("Authorization", "")
         if (
             p.startswith("/api/")
             and not p.startswith("/api/playground")
