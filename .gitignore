@@ -83,3 +83,7 @@ app/templates/*.bak.*
 
 # local backups
 *.bak.*
+
+# legacy artifacts removed
+app/static/docs.zip
+app/static/play.html
