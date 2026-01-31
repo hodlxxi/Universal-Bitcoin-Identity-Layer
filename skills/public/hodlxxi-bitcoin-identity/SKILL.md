@@ -1,6 +1,23 @@
 ---
 name: hodlxxi-bitcoin-identity
-description: Integrate HODLXXI as a Bitcoin-native identity provider that bridges OAuth2/OIDC and Lightning LNURL-Auth. Use when setting up client registration, authorization flows, JWT verification, or health monitoring for HODLXXI deployments.
+version: 1.0.0
+description: Integrate HODLXXI as a Bitcoin-native identity provider that bridges OAuth2/OIDC and Lightning LNURL-Auth for client registration, authorization flows, JWT verification, and health monitoring.
+homepage: https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer
+metadata:
+  category: authentication
+  license: MIT
+  tags:
+    - oauth2
+    - oidc
+    - lnurl-auth
+    - jwt
+    - bitcoin
+  dependencies:
+    - curl
+    - python
+    - ecdsa
+    - pyjwt
+    - requests
 ---
 
 # HODLXXI Bitcoin Identity
@@ -9,15 +26,30 @@ description: Integrate HODLXXI as a Bitcoin-native identity provider that bridge
 
 Use this skill to integrate HODLXXI (Universal Bitcoin Identity Layer) for agent authentication, LNURL-Auth linking, and JWT-based identity claims.
 
+## Installation
+
+1. Fetch the skill file from the repository (raw link works for installable agents):
+
+```bash
+curl -L -o SKILL.md \
+  https://raw.githubusercontent.com/hodlxxi/Universal-Bitcoin-Identity-Layer/main/skills/public/hodlxxi-bitcoin-identity/SKILL.md
+```
+
+2. Install helper dependencies for local verification scripts:
+
+```bash
+python -m pip install ecdsa pyjwt requests
+```
+
 ## Quick start
 
 1. Set a base URL for the HODLXXI deployment.
 2. Register an OAuth client to obtain `client_id` and `client_secret`.
 3. Run the OAuth2/OIDC authorization code flow (PKCE recommended).
-4. Link a Lightning identity via LNURL-Auth.
+4. Start an LNURL-Auth session for Lightning wallet login.
 5. Verify JWTs with the JWKS endpoint.
 
-## Core workflows
+## Usage steps
 
 ### 1) Configure the base URL
 
@@ -63,20 +95,19 @@ curl -X POST "$BASE_URL/oauth/token" \
 
 Expect an access token, ID token (JWT), and optional refresh token.
 
-### 4) Link a Lightning identity with LNURL-Auth
+### 4) Start an LNURL-Auth session
 
-Generate a challenge:
+Create a session and show the LNURL to the user:
 
 ```bash
-curl "$BASE_URL/lnurl/auth?tag=login"
+curl -X POST "$BASE_URL/api/lnurl-auth/create" \
+  -H "Accept: application/json"
 ```
 
-Sign the LNURL `k1` challenge with the Lightning wallet and verify:
+Poll for completion after the user scans the LNURL with a Lightning wallet:
 
 ```bash
-curl -X POST "$BASE_URL/lnurl/verify" \
-  -H "Content-Type: application/json" \
-  -d '{"k1": "challenge_from_lnurl", "key": "your_pubkey", "signature": "your_signature"}'
+curl "$BASE_URL/api/lnurl-auth/check/your_session_id"
 ```
 
 ### 5) Verify JWTs
@@ -84,7 +115,7 @@ curl -X POST "$BASE_URL/lnurl/verify" \
 Fetch JWKS:
 
 ```bash
-curl "$BASE_URL/.well-known/jwks.json"
+curl "$BASE_URL/oauth/jwks.json"
 ```
 
 Verify with Python (example uses PyJWT):
@@ -93,7 +124,7 @@ Verify with Python (example uses PyJWT):
 import jwt
 import requests
 
-jwks = requests.get("https://your-hodlxxi-deployment.com/.well-known/jwks.json").json()
+jwks = requests.get("https://your-hodlxxi-deployment.com/oauth/jwks.json", timeout=10).json()
 public_key = jwt.algorithms.RSAAlgorithm.from_jwk(jwks["keys"][0])
 claims = jwt.decode(your_jwt, public_key, algorithms=["RS256"], audience="your_audience")
 print(claims)
@@ -101,25 +132,61 @@ print(claims)
 
 ### 6) Monitor health and metrics
 
-Check liveness and metrics endpoints:
+Check liveness and OAuth system status endpoints:
 
 ```bash
 curl "$BASE_URL/health"
-curl "$BASE_URL/metrics/prometheus"
+curl "$BASE_URL/oauthx/status"
 ```
 
-## Operational guidance
+## Code examples
 
-- Always use HTTPS in production.
-- Store secrets outside source control.
-- Handle 4xx/5xx responses with retries for transient errors.
-- Keep PKCE enabled for auth flows.
+### Register a client from a JSON template
+
+```bash
+curl -X POST "$BASE_URL/oauth/register" \
+  -H "Content-Type: application/json" \
+  -d @templates/oauth-client.json
+```
+
+### Create LNURL session and poll
+
+```bash
+session_json=$(curl -s -X POST "$BASE_URL/api/lnurl-auth/create")
+session_id=$(python - <<'PY'
+import json, sys
+print(json.load(sys.stdin)["session_id"])
+PY
+<<<"$session_json")
+
+curl "$BASE_URL/api/lnurl-auth/check/$session_id"
+```
+
+## Best practices
+
+- Always use HTTPS and verify TLS certificates in production.
+- Keep client secrets in a secrets manager or environment variables.
+- Use PKCE for public clients and rotate secrets for confidential clients.
+- Treat LNURL sessions as single-use and enforce short TTLs.
+- Validate `aud`, `iss`, and `exp` claims for JWTs.
+
+## Advanced features
+
+- Use `/oauthx/docs` for live OAuth/OIDC API documentation.
+- Use `/oauthx/status` to monitor database and LNURL session health.
+- Rotate JWKS keys via the server configuration (JWKS directory + rotation days).
+
+## Supporting files
+
+- `scripts/verify_signature.py` validates LNURL-Auth signatures locally.
+- `HEARTBEAT.md` describes periodic health checks for the deployment.
+- `templates/oauth-client.json` provides a ready client registration payload.
 
 ## Optional helper script
 
 Use `scripts/verify_signature.py` to validate LNURL signatures locally. Install the dependency first:
 
 ```bash
-pip install ecdsa
+python -m pip install ecdsa
 python scripts/verify_signature.py --k1 <hex> --signature <hex> --pubkey <hex>
 ```
