@@ -2604,8 +2604,7 @@ def chat():
   #qrcode img, #qrcode canvas{ width: 200px !important; height: 200px !important; }
 }
 
-</style>
-</head>
+</style></head>
 
 <body
   data-my-pubkey="{{ my_pubkey|e }}"
@@ -4076,14 +4075,13 @@ def login():
 }
 
 </style>
-  <link rel="stylesheet" href="/static/ui_core.css?v=1"/>
-</head>
+  <link rel="stylesheet" href="/static/ui_core.css?v=1"/></head>
 
 <body>
   <canvas id="matrix-bg" aria-hidden="true"></canvas>
 
   <!-- Optional login sound -->
-  <audio id="login-sound" src="/static/sounds/login.mp3" preload="auto" playsinline></audio>
+  <audio id="login-sound" src="/static/sounds/message.mp3" preload="auto" playsinline></audio>
 
   <div class="wrap">
     <!-- LOGIN_MANIFESTO_SINGLE_V1: single manifesto panel -->
@@ -4430,6 +4428,9 @@ def login():
         const d = await r.json().catch(()=> ({}));
         if (r.ok && d.verified) {
           sessionStorage.setItem("playLoginSound", "1");
+          // SOUND_IMMEDIATE_V1
+          try{ window.HODLXXI_PLAY_SOUND('/static/sounds/message.mp3', 0.9); }catch(e){}
+
           window.location.href = getRedirectUrl();
         } else {
           setStatus("legacyStatus", d.error || "Failed");
@@ -4473,6 +4474,9 @@ def login():
         const d = await r.json().catch(()=> ({}));
         if (r.ok && d.verified) {
           sessionStorage.setItem("playLoginSound", "1");
+          // SOUND_IMMEDIATE_V1
+          try{ window.HODLXXI_PLAY_SOUND('/static/sounds/message.mp3', 0.9); }catch(e){}
+
           window.location.href = getRedirectUrl();
         } else {
           setStatus("apiStatus", d.error || "Failed");
@@ -4515,6 +4519,9 @@ def login():
         const d = await r.json().catch(()=> ({}));
         if (r.ok && d.verified) {
           sessionStorage.setItem("playLoginSound", "1");
+          // SOUND_IMMEDIATE_V1
+          try{ window.HODLXXI_PLAY_SOUND('/static/sounds/message.mp3', 0.9); }catch(e){}
+
           window.location.href = getRedirectUrl();
         } else {
           setStatus("specialStatus", d.error || "Failed");
@@ -5890,8 +5897,7 @@ textarea{
   *{ animation:none !important; transition:none !important; }
   #matrix-bg{ display:none !important; }
 }
-    </style>
-</head>
+    </style></head>
 
 <body data-access-level="{{ access_level }}">
     <!-- Matrix canvas -->
@@ -6208,7 +6214,7 @@ textarea{
             setLabelsFromZpub();
         }
 
-        const chatSound = new Audio('{{ url_for("static", filename="sounds/login.mp3") }}');
+        const chatSound = new Audio('{{ url_for("static", filename="sounds/message.mp3") }}');
         chatSound.preload = 'auto';
         chatSound.playsInline = true;
 
@@ -6659,13 +6665,61 @@ textarea{
 
         // Login sound on entry from login page
         document.addEventListener('DOMContentLoaded', () => {
-            if (sessionStorage.getItem('playLoginSound') === '1') {
-                sessionStorage.removeItem('playLoginSound');
-                const a = new Audio('/static/sounds/login.mp3');
-                a.loop = true;
-                a.play().catch(()=>{});
-                setTimeout(() => { a.pause(); a.remove(); }, 6000);
-            }
+
+    // === SOUND_HELPER_V2: autoplay-safe + keep-alive pool + queue ===
+    (function(){
+      const POOL = [];
+      let pending = null;
+
+      function _play(url, volume){
+        try{
+          const a = new Audio(url);
+          a.preload = "auto";
+          a.playsInline = true;
+          if (typeof volume === "number") a.volume = Math.max(0, Math.min(1, volume));
+
+          // keep reference so GC can't stop playback
+          const idx = POOL.push(a) - 1;
+          const cleanup = () => { POOL[idx] = null; };
+          a.addEventListener("ended", cleanup, {once:true});
+          a.addEventListener("error", cleanup, {once:true});
+
+          const pr = a.play();
+          if (pr && pr.catch) pr.catch((e)=>{
+            pending = url;
+            cleanup();
+            console.warn("[sound blocked]", url, e);
+          });
+        }catch(e){
+          pending = url;
+          console.warn("[sound exception]", url, e);
+        }
+      }
+
+      window.HODLXXI_PLAY_SOUND = function(url, volume){
+        if(!url) return;
+        _play(url, volume);
+      };
+
+      function flush(){
+        if(!pending) return;
+        const u = pending;
+        pending = null;
+        _play(u);
+      }
+
+      ["pointerdown","touchstart","click","keydown"].forEach((ev)=>{
+        window.addEventListener(ev, flush, {passive:true});
+      });
+    })();
+    // === /SOUND_HELPER_V2 ===
+
+
+if (sessionStorage.getItem('playLoginSound') === '1') {
+  sessionStorage.removeItem('playLoginSound');
+  window.HODLXXI_PLAY_SOUND('/static/sounds/message.mp3', 0.9);
+}
+
         });
 
         // Matrix background (warp)
@@ -8751,8 +8805,7 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
         .btn:hover {
             background: rgba(0, 255, 136, 0.1);
         }
-    </style>
-</head>
+    </style></head>
 <body>
     <div class="container">
         <header>
@@ -10718,3 +10771,145 @@ def playground_slash_alias():
     from flask import redirect
 
     return redirect("/playground", code=308)
+
+
+
+
+# === HODLXXI_APP_SOUND_INJECT_V3b: inject sound + socket hook into GET /app (ignore self-echo) ===
+@app.after_request
+def _hodlxxi_app_sound_inject_v3b(resp):
+    try:
+        if request.method != "GET":
+            return resp
+        if request.path not in ("/app", "/app/"):
+            return resp
+        ct = resp.headers.get("Content-Type", "")
+        if "text/html" not in ct:
+            return resp
+
+        html = resp.get_data(as_text=True)
+        if "HODLXXI_APP_SOUND_INJECT_V3b" in html:
+            return resp
+
+        import json
+        my = str(session.get("logged_in_pubkey", "") or "")
+        my_js = json.dumps(my)  # safe JS string literal (includes quotes)
+
+        inject = (
+            "<script src='/static/js/sound.js'></script>"
+            "<script>(function(){"
+              "var MY_PUBKEY=" + my_js + ";"
+              "var SOUND_URL='/static/sounds/message.mp3';var ENTER_KEY='hodlxxi_enter_ding_done';try{if(!sessionStorage.getItem(ENTER_KEY)){sessionStorage.setItem(ENTER_KEY,'1');setTimeout(function(){try{ if(window.HODLXXI_PLAY_SOUND) window.HODLXXI_PLAY_SOUND(SOUND_URL,0.9); }catch(e){}},80);}}catch(e){}"
+              "var NOISE=/typing|presence|pong|ping|joined|left|online|user:|connect|disconnect/i;"
+              "var MATCH=/chat|message|msg|dm/i;"
+              "var last=0;"
+              "function dbg(){try{return localStorage.getItem('soundDebug')==='1';}catch(e){return false;}}"
+              "function ding(){var now=Date.now(); if(now-last<250) return; last=now;"
+                "try{ if(window.HODLXXI_PLAY_SOUND) window.HODLXXI_PLAY_SOUND(SOUND_URL,0.9); }catch(e){}"
+              "}"
+              "function install(){"
+                "try{"
+                  "if(!window.io||!window.io.Socket||!window.io.Socket.prototype) return false;"
+                  "var P=window.io.Socket.prototype;"
+                  "if(P.__hodlxxi_sound_v3b) return true;"
+                  "P.__hodlxxi_sound_v3b=true;"
+                  "var orig=P.onevent;"
+                  "P.onevent=function(packet){"
+                    "try{"
+                      "var d=packet&&packet.data; var ev=d&&d[0]; var payload=d&&d[1];"
+                      "if(typeof ev==='string'){"
+                        "if(dbg()) console.log('[sock]',ev,d);"
+                        "if(MATCH.test(ev) && !NOISE.test(ev)){"
+                          "if(payload && typeof payload==='object' && payload.pubkey && MY_PUBKEY && payload.pubkey===MY_PUBKEY){"
+                            "return orig.call(this,packet);"
+                          "}"
+                          "ding();"
+                        "}"
+                      "}"
+                    "}catch(e){}"
+                    "return orig.call(this,packet);"
+                  "};"
+                  "return true;"
+                "}catch(e){ return false; }"
+              "}"
+              "if(!install()){var tries=0; var t=setInterval(function(){"
+                "tries++; if(install()||tries>40) clearInterval(t);"
+              "},250);}"
+            "})();</script>"
+            "<!-- HODLXXI_APP_SOUND_INJECT_V3b -->"
+        )
+
+        if "</body>" in html:
+            html = html.replace("</body>", inject + "</body>", 1)
+        else:
+            html = html + inject
+
+        resp.set_data(html)
+        resp.headers.pop("Content-Length", None)
+    except Exception:
+        pass
+    return resp
+# === /HODLXXI_APP_SOUND_INJECT_V3b ===
+
+# === HODLXXI_LOGIN_SOUND_UNLOCK_V1: unlock audio on /login?next=/app so /app enter ding can play ===
+@app.after_request
+def _hodlxxi_login_sound_unlock_v1(resp):
+    try:
+        if request.method != "GET":
+            return resp
+        if request.path not in ("/login", "/universal_login"):
+            return resp
+
+        # Only when user is heading into the chat app
+        nxt = (request.args.get("next", "") or "").strip()
+        if nxt not in ("/app", "/app/"):
+            return resp
+
+        ct = resp.headers.get("Content-Type", "")
+        if "text/html" not in ct:
+            return resp
+
+        html = resp.get_data(as_text=True)
+        if "HODLXXI_LOGIN_SOUND_UNLOCK_V1" in html:
+            return resp
+
+        inject = (
+            "<script src='/static/js/sound.js'></script>"
+            "<script>(function(){"
+              "var SOUND_URL='/static/sounds/message.mp3';"
+              "var done=false;"
+              "function unlock(){"
+                "if(done) return; done=true;"
+                "try{"
+                  "var AC=window.AudioContext||window.webkitAudioContext;"
+                  "if(AC){ var ctx=new AC(); ctx.resume().catch(function(){}); }"
+                "}catch(e){}"
+                "try{"
+                  ""
+                  "sessionStorage.removeItem('hodlxxi_enter_ding_done');"
+                "}catch(e){}"
+                "try{"
+                  ""
+                  "if(window.HODLXXI_PLAY_SOUND) window.HODLXXI_PLAY_SOUND(SOUND_URL, 0.0);"
+                "}catch(e){}"
+              "}"
+              "['pointerdown','touchstart','click','keydown'].forEach(function(ev){"
+                "window.addEventListener(ev, unlock, {passive:true, once:true});"
+              "});"
+            "})();</script>"
+            "<!-- HODLXXI_LOGIN_SOUND_UNLOCK_V1 -->"
+        )
+
+        if "</body>" in html:
+            html = html.replace("</body>", inject + "</body>", 1)
+        else:
+            html = html + inject
+
+        resp.set_data(html)
+        resp.headers.pop("Content-Length", None)
+    except Exception:
+        pass
+    return resp
+# === /HODLXXI_LOGIN_SOUND_UNLOCK_V1 ===
+
+
