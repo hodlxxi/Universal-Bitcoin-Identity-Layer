@@ -56,7 +56,7 @@ python -m pip install ecdsa pyjwt requests
 Set the base URL to the HODLXXI deployment (update as needed):
 
 ```bash
-BASE_URL="https://your-hodlxxi-deployment.com"
+BASE_URL="https://hodlxxi.com"
 ```
 
 ### 2) Register an OAuth client
@@ -175,6 +175,50 @@ curl "$BASE_URL/api/lnurl-auth/check/$session_id"
 - Use `/oauthx/docs` for live OAuth/OIDC API documentation.
 - Use `/oauthx/status` to monitor database and LNURL session health.
 - Rotate JWKS keys via the server configuration (JWKS directory + rotation days).
+
+## PAYG billing for OAuth clients
+
+Paid API calls are billed per **OAuth `client_id`** (agent/app), not per session pubkey. When balance or free quota is exhausted, paid endpoints return **HTTP 402** with a Lightning top-up path.
+
+### Billing endpoints (OAuth token required)
+
+- `POST /api/billing/agent/create-invoice`
+- `POST /api/billing/agent/check-invoice`
+
+Example create invoice:
+
+```bash
+curl -X POST "$BASE_URL/api/billing/agent/create-invoice" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"amount_sats": 1000}'
+```
+
+Example check invoice:
+
+```bash
+curl -X POST "$BASE_URL/api/billing/agent/check-invoice" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"invoice_id": "your_invoice_id"}'
+```
+
+### 402 response shape
+
+When a paid endpoint is called with insufficient balance, expect:
+
+```json
+{
+  "ok": false,
+  "error": "payment_required",
+  "code": "PAYMENT_REQUIRED",
+  "client_id": "your_client_id",
+  "cost_sats": 1,
+  "balance_sats": 0,
+  "create_invoice_endpoint": "/api/billing/agent/create-invoice",
+  "hint": "Top up via Lightning PAYG"
+}
+```
 
 ## Supporting files
 

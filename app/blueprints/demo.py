@@ -4,9 +4,13 @@ Demo endpoints blueprint.
 These endpoints are intentionally simple and stable for integration tests and public demos.
 """
 
+import os
 import time
 
 from flask import Blueprint, jsonify, session
+
+from app.billing_clients import require_paid_client
+from app.oauth_utils import require_oauth_token
 
 demo_bp = Blueprint("demo", __name__)
 
@@ -45,8 +49,7 @@ def demo_pro():
 
 
 @demo_bp.get("/protected")
+@require_oauth_token("read_limited")
+@require_paid_client(cost_sats=int(os.getenv("HODLXXI_COST_DEMO_PROTECTED_SATS", "1")))
 def demo_protected():
-    # Must require authentication (tests accept 401 or 403)
-    if not session.get("logged_in_pubkey"):
-        return jsonify({"error": "unauthorized"}), 401
     return jsonify({"ok": True, "message": "demo protected ok"}), 200

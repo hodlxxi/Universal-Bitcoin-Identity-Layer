@@ -5,6 +5,7 @@ Handles Bitcoin Core RPC operations and wallet management.
 """
 
 import logging
+import os
 import time
 import uuid
 from decimal import Decimal
@@ -13,6 +14,8 @@ from typing import Any, Dict
 from flask import Blueprint, current_app, jsonify, request
 
 from app.audit_logger import get_audit_logger
+from app.billing_clients import require_paid_client
+from app.oauth_utils import require_oauth_token
 from app.security import limiter as _limiter
 
 
@@ -40,6 +43,8 @@ RPC_RATE_LIMIT = "30 per minute"
 
 @bitcoin_bp.route("/rpc/<cmd>", methods=["GET"])
 @limiter.limit(RPC_RATE_LIMIT)
+@require_oauth_token("read_limited")
+@require_paid_client(cost_sats=int(os.getenv("HODLXXI_COST_BITCOIN_RPC_SATS", "1")))
 def rpc_command(cmd: str):
     """
     Execute Bitcoin Core RPC command.
@@ -171,6 +176,8 @@ def decode_raw_script():
 
 @bitcoin_bp.route("/descriptors", methods=["GET"])
 @limiter.limit(RPC_RATE_LIMIT)
+@require_oauth_token("read_limited")
+@require_paid_client(cost_sats=int(os.getenv("HODLXXI_COST_BITCOIN_RPC_SATS", "1")))
 def list_descriptors():
     """
     List wallet descriptors.
