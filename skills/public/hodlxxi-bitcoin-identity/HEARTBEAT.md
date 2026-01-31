@@ -17,12 +17,7 @@ curl -fsS "$BASE_URL/oauthx/status"
 
 ```bash
 session_json=$(curl -fsS -X POST "$BASE_URL/api/lnurl-auth/create")
-session_id=$(python - <<'PY'
-import json, sys
-print(json.load(sys.stdin)["session_id"])
-PY
-<<<"$session_json")
-
+session_id=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["session_id"])' "$session_json")
 curl -fsS "$BASE_URL/api/lnurl-auth/check/$session_id"
 ```
 
