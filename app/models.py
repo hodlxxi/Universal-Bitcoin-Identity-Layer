@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     Column,
     DateTime,
@@ -157,6 +158,49 @@ class OAuthToken(Base):
 
     def __repr__(self):
         return f"<OAuthToken(id={self.id}, user={self.user_id})>"
+
+
+class UbidClient(Base):
+    """
+    Billing record for OAuth client_id PAYG usage.
+    """
+
+    __tablename__ = "ubid_clients"
+
+    client_id = Column(String(255), primary_key=True)
+    payg_enabled = Column(Boolean, default=True, nullable=False)
+    sats_balance = Column(BigInteger, default=0, nullable=False)
+    free_quota_remaining = Column(BigInteger, default=0, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)
+    last_quota_reset = Column(DateTime)
+
+    __table_args__ = (Index("idx_ubid_clients_updated", "updated_at"),)
+
+    def __repr__(self):
+        return f"<UbidClient(client_id={self.client_id}, balance={self.sats_balance})>"
+
+
+class ClientPayment(Base):
+    """
+    Lightning invoices and credits for OAuth client billing.
+    """
+
+    __tablename__ = "payments_clients"
+
+    invoice_id = Column(String(255), primary_key=True)
+    client_id = Column(String(255), ForeignKey("ubid_clients.client_id"), nullable=False)
+    payment_request = Column(Text)
+    amount_sats = Column(BigInteger, nullable=False, default=0)
+    status = Column(String(32), default="pending")
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    paid_at = Column(DateTime)
+    credited = Column(Boolean, default=False)
+
+    __table_args__ = (Index("idx_payments_clients_client", "client_id"),)
+
+    def __repr__(self):
+        return f"<ClientPayment(invoice_id={self.invoice_id}, client={self.client_id})>"
 
 
 class Session(Base):
