@@ -173,6 +173,11 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(dev_bp)
     logger.info("✓ Developer platform registered")
 
+    # OAuth client billing endpoints
+    from app.blueprints.billing_agent import billing_agent_bp
+
+    app.register_blueprint(billing_agent_bp)
+
     logger.info("✅ All blueprints registered")
 
 

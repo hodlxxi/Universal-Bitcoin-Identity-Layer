@@ -45,6 +45,9 @@ os.environ["RPC_PASSWORD"] = "test_password"
 os.environ["LNURL_BASE_URL"] = "http://localhost:5000"
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["RATE_LIMIT_ENABLED"] = "false"
+os.environ["HODLXXI_COST_DEMO_PROTECTED_SATS"] = "1"
+os.environ["HODLXXI_COST_BITCOIN_RPC_SATS"] = "1"
+os.environ["HODLXXI_FREE_QUOTA_CALLS"] = "0"
 
 # Import app after setting environment
 import sys
@@ -116,6 +119,75 @@ def oauth_client_data():
         "response_types": ["code"],
         "scope": "openid profile",
     }
+
+
+@pytest.fixture
+def oauth_client_token(sample_pubkey):
+    """
+    Insert an OAuth client + token into the DB and return token details.
+    """
+    from datetime import datetime, timedelta
+    import uuid
+
+    from app.db_storage import create_user, store_oauth_client, store_oauth_token
+
+    client_id = f"test_client_{uuid.uuid4().hex[:8]}"
+    user_id = create_user(sample_pubkey)
+
+    store_oauth_client(
+        client_id,
+        {
+            "client_id": client_id,
+            "client_secret": "test-secret",
+            "client_name": "Test Client",
+            "redirect_uris": ["http://localhost:3000/callback"],
+            "grant_types": ["authorization_code"],
+            "response_types": ["code"],
+            "scope": "read_limited",
+            "token_endpoint_auth_method": "client_secret_basic",
+        },
+    )
+
+    access_token = f"access_{uuid.uuid4().hex}"
+    now = datetime.utcnow()
+    token_payload = {
+        "access_token": access_token,
+        "refresh_token": f"refresh_{uuid.uuid4().hex}",
+        "token_type": "Bearer",
+        "client_id": client_id,
+        "user_id": user_id,
+        "scope": "read_limited",
+        "access_token_expires_at": (now + timedelta(hours=1)).isoformat(),
+        "refresh_token_expires_at": (now + timedelta(days=30)).isoformat(),
+    }
+    store_oauth_token(str(uuid.uuid4()), token_payload)
+
+    return {"access_token": access_token, "client_id": client_id}
+
+
+@pytest.fixture
+def funded_oauth_client_token(oauth_client_token):
+    """
+    Ensure the OAuth client has a positive sats balance for PAYG tests.
+    """
+    from sqlalchemy import text
+
+    from app.database import session_scope
+
+    with session_scope() as session:
+        session.execute(
+            text(
+                """
+                INSERT INTO ubid_clients (client_id, payg_enabled, sats_balance, free_quota_remaining, created_at, updated_at)
+                VALUES (:client_id, TRUE, 10, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (client_id)
+                DO UPDATE SET sats_balance = 10, updated_at = CURRENT_TIMESTAMP
+                """
+            ),
+            {"client_id": oauth_client_token["client_id"]},
+        )
+
+    return oauth_client_token
 
 
 @pytest.fixture

@@ -70,7 +70,9 @@ from app.db_storage import (
     store_session,
     revoke_oauth_token_by_refresh,
 )
+from app.billing_clients import check_client_invoice, create_client_invoice, require_paid_client
 from app.jwks import ensure_rsa_keypair
+from app.oauth_utils import require_oauth_token
 from app.utils import get_rpc_connection
 from app.oidc import oidc_bp, validate_pkce
 from app.security import init_security, limiter
@@ -9642,50 +9644,45 @@ def lnurl_check(session_id):
 # ROUTES: PROTECTED DEMO API
 # ============================================================================
 
-
-def require_oauth_token(required_scope: str):
-    def decorator(f):
-        def wrapper(*args, **kwargs):
-            auth_header = request.headers.get("Authorization", "")
-            if not auth_header.startswith("Bearer "):
-                return jsonify({"error": "unauthorized", "detail": "Missing Bearer token"}), 401
-
-            token_str = auth_header.split(" ", 1)[1]
-
-            token_data = get_oauth_token(token_str)
-            if not token_data:
-                return jsonify({"error": "invalid_token"}), 401
-
-            token_scopes = set((token_data.get("scope") or "").split())
-            if required_scope not in token_scopes:
-                return (
-                    jsonify(
-                        {"error": "insufficient_scope", "required": required_scope, "provided": list(token_scopes)}
-                    ),
-                    403,
-                )
-
-            user = get_user_by_id(token_data.get("user_id")) if token_data.get("user_id") else None
-            request.oauth_payload = token_data
-            request.oauth_client_id = token_data.get("client_id")
-            request.oauth_scope = token_data.get("scope")
-            request.oauth_sub = user.get("pubkey") if user else None
-            request.oauth_pubkey = user.get("pubkey") if user else None
-
-            return f(*args, **kwargs)
-
-        wrapper.__name__ = f.__name__
-        return wrapper
-
-    return decorator
-
-
-
-
 @app.route("/api/demo/protected", methods=["GET"])
 @require_oauth_token("read_limited")
+@require_paid_client(cost_sats=int(os.getenv("HODLXXI_COST_DEMO_PROTECTED_SATS", "1")))
 def api_demo_protected_v2():
     return jsonify({"status": "ok", "tier": "limited", "msg": "requires read_limited scope"})
+
+
+@app.route("/api/billing/agent/create-invoice", methods=["POST"])
+@require_oauth_token("read_limited")
+def api_billing_agent_create_invoice():
+    data = request.get_json(silent=True) or {}
+    amount_raw = data.get("amount_sats") or request.form.get("amount_sats")
+    if amount_raw is None:
+        return jsonify({"ok": False, "error": "amount_sats required"}), 400
+    try:
+        amount_sats = int(amount_raw)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "amount_sats must be an integer"}), 400
+    if amount_sats <= 0:
+        return jsonify({"ok": False, "error": "amount_sats must be > 0"}), 400
+
+    client_id = request.oauth_client_id
+    memo = f"HODLXXI PAYG topup for client {client_id}"
+    payload = create_client_invoice(client_id, amount_sats, memo)
+    return jsonify(payload)
+
+
+@app.route("/api/billing/agent/check-invoice", methods=["POST"])
+@require_oauth_token("read_limited")
+def api_billing_agent_check_invoice():
+    data = request.get_json(silent=True) or {}
+    invoice_id = data.get("invoice_id") or request.args.get("invoice_id") or request.form.get("invoice_id")
+    if not invoice_id:
+        return jsonify({"ok": False, "error": "invoice_id required"}), 400
+
+    client_id = request.oauth_client_id
+    payload = check_client_invoice(client_id, invoice_id)
+    status_code = 404 if payload.get("error") == "invoice_not_found" else 200
+    return jsonify(payload), status_code
 
 
 # ============================================================================
@@ -10911,5 +10908,4 @@ def _hodlxxi_login_sound_unlock_v1(resp):
         pass
     return resp
 # === /HODLXXI_LOGIN_SOUND_UNLOCK_V1 ===
-
 

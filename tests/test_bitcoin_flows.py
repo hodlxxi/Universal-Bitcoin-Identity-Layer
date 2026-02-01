@@ -77,7 +77,7 @@ def mock_rpc(monkeypatch, client):
 class TestRPCCommands:
     """Test safe RPC command execution."""
 
-    def test_rpc_getblockchaininfo_success(self, client, mock_rpc):
+    def test_rpc_getblockchaininfo_success(self, client, mock_rpc, funded_oauth_client_token):
         """Test successful blockchain info query."""
         mock_rpc.getblockchaininfo.return_value = {
             "chain": "main",
@@ -86,7 +86,8 @@ class TestRPCCommands:
             "bestblockhash": "0" * 64,
         }
 
-        response = client.get("/api/rpc/getblockchaininfo")
+        headers = {"Authorization": f"Bearer {funded_oauth_client_token['access_token']}"}
+        response = client.get("/api/rpc/getblockchaininfo", headers=headers)
 
         assert response.status_code == 200
         data = json.loads(response.data)
@@ -94,17 +95,18 @@ class TestRPCCommands:
         assert data["result"]["chain"] == "main"
         assert data["result"]["blocks"] == 800000
 
-    def test_rpc_getbalance_success(self, client, mock_rpc):
+    def test_rpc_getbalance_success(self, client, mock_rpc, funded_oauth_client_token):
         """Test wallet balance query."""
         mock_rpc.getbalance.return_value = 1.23456789
 
-        response = client.get("/api/rpc/getbalance")
+        headers = {"Authorization": f"Bearer {funded_oauth_client_token['access_token']}"}
+        response = client.get("/api/rpc/getbalance", headers=headers)
 
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data["result"] == 1.23456789
 
-    def test_rpc_dangerous_command_blocked(self, client):
+    def test_rpc_dangerous_command_blocked(self, client, funded_oauth_client_token):
         """Test that dangerous commands are blocked."""
         dangerous_commands = [
             "sendtoaddress",
@@ -115,25 +117,28 @@ class TestRPCCommands:
             "stop",
         ]
 
+        headers = {"Authorization": f"Bearer {funded_oauth_client_token['access_token']}"}
         for cmd in dangerous_commands:
-            response = client.get(f"/api/rpc/{cmd}")
+            response = client.get(f"/api/rpc/{cmd}", headers=headers)
             assert response.status_code == 403
             data = json.loads(response.data)
             assert "not allowed" in data["error"]
 
-    def test_rpc_connection_failure(self, client, mock_rpc):
+    def test_rpc_connection_failure(self, client, mock_rpc, funded_oauth_client_token):
         """Test handling of RPC connection failure."""
         mock_rpc.getblockchaininfo.side_effect = ConnectionError("Connection refused")
 
-        response = client.get("/api/rpc/getblockchaininfo")
+        headers = {"Authorization": f"Bearer {funded_oauth_client_token['access_token']}"}
+        response = client.get("/api/rpc/getblockchaininfo", headers=headers)
 
         assert response.status_code == 500
         data = json.loads(response.data)
         assert "error" in data
 
-    def test_rpc_invalid_command(self, client):
+    def test_rpc_invalid_command(self, client, funded_oauth_client_token):
         """Test handling of invalid RPC command."""
-        response = client.get("/api/rpc/nonexistent_command")
+        headers = {"Authorization": f"Bearer {funded_oauth_client_token['access_token']}"}
+        response = client.get("/api/rpc/nonexistent_command", headers=headers)
 
         assert response.status_code == 403
 
@@ -264,7 +269,7 @@ class TestScriptDecoding:
 class TestDescriptorManagement:
     """Test wallet descriptor operations."""
 
-    def test_list_descriptors_success(self, client, mock_rpc):
+    def test_list_descriptors_success(self, client, mock_rpc, funded_oauth_client_token):
         """Test listing wallet descriptors."""
         mock_descriptors = {
             "descriptors": [
@@ -282,13 +287,14 @@ class TestDescriptorManagement:
 
         mock_rpc.listdescriptors.return_value = mock_descriptors
 
-        response = client.get("/api/descriptors")
+        headers = {"Authorization": f"Bearer {funded_oauth_client_token['access_token']}"}
+        response = client.get("/api/descriptors", headers=headers)
 
         assert response.status_code == 200
         data = json.loads(response.data)
         assert len(data["descriptors"]) == 2
 
-    def test_list_descriptors_production_filters_private(self, app, client, mock_rpc):
+    def test_list_descriptors_production_filters_private(self, app, client, mock_rpc, funded_oauth_client_token):
         """Test that private keys are filtered in production."""
         app.config["APP_CONFIG"]["FLASK_ENV"] = "production"
 
@@ -296,18 +302,20 @@ class TestDescriptorManagement:
 
         mock_rpc.listdescriptors.return_value = mock_descriptors
 
-        response = client.get("/api/descriptors")
+        headers = {"Authorization": f"Bearer {funded_oauth_client_token['access_token']}"}
+        response = client.get("/api/descriptors", headers=headers)
 
         assert response.status_code == 200
         data = json.loads(response.data)
         # Private key markers should be removed
         assert "xprv" not in str(data)
 
-    def test_list_descriptors_rpc_failure(self, client, mock_rpc):
+    def test_list_descriptors_rpc_failure(self, client, mock_rpc, funded_oauth_client_token):
         """Test descriptor listing with RPC failure."""
         mock_rpc.listdescriptors.side_effect = Exception("RPC error")
 
-        response = client.get("/api/descriptors")
+        headers = {"Authorization": f"Bearer {funded_oauth_client_token['access_token']}"}
+        response = client.get("/api/descriptors", headers=headers)
 
         assert response.status_code == 500
 
@@ -392,21 +400,22 @@ class TestBitcoinUtilities:
 class TestBitcoinIntegration:
     """Integration tests with multiple Bitcoin operations."""
 
-    def test_wallet_workflow(self, client, mock_rpc):
+    def test_wallet_workflow(self, client, mock_rpc, funded_oauth_client_token):
         """Test complete wallet workflow."""
+        headers = {"Authorization": f"Bearer {funded_oauth_client_token['access_token']}"}
         # 1. Get blockchain info
         mock_rpc.getblockchaininfo.return_value = {"chain": "main", "blocks": 800000}
-        response1 = client.get("/api/rpc/getblockchaininfo")
+        response1 = client.get("/api/rpc/getblockchaininfo", headers=headers)
         assert response1.status_code == 200
 
         # 2. List descriptors
         mock_rpc.listdescriptors.return_value = {"descriptors": [{"desc": "wpkh(...)", "active": True}]}
-        response2 = client.get("/api/descriptors")
+        response2 = client.get("/api/descriptors", headers=headers)
         assert response2.status_code == 200
 
         # 3. Get balance
         mock_rpc.getbalance.return_value = 5.0
-        response3 = client.get("/api/rpc/getbalance")
+        response3 = client.get("/api/rpc/getbalance", headers=headers)
         assert response3.status_code == 200
         assert json.loads(response3.data)["result"] == 5.0
 

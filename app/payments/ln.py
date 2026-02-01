@@ -17,6 +17,18 @@ class LightningPaymentError(Exception):
     pass
 
 
+def _assert_not_stub_in_production() -> None:
+    env = (os.getenv("FLASK_ENV") or "").lower()
+    force_https = os.getenv("FORCE_HTTPS", "").lower() == "true"
+    backend = os.getenv("LN_BACKEND", "stub").lower()
+    test_paid = os.getenv("TEST_INVOICE_PAID", "false").lower() == "true"
+
+    if env == "production" or force_https:
+        if backend == "stub" or test_paid:
+            logger.error("Lightning backend misconfigured for production (stub/testing enabled).")
+            raise LightningPaymentError("Lightning backend misconfigured for production.")
+
+
 def _lnd_headers() -> dict:
     macaroon = os.getenv("LND_MACAROON") or os.getenv("LND_MACAROON_HEX")
     if not macaroon:
@@ -48,6 +60,7 @@ def _create_invoice_lnd_rest(amount_sats: int, memo: str, expiry_seconds: int) -
 def create_invoice(amount_sats: int, memo: str, user_pubkey: str, expiry_seconds: int = 3600) -> Tuple[str, str]:
     """Create a Lightning invoice for payment."""
     try:
+        _assert_not_stub_in_production()
         backend = os.getenv("LN_BACKEND", "stub").lower()
         if backend == "lnd_rest":
             payment_request, invoice_id = _create_invoice_lnd_rest(amount_sats, memo, expiry_seconds)
@@ -65,6 +78,7 @@ def create_invoice(amount_sats: int, memo: str, user_pubkey: str, expiry_seconds
 
 def check_invoice_paid(invoice_id: str) -> bool:
     """Check if a Lightning invoice has been paid."""
+    _assert_not_stub_in_production()
     backend = os.getenv("LN_BACKEND", "stub").lower()
     if backend == "lnd_rest":
         base_url = os.getenv("LND_REST_URL", "").rstrip("/")
