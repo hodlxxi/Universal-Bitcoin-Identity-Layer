@@ -50,25 +50,21 @@ def _ensure_client_record(db_session, client_id: str) -> None:
     free_quota = _default_free_quota()
     if db_session.bind.dialect.name == "sqlite":
         db_session.execute(
-            text(
-                """
+            text("""
                 INSERT OR IGNORE INTO ubid_clients
                     (client_id, payg_enabled, sats_balance, free_quota_remaining, created_at, updated_at, last_quota_reset)
                 VALUES (:client_id, TRUE, 0, :free_quota, :now, :now, :now)
-                """
-            ),
+                """),
             {"client_id": client_id, "free_quota": free_quota, "now": now},
         )
     else:
         db_session.execute(
-            text(
-                """
+            text("""
                 INSERT INTO ubid_clients
                     (client_id, payg_enabled, sats_balance, free_quota_remaining, created_at, updated_at, last_quota_reset)
                 VALUES (:client_id, TRUE, 0, :free_quota, :now, :now, :now)
                 ON CONFLICT (client_id) DO NOTHING
-                """
-            ),
+                """),
             {"client_id": client_id, "free_quota": free_quota, "now": now},
         )
 
@@ -79,29 +75,25 @@ def _consume_free_quota(db_session, client_id: str, cost: int) -> bool:
     params = {"client_id": client_id, "cost": cost, "now": _utc_now()}
     if db_session.bind.dialect.name == "sqlite":
         result = db_session.execute(
-            text(
-                """
+            text("""
                 UPDATE ubid_clients
                    SET free_quota_remaining = free_quota_remaining - :cost,
                        updated_at = :now
                  WHERE client_id = :client_id
                    AND free_quota_remaining >= :cost
-                """
-            ),
+                """),
             params,
         )
         return result.rowcount > 0
     row = db_session.execute(
-        text(
-            """
+        text("""
             UPDATE ubid_clients
                SET free_quota_remaining = free_quota_remaining - :cost,
                    updated_at = :now
              WHERE client_id = :client_id
                AND free_quota_remaining >= :cost
              RETURNING free_quota_remaining
-            """
-        ),
+            """),
         params,
     ).fetchone()
     return bool(row)
@@ -113,29 +105,25 @@ def _debit_balance(db_session, client_id: str, cost: int) -> bool:
     params = {"client_id": client_id, "cost": cost, "now": _utc_now()}
     if db_session.bind.dialect.name == "sqlite":
         result = db_session.execute(
-            text(
-                """
+            text("""
                 UPDATE ubid_clients
                    SET sats_balance = sats_balance - :cost,
                        updated_at = :now
                  WHERE client_id = :client_id
                    AND sats_balance >= :cost
-                """
-            ),
+                """),
             params,
         )
         return result.rowcount > 0
     row = db_session.execute(
-        text(
-            """
+        text("""
             UPDATE ubid_clients
                SET sats_balance = sats_balance - :cost,
                    updated_at = :now
              WHERE client_id = :client_id
                AND sats_balance >= :cost
              RETURNING sats_balance
-            """
-        ),
+            """),
         params,
     ).fetchone()
     return bool(row)
@@ -143,13 +131,11 @@ def _debit_balance(db_session, client_id: str, cost: int) -> bool:
 
 def _get_balances(db_session, client_id: str) -> tuple[int, int]:
     row = db_session.execute(
-        text(
-            """
+        text("""
             SELECT sats_balance, free_quota_remaining
               FROM ubid_clients
              WHERE client_id = :client_id
-            """
-        ),
+            """),
         {"client_id": client_id},
     ).fetchone()
     if not row:
@@ -209,13 +195,11 @@ def create_client_invoice(client_id: str, amount_sats: int, memo: str) -> dict:
     with session_scope() as db_session:
         _ensure_client_record(db_session, client_id)
         db_session.execute(
-            text(
-                """
+            text("""
                 INSERT INTO payments_clients
                     (invoice_id, client_id, payment_request, amount_sats, status, created_at)
                 VALUES (:invoice_id, :client_id, :payment_request, :amount_sats, 'pending', :now)
-                """
-            ),
+                """),
             {
                 "invoice_id": invoice_id,
                 "client_id": client_id,
@@ -240,14 +224,12 @@ def create_client_invoice(client_id: str, amount_sats: int, memo: str) -> dict:
 def check_client_invoice(client_id: str, invoice_id: str) -> dict:
     with session_scope() as db_session:
         payment = db_session.execute(
-            text(
-                """
+            text("""
                 SELECT amount_sats, status, credited
                   FROM payments_clients
                  WHERE invoice_id = :invoice_id
                    AND client_id = :client_id
-                """
-            ),
+                """),
             {"invoice_id": invoice_id, "client_id": client_id},
         ).fetchone()
 
@@ -273,8 +255,7 @@ def check_client_invoice(client_id: str, invoice_id: str) -> dict:
         params = {"invoice_id": invoice_id, "client_id": client_id, "now": now}
         if db_session.bind.dialect.name == "sqlite":
             db_session.execute(
-                text(
-                    """
+                text("""
                     UPDATE payments_clients
                        SET status = 'paid',
                            paid_at = :now,
@@ -282,26 +263,22 @@ def check_client_invoice(client_id: str, invoice_id: str) -> dict:
                      WHERE invoice_id = :invoice_id
                        AND client_id = :client_id
                        AND COALESCE(credited, FALSE) = FALSE
-                    """
-                ),
+                    """),
                 params,
             )
             refreshed = db_session.execute(
-                text(
-                    """
+                text("""
                     SELECT credited
                       FROM payments_clients
                      WHERE invoice_id = :invoice_id
                        AND client_id = :client_id
-                    """
-                ),
+                    """),
                 params,
             ).fetchone()
             credited_now = bool(refreshed and refreshed[0]) and not credited
         else:
             updated = db_session.execute(
-                text(
-                    """
+                text("""
                 UPDATE payments_clients
                    SET status = 'paid',
                        paid_at = :now,
@@ -310,21 +287,18 @@ def check_client_invoice(client_id: str, invoice_id: str) -> dict:
                    AND client_id = :client_id
                    AND COALESCE(credited, FALSE) = FALSE
                  RETURNING amount_sats
-                """
-            ),
-            params,
+                """),
+                params,
             ).fetchone()
             credited_now = bool(updated)
         if credited_now:
             db_session.execute(
-                text(
-                    """
+                text("""
                     UPDATE ubid_clients
                        SET sats_balance = sats_balance + :amount,
                            updated_at = :now
                      WHERE client_id = :client_id
-                    """
-                ),
+                    """),
                 {"amount": amount_sats, "client_id": client_id, "now": now},
             )
 
