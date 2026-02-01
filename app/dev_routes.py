@@ -160,15 +160,13 @@ def get_user_oauth_clients(user_pubkey: str) -> List[Dict]:
     """Get all OAuth clients owned by user."""
     with session_scope() as db_session:
         results = db_session.execute(
-            text(
-                """
+            text("""
                 SELECT client_id, client_name, redirect_uris, grant_types, 
                        response_types, is_active, created_at, plan
                 FROM oauth_clients
                 WHERE owner_pubkey = :pubkey OR owner_pubkey IS NULL
                 ORDER BY created_at DESC
-            """
-            ),
+            """),
             {"pubkey": user_pubkey},
         ).fetchall()
 
@@ -317,15 +315,13 @@ def create_invoice_route():
             )
 
             db_session.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO payments
                     (user_pubkey, invoice_id, payment_request, amount_sats,
                      status, plan, created_at, expires_at)
                     VALUES (:pubkey, :invoice_id, :payment_request, :amount,
                             'pending', :plan, :now, :expires)
-                    """
-                ),
+                    """),
                 {
                     "pubkey": user_pubkey,
                     "invoice_id": invoice_id,
@@ -416,8 +412,7 @@ def check_invoice_route():
                     return jsonify({"paid": False, "invoice_id": invoice_id})
 
             credited_row = db_session.execute(
-                text(
-                    """
+                text("""
                     UPDATE payments
                        SET status='paid',
                            paid_at=:now,
@@ -426,8 +421,7 @@ def check_invoice_route():
                        AND user_pubkey=:pubkey
                        AND COALESCE((metadata->>'credited')::boolean,false)=false
                      RETURNING plan, amount_sats
-                    """
-                ),
+                    """),
                 {"now": now, "invoice_id": invoice_id, "pubkey": user_pubkey},
             ).fetchone()
             # If we just flipped credited from false->true, also credit the cached user balance
@@ -435,15 +429,13 @@ def check_invoice_route():
                 _plan = credited_row[0]
                 _amt = int(credited_row[1] or 0)
                 db_session.execute(
-                    text(
-                        """
+                    text("""
                         UPDATE ubid_users
                            SET sats_balance = sats_balance + :amt,
                                payg_enabled = CASE WHEN :plan='payg' THEN TRUE ELSE payg_enabled END,
                                last_login_at = NOW()
                          WHERE pubkey = :pubkey
-                        """
-                    ),
+                        """),
                     {"amt": _amt, "plan": _plan, "pubkey": user_pubkey},
                 )
             db_session.commit()
