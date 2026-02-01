@@ -731,6 +731,11 @@ def health():
 # --- Dev dashboard hard block (must run before any login redirect gates) ---
 @app.before_request
 def _dev_dashboard_full_only():
+    # PAYG_BEARER_BILLING_AGENT_BYPASS_V1: allow billing-agent endpoints to use Bearer tokens
+    # Session gate must not block these; require_oauth_token will enforce auth+scope.
+    if request.path.startswith('/api/billing/agent/'):
+        return None
+
     # Always hide dev dashboard unless full (even if not logged in)
     if request.path.rstrip("/") == "/dev/dashboard" and session.get("access_level") != "full":
         from flask import make_response as _make_response
@@ -743,6 +748,11 @@ def _dev_dashboard_full_only():
 
 @app.before_request
 def _oauth_public_allowlist():
+    # PAYG_BILLING_AGENT_BYPASS_ALL_V1: never block billing-agent bearer endpoints with session gates
+    from flask import request as _req
+    if (_req.path or '').startswith('/api/billing/agent/'):
+        return None
+
     # OAUTH_ALLOWLIST_SCOPE_GUARD_V1
     # This allowlist is only meant for OAuth/OIDC endpoints.
     # Do NOT enforce login here for the rest of the site.
@@ -1471,6 +1481,11 @@ def check_auth():
 
     p = request.path or "/"
 
+
+    # PAYG_BILLING_AGENT_ALLOWLIST_V1: billing-agent endpoints are Bearer-authenticated
+    # and must never be blocked by session/login gates.
+    if p.startswith('/api/billing/agent/'):
+        return None
     auth_header = request.headers.get("Authorization","")
     # Bearer API calls should NOT be redirected to /login. Token validation happens in the route.
     if auth_header.startswith("Bearer ") and p.startswith("/api/"):
@@ -7447,6 +7462,11 @@ PUBLIC_API_PATHS = (
 
 @app.before_request
 def _public_guard_for_lnurl():
+    # PAYG_BILLING_AGENT_BYPASS_ALL_V1: never block billing-agent bearer endpoints with session gates
+    from flask import request as _req
+    if (_req.path or '').startswith('/api/billing/agent/'):
+        return None
+
     p = request.path
     # --- allow playground + playground static assets without auth ---
     # this keeps only playground and its static dir public
@@ -10033,6 +10053,11 @@ _cleanup_once = {"done": False}
 
 @app.before_request
 def _run_cleanup_once():
+    # PAYG_BILLING_AGENT_BYPASS_ALL_V1: never block billing-agent bearer endpoints with session gates
+    from flask import request as _req
+    if (_req.path or '').startswith('/api/billing/agent/'):
+        return None
+
     if _cleanup_once.get("done"):
         return None
     _cleanup_once["done"] = True
@@ -10652,6 +10677,11 @@ def upgrade():
 # Fix common typo BEFORE auth guards so next= uses /account
 @app.before_request
 def _fix_accaunt_typo_before_auth_v3():
+    # PAYG_BILLING_AGENT_BYPASS_ALL_V1: never block billing-agent bearer endpoints with session gates
+    from flask import request as _req
+    if (_req.path or '').startswith('/api/billing/agent/'):
+        return None
+
     from flask import request, redirect
 
     if request.path == "/accaunt":
@@ -10908,4 +10938,3 @@ def _hodlxxi_login_sound_unlock_v1(resp):
         pass
     return resp
 # === /HODLXXI_LOGIN_SOUND_UNLOCK_V1 ===
-
