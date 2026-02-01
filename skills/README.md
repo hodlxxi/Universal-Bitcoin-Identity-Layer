@@ -1,0 +1,26 @@
+# Skills
+
+This folder contains agent-friendly “skills” for integrating with HODLXXI / Universal Bitcoin Identity Layer (UBID).
+
+## Public skills
+
+### hodlxxi-bitcoin-identity
+Path: `skills/public/hodlxxi-bitcoin-identity/`
+
+- **SKILL.md**: OAuth2/OIDC + LNURL-auth integration guide and code examples
+- **HEARTBEAT.md**: health-check checklist for production monitoring
+- **scripts/**: helper scripts (e.g., signature verification)
+- **templates/**: JSON templates (e.g., OAuth client registration payload)
+
+Quick link:
+- `skills/public/hodlxxi-bitcoin-identity/SKILL.md`
+
+Raw install link (for agents that can fetch skills from GitHub):
+- `https://raw.githubusercontent.com/hodlxxi/Universal-Bitcoin-Identity-Layer/main/skills/public/hodlxxi-bitcoin-identity/SKILL.md`
+
+## Conventions
+
+- Skills should avoid secrets and never include private keys, macaroons, or environment values.
+- Prefer copy/paste command blocks and small scripts.
+- If a skill requires credentials, document the *variable names* and how to obtain them.
+
