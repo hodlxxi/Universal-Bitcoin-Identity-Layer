@@ -20,7 +20,7 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for tests
 
 logger = logging.getLogger(__name__)
 
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_remote_address, storage_uri="memory://")
 def _as_bool(value: Any, default: bool = False) -> bool:
     if value is None:
         return default
@@ -186,7 +186,7 @@ try:
     from flask_limiter.util import get_remote_address
 
     if globals().get("limiter", None) is None:
-        limiter = Limiter(key_func=get_remote_address)
+        limiter = Limiter(key_func=get_remote_address, storage_uri="memory://")
 except Exception:
     # absolute fallback to avoid import-time crashes
     class _NoopLimiter:
