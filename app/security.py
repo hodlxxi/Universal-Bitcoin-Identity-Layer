@@ -12,33 +12,6 @@ from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 
-# ------------------------------
-# Ensure limiter exists at import time
-# ------------------------------
-def ensure_limiter_initialized():
-    global limiter
-    try:
-        limiter_obj = globals().get("limiter", None)
-    except Exception:
-        limiter_obj = None
-
-    if limiter_obj is None:
-        try:
-            limiter = Limiter(key_func=get_remote_address)
-        except Exception:
-            # Absolute fallback (should not happen in your env)
-            class _NoopLimiter:
-                def limit(self, *_a, **_k):
-                    def _decorator(fn):
-                        return fn
-
-                    return _decorator
-
-            limiter = _NoopLimiter()
-
-
-ensure_limiter_initialized()
-
 try:  # pragma: no cover - optional dependency
     from flask_talisman import Talisman  # type: ignore
 except ModuleNotFoundError:  # pragma: no cover - fallback for tests
@@ -47,9 +20,7 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for tests
 
 logger = logging.getLogger(__name__)
 
-limiter: Optional[Limiter] = None
-
-
+limiter = Limiter(key_func=get_remote_address)
 def _as_bool(value: Any, default: bool = False) -> bool:
     if value is None:
         return default
@@ -76,7 +47,7 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
     global limiter
 
     # Respect reverse proxy headers for TLS detection and client IP extraction.
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)  # type: ignore[assignment]
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)  # type: ignore[assignment]
 
     default_force_https = (
         str(cfg.get("FLASK_ENV") or os.getenv("FLASK_ENV", "development")).strip().lower() == "production"
@@ -128,14 +99,26 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
     else:
         # ALWAYS use memory:// storage for reliability
         # Redis-based rate limiting can be added later if needed
-        limiter = Limiter(
-            key_func=get_remote_address,
-            default_limits=[limit_default],
-            storage_uri="memory://",
-            strategy="fixed-window",
-        )
-        limiter.init_app(app)
-        logger.info(f"Rate limiter initialized with memory:// storage (limit: {limit_default})")
+        try:
+            limiter.init_app(
+                app,
+                default_limits=[limit_default],
+                storage_uri="memory://",
+                strategy="fixed-window",
+            )
+        except TypeError:
+            limiter.init_app(app)
+        # HODLXXI_EXEMPT_STATUS_V2
+        # Screensaver polls /api/public/status; exempt it from Flask-Limiter defaults.
+        try:
+            vf = app.view_functions.get("api_public_status")
+            if vf is not None and hasattr(limiter, "exempt"):
+                limiter.exempt(vf)
+                logger.info("✅ Exempted /api/public/status from Flask-Limiter defaults")
+        except Exception:
+            pass
+
+    logger.info(f"Rate limiter initialized with memory:// storage (limit: {limit_default})")
 
     log_level = str(cfg.get("LOG_LEVEL", "INFO")).upper()
     level = getattr(logging, log_level, logging.INFO)
