@@ -6519,7 +6519,8 @@ textarea{
                 <a class="home-link" href="{{ url_for('home') }}">HODLXXI</a>
             </h1>
 
-            <div class="manifesto-panel">
+            {% if not session.get('manifesto_hidden') %}
+<div class="manifesto-panel" id="manifestoPanel">
                 <p class="manifesto-text">
                     <a href="https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer.git" rel="noopener">
                         This is a Game Theory and Mathematics–driven Design Framework for decentralized financial support
@@ -6540,7 +6541,36 @@ textarea{
                         math, guided by ethics, designed for generations. Let’s make covenants great again!!!
                     </a>
                 </p>
-            </div>
+            
+      <!-- HIDE_MANIFESTO_V1: session-scoped hide button -->
+      <div style="margin-top:12px; display:flex; justify-content:flex-end;">
+        <button id="hideManifestoBtn" type="button"
+          style="padding:10px 14px; border:1px solid #00ff66; background:rgba(0,0,0,0.45); color:#00ff66; border-radius:12px; cursor:pointer;">
+          Hide
+        </button>
+      </div>
+      <script>
+      (function(){
+        const btn = document.getElementById('hideManifestoBtn');
+        if(!btn) return;
+        btn.addEventListener('click', async () => {
+          try{
+            const r = await fetch('/api/ui/hide_manifesto', {
+              method:'POST',
+              credentials:'include',
+              headers:{'Content-Type':'application/json'},
+              body:'{}'
+            });
+            if (r.ok){
+              const panel = document.getElementById('manifestoPanel');
+              if(panel) panel.remove();
+            }
+          }catch(e){}
+        });
+      })();
+      </script>
+</div>
+{% endif %}
 
             <div class="manifesto-actions">
                 <div class="manifesto-actions-inner">
@@ -11980,3 +12010,16 @@ def _hodlxxi_login_sound_unlock_v1(resp):
         pass
     return resp
 # === /HODLXXI_LOGIN_SOUND_UNLOCK_V1 ===
+
+
+# HIDE_MANIFESTO_V1: allow user to hide Home manifesto for current login session
+@app.route("/api/ui/hide_manifesto", methods=["POST"])
+def api_hide_manifesto():
+    try:
+        # require some logged-in identity (guest or full)
+        if not session.get("logged_in_pubkey"):
+            return jsonify({"ok": False, "error": "not_logged_in"}), 401
+        session["manifesto_hidden"] = True
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
