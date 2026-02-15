@@ -6,7 +6,35 @@ import redis
 import logging
 import os
 import re
-from flask import session, request
+
+
+def _mask_pubkey_tail(pk: str, tail: int = 4) -> str:
+    pk = (pk or "").strip()
+    if len(pk) < tail:
+        return pk
+    if re.fullmatch(r"(?i)(02|03)[0-9a-f]{64}", pk):
+        return pk[:2] + "*****" + pk[-tail:]
+    return "*****" + pk[-tail:]
+
+def _mask_clickable_pubkeys_in_html(html: str) -> str:
+    """
+    Mask visible pubkey text inside clickable spans but keep onclick FULL.
+    """
+    if not html:
+        return html
+
+    pat = re.compile(
+        r'(<span class=\\"clickable-pubkey\\"[^>]*handlePubKeyClick\\(\\\'([0-9a-fA-F]{66})\\\'\\);\\">)\\2(</span>)'
+    )
+
+    def repl(m):
+        full = m.group(2)
+        tail = full[-4:]
+        return m.group(1) + f'<span style=\\"color:red;\\">{tail}</span>' + m.group(3)
+
+    return pat.sub(repl, html)
+
+from flask import session, request, request
 from flask import render_template_string
 import secrets
 import time
@@ -943,17 +971,49 @@ TURN_HOST = os.getenv("TURN_HOST", "213.111.146.201")
 TURN_SECRET = os.getenv("TURN_SECRET", "")
 TURN_TTL = int(os.getenv("TURN_TTL", "3600"))
 
+# TURN_RATE_LIMIT_V1: simple in-process limiter for /turn_credentials
+# Env knobs:
+#   TURN_RL_WINDOW=60  (seconds)
+#   TURN_RL_MAX=20     (requests per window)
+TURN_RL_WINDOW = int(os.getenv("TURN_RL_WINDOW", "60"))
+TURN_RL_MAX    = int(os.getenv("TURN_RL_MAX", "20"))
+_TURN_RL = {}  # key -> [timestamps]
+
+def _turn_rate_limit_ok(key: str):
+    import time as _t
+    now = _t.time()
+    arr = _TURN_RL.get(key, [])
+    arr = [x for x in arr if (now - x) < TURN_RL_WINDOW]
+    if len(arr) >= TURN_RL_MAX:
+        retry = int(TURN_RL_WINDOW - (now - min(arr))) + 1
+        _TURN_RL[key] = arr
+        return False, max(retry, 1)
+    arr.append(now)
+    _TURN_RL[key] = arr
+    return True, 0
+
 
 @app.route("/turn_credentials")
 def turn_credentials():
     # Require a logged-in session to prevent TURN credential scraping/abuse
-    from flask import session
+    from flask import session, request
 
     if not (session.get("logged_in_pubkey") or "").strip():
         return jsonify({"error": "Not logged in"}), 401
 
     if not TURN_SECRET:
         return jsonify({"error": "TURN not configured"}), 500
+
+    # TURN_RATE_LIMIT_CHECK_V1: per IP + session pubkey
+    try:
+        xf = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+    except Exception:
+        xf = ""
+    ip = xf or (request.remote_addr or "unknown")
+    pk = (session.get("logged_in_pubkey") or "").strip()
+    ok, retry = _turn_rate_limit_ok(f"{ip}|{pk}")
+    if not ok:
+        return jsonify({"error": "Rate limited", "retry_after": retry}), 429
     username = str(int(time.time()) + TURN_TTL)
     digest = hmac.new(TURN_SECRET.encode("utf-8"), username.encode("utf-8"), hashlib.sha1).digest()
     password = base64.b64encode(digest).decode("utf-8")
@@ -986,28 +1046,36 @@ def classify_presence(pubkey: str | None, access_level: str | None) -> str:
     Decide chip color role for a user:
       full    -> Orange
       limited -> Green
-      pin     -> White (session ID is a PIN value)
+      pin     -> White (PIN guest)
       random  -> Red   (anonymous guest like 'guest-xxxx')
+
+    HARDENED:
+      - tolerate None / whitespace
+      - tolerate missing PIN maps
+      - never raise (socket connect must not crash)
     """
-    if not pubkey:
+    pk = (pubkey or "").strip()
+    lvl = (access_level or "").strip().lower()
+
+    if not pk:
         return "limited"
 
-    # Random-guest identities look like 'guest-<rand>'
-    if pubkey.startswith("guest-"):
+    if pk.startswith("guest-"):
         return "random"
 
-    # PIN users use the PIN as their session id; also treat pure digits as PIN
-    try:
-        is_pin = (pubkey in GUEST_PINS) or pubkey.isdigit()  # GUEST_PINS already in your app
-    except NameError:
-        is_pin = pubkey.isdigit()
-    if is_pin:
+    if pk.isdigit():
         return "pin"
 
-    # Signed users (or special users) rely on access_level
-    if access_level == "full":
+    try:
+        pin_map = globals().get("GUEST_PINS") or globals().get("GUEST_STATIC_PINS") or {}
+        if pk in pin_map:
+            return "pin"
+    except Exception:
+        pass
+
+    if lvl == "full":
         return "full"
-    if access_level == "limited":
+    if lvl == "limited":
         return "limited"
 
     return "limited"
@@ -1324,6 +1392,49 @@ app.permanent_session_lifetime = timedelta(days=7)
 from decimal import Decimal
 
 
+
+def extract_timelock_pubkeys_from_asm(asm: str):
+    """
+    Return (first_pub, second_pub) for the *timelock* OP_IF/OP_ELSE pair.
+
+    Works for:
+      A) Legacy: OP_IF <cltv> ... <pkA> OP_CHECKSIG OP_ELSE <cltv> ... <pkB> OP_CHECKSIG OP_ENDIF
+      B) Multisig-wrapped: OP_IF ... OP_CHECKMULTISIG OP_ELSE OP_IF <cltv> ... <pkA> OP_CHECKSIG OP_ELSE ... <pkB> OP_CHECKSIG OP_ENDIF OP_ENDIF
+
+    We ignore multisig header keys by preferring matches after OP_CHECKMULTISIG.
+    """
+    import re
+    if not asm:
+        return (None, None)
+
+    toks = (asm or "").replace("\n", " ").split()
+
+    ms_idx = -1
+    try:
+        ms_idx = toks.index("OP_CHECKMULTISIG")
+    except ValueError:
+        ms_idx = -1
+
+    matches = []
+    # pattern: <lock> OP_CHECKLOCKTIMEVERIFY OP_DROP <pubkey> OP_CHECKSIG
+    for i in range(len(toks) - 4):
+        if toks[i+1] == "OP_CHECKLOCKTIMEVERIFY" and toks[i+2] == "OP_DROP" and toks[i+4] == "OP_CHECKSIG":
+            lt = toks[i]
+            pk = toks[i+3]
+            if lt.isdigit() and re.fullmatch(r"[0-9A-Fa-f]{66,130}", pk):
+                matches.append((i, int(lt), pk))
+
+    # Prefer timelock pair after multisig (if present)
+    cand = [m for m in matches if m[0] > ms_idx] if ms_idx != -1 else matches
+    if len(cand) >= 2:
+        return (cand[0][2], cand[1][2])
+
+    # fallback: last pair
+    if len(matches) >= 2:
+        return (matches[-2][2], matches[-1][2])
+
+    return (None, None)
+
 def get_save_and_check_balances_for_pubkey(pubkey_hex: str) -> tuple[Decimal, Decimal]:
     """
     For every raw(...) descriptor in the wallet:
@@ -1338,6 +1449,19 @@ def get_save_and_check_balances_for_pubkey(pubkey_hex: str) -> tuple[Decimal, De
     out_total = Decimal(0)
     neutral_cards: list[dict] = []
 
+
+    # FIX_TIMELOCK_PUBKEYS_V4: compare user pubkey (hex or npub) to script pubkey (hex)
+    def _pk_match(user_pk: str, script_hex_pk: str) -> bool:
+        if not user_pk or not script_hex_pk:
+            return False
+        u = str(user_pk).strip()
+        if u.lower().startswith("npub"):
+            try:
+                return to_npub(script_hex_pk) == u
+            except Exception:
+                return False
+        return script_hex_pk.lower() == u.lower()
+
     for desc_item in rpc_conn.listdescriptors().get("descriptors", []):
         raw_desc = desc_item["desc"]
 
@@ -1348,8 +1472,12 @@ def get_save_and_check_balances_for_pubkey(pubkey_hex: str) -> tuple[Decimal, De
 
         decoded = rpc_conn.decodescript(script)
         asm = decoded.get("asm", "")
-        op_if = extract_pubkey_from_op_if(asm)
-        op_else = extract_pubkey_from_op_else(asm)
+
+        # FIX_BALANCE_CLASSIFY_V5:
+        # - For 1 CLTV ELSE branch: treat as OUT (legacy behavior)
+        # - For 2+ CLTV ELSE branches: earliest lock = IN, second = OUT (nested/dual-else)
+        op_if_pub = extract_pubkey_from_op_if(asm)
+        else_branches = sorted(extract_else_branches(asm), key=lambda b: int(b.get("lock") or 0))
 
         # Address: segwit -> p2sh -> derive from descriptor
         addr = (decoded.get("segwit") or {}).get("address")
@@ -1369,11 +1497,28 @@ def get_save_and_check_balances_for_pubkey(pubkey_hex: str) -> tuple[Decimal, De
         sum_btc = sum(Decimal(u["amount"]) for u in utxos)
 
         matched = False
-        if op_if and op_if.lower() == pubkey_hex.lower():
+
+        # Rule 1: one CLTV branch => OUT
+        if len(else_branches) == 1:
+            b = else_branches[0]
+            if b.get("pubkey") and _pk_match(pubkey_hex, b["pubkey"]):
+                out_total += sum_btc
+                matched = True
+
+        # Rule 2: two+ CLTV branches => earliest=IN, second=OUT
+        elif len(else_branches) >= 2:
+            early = else_branches[0]
+            late  = else_branches[1]
+            if early.get("pubkey") and _pk_match(pubkey_hex, early["pubkey"]):
+                in_total += sum_btc
+                matched = True
+            elif late.get("pubkey") and _pk_match(pubkey_hex, late["pubkey"]):
+                out_total += sum_btc
+                matched = True
+
+        # Fallback: OP_IF pubkey behaves like IN for old scripts
+        if (not matched) and op_if_pub and _pk_match(pubkey_hex, op_if_pub):
             in_total += sum_btc
-            matched = True
-        elif op_else and op_else.lower() == pubkey_hex.lower():
-            out_total += sum_btc
             matched = True
 
         # Collect non-matching contracts so the UI can render them neutrally
@@ -1728,6 +1873,9 @@ def chat():
 
     * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color: transparent; }
     html, body { width:100%; height:100%; background:var(--bg); color:var(--fg); overflow:hidden; }
+
+    html, body { height: var(--app-height, 100dvh) !important; }
+    .shell { height: var(--app-height, 100dvh) !important; }
     body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Mono", Menlo, Consolas, monospace; }
 
     /* Matrix canvas */
@@ -2099,7 +2247,19 @@ def chat():
     @media (min-width: 600px){
       .call-grid{ grid-template-columns: repeat(2, 1fr); }
     }
-    .video-tile{
+    
+/* VIDEO_PIN_MODE_V1: click a remote tile to pin it (full mode) */
+#remoteVideosContainer{ display: contents; } /* remote tiles become grid items */
+.video-tile{ cursor: pointer; }
+.video-tile.pinned{
+  grid-column: 1 / -1;
+  aspect-ratio: 16 / 9;
+}
+.video-tile.dim{
+  opacity: 0.25;
+  filter: blur(0.4px);
+}
+.video-tile{
       position:relative;
       width:100%;
       aspect-ratio: 4/3;
@@ -2621,6 +2781,105 @@ def chat():
   #qrcode img, #qrcode canvas{ width: 200px !important; height: 200px !important; }
 }
 
+
+
+/* KEYBOARD_LIFT_V1: lift composer + keep last messages visible when mobile keyboard opens */
+/* VIDEO_PIN_LAYOUT_V3: make remote tiles actual grid items + pinned big tile */
+#remoteVideosContainer{ display: contents; } /* critical: children become grid items */
+
+/* When a tile is pinned, make a 2-col layout: big pinned + small strip */
+.call-grid.pinned-mode{
+  grid-template-columns: minmax(0, 1fr) 220px;
+  grid-auto-rows: min-content;
+  align-items: start;
+}
+.call-grid.pinned-mode .video-tile.pinned{
+  grid-column: 1;
+  grid-row: 1 / span 99;
+  aspect-ratio: 16/9;
+  min-height: 280px;
+}
+.call-grid.pinned-mode .video-tile.local-tile{
+  grid-column: 2;
+}
+.call-grid.pinned-mode .video-tile:not(.pinned){
+  grid-column: 2;
+  height: 140px;
+  aspect-ratio: 1/1;
+}
+
+@media (max-width: 768px){
+  .call-grid.pinned-mode{ grid-template-columns: minmax(0, 1fr) 140px; }
+  .call-grid.pinned-mode .video-tile:not(.pinned){ height: 110px; }
+  .call-grid.pinned-mode .video-tile.pinned{ min-height: 220px; }
+}
+
+
+
+/* PRESENCE_ROLE_COLORS_V1: color users by role (full/limited/pin/random) */
+.user-item.role-full{
+  border-color: rgba(255,149,0,0.55) !important;
+  box-shadow: 0 0 18px rgba(255,149,0,0.12);
+}
+.user-item.role-full .user-dot{
+  background:#ff9500 !important;
+  box-shadow:0 0 10px rgba(255,149,0,0.85) !important;
+}
+
+.user-item.role-limited{
+  border-color: rgba(34,197,94,0.40) !important;
+}
+.user-item.role-limited .user-dot{
+  background:#22c55e !important;
+  box-shadow:0 0 10px rgba(34,197,94,0.85) !important;
+}
+
+.user-item.role-pin{
+  border-color: rgba(255,255,255,0.35) !important;
+}
+.user-item.role-pin .user-dot{
+  background:#e5e7eb !important;
+  box-shadow:0 0 10px rgba(229,231,235,0.65) !important;
+}
+
+.user-item.role-random{
+  border-color: rgba(255,59,48,0.45) !important;
+}
+.user-item.role-random .user-dot{
+  background:#ff3b30 !important;
+  box-shadow:0 0 10px rgba(255,59,48,0.75) !important;
+}
+
+/* CALL_FULLSCREEN_OVERLAY_V1: true “big” call view (panel breaks out of sidebar) */
+body.call-full #groupCallPanel{
+  position: fixed !important;
+  inset: 10px !important;
+  z-index: 999999 !important;
+  display: block !important;
+  max-height: none !important;
+  overflow: hidden !important;
+  background: rgba(0,0,0,0.82) !important;
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  border: 1px solid rgba(0,255,136,0.22) !important;
+  box-shadow: 0 0 30px rgba(0,255,136,0.12);
+}
+body.call-full .floating-call-btn{ display:none !important; }
+
+/* make call grid fill available height in overlay */
+body.call-full #groupCallPanel .call-grid{
+  height: calc(100vh - 170px);
+}
+body.call-full #groupCallPanel .video-tile.pinned{
+  min-height: calc(100vh - 210px) !important;
+}
+@media (max-width: 768px){
+  body.call-full #groupCallPanel{ inset: 6px !important; }
+  body.call-full #groupCallPanel .call-grid{ height: calc(100vh - 190px); }
+}
+
+
+/* KB_LIFT_DISABLED_V1: disable mobile keyboard lift (restore old behavior) */
 </style></head>
 
 <body
@@ -2635,7 +2894,6 @@ def chat():
   <main class="shell">
     <header class="top-bar">
       <div class="top-left">
-        <button class="back-btn" type="button" onclick="goHome('#explorer')">CRT</button>
         <div class="title-block">
           <div class="title">Global Chat</div>
           <div class="subtitle">Presence chips ·  whispers · p2p call</div>
@@ -2664,7 +2922,14 @@ def chat():
               {% for m in history %}
               <li class="message{% if m.pubkey == my_pubkey %} me{% endif %}" data-ts="{{ m.ts|default(0) }}">
                 <div class="message-meta">
-                  <div class="message-sender">{{ (m.pubkey or 'anon')[:12] }}…{{ (m.pubkey or '')[-6:] }}</div>
+                  <div class="message-sender">
+  {%- set pk = (m.pubkey or 'anon') -%}
+  {%- if pk.startswith('guest') or pk|length < 20 -%}
+    …{{ pk[-4:] }}
+  {%- else -%}
+    {{ pk[:2] }}…{{ pk[-4:] }}
+  {%- endif -%}
+</div>
                   <div class="message-timestamp">''</div>
                 </div>
                 <div class="message-text">{{ (m.text or '')|e }}</div>
@@ -2703,7 +2968,7 @@ def chat():
                       {% if pk == my_pubkey %}
                         <div class="user-tag">you</div>
                       {% else %}
-                        <div class="user-sub">…{{ pk[-4:] }}</div>
+                        <div class="user-sub"><!-- PRESENCE_USER_SUB_JINJA_V2 -->{% set p = pk or '' %}{% if p[:10] == 'guest-pin-' %}PIN…{{ p[-4:] }}{% elif p[:6] == 'guest-' %}GUEST…{{ p[-4:] }}{% elif p|length > 10 and (p[:2] == '02' or p[:2] == '03') %}{{ p[:2] }}…{{ p[-4:] }}{% elif p|length > 10 %}…{{ p[-4:] }}{% else %}{{ p }}{% endif %}</div>
                       {% endif %}
                     </div>
                   </div>
@@ -2722,6 +2987,7 @@ def chat():
             <div class="call-controls">
               <button id="muteBtn" class="ctrl-btn" type="button"><span>🔊</span>Mute</button>
               <button id="cameraBtn" class="ctrl-btn" type="button"><span>📷</span>Camera Off</button>
+              <button id="fsBtn" class="ctrl-btn" type="button"><span>⛶</span>Full</button>
               <button id="hangupGroupBtn" class="ctrl-btn ctrl-danger" type="button"><span>✕</span>Hang Up</button>
             </div>
           </div>
@@ -2908,38 +3174,54 @@ def chat():
 
 
     function shortKey(pk) {
-
-  // PRESENCE_LABELMAP_FRONTEND_V1: prefer server-broadcast labels for ANY user (so everyone sees Guest-HOST)
+  // Prefer server-broadcast labels first (PIN guests, etc.)
   try {
     const lm = window.__labelByPubkey || {};
     const lbl = lm[pk];
-    if (lbl) return lbl;
+    if (lbl) return String(lbl);
   } catch(e) {}
 
-      // APP_PRESENCE_GUEST_LABEL_SHORTKEY_V1: show Guest-* label for current PIN guest instead of truncating pubkey
+  // Current PIN guest label for self
+  try {
+    const my = (window.__myPubkey || '').trim();
+    const gl = (window.__guestLabel || '').trim();
+    if (gl && my && pk === my) return gl;
+  } catch(e) {}
 
+  if (!pk) return "";
+  const s = String(pk);
+
+  // Guests / short IDs -> just tail4
+  if (s.startsWith("guest-") || s.length < 12) return "…" + s.slice(-4);
+
+  // compressed pubkeys: show 02…ABCD / 03…ABCD
+  if ((s.startsWith("02") || s.startsWith("03")) && s.length >= 10) return s.slice(0,2) + "…" + s.slice(-4);
+
+  // default: just tail4
+  return "…" + s.slice(-4);
+}
+
+
+    /* PRESENCE_SUBKEY_V1: shorter key under user (avoid long pubkey line) */
+    function subKey(pk) {
+      // prefer label map (PIN guests show Guest-1234 to everyone)
       try {
-
-        const my = window.__myPubkey || '';
-
-        const gl = window.__guestLabel || '';
-
-        if (gl && my && pk === my) return gl;
-
+        const lm = window.__labelByPubkey || {};
+        const lbl = lm[pk];
+        if (lbl) return String(lbl);
       } catch(e) {}
-  // GUEST_LABEL_UI_V1: show guest label for current (PIN) guest instead of truncated pubkey
-  if (window.__myPubkey === undefined) {
-    var ds = (document && document.body && document.body.dataset) ? document.body.dataset : {};
-    window.__myPubkey = ds.loggedInPubkey || ds.loggedIn || "";
-    window.__guestLabel = ds.guestLabel || "";
-  }
-  if (window.__guestLabel && window.__myPubkey && pk === window.__myPubkey) return window.__guestLabel;
 
       if (!pk) return "";
-      return pk.length > 18 ? pk.slice(0,10) + "…" + pk.slice(-6) : pk;
+      const x = String(pk);
+
+      // guests / short ids: only last4
+      if (x.startsWith("guest") || x.length < 20) return "…" + x.slice(-4);
+
+      // real pubkeys: show 02/03 prefix + last4
+      return x.slice(0,2) + "…" + x.slice(-4);
     }
 
-    function displayName(pk) {
+function displayName(pk) {
       // PRESENCE_DISPLAYNAME_LABELMAP_V1: prefer server-broadcast labels for ANY user (PIN guests, etc.)
       try {
         const lm = window.__labelByPubkey || {};
@@ -2979,7 +3261,73 @@ def chat():
     const onlineCountEl = document.getElementById('onlineCount');
     const statusEl      = document.getElementById('room-status');
     const inputEl       = document.getElementById('chatInput');
+
+    // KEYBOARD_LIFT_JS_V1: track mobile keyboard height and lift composer
+    (function(){
+      try{
+        const vv = window.visualViewport || null;
+        function update(){
+          const h = vv ? vv.height : window.innerHeight;
+          const off = vv ? (vv.offsetTop || 0) : 0;
+          const kb = Math.max(0, window.innerHeight - h - off);
+// KB_LIFT_DISABLED_V1:           document.documentElement.style.setProperty('--kb', kb + 'px');
+        }
+
+        if (vv){
+          vv.addEventListener('resize', update);
+          vv.addEventListener('scroll', update);
+        }
+        window.addEventListener('resize', update);
+
+        const onFocus = () => {
+// KB_LIFT_DISABLED_V1:           document.body.classList.add('kb-open');
+          update();
+          setTimeout(update, 50);
+          setTimeout(update, 250);
+        };
+        const onBlur = () => {
+// KB_LIFT_DISABLED_V1:           document.body.classList.remove('kb-open');
+// KB_LIFT_DISABLED_V1:           document.documentElement.style.setProperty('--kb', '0px');
+        };
+
+        try{ inputEl && inputEl.addEventListener('focus', onFocus); }catch(e){}
+        try{ inputEl && inputEl.addEventListener('blur', onBlur); }catch(e){}
+
+        update();
+      }catch(e){}
+    })();
+
+
     const sendBtn       = document.getElementById('sendBtn');
+
+    // MOBILE_KEYBOARD_FIX_V2: keep composer visible + chat usable on iOS/Android keyboards
+    (function(){
+      // KB_LIFT_DISABLED_V2: rollback to old behavior
+      return;
+
+      function setAppHeight(){
+        try{
+          const h = (window.visualViewport && window.visualViewport.height) ? window.visualViewport.height : window.innerHeight;
+          document.documentElement.style.setProperty('--app-height', h + 'px');
+        }catch(e){}
+      }
+      setAppHeight();
+      window.addEventListener('resize', setAppHeight);
+      if (window.visualViewport){
+        window.visualViewport.addEventListener('resize', () => {
+          setAppHeight();
+          try { scrollMessagesToBottom(); } catch(e) {}
+        });
+      }
+      try{
+        inputEl?.addEventListener('focus', () => {
+          setTimeout(() => {
+            try { inputEl.scrollIntoView({ block:'end', behavior:'smooth' }); } catch(e){}
+            try { scrollMessagesToBottom(); } catch(e){}
+          }, 80);
+        });
+      }catch(e){}
+    })();
 
     function setStatus(text) { if (statusEl) statusEl.textContent = text; }
     function setOnlineCount(n) { if (onlineCountEl) onlineCountEl.textContent = n; }
@@ -3003,8 +3351,14 @@ def chat():
       const fromPk = msg.pubkey || msg.sender_pubkey || '';
       if (fromPk && myPubkey && fromPk === myPubkey) li.classList.add('me');
 
-      const senderLabel = msg.label || msg.sender || fromPk || 'anon';
-      const shortSender = senderLabel.length > 22 ? senderLabel.slice(0, 12) + '…' + senderLabel.slice(-6) : senderLabel;
+      // MSG_SENDER_SHORT_V1: show only 02/03…LAST4 (or label) in message header
+      let senderLabel = '';
+      try{
+        const lm = window.__labelByPubkey || {};
+        senderLabel = String(msg.label || msg.sender || lm[fromPk] || '').trim();
+      }catch(e){ senderLabel = ''; }
+
+      const shortSender = senderLabel ? senderLabel : subKey(fromPk);
 
       const rawTs = msg.ts || msg.timestamp || msg.created_at || (Date.now() / 1000);
       const timeStr = new Date(rawTs * 1000).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
@@ -3033,8 +3387,22 @@ def chat():
       userListEl.innerHTML = '';
 
       users.forEach(pk => {
+        /* PRESENCE_APPLY_ROLECLASS_V1 */
+        let role = "limited";
+        try{
+          const rm = window.__roleByPubkey || {};
+          role = (rm[pk] || role);
+        }catch(e){}
+        // fallback inference if not provided
+        try{
+          if (!role || role === "limited"){
+            if (pk && String(pk).startswith("guest-")) role = "random";
+          }
+        }catch(e){}
+
         const li = document.createElement('li');
         li.className = 'user-item';
+        try{ li.classList.add('role-' + String(role)); }catch(e){}
         li.dataset.pubkey = pk;
 
         const isMe = myPubkey && pk === myPubkey;
@@ -3045,7 +3413,7 @@ def chat():
             <span class="user-dot"></span>
             <div style="min-width:0;">
               <div class="user-name">${displayName(pk).replace(/</g,'&lt;')}</div>
-              ${isMe ? `<div class="user-tag">you</div>` : `<div class="user-sub">${shortKey(pk)}</div><!-- PRESENCE_USER_SUB_USE_SHORTKEY_V1 -->`}
+              ${isMe ? `<div class="user-tag">you</div>` : `<div class="user-sub">${subKey(pk)}</div><!-- PRESENCE_USER_SUB_USE_SUBKEY_V1 -->`}
             </div>
           </div>
           <button class="user-btn" type="button">@</button>
@@ -3110,8 +3478,7 @@ def chat():
     // APP_PRESENCE_ONLINE_CACHE_V1: cache latest payload so we can re-render once guest_label arrives
 
     // APP_PRESENCE_GUEST_LABEL_INIT_V1: fetch guest_label for current session so presence UI can show Guest-HOST
-
-    (function(){
+;(function(){
 
       if (window.__guestLabelInit) return; window.__guestLabelInit = true;
 
@@ -3243,7 +3610,62 @@ def chat():
     })();
 
 
-    socket.on('online:list', (payload) => {
+    
+    // PRESENCE_ROLE_FROM_SCRATCH_V1: map roles -> apply role-* classes + keep updated
+    window.__presenceRoles = window.__presenceRoles || {};
+
+    window.__presenceApplyRoles = function(){
+      try{
+        const map = window.__presenceRoles || {};
+        document.querySelectorAll('.user-item').forEach((el) => {
+          const pk = (el.dataset.pubkey || el.dataset.pk || el.getAttribute('data-pubkey') || el.getAttribute('data-pk') || '').trim();
+          if (!pk) return;
+
+          const role = (el.dataset.role || map[pk] || '').trim();
+          if (role) el.dataset.role = role;
+
+          el.classList.remove('role-full','role-limited','role-pin','role-random');
+          if (role) el.classList.add('role-' + role);
+        });
+      }catch(e){}
+    };
+
+    if (!window.__presenceRoleObserver) {
+      window.__presenceRoleObserver = new MutationObserver(() => {
+        try{ clearTimeout(window.__presenceRoleTO); }catch(e){}
+        window.__presenceRoleTO = setTimeout(() => {
+          try{ window.__presenceApplyRoles && window.__presenceApplyRoles(); }catch(e){}
+        }, 50);
+      });
+      const ul = document.getElementById('userList') || document.querySelector('.users-list');
+      if (ul) window.__presenceRoleObserver.observe(ul, { childList:true, subtree:true, attributes:true });
+    }
+
+socket.on('online:list', (payload) => {
+      // PRESENCE_ROLE_MAP_UPDATE_V1
+      try{
+        window.__presenceRoles = window.__presenceRoles || {};
+        (payload || []).forEach((it) => {
+          if (!it) return;
+          const pk = String(it.pubkey || it.pk || '').trim();
+          if (!pk) return;
+          const role = String(it.role || it.access_level || '').trim();
+          if (role) window.__presenceRoles[pk] = role;
+        });
+      }catch(e){}
+      // PRESENCE_ROLEMAP_SOCKET_V1: capture role per pubkey from server payload
+      try{
+        const list = Array.isArray(payload) ? payload : (payload ? [payload] : []);
+        window.__roleByPubkey = window.__roleByPubkey || {};
+        list.forEach((x) => {
+          try{
+            if (x && typeof x === 'object' && x.pubkey && x.role){
+              window.__roleByPubkey[x.pubkey] = String(x.role);
+            }
+          }catch(e){}
+        });
+      }catch(e){}
+
       // PRESENCE_LABELMAP_SOCKET_V2: build label map from server payload so everyone renders Guest-* labels
       // PRESENCE_DOM_LABEL_APPLY_V1: apply label map to any presence chips that still show truncated pubkey like …59cb
       try {
@@ -3318,6 +3740,9 @@ def chat():
       try { window.__lastOnlinePayload = payload; } catch (e) {}
 
       renderUserList(extractPubkeys(payload));
+      // PRESENCE_ROLE_APPLY_ON_ONLINE_LIST_V1
+      try{ window.__presenceApplyRoles && window.__presenceApplyRoles(); }catch(e){}
+
 
       try { window.__applyGuestLabelPresence && window.__applyGuestLabelPresence(); } catch(e) {}
     });
@@ -3325,6 +3750,14 @@ def chat():
     socket.on('user:list',   (payload) => renderUserList(extractPubkeys(payload)));
 
     socket.on('user:joined', (payload) => {
+      // PRESENCE_ROLEMAP_JOIN_V1: capture role on join events
+      try{
+        if (payload && typeof payload === 'object' && payload.pubkey && payload.role){
+          window.__roleByPubkey = window.__roleByPubkey || {};
+          window.__roleByPubkey[payload.pubkey] = String(payload.role);
+        }
+      }catch(e){}
+
       // PRESENCE_LABELMAP_SOCKET_V2: also capture label on incremental join events
       try { window.__applyPresenceLabels && window.__applyPresenceLabels(); } catch(e) {}
 
@@ -3379,8 +3812,35 @@ def chat():
       const muteBtn = document.getElementById("muteBtn");
       const cameraBtn = document.getElementById("cameraBtn");
       const hangupBtn = document.getElementById("hangupGroupBtn");
+      const fsBtn = document.getElementById("fsBtn");
+
 
       function updateStatus(t){ if (callStatusEl) callStatusEl.textContent = t || "No active call"; }
+
+      // CALL_FULLSCREEN_TOGGLE_V1: overlay fullscreen + best-effort native Fullscreen API
+      function toggleCallFullscreen(forceOn=null){
+        try{
+          const wantOn = (forceOn===null) ? !document.body.classList.contains("call-full") : !!forceOn;
+          document.body.classList.toggle("call-full", wantOn);
+
+          try{
+            if (fsBtn){
+              fsBtn.classList.toggle("active", wantOn);
+              fsBtn.innerHTML = wantOn ? "<span>⛶</span>Exit" : "<span>⛶</span>Full";
+            }
+          }catch(e){}
+
+          // best-effort native fullscreen (desktop). overlay works even if this fails.
+          try{
+            if (wantOn){
+              const el = panel || document.documentElement;
+              if (el && el.requestFullscreen) el.requestFullscreen().catch(()=>{});
+            }else{
+              if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(()=>{});
+            }
+          }catch(e){}
+        }catch(e){}
+      }
       function setUI(active){
         if (!panel) return;
         panel.classList.toggle("hidden", !active);
@@ -3410,7 +3870,29 @@ def chat():
         return stream;
       }
 
-      function addRemoteTile(pk, stream){
+            // VIDEO_PIN_STATE_V2
+      let pinnedPk = null;
+
+      function applyPinClasses(){
+        try{
+          const tiles = document.querySelectorAll(".video-tile");
+          tiles.forEach(t => {
+            const id = t.getAttribute("id") || "";
+            const isRemoteTile = id.startsWith("tile-");
+            const isPinned = pinnedPk && (id === ("tile-" + pinnedPk));
+            t.classList.toggle("pinned", !!isPinned);
+            if (pinnedPk && isRemoteTile && !isPinned) t.classList.add("dim");
+            else t.classList.remove("dim");
+          });
+        }catch(e){}
+      }
+
+      function togglePin(pk){
+        pinnedPk = (pinnedPk === pk) ? null : pk;
+        applyPinClasses();
+      }
+
+function addRemoteTile(pk, stream){
         if (!remoteWrap) return;
         let tile = document.getElementById("tile-" + pk);
         if (!tile){
@@ -3428,6 +3910,15 @@ def chat():
           tile.appendChild(v);
           tile.appendChild(label);
           remoteWrap.appendChild(tile);
+          // VIDEO_PIN_CLICK_V2: click remote tile to pin/unpin
+          try{
+            tile.addEventListener("click", (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              togglePin(pk);
+            }, { passive: true });
+          }catch(e){}
+
         }
         const vid = tile.querySelector("video");
         if (vid){
@@ -3437,6 +3928,10 @@ def chat():
       }
 
       function removeRemoteTile(pk){
+        // VIDEO_PIN_UNPIN_V2
+        try{ if (pinnedPk === pk) pinnedPk = null; }catch(e){}
+        try{ applyPinClasses(); }catch(e){}
+
         document.getElementById("tile-" + pk)?.remove();
       }
 
@@ -3506,6 +4001,7 @@ def chat():
         cameraBtn?.classList.remove("active");
         if (muteBtn) muteBtn.innerHTML = "<span>🔊</span>Mute";
         if (cameraBtn) cameraBtn.innerHTML = "<span>📷</span>Camera Off";
+        try{ toggleCallFullscreen(false); }catch(e){}
         setUI(false);
         updateStatus("Not in a call");
       }
@@ -3573,6 +4069,7 @@ def chat():
         hangupBtn?.addEventListener("click", leaveRoom);
         muteBtn?.addEventListener("click", toggleMute);
         cameraBtn?.addEventListener("click", toggleCamera);
+        fsBtn?.addEventListener("click", () => toggleCallFullscreen());
 
         socket.on("rtc:room_peers", handleRoomPeers);
         socket.on("rtc:signal", handleSignal);
@@ -4375,7 +4872,7 @@ def login():
     function getRedirectUrl() {
       const params = new URLSearchParams(window.location.search);
       const next = params.get("next");
-      return next || "/account";
+      return next || "/home";
     }
 
     function showTab(which) {
@@ -5362,30 +5859,69 @@ def extract_pubkey_from_op_if(asm):
 
 
 def extract_pubkey_from_op_else(asm):
-    ops = asm.split()
-    try:
-        idx = ops.index("OP_ELSE")
-        for token in ops[idx + 1 :]:
-            if re.fullmatch(r"[0-9a-fA-F]{66}", token) or re.fullmatch(r"[0-9a-fA-F]{130}", token):
-                return token
-    except ValueError:
-        return None
-    return None
+    # Backwards-compatible: return the first pubkey found in ELSE branches
+    branches = extract_else_branches(asm)
+    return branches[0]["pubkey"] if branches else None
+
+
+def extract_else_branches(asm: str) -> list[dict]:
+    """
+    Extract all branches matching:
+      <locktime> OP_CHECKLOCKTIMEVERIFY OP_DROP <PUBKEY> OP_CHECKSIG
+    Works even when OP_ELSE contains nested OP_IF/OP_ELSE.
+    Returns list of dicts: [{"lock": int, "pubkey": str}, ...] (unique).
+    """
+    ops = (asm or "").split()
+    out: list[dict] = []
+
+    for i, tok in enumerate(ops):
+        if tok != "OP_CHECKLOCKTIMEVERIFY":
+            continue
+        if i == 0 or not ops[i - 1].isdigit():
+            continue
+        lock = int(ops[i - 1])
+
+        pk = None
+        # pubkey usually appears shortly after OP_DROP; scan a small window
+        for j in range(i + 1, min(i + 20, len(ops))):
+            t = ops[j]
+            if re.fullmatch(r"[0-9a-fA-F]{66}", t) or re.fullmatch(r"[0-9a-fA-F]{130}", t):
+                pk = t
+                break
+        if pk:
+            out.append({"lock": lock, "pubkey": pk})
+
+    # de-dup
+    seen = set()
+    uniq = []
+    for b in out:
+        key = (b["lock"], b["pubkey"].lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(b)
+    return uniq
+
+
+def else_early_late(asm: str):
+    """
+    Returns (early, late) where early is the smallest locktime branch from OP_ELSE.
+    early/late are dicts like {"lock": int, "pubkey": str} or None.
+    """
+    branches = sorted(extract_else_branches(asm), key=lambda b: b["lock"])
+    early = branches[0] if len(branches) >= 1 else None
+    late = branches[1] if len(branches) >= 2 else None
+    return early, late
 
 
 def format_asm(asm):
-    ops = asm.split()
+    ops = (asm or "").split()
     formatted_ops = []
-    in_op_if = False
 
     for op in ops:
-        if op == "OP_IF":
-            in_op_if = True
-        elif op == "OP_ENDIF":
-            in_op_if = False
-
-        if in_op_if and re.fullmatch(r"[0-9a-fA-F]{66}", op):
-            formatted_ops.append(f'<span class="clickable-pubkey" onclick="handlePubKeyClick(\'{op}\');">{op}</span>')
+        # Mask any compressed pubkey token (02/03 + 64 hex) using ref-based click
+        if re.fullmatch(r"(?i)(02|03)[0-9a-f]{64}", op):
+            formatted_ops.append(clickable_ref(op))
         else:
             formatted_ops.append(op)
 
@@ -5440,9 +5976,52 @@ def mask_hex_value(hex_value, num_visible=4):
     return "*****" + hex_value[-num_visible:]
 
 
+
+# --- pubkey ref (no full pubkey in HTML) ---
+def _pkref_redis():
+    # Dedicated tiny redis client for pubkey refs (TTL). Uses existing env if present.
+    url = os.environ.get("REDIS_URL") or os.environ.get("REDIS_URI") or "redis://localhost:6379/0"
+    try:
+        return redis.Redis.from_url(url, decode_responses=True)
+    except Exception:
+        # fallback
+        return redis.Redis(host="localhost", port=6379, decode_responses=True)
+
+def _pkref_store(pubkey: str, ttl_sec: int = 600) -> str:
+    # Store mapping ref->pubkey server-side; return short token.
+    ref = secrets.token_urlsafe(9)  # ~12 chars
+    r = _pkref_redis()
+    r.setex(f"hodlxxi:pkref:{ref}", ttl_sec, pubkey)
+    return ref
+
+def clickable_ref(pubkey: str) -> str:
+    # clickable span that DOES NOT reveal pubkey in HTML
+    ref = _pkref_store(pubkey)
+    short = pubkey[-4:]
+    return (
+        f"<span class=\"clickable-pubkey\" onclick=\"handlePubKeyClickRef('{ref}');\">"
+        f"<span style=\"color:red;\">{short}</span></span>"
+    )
+
+@app.get("/api/pubkey/resolve")
+def api_pubkey_resolve():
+    # Require login (same behavior as /home): no anonymous resolution
+    if not session.get("logged_in_pubkey"):
+        return jsonify({"error": "Not logged in"}), 401
+    ref = request.args.get("ref", "").strip()
+    if not ref or len(ref) > 64:
+        return jsonify({"error": "Bad ref"}), 400
+    r = _pkref_redis()
+    pub = r.get(f"hodlxxi:pkref:{ref}")
+    if not pub:
+        return jsonify({"error": "Expired or unknown ref"}), 404
+    return jsonify({"pubkey": pub})
+# --- end pubkey ref ---
+
 def clickable_trunc(pubkey):
-    short = shorten_pubkey(pubkey)
-    return f'<span class="clickable-pubkey" onclick="handlePubKeyClick(\'{pubkey}\');"><span style="color:red;">{short}</span></span>'
+    # Return ref-based clickable so pubkey never appears in HTML/JSON
+    return clickable_ref(pubkey)
+
 
 
 def mask_raw_descriptor(text):
@@ -5454,6 +6033,12 @@ def mask_raw_descriptor(text):
         masked_hex = re.sub(
             r"(b17521)((?:[0-9a-fA-F]{66}|[0-9a-fA-F]{130}))",
             lambda match_obj: match_obj.group(1) + clickable_trunc(match_obj.group(2)),
+            masked_hex,
+        )
+        # Also mask ANY compressed pubkey (02/03 + 64 hex) inside raw-hex (e.g., multisig scripts)
+        masked_hex = re.sub(
+            r"(?i)(02|03)[0-9a-f]{64}",
+            lambda m: clickable_ref(m.group(0)),
             masked_hex,
         )
         return f"raw({masked_hex}){suffix}"
@@ -6395,7 +6980,7 @@ textarea{
                             : '';
 
                         box.innerHTML = `
-                            <pre><strong>!</strong> ${descriptor.raw}</pre>
+                            <pre><strong>!</strong> ${descriptor.desc || descriptor.raw}</pre>
                             <div style="text-align:center; margin:0.5rem 0;">
                                 <pre><strong>Address:</strong> ${descriptor.truncated_address}</pre>
                             </div>
@@ -6414,6 +6999,16 @@ textarea{
                         container.appendChild(box);
                     });
 
+
+                    // FIX_WHOIS_TOTALS_FROM_BACKEND_V1: prefer server totals (works for hex clicks + limited users)
+                    try {
+                        const inUsd  = parseFloat((data && (data.in_usd ?? data.incoming_usd)) ?? "");
+                        const outUsd = parseFloat((data && (data.out_usd ?? data.outgoing_usd)) ?? "");
+                        if (!Number.isNaN(inUsd) && !Number.isNaN(outUsd)) {
+                            inputTotal = inUsd;
+                            outputTotal = outUsd;
+                        }
+                    } catch (e) {}
                     document.getElementById('input-balance').innerText  = '$' + inputTotal.toFixed(2);
                     document.getElementById('output-balance').innerText = '$' + outputTotal.toFixed(2);
                 })
@@ -6424,30 +7019,72 @@ textarea{
                 });
         }
 
-        function handlePubKeyClick(pubKey) {
-            verifyAndListContracts(pubKey);
+        
+        window.handlePubKeyClickRef = async function(ref) {
+            try {
+                const r = await fetch(`/api/pubkey/resolve?ref=${encodeURIComponent(ref)}`, { credentials: "same-origin" });
+                const j = await r.json();
+                if (!r.ok || !j.pubkey) throw new Error(j.error || "resolve failed");
+                verifyAndListContracts(j.pubkey);
+            } catch (e) {
+                console.error("resolve pubkey ref failed:", e);
+                alert("Link expired — refresh the page and try again.");
+            }
         }
 
-        function updateScript() {
-            const tpl = document.getElementById('initialScript').value;
-            const baked = [...tpl.matchAll(/b17521([0-9A-Fa-f]{66})/g)].map(m=>m[1]);
-            let k1 = document.getElementById('newPubKey1').value.trim() || baked[0] || '';
-            let k2 = document.getElementById('newPubKey2').value.trim() || baked[1] || '';
+window.handlePubKeyClick = function(pubKey) {
+  // Back-compat: if we were passed a ref token, resolve it server-side
+  if (!/^(02|03)[0-9a-fA-F]{64}$/.test(pubKey || "")) {
+    return window.handlePubKeyClickRef ? window.handlePubKeyClickRef(pubKey) : null;
+  }
+  return verifyAndListContracts(pubKey);
+}
 
-            function valid(key) {
-                return /^(npub[0-9A-Za-z]+)$/.test(key) || /^[0-9A-Fa-f]{66,130}$/.test(key);
+
+        function updateScript() {
+            const tpl = document.getElementById('initialScript').value.trim();
+
+            // Extract pubkeys from raw-script HEX robustly:
+            //   0x21 <33-byte pubkey>  OR  0x41 <65-byte pubkey>
+            // (works for single-sig, multisig, nested IFs, dual-ELSE, etc.)
+            const baked = (() => {
+                const hex = (tpl || '').replace(/[^0-9A-Fa-f]/g, '');
+                const out = [];
+                const rePk = /(?:21([0-9A-Fa-f]{66})|41([0-9A-Fa-f]{130}))/g;
+                let m;
+                while ((m = rePk.exec(hex)) !== null) {
+                    const pk = (m[1] || m[2] || '').toLowerCase();
+                    if (pk && !out.includes(pk)) out.push(pk);
+                }
+                return out;
+            })();
+
+            // Inputs: keep your existing two fields, but they must be HEX pubkeys.
+            let k1 = (document.getElementById('newPubKey1')?.value || '').trim().toLowerCase() || baked[0] || '';
+            let k2 = (document.getElementById('newPubKey2')?.value || '').trim().toLowerCase() || baked[1] || '';
+
+            function validHexPubkey(key) {
+                return /^[0-9a-f]{66}$/.test(key) || /^[0-9a-f]{130}$/.test(key);
             }
 
-            if (k1 && !valid(k1)) { alert("Invalid OP_IF key"); return; }
-            if (k2 && !valid(k2)) { alert("Invalid OP_ELSE key"); return; }
+            // IMPORTANT: npub cannot be embedded into script HEX.
+            if (k1 && !validHexPubkey(k1)) { alert("Invalid key 1. Use HEX pubkey (66/130 hex). npub cannot be inserted into raw script hex."); return; }
+            if (k2 && !validHexPubkey(k2)) { alert("Invalid key 2. Use HEX pubkey (66/130 hex). npub cannot be inserted into raw script hex."); return; }
 
-            let rawScript = tpl;
-            if (baked[0] && k1) rawScript = rawScript.replace(baked[0], k1);
-            if (baked[1] && k2) rawScript = rawScript.replace(baked[1], k2);
+            // Replace globally so scripts where the same key appears twice (dual-ELSE) update correctly.
+            function replaceAll(hay, oldKey, newKey) {
+                if (!oldKey || !newKey || oldKey === newKey) return hay;
+                return hay.split(oldKey).join(newKey);
+            }
 
-            let displayScript = tpl;
-            if (baked[0] && k1) displayScript = displayScript.replace(baked[0], `<span style="color:var(--neon-blue);">${k1}</span>`);
-            if (baked[1] && k2) displayScript = displayScript.replace(baked[1], `<span style="color:var(--neon-green);">${k2}</span>`);
+            let rawScript = (tpl || '').replace(/[^0-9A-Fa-f]/g, '');
+            if (baked[0] && k1) rawScript = replaceAll(rawScript.toLowerCase(), baked[0], k1);
+            if (baked[1] && k2) rawScript = replaceAll(rawScript.toLowerCase(), baked[1], k2);
+
+            // Pretty display with highlights (also global)
+            let displayScript = (tpl || '').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            if (baked[0] && k1) displayScript = displayScript.split(baked[0]).join(`<span style="color:var(--neon-blue);">${k1}</span>`);
+            if (baked[1] && k2) displayScript = displayScript.split(baked[1]).join(`<span style="color:var(--neon-green);">${k2}</span>`);
             document.getElementById('updatedScript').innerHTML = displayScript;
 
             fetch('/decode_raw_script', {
@@ -6466,6 +7103,41 @@ textarea{
             .then(d => {
                 const out = document.getElementById('decodedWitness');
                 out.textContent = d.error ? `Error: ${d.error}` : JSON.stringify(d.decoded, null, 2);
+
+                // ----- NEW: show branch metadata (dual-ELSE visibility) -----
+                let meta = document.getElementById('scriptMeta');
+                if (!meta) {
+                    meta = document.createElement('div');
+                    meta.id = 'scriptMeta';
+                    meta.style.marginTop = '0.5rem';
+                    meta.style.whiteSpace = 'pre-wrap';
+                    meta.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+                    meta.style.fontSize = '12px';
+                    meta.style.opacity = '0.95';
+                    const qrContainer0 = document.getElementById('qr-codes');
+                    if (qrContainer0 && qrContainer0.parentNode) {
+                        qrContainer0.parentNode.insertBefore(meta, qrContainer0);
+                    }
+                }
+
+                if (d && !d.error) {
+                    const lines = [];
+                    if (d.op_if)  lines.push(`OP_IF key:  ${d.op_if}`);
+                    if (d.op_else) lines.push(`OP_ELSE key: ${d.op_else}`);
+                    if (d.else_early_lock != null) lines.push(`ELSE early: lock=${d.else_early_lock} pub=${d.else_early_pub || ''}`);
+                    if (d.else_late_lock  != null) lines.push(`ELSE late:  lock=${d.else_late_lock} pub=${d.else_late_pub || ''}`);
+
+                    if (Array.isArray(d.op_else_branches) && d.op_else_branches.length) {
+                        lines.push("ELSE branches:");
+                        for (const b of d.op_else_branches) {
+                            lines.push(`  - lock=${b.lock} pub=${b.pubkey}`);
+                        }
+                    }
+                    meta.textContent = lines.length ? lines.join("\n") : "";
+                } else {
+                    meta.textContent = "";
+                }
+                // ----------------------------------------------------------
 
                 const qrContainer = document.getElementById('qr-codes');
                 qrContainer.innerHTML = '';
@@ -6681,10 +7353,9 @@ textarea{
         });
 
         // Login sound on entry from login page
-        document.addEventListener('DOMContentLoaded', () => {
 
     // === SOUND_HELPER_V2: autoplay-safe + keep-alive pool + queue ===
-    (function(){
+;(function(){
       const POOL = [];
       let pending = null;
 
@@ -6736,8 +7407,6 @@ if (sessionStorage.getItem('playLoginSound') === '1') {
   sessionStorage.removeItem('playLoginSound');
   window.HODLXXI_PLAY_SOUND('/static/sounds/message.mp3', 0.9);
 }
-
-        });
 
         // Matrix background (warp)
         (() => {
@@ -6819,27 +7488,230 @@ if (sessionStorage.getItem('playLoginSound') === '1') {
         })();
 
         // Small nav helpers for the top icon row
-        function openPanel(which) {
+        window.openPanel = function(which) {
             const url = `${location.origin}${location.pathname}#${which}`;
             window.location.href = url;
+        };
+;(function(){
+  function bindTopButtons(){
+    try{
+      const btnExplorer    = document.getElementById('btnExplorer');
+      const btnOnboard     = document.getElementById('btnOnboard');
+      const btnChat        = document.getElementById('btnChat');
+      const btnExit        = document.getElementById('btnExit');
+      const btnScreensaver = document.getElementById('btnScreensaver');
+
+      btnExplorer?.addEventListener('click', () => window.openPanel('explorer'));
+      btnOnboard?.addEventListener('click', () => window.openPanel('onboard'));
+      btnChat?.addEventListener('click', () => { window.location.href = "/app"; });
+      btnExit?.addEventListener('click', () => { window.location.href = "/logout"; });
+      btnScreensaver?.addEventListener('click', () => { window.location.href = "/screensaver"; });
+
+      // debug marker
+      window.__HODLXXI_TOPBTN_BOUND = 1;
+      console.log("[HODLXXI] top buttons bound", {
+        hasExplorer: !!btnExplorer, hasOnboard: !!btnOnboard, hasChat: !!btnChat, hasExit: !!btnExit, hasScreensaver: !!btnScreensaver
+      });
+    }catch(e){
+      console.error("[HODLXXI] bindTopButtons failed", e);
+    }
+;(() => {
+  // FIX_TOTALS_BAR_V2: show Total Out / Total In / Ratio based on /verify_pubkey_and_list JSON
+  function ensureTotalsBar(){
+    let bar = document.getElementById('hodlxxiTotalsBar');
+    if (bar) return bar;
+
+    bar = document.createElement('div');
+    bar.id = 'hodlxxiTotalsBar';
+    // FORCE_VISIBLE: keep totals bar above everything and readable
+    bar.style.position = 'fixed';
+    bar.style.top = '8px';
+    bar.style.left = '50%';
+    bar.style.transform = 'translateX(-50%)';
+    bar.style.zIndex = '999999';
+    bar.style.width = 'min(980px, calc(100% - 24px))';
+    bar.style.pointerEvents = 'none';
+    bar.style.color = 'var(--neon-green, #00ff88)';
+    bar.style.background = 'rgba(0,0,0,0.75)';
+    bar.style.color = 'var(--neon-green)';
+    bar.style.color = 'var(--neon-green)';
+    bar.style.cssText = "margin:.6rem auto .2rem;max-width:980px;padding:.55rem .7rem;border:1px solid rgba(0,255,136,.35);border-radius:12px;background:rgba(0,0,0,.25);box-shadow:0 0 18px rgba(0,255,136,.18);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;letter-spacing:.2px";
+    bar.innerHTML = "Totals: <span style='opacity:.8'>loading…</span>";
+
+    const host = document.querySelector('.main-grid') || document.body;
+    host.prepend(bar);
+    return bar;
+  }
+
+  function renderTotals(t){
+    if (!t) return;
+    window.__HODLXXI_LAST_TOTALS = t;
+    const bar = ensureTotalsBar();
+    // HODLXXI_TOTALS_FORCE_FIXED_V5: pin bar to viewport so it is always visible
+    try {
+      Object.assign(bar.style, {
+        position: 'fixed',
+        top: '8px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: '999999',
+        width: 'min(980px, calc(100% - 24px))',
+        pointerEvents: 'none',
+        background: 'rgba(0,0,0,0.75)',
+      });
+    } catch (e) {}
+
+    const out_btc = (t.out_total ?? t.out_btc ?? t.out_total_btc ?? "0");
+    const in_btc  = (t.in_total  ?? t.in_btc  ?? t.in_total_btc  ?? "0");
+    const ratio   = (t.ratio   ?? "0");
+    bar.innerHTML =
+      `Out: <strong>${out_btc}</strong> BTC &nbsp; | &nbsp; ` +
+      `In: <strong>${in_btc}</strong> BTC &nbsp; | &nbsp; ` +
+      `Ratio: <strong>${ratio}</strong>`;
+  }
+
+  
+  // FIX_TOTALS_BAR_V2_INIT: make bar visible immediately + expose helpers for debugging
+
+  // AUTO_TOTALS_FROM_SESSION_V1: on /home load, fetch session pubkey and pull totals automatically
+  (function(){
+    if (window.__HODLXXI_AUTO_TOTALS_FROM_SESSION) return;
+    window.__HODLXXI_AUTO_TOTALS_FROM_SESSION = 1;
+
+    function _parseJsonSafe(txt){
+      try{ return JSON.parse(txt); }catch(e){ return null; }
+    }
+    async function _fetchJson(url, init){
+      try{
+        const r = await fetch(url, Object.assign({credentials:"same-origin"}, init||{}));
+        const txt = await r.text();
+        const j = _parseJsonSafe(txt);
+        if (j !== null) return j;
+        return {ok:false, _status:r.status, _raw:txt};
+      }catch(e){
+        return {ok:false, _error:String(e)};
+      }
+    }
+    function _pickTotals(j){
+      if(!j) return null;
+      if (("in_total" in j) || ("out_total" in j) || ("ratio" in j) || ("in_btc" in j) || ("out_btc" in j)) return j;
+      if (j.totals_v2) return j.totals_v2;
+      if (j.totals) return j.totals;
+      if (j.total) return j.total;
+      return null;
+    }
+    function _f2(x){
+      const n = Number(x||0);
+      return n.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2});
+    }
+    function _f8(x){
+      const n = Number(x||0);
+      return n.toLocaleString(undefined,{minimumFractionDigits:8, maximumFractionDigits:8});
+    }
+
+    // Update the big INCOMING/OUTGOING pills if we can find them by their labels.
+    function _updateWhoIsPanels(t){
+      try{
+        const in_btc  = (t.in_btc ?? t.in_total_btc ?? t.in_total ?? 0);
+        const out_btc = (t.out_btc ?? t.out_total_btc ?? t.out_total ?? 0);
+        const in_usd  = (t.in_usd ?? t.incoming_usd ?? null);
+        const out_usd = (t.out_usd ?? t.outgoing_usd ?? null);
+
+        const in_txt  = (in_usd  !== null && in_usd  !== undefined) ? ("$"+_f2(in_usd))  : (_f8(in_btc)+" BTC");
+        const out_txt = (out_usd !== null && out_usd !== undefined) ? ("$"+_f2(out_usd)) : (_f8(out_btc)+" BTC");
+
+        function setLabel(label, text){
+          const nodes = Array.from(document.querySelectorAll("div,span,strong,p,h1,h2,h3"))
+            .filter(n => (n.textContent||"").trim().toUpperCase()===label && n.childElementCount===0);
+
+          for(const n of nodes){
+            const p = n.parentElement;
+            if(!p) continue;
+
+            // 1) next sibling (common pattern)
+            const sib = n.nextElementSibling;
+            if (sib && sib !== n){
+              sib.textContent = text;
+              return true;
+            }
+
+            // 2) find a nearby value node under same parent
+            const cand = Array.from(p.querySelectorAll("strong,span,div"))
+              .find(x => x!==n && /\$?\s*[\d,]+(\.\d+)?/.test((x.textContent||"").trim()));
+            if (cand){
+              cand.textContent = text;
+              return true;
+            }
+          }
+          return false;
         }
 
-document.getElementById('btnExplorer').addEventListener('click', () => openPanel('explorer'));
+        setLabel("INCOMING", in_txt);
+        setLabel("OUTGOING", out_txt);
+      }catch(e){
+        console.warn("[HODLXXI] AUTO_TOTALS_FROM_SESSION_V1 panels failed", e);
+      }
+    }
 
-const btnScreensaver = document.getElementById('btnScreensaver');
-if (btnScreensaver) {
-    btnScreensaver.addEventListener('click', () => {
-        window.location.href = '/screensaver';
+    async function refresh(){
+      try{
+        const sess = await _fetchJson("/api/debug/session");
+        const pk = sess.pubkey || sess.logged_in_pubkey || sess.pof_pubkey;
+        if(!pk) return;
+
+        // Pull totals using existing endpoint (also feeds totals-bar fetch hook)
+        const j = await _fetchJson("/verify_pubkey_and_list?pubkey="+encodeURIComponent(pk));
+        const t = _pickTotals(j) || j || {};
+
+        if (t && window.__HODLXXI_renderTotals) window.__HODLXXI_renderTotals(t);
+        _updateWhoIsPanels(t);
+      }catch(e){
+        console.warn("[HODLXXI] AUTO_TOTALS_FROM_SESSION_V1 refresh failed", e);
+      }
+    }
+
+    setTimeout(refresh, 120);
+    document.addEventListener("visibilitychange", function(){
+      if(!document.hidden) setTimeout(refresh, 80);
     });
-}
 
-document.getElementById('btnOnboard').addEventListener('click', () => openPanel('onboard'));
-document.getElementById('btnChat').addEventListener('click', () => {
-    window.location.href = "{{ url_for('chat') }}";
-});
-document.getElementById('btnExit').addEventListener('click', () => {
-    window.location.href = "{{ url_for('logout') }}";
-});
+    window.__HODLXXI_refreshTotalsFromSession = refresh; // debug hook
+  })();
+  try {
+    window.__HODLXXI_renderTotals = renderTotals;
+    window.__HODLXXI_ensureTotalsBar = ensureTotalsBar;
+    ensureTotalsBar();
+    console.log("[HODLXXI] totals bar initialized");
+  } catch (e) {}
+const origFetch = window.fetch;
+  if (!origFetch || origFetch.__HODLXXI_TOTALS_HOOKED) return;
+
+  window.fetch = async function(...args){
+    const res = await origFetch.apply(this, args);
+    try{
+      const u = String(args[0] && args[0].url ? args[0].url : args[0] || "");
+      if (u.includes("/verify_pubkey_and_list")) {
+        const c = res.clone();
+        c.json().then((j)=>{
+          if (!j) return;
+          // accept top-level totals from backend: {in_total,out_total,ratio}
+          if (("in_total" in j) || ("out_total" in j) || ("ratio" in j)) { renderTotals(j); return; }
+          if (j.totals || j.total || j.totals_v2) renderTotals(j.totals || j.totals_v2 || j.total);
+        }).catch(()=>{});
+      }
+    }catch(e){}
+    return res;
+  };
+  window.fetch.__HODLXXI_TOTALS_HOOKED = 1;
+})();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bindTopButtons);
+  } else {
+    bindTopButtons();
+  }
+})();
         function switchPanelByHash() {
             const h = (location.hash || '').slice(1);
             const showId =
@@ -6860,9 +7732,12 @@ document.getElementById('btnExit').addEventListener('click', () => {
         }
 
         window.addEventListener('hashchange', switchPanelByHash);
-        document.addEventListener('DOMContentLoaded', switchPanelByHash);
-
-        function maskDeepLinkedKeyForLimited() {
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', switchPanelByHash);
+} else {
+  try { switchPanelByHash(); } catch(e){ console.error("[HODLXXI] switchPanelByHash failed", e); }
+}
+function maskDeepLinkedKeyForLimited() {
             try {
                 // Only mask for non-full users
                 if (typeof accessLevel !== 'undefined' && accessLevel === 'full') return;
@@ -6920,12 +7795,90 @@ document.getElementById('btnExit').addEventListener('click', () => {
 
         document.addEventListener('DOMContentLoaded', autoLoadExplorerFromDeepLink);
     </script>
+<script>
+(function(){
+  // FIX_TOTALS_BAR_V1: render Total In/Out from /verify_pubkey_and_list responses (no edits to big inline JS)
+  function renderTotalsBar(t){
+    try{
+      if(!t) return;
+      const host = document.getElementById('explorerPanel') || document.getElementById('homePanel') || document.body;
+      let bar = document.getElementById('hodlxxiTotalsBar');
+      if(!bar){
+        bar = document.createElement('div');
+        bar.id = 'hodlxxiTotalsBar';
+        bar.style.cssText = [
+          "margin:.6rem auto 0",
+          "padding:.45rem .65rem",
+          "max-width:980px",
+          "border:1px solid rgba(0,255,136,.25)",
+          "border-radius:14px",
+          "background:rgba(0,0,0,.35)",
+          "box-shadow:0 0 20px rgba(0,255,136,.12)",
+          "font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace",
+          "font-size:.85rem"
+        ].join(";");
+        const anchor = document.getElementById('pubKey') || host.firstElementChild;
+        if(anchor && anchor.parentNode) anchor.parentNode.insertBefore(bar, anchor);
+        else host.prepend(bar);
+      }
+      const f8 = (x)=> (typeof x === 'number' && isFinite(x)) ? x.toFixed(8).replace(/0+$/,'').replace(/\.$/,'') : String(x ?? 0);
+      const f2 = (x)=> (typeof x === 'number' && isFinite(x)) ? x.toFixed(2) : String(x ?? 0);
+      const ratio = (typeof t.ratio === 'number' && isFinite(t.ratio)) ? t.ratio.toFixed(2) : "0.00";
+      bar.innerHTML =
+        `<span style="opacity:.8">Total In</span> <strong>${f8(t.in_btc ?? t.in_total_btc ?? t.in_total)}</strong> BTC <span style="opacity:.65">($${f2(t.in_usd)})</span>` +
+        ` &nbsp; | &nbsp; <span style="opacity:.8">Total Out</span> <strong>${f8(t.out_btc ?? t.out_total_btc ?? t.out_total)}</strong> BTC <span style="opacity:.65">($${f2(t.out_usd)})</span>` +
+        ` &nbsp; | &nbsp; <span style="opacity:.8">Ratio</span> <strong>${ratio}</strong>`;
+    }catch(e){ console.warn("[HODLXXI] renderTotalsBar failed", e); }
+  }
+
+  const _fetch = window.fetch;
+  if (typeof _fetch !== "function") return;
+
+  window.fetch = function(input, init){
+    const p = _fetch(input, init);
+    try{
+      const url = (typeof input === "string") ? input : (input && input.url) ? input.url : "";
+      if (url && url.indexOf("/verify_pubkey_and_list") !== -1) {
+        return Promise.resolve(p).then((resp)=>{
+          try{
+            const c = resp.clone();
+            c.json().then((data)=>{
+              if (data && data.totals) renderTotalsBar(data.totals);
+            }).catch(()=>{});
+          }catch(e){}
+          return resp;
+        });
+      }
+    }catch(e){}
+    return p;
+  };
+})();
+</script>
 </body>
 </html>
 
     """
     logger.debug("home → access_level=%s", access_level)
+    
     return render_template_string(html, access_level=access_level, initial_pubkey=initial_pubkey)
+
+
+# --- Aliases: panels live inside /home (hash router) ---
+# If any UI link navigates by path, keep it working.
+@app.route("/explorer", methods=["GET"])
+def explorer_alias():
+    return redirect("/home#explorer")
+
+
+@app.route("/onboard", methods=["GET"])
+def onboard_alias():
+    return redirect("/home#onboard")
+
+
+@app.route("/oneword", methods=["GET"])
+def oneword_alias():
+    # legacy / typo route - keep backwards compatibility
+    return redirect("/home")
 
 
 @app.route("/logout")
@@ -6940,6 +7893,16 @@ def verify_pubkey_and_list():
     from decimal import Decimal
 
     pubkey = request.args.get("pubkey")
+
+
+    # FIX_INOUT_TOTALS_V1: compute incoming/outgoing totals from matched descriptors below
+    in_role_btc  = Decimal("0")
+    out_role_btc = Decimal("0")
+    in_role_usd  = Decimal("0")
+    out_role_usd = Decimal("0")
+    ratio = None
+
+
     if not pubkey:
         return jsonify({"valid": False, "error": "No public key provided."}), 400
 
@@ -7009,10 +7972,41 @@ def verify_pubkey_and_list():
             check_btc = float(check_bal)
             check_usd = float(check_bal * btc_price)
 
-            op_if_pub = extract_pubkey_from_op_if(asm)
-            op_else_pub = extract_pubkey_from_op_else(asm)
+            # FIX_VERIFY_USES_TIMELOCK_PUBKEYS_V2
+            op_if_pub, op_else_pub = extract_timelock_pubkeys_from_asm(asm)
+            if not op_if_pub and not op_else_pub:
+                op_if_pub = extract_pubkey_from_op_if(asm)
+                op_else_pub = extract_pubkey_from_op_else(asm)
             op_if_npub = to_npub(op_if_pub) if op_if_pub else None
             op_else_npub = to_npub(op_else_pub) if op_else_pub else None
+
+            # FIX_INOUT_TOTALS_V1: accumulate role totals for the queried pubkey (no pubkey leakage to JSON)
+            try:
+                total_btc = (save_bal + check_bal)
+                total_usd = (total_btc * btc_price)
+
+                role = None
+                if isinstance(pubkey, str) and pubkey.startswith("npub"):
+                    if op_if_npub and op_if_npub == pubkey:
+                        role = "in"
+                    elif op_else_npub and op_else_npub == pubkey:
+                        role = "out"
+                else:
+                    pkl = (pubkey or "").lower()
+                    if op_if_pub and op_if_pub.lower() == pkl:
+                        role = "in"
+                    elif op_else_pub and op_else_pub.lower() == pkl:
+                        role = "out"
+
+                if role == "in":
+                    in_role_btc += total_btc
+                    in_role_usd += total_usd
+                elif role == "out":
+                    out_role_btc += total_btc
+                    out_role_usd += total_usd
+            except Exception:
+                pass
+
 
             nostr_npub = to_npub(op_if_pub) if op_if_pub else None
             truncated_npub = truncate_address(nostr_npub) if nostr_npub else None
@@ -7036,31 +8030,68 @@ def verify_pubkey_and_list():
                 {
                     "raw": masked_raw,
                     "asm": format_asm(asm),
+                    # hide full pubkeys in JSON; provide only tail+ref
+                    "op_if_tail": (op_if_pub[-4:] if op_if_pub else None),
+                    "op_else_tail": (op_else_pub[-4:] if op_else_pub else None),
+                    "op_if_ref": (_pkref_store(op_if_pub) if op_if_pub else None),
+                    "op_else_ref": (_pkref_store(op_else_pub) if op_else_pub else None),
+                    "op_if_pub": None,
+                    "op_else_pub": None,
                     "address": segwit_addr,
                     "truncated_address": truncate_address(segwit_addr) if segwit_addr else None,
                     "qr_code": generate_qr_code(segwit_addr) if segwit_addr else None,
                     "balance_usd": f"{bal_usd:.2f}",
                     "nostr_npub": nostr_npub,
                     "nostr_npub_truncated": truncated_npub,
-                    "op_if_pub": op_if_pub,
-                    "op_else_pub": op_else_pub,
+                    "op_if_pub": None,
+                    "op_if_tail": (op_if_pub[-4:] if op_if_pub else None),
+                    "op_if_ref": (_pkref_store(op_if_pub) if op_if_pub else None),
+                    "op_else_pub": None,
+                    "op_else_tail": (op_else_pub[-4:] if op_else_pub else None),
+                    "op_else_ref": (_pkref_store(op_else_pub) if op_else_pub else None),
                     "script_hex": mask_hex_value(script_hex_val),
                     "saving_balance_usd": f"{save_usd:.2f}",
                     "checking_balance_usd": f"{check_usd:.2f}",
                     "counterparty_online": counterparty_online,
-                    "counterparty_pubkey": counterparty_pubkey,
+                    "counterparty_pubkey": None,
+                    "counterparty_tail": (counterparty_pubkey[-4:] if counterparty_pubkey else None),
+                    "counterparty_ref": (_pkref_store(counterparty_pubkey) if counterparty_pubkey else None),
                     "op_if_npub": op_if_npub,
                     "op_else_npub": op_else_npub,
                     # full-access only
                     "raw_script": raw_script_for_ui,
                     "onboard_link": onboard_link,
-                }
-            )
-
+        })
         if not matched:
             return jsonify({"valid": False, "error": "No matching descriptors found."}), 404
 
-        return jsonify({"valid": True, "descriptors": matched}), 200
+
+        # FIX_INOUT_TOTALS_V1: totals come from role totals accumulated above
+        in_total_btc  = in_role_btc
+        out_total_btc = out_role_btc
+        try:
+            ratio = float(out_total_btc / in_total_btc) if in_total_btc and in_total_btc != 0 else None
+        except Exception:
+            ratio = None
+
+        in_usd_val  = float(in_role_usd)
+        out_usd_val = float(out_role_usd)
+
+        return jsonify({
+            "valid": True,
+            "descriptors": matched,
+            "in_total":  format(in_total_btc,  ".8f"),
+            "out_total": format(out_total_btc, ".8f"),
+            "ratio": ratio,
+
+            # explicit fields for WhoIs panels (USD + BTC)
+            "in_btc":  format(in_total_btc,  ".8f"),
+            "out_btc": format(out_total_btc, ".8f"),
+            "in_usd":  f"{in_usd_val:.2f}",
+            "out_usd": f"{out_usd_val:.2f}",
+            "incoming_usd": f"{in_usd_val:.2f}",
+            "outgoing_usd": f"{out_usd_val:.2f}",
+        }), 200
 
     except Exception as e:
         logger.error("Error in verify_pubkey_and_list: %s", str(e), exc_info=True)
@@ -7087,6 +8118,8 @@ def decode_raw_script():
         asm = decoded.get("asm", "")
         op_if = extract_pubkey_from_op_if(asm)
         op_else = extract_pubkey_from_op_else(asm)
+        else_branches = extract_else_branches(asm)
+        early, late = else_early_late(asm)
         npub_if = to_npub(op_if) if op_if else None
         npub_else = to_npub(op_else) if op_else else None
 
@@ -7111,6 +8144,15 @@ def decode_raw_script():
         return jsonify(
             {
                 "decoded": decoded,
+                "op_if": op_if,
+                "op_else": op_else,
+                "npub_if": npub_if,
+                "npub_else": npub_else,
+                "op_else_branches": else_branches,
+                "else_early_pub": (early.get("pubkey") if early else None),
+                "else_early_lock": (early.get("lock") if early else None),
+                "else_late_pub": (late.get("pubkey") if late else None),
+                "else_late_lock": (late.get("lock") if late else None),
                 "qr": {
                     "full_descriptor": generate_qr_code(full_desc) if full_desc else None,
                     "segwit_address": generate_qr_code(seg_addr) if seg_addr else None,
