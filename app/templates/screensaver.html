@@ -306,7 +306,64 @@
           <div class="chain-stat">
             <div class="chain-label">Session Uptime</div>
             <div class="chain-value" id="navUptime">00:00:00</div>
+          <!-- SCREENSAVER_CHAIN_STATS_V3 -->
+          <div class="chain-stat">
+            <div class="chain-label">Online Users</div>
+            <div class="chain-value" id="navOnlineUsers">…</div>
           </div>
+          <div class="chain-stat">
+            <div class="chain-label">Active Sockets</div>
+            <div class="chain-value" id="navActiveSockets">…</div>
+          </div>
+          <div class="chain-stat">
+            <div class="chain-label">Mempool</div>
+            <div class="chain-value" id="navMempool">…</div>
+          </div>
+          <div class="chain-stat">
+            <div class="chain-label">Peers</div>
+            <div class="chain-value" id="navPeers">…</div>
+          </div>
+          <div class="chain-stat">
+            <div class="chain-label">LND</div>
+            <div class="chain-value" id="navLndState">…</div>
+          </div>
+          <div class="chain-stat">
+            <div class="chain-label">LND Wallet</div>
+            <div class="chain-value" id="navLndWallet">locked</div>
+          </div>
+          <div class="chain-stat">
+            <div class="chain-label">LND Channels</div>
+            <div class="chain-value" id="navLndChannels">locked</div>
+          </div>
+          <!-- /SCREENSAVER_CHAIN_STATS_V3 -->
+
+          </div>
+          <!-- SCREENSAVER_USERSTATS_V1: user/session stats -->
+          <div class="chain-stat">
+            <div class="chain-label">User</div>
+            <div class="chain-value" id="navUser">not logged in</div>
+          </div>
+          <div class="chain-stat">
+            <div class="chain-label">Access Level</div>
+            <div class="chain-value" id="navAccess">—</div>
+          </div>
+          <div class="chain-stat">
+            <div class="chain-label">Role</div>
+            <div class="chain-value" id="navRole">—</div>
+          </div>
+          <div class="chain-stat">
+            <div class="chain-label">Online</div>
+            <div class="chain-value" id="navOnline">—</div>
+          </div>
+          <div class="chain-stat">
+            <div class="chain-label">Connections</div>
+            <div class="chain-value" id="navConns">0</div>
+          </div>
+          <div class="chain-stat">
+            <div class="chain-label">Login Method</div>
+            <div class="chain-value" id="navLoginMethod">—</div>
+          </div>
+
         </div>
       </div>
 
@@ -347,6 +404,33 @@
       try {
         const r = await fetch("/api/public/status", { cache: "no-store" });
         const j = await r.json();
+        // SCREENSAVER_CHAIN_STATS_V3_APPLY: public-safe totals + btc + lnd state
+        try{
+          const ou = document.getElementById("navOnlineUsers");
+          if (ou) ou.textContent = (j && j.online_users != null) ? String(j.online_users) : "n/a";
+          const as = document.getElementById("navActiveSockets");
+          if (as) as.textContent = (j && j.active_sockets != null) ? String(j.active_sockets) : "n/a";
+
+          const btc = (j && j.btc) ? j.btc : {};
+          const mp = document.getElementById("navMempool");
+          if (mp){
+            if (btc && btc.mempool_size != null){
+              const mb = (btc.mempool_bytes != null) ? (btc.mempool_bytes / 1e6) : null;
+              mp.textContent = mb != null ? `${btc.mempool_size} tx / ${mb.toFixed(2)} MB` : `${btc.mempool_size} tx`;
+            } else mp.textContent = "n/a";
+          }
+          const peers = document.getElementById("navPeers");
+          if (peers) peers.textContent = (btc && btc.peers != null) ? String(btc.peers) : "n/a";
+
+          const lnd = (j && j.lnd) ? j.lnd : {};
+          const ls = document.getElementById("navLndState");
+          if (ls){
+            if (lnd && typeof lnd.active === "boolean"){
+              ls.textContent = lnd.active ? "active" : (lnd.state ? String(lnd.state) : "inactive");
+            } else ls.textContent = (lnd && lnd.state) ? String(lnd.state) : "unknown";
+          }
+        }catch(e){}
+
         document.getElementById("hudBlock").textContent =
           (j && j.block_height != null) ? j.block_height : "n/a";
         document.getElementById("hudServerTime").textContent =
@@ -360,7 +444,82 @@
       }
     }
     setInterval(pollStatus, 15000);
+    
+    // SCREENSAVER_POLL_LND_V1: gated LND stats (only when logged in + full)
+    async function pollLnd(){
+      try{
+        const r = await fetch("/api/lnd/status", { cache: "no-store" });
+        if (!r.ok){
+          const w = document.getElementById("navLndWallet");
+          const c = document.getElementById("navLndChannels");
+          if (w) w.textContent = (r.status === 401 || r.status === 403) ? "locked" : `err:${r.status}`;
+          if (c) c.textContent = (r.status === 401 || r.status === 403) ? "locked" : `err:${r.status}`;
+          return;
+        }
+        const j = await r.json();
+        if (!j || !j.ok){
+          const w = document.getElementById("navLndWallet");
+          const c = document.getElementById("navLndChannels");
+          const msg = (j && j.error) ? String(j.error).slice(0, 200) : "err";
+          if (w) w.textContent = "err:" + msg;
+          if (c) c.textContent = "err:" + msg;
+          return;
+        }
+        const wb = j.walletbalance || {};
+        const cs = j.channels_summary || {};
+        const cb = j.channelbalance || {};
+        const w = document.getElementById("navLndWallet");
+        const c = document.getElementById("navLndChannels");
+        if (w) w.textContent = `${wb.confirmed_balance || "0"} sat (total ${wb.total_balance || "0"})`;
+        if (c) c.textContent = `${cs.count || 0} ch | local ${cs.local_sum || 0} / remote ${cs.remote_sum || 0} | spendable ${cb.balance || 0}`;
+      }catch(e){
+        const w = document.getElementById("navLndWallet");
+        const c = document.getElementById("navLndChannels");
+        if (w) w.textContent = "err";
+        if (c) c.textContent = "err";
+      }
+    }
+    setInterval(pollLnd, 20000);
+    pollLnd();
+
     pollStatus();
+
+    // SCREENSAVER_USERSTATS_V1: poll logged-in user/session state
+    function shortPk(pk){
+      pk = String(pk || "");
+      if (!pk) return "";
+      return "…" + pk.slice(-4);
+    }
+
+    async function pollWhoami(){
+      try{
+        const r = await fetch("/api/whoami", { cache: "no-store" });
+        const j = await r.json();
+
+        const logged = !!(j && j.logged_in);
+        const label  = (j && (j.guest_label || "")) ? String(j.guest_label) : "";
+        const pk     = (j && (j.pubkey || "")) ? String(j.pubkey) : "";
+
+        const who = label || (pk ? shortPk(pk) : "");
+        const access = (j && j.access_level) ? String(j.access_level) : "";
+        const role   = (j && j.role) ? String(j.role) : "";
+        const online = (j && typeof j.online === "boolean") ? (j.online ? "online" : "offline") : "—";
+        const conns  = (j && (j.active_connections != null)) ? String(j.active_connections) : "0";
+        const lm     = (j && j.login_method) ? String(j.login_method) : "";
+
+        document.getElementById("navUser").textContent = logged ? (who || "logged in") : "not logged in";
+        document.getElementById("navAccess").textContent = logged ? (access || "limited") : "—";
+        document.getElementById("navRole").textContent   = logged ? (role || "limited")   : "—";
+        document.getElementById("navOnline").textContent = logged ? online : "—";
+        document.getElementById("navConns").textContent  = logged ? conns  : "0";
+        document.getElementById("navLoginMethod").textContent = logged ? (lm || "—") : "—";
+      }catch(e){
+        // keep it quiet; just show unknown
+        try{ document.getElementById("navUser").textContent = "unknown"; }catch(_){}
+      }
+    }
+    setInterval(pollWhoami, 15000);
+    pollWhoami();
 
     // fullscreen on click/tap (debounced to avoid double-click conflict)
     async function goFullscreen() {

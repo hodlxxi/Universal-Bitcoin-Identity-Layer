@@ -631,31 +631,250 @@ def screensaver():
     return render_template("screensaver.html")
 
 
+# PUBLIC_STATUS_EXT_V3: extended public status for screensaver (public-safe, cached)
 @app.route("/api/public/status")
 def api_public_status():
-    import time
+    import time, os, subprocess
 
     now = int(time.time())
     iso = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(now))
 
-    height = None
-    err = None
+    # Presence totals (safe)
+    active_sockets = len(ACTIVE_SOCKETS) if "ACTIVE_SOCKETS" in globals() else 0
+    online_users = len(ONLINE_USERS) if "ONLINE_USERS" in globals() else 0
+
+    # Role breakdown (aggregated only)
+    roles = {"full": 0, "limited": 0, "pin": 0, "random": 0, "other": 0}
+    try:
+        users = list(ONLINE_USERS) if "ONLINE_USERS" in globals() else []
+        for pk in users:
+            role = None
+            try:
+                rec = (ONLINE_USER_META.get(pk) if "ONLINE_USER_META" in globals() else None) or {}
+                role = rec.get("role") if isinstance(rec, dict) else None
+            except Exception:
+                role = None
+            if not role:
+                try:
+                    role = (ONLINE_META.get(pk) if "ONLINE_META" in globals() else None)
+                except Exception:
+                    role = None
+            role = (str(role).strip().lower() if role else "limited")
+            if role in roles:
+                roles[role] += 1
+            elif role.startswith("guest"):
+                roles["random"] += 1
+            else:
+                roles["other"] += 1
+    except Exception:
+        pass
+
+    # Process uptime/load (safe)
+    try:
+        uptime_sec = int(time.time() - float(PROCESS_START_TIME))
+    except Exception:
+        uptime_sec = None
+    try:
+        l1, l5, l15 = os.getloadavg()
+        load = {"1": l1, "5": l5, "15": l15}
+    except Exception:
+        load = None
+
+    # Cached bitcoind stats (public-safe)
+    btc = {}
+    try:
+        cache = getattr(api_public_status, "_btc_cache", None)
+        ttl = 10
+        if cache and (time.time() - cache.get("ts", 0)) < ttl:
+            btc = cache.get("data", {}) or {}
+        else:
+            rpc = get_rpc_connection()
+            err = None
+            chain = None
+            height = None
+            headers = None
+            ibd = None
+            vprog = None
+            peers = None
+            mp_size = None
+            mp_bytes = None
+
+            try:
+                bci = rpc.getblockchaininfo()
+                chain = bci.get("chain")
+                height = bci.get("blocks")
+                headers = bci.get("headers")
+                ibd = bci.get("initialblockdownload")
+                vprog = bci.get("verificationprogress")
+            except Exception as e:
+                err = str(e)
+
+            try:
+                mp = rpc.getmempoolinfo()
+                mp_size = mp.get("size")
+                mp_bytes = mp.get("bytes")
+            except Exception as e:
+                if not err: err = str(e)
+
+            try:
+                ni = rpc.getnetworkinfo()
+                peers = ni.get("connections")
+            except Exception as e:
+                if not err: err = str(e)
+
+            btc = {
+                "chain": chain,
+                "block_height": height,
+                "headers": headers,
+                "ibd": ibd,
+                "verificationprogress": vprog,
+                "mempool_size": mp_size,
+                "mempool_bytes": mp_bytes,
+                "peers": peers,
+                "error": err,
+            }
+            api_public_status._btc_cache = {"ts": time.time(), "data": btc}
+    except Exception as e:
+        btc = {"error": str(e)}
+
+    # LND state only (public-safe)
+    lnd = {}
+    try:
+        cache = getattr(api_public_status, "_lnd_cache", None)
+        ttl = 10
+        if cache and (time.time() - cache.get("ts", 0)) < ttl:
+            lnd = cache.get("data", {}) or {}
+        else:
+            state = None
+            try:
+                r = subprocess.run(["systemctl","is-active","lnd.service"], capture_output=True, text=True, timeout=0.6)
+                state = (r.stdout or "").strip() or (r.stderr or "").strip() or "unknown"
+            except Exception as e:
+                state = f"unknown:{e.__class__.__name__}"
+            lnd = {"active": True if state == "active" else False, "state": state}
+            api_public_status._lnd_cache = {"ts": time.time(), "data": lnd}
+    except Exception as e:
+        lnd = {"active": False, "state": f"unknown:{e.__class__.__name__}"}
+
+    # Back-compat fields
+    height = btc.get("block_height")
+    err = btc.get("error")
+
+    return jsonify({
+        "server_time_epoch": now,
+        "server_time_utc": iso,
+        "block_height": height,
+        "error": err,
+
+        "online_users": online_users,
+        "active_sockets": active_sockets,
+        "online_roles": roles,
+        "uptime_sec": uptime_sec,
+        "load": load,
+
+        "btc": btc,
+        "lnd": lnd,
+    })
+
+# /PUBLIC_STATUS_EXT_V3
+
+
+# LND_STATUS_API_V1: wallet/channel stats (login + full only)
+@app.route("/api/lnd/status", methods=["GET"])
+def api_lnd_status():
+    import os, time, json, subprocess
+    from flask import jsonify, session
+
+    if not (session.get("logged_in_pubkey") or "").strip():
+        return jsonify(ok=False, error="Not logged in"), 401
+    if (session.get("access_level") or "").strip().lower() != "full":
+        return jsonify(ok=False, error="Full access required"), 403
+
+    cache = getattr(api_lnd_status, "_cache", None)
+    ttl = 10
+    if cache and (time.time() - cache.get("ts", 0)) < ttl:
+        return jsonify(cache.get("data", {})), 200
+
+    lncli_bin = os.getenv("LND_LNCLI_BIN", "/usr/local/bin/lncli")
+    lnddir = os.getenv("LND_DIR", "/var/lib/lnd")
+
+    # Prefer runtime copies if present
+    tls_candidates = [
+        os.getenv("LND_TLS_CERT", ""),
+        "/srv/ubid/runtime/lnd/tls.cert",
+        f"{lnddir}/tls.cert",
+    ]
+    mac_candidates = [
+        os.getenv("LND_READONLY_MACAROON", ""),
+        os.getenv("LND_MACAROON", ""),
+        "/srv/ubid/runtime/lnd/readonly.macaroon",
+        f"{lnddir}/data/chain/bitcoin/mainnet/readonly.macaroon",
+    ]
+    tls = next((x for x in tls_candidates if x and os.path.exists(x)), None)
+    mac = next((x for x in mac_candidates if x and os.path.exists(x)), None)
+
+    if not tls or not mac:
+        data = {"ok": False, "error": "LND cert/macaroon not found", "active": False}
+        api_lnd_status._cache = {"ts": time.time(), "data": data}
+        return jsonify(data), 500
+
+    base = [lncli_bin, f"--lnddir={lnddir}", f"--tlscertpath={tls}", f"--macaroonpath={mac}"]
+
+    rpcserver = (os.getenv("LND_RPCSERVER") or "127.0.0.1:10009").strip()
+    if rpcserver:
+        base.append(f"--rpcserver={rpcserver}")
+    def run(args, timeout=8.0):
+        r = subprocess.run(base + args, capture_output=True, text=True, timeout=timeout)
+        if r.returncode != 0:
+            msg = (r.stderr or r.stdout or "").strip()
+            raise RuntimeError(msg[:300] if msg else "lncli error")
+        out = (r.stdout or "").strip()
+        return json.loads(out) if out else {}
 
     try:
-        rpc = get_rpc_connection()
-        height = rpc.getblockcount()
-    except Exception as e:
-        err = str(e)
+        info = run(["getinfo"])
+        wb   = run(["walletbalance"])
+        cb   = run(["channelbalance"])
+        ch   = run(["listchannels"], timeout=12.0)
+        # summarize channels (avoid huge payload)
+        chans = ch.get("channels") or []
+        local_sum  = sum(int(x.get("local_balance") or 0) for x in chans)
+        remote_sum = sum(int(x.get("remote_balance") or 0) for x in chans)
 
-    return jsonify(
-        {
-            "server_time_epoch": now,
-            "server_time_utc": iso,
-            "block_height": height,
-            "error": err,
+        data = {
+            "ok": True,
+            "active": True,
+            "state": "active",
+            "getinfo": {
+                "alias": info.get("alias"),
+                "synced_to_chain": info.get("synced_to_chain"),
+                "synced_to_graph": info.get("synced_to_graph"),
+                "block_height": info.get("block_height"),
+                "num_peers": info.get("num_peers"),
+                "num_active_channels": info.get("num_active_channels"),
+            },
+            "walletbalance": {
+                "confirmed_balance": wb.get("confirmed_balance"),
+                "unconfirmed_balance": wb.get("unconfirmed_balance"),
+                "total_balance": wb.get("total_balance"),
+            },
+            "channelbalance": {
+                "balance": cb.get("balance"),
+                "pending_open_balance": cb.get("pending_open_balance"),
+            },
+            "channels_summary": {
+                "count": len(chans),
+                "local_sum": local_sum,
+                "remote_sum": remote_sum,
+            },
         }
-    )
+    except Exception as e:
+        data = {"ok": False, "active": False, "error": f"{e.__class__.__name__}: {str(e)[:260]}"}
 
+    api_lnd_status._cache = {"ts": time.time(), "data": data}
+    return jsonify(data), 200
+
+# /LND_STATUS_API_V1
 
 # Redis client
 # Redis client for sessions
@@ -8651,20 +8870,76 @@ def is_valid_pubkey(pubkey: str) -> bool:
         return False
 
 
-# WHOAMI_V1
+# WHOAMI_V2_USERSTATS
+# WHOAMI_V3 (screensaver-compatible)
 @app.route("/api/whoami", methods=["GET"])
 def api_whoami():
     spk = (session.get("logged_in_pubkey") or "").strip()
+    lvl = (session.get("access_level") or "limited").strip()
+    glabel = (session.get("guest_label") or "").strip()
+    lm = (session.get("login_method") or "").strip()
+
+    # If not logged in, keep existing behavior: 401 JSON (screensaver handles this)
+    if not spk:
+        return jsonify(ok=False, error="Not logged in", logged_in=False), 401
+
+    # role classification (no external deps)
+    role = (lvl or "limited").lower()
+    try:
+        gl = glabel.lower()
+        if gl.startswith("guest-"):
+            role = "pin"
+            if "random" in gl:
+                role = "random"
+    except Exception:
+        pass
+    try:
+        if spk.startswith("guest-"):
+            role = "random"
+        if spk.startswith("guest-pin-"):
+            role = "pin"
+    except Exception:
+        pass
+
+    # active socket count for this pubkey
+    try:
+        conns = len([sid for sid, who in ACTIVE_SOCKETS.items() if who == spk]) if spk else 0
+    except Exception:
+        conns = 0
+
+    # online flag (SocketIO presence)
+    try:
+        online = bool(spk) and (spk in ONLINE_USERS)
+    except Exception:
+        online = False
+
+    # display helper (optional)
+    def short_pk(x: str) -> str:
+        if not x:
+            return "—"
+        if len(x) > 10:
+            return x[:2] + "…" + x[-4:]
+        return x
+
+    try:
+        display = glabel or (SPECIAL_NAMES.get(spk) if "SPECIAL_NAMES" in globals() else "") or short_pk(spk)
+    except Exception:
+        display = short_pk(spk)
+
     return jsonify(
         ok=True,
-        logged_in=bool(spk),
+        logged_in=True,
         pubkey=spk,
-        access_level=session.get("access_level", "limited"),
-        login_method=session.get("login_method", ""),
+        access_level=lvl or "limited",
+        login_method=lm,
+        guest_label=glabel,
+        role=role,
+        online=online,
+        active_connections=conns,
+        display=display,
     )
+# /WHOAMI_V3
 
-
-# /WHOAMI_V1
 @app.route("/api/challenge", methods=["POST"])
 def api_challenge():
     data = request.get_json() or {}
