@@ -76,7 +76,7 @@ cp env.example .env
 docker compose up --build
 ```
 
-The Postgres, Redis, and Bitcoin services wait for health checks before the Flask app starts. Mounts for `./app`, `./logs`, and `./keys` ensure code edits and generated keys persist on the host. See `docs/DEV_ONBOARDING_CHECKLIST.md` for the full onboarding flow and smoke tests.
+The Postgres, Redis, and Bitcoin services wait for health checks before the Flask app starts. Mounts for `./app`, `./logs`, and `./keys` ensure code edits and generated keys persist on the host. See `docs/README.md` for the Docs v2 map and `docs/archive/DEV_ONBOARDING_CHECKLIST.md` for the legacy onboarding checklist.
 
 See [`TESTING.md`](TESTING.md) for pytest, mypy, and linting guidance.
 
