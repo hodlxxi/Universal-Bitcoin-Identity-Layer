@@ -601,6 +601,40 @@ def truncate_key(key: str, head: int = 6, tail: int = 4) -> str:
 
 app = Flask(__name__)
 
+
+# VISIT_LOG_V1: per-request identity log (no query strings, no secrets)
+from flask import request
+
+@app.after_request
+def _hodl_visit_log(resp):
+    try:
+        path = request.path or ""
+        # avoid noise
+        if path.startswith("/static") or path in ("/favicon.ico",):
+            return resp
+
+        # real client ip if nginx forwards it; else remote_addr
+        ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+
+        pub = session.get("logged_in_pubkey")
+        lvl = session.get("access_level")
+        lm  = session.get("login_method")
+        gl  = session.get("guest_label")
+
+        kind = "anon"
+        if pub:
+            pub_s = str(pub)
+            kind = "guest" if pub_s.startswith("guest-") or gl or (lm in ("guest","pin")) else "key"
+        tail = (str(pub)[-8:] if pub else "")
+
+        app.logger.info(
+            "VISIT ip=%s kind=%s lvl=%s lm=%s pub_tail=%s %s %s -> %s",
+            ip, kind, lvl, lm, tail, request.method, path, resp.status_code
+        )
+    except Exception:
+        pass
+    return resp
+
 # Cookie domain: allow sessions to work across apex + www
 _cookie_domain = os.getenv("SESSION_COOKIE_DOMAIN")
 if _cookie_domain:
