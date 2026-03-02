@@ -26,7 +26,7 @@ def _local_only() -> bool:
         return False
     return request.remote_addr in ("127.0.0.1", "::1")
 
-def _lncli(args: list[str], timeout: int = 8) -> dict:
+def _lncli(args: list[str], timeout: int = 25) -> dict:
     os.makedirs(LNDIR, exist_ok=True)
     cmd = [
         LNCLI,
