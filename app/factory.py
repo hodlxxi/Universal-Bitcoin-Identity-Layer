@@ -175,8 +175,10 @@ def register_blueprints(app: Flask) -> None:
 
     # OAuth client billing endpoints
     from app.blueprints.billing_agent import billing_agent_bp
+    from app.blueprints.agent import agent_bp
 
     app.register_blueprint(billing_agent_bp)
+    app.register_blueprint(agent_bp)
 
     logger.info("✅ All blueprints registered")
 
