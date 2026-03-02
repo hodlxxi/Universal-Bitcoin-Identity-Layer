@@ -601,6 +601,10 @@ def truncate_key(key: str, head: int = 6, tail: int = 4) -> str:
 
 app = Flask(__name__)
 
+# --- Internal Agent Invoice API (Option A: agent -> localhost web app) ---
+from app.agent_invoice_api import bp as agent_invoice_bp
+app.register_blueprint(agent_invoice_bp)
+
 
 # VISIT_LOG_V1: per-request identity log (no query strings, no secrets)
 from flask import request
@@ -1029,6 +1033,12 @@ def _dev_dashboard_full_only():
 
 @app.before_request
 def _oauth_public_allowlist():
+
+    # EXEMPT: allow agent invoice endpoints without session (protected by localhost + Bearer in blueprint)
+    from flask import request as _req
+    p = _req.path or ""
+    if p.startswith("/api/internal/agent/invoice"):
+        return
     # PAYG_BILLING_AGENT_BYPASS_ALL_V1: never block billing-agent bearer endpoints with session gates
     from flask import request as _req
     if (_req.path or '').startswith('/api/billing/agent/'):
@@ -1851,6 +1861,12 @@ def generate_challenge():
 # --- Minimal login/guest/dev helpers ---------------------------------
 @app.before_request
 def check_auth():
+
+    # EXEMPT: agent invoice endpoints bypass session/login gate (protected by localhost + Bearer token)
+    from flask import request as _req
+    p = (_req.path or "")
+    if p.startswith("/api/internal/agent/invoice"):
+        return None
     # PUBLIC PREVIEW ROUTES (no login required)
     from flask import request as flask_request
 
@@ -8787,6 +8803,12 @@ PUBLIC_API_PATHS = (
 
 @app.before_request
 def _public_guard_for_lnurl():
+
+    # EXEMPT: agent invoice endpoints bypass session/login gate (protected by localhost + Bearer token)
+    from flask import request as _req
+    p = (_req.path or "")
+    if p.startswith("/api/internal/agent/invoice"):
+        return None
     # PAYG_BILLING_AGENT_BYPASS_ALL_V1: never block billing-agent bearer endpoints with session gates
     from flask import request as _req
     if (_req.path or '').startswith('/api/billing/agent/'):
@@ -11434,6 +11456,12 @@ _cleanup_once = {"done": False}
 
 @app.before_request
 def _run_cleanup_once():
+
+    # EXEMPT: agent invoice endpoints bypass session/login gate (protected by localhost + Bearer token)
+    from flask import request as _req
+    p = (_req.path or "")
+    if p.startswith("/api/internal/agent/invoice"):
+        return None
     # PAYG_BILLING_AGENT_BYPASS_ALL_V1: never block billing-agent bearer endpoints with session gates
     from flask import request as _req
     if (_req.path or '').startswith('/api/billing/agent/'):
