@@ -446,3 +446,37 @@ class ProofOfFunds(Base):
 
     def __repr__(self):
         return f"<ProofOfFunds(user_id={self.user_id}, btc={self.total_btc}, level={self.privacy_level})>"
+
+
+class AgentJob(Base):
+    """Paid agent job state for Agent UBID MVP."""
+
+    __tablename__ = "agent_jobs"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    job_type = Column(String(64), nullable=False)
+    request_json = Column(JSON, nullable=False)
+    request_hash = Column(String(64), nullable=False, index=True)
+    sats = Column(Integer, nullable=False)
+    payment_request = Column(Text, nullable=False)
+    payment_lookup_id = Column(String(255), nullable=False)
+    payment_hash = Column(String(64), nullable=False, index=True)
+    status = Column(String(32), nullable=False, default="invoice_pending", index=True)
+    result_json = Column(JSON)
+    result_hash = Column(String(64))
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+
+
+class AgentEvent(Base):
+    """Signed attestation log entries for Agent UBID MVP."""
+
+    __tablename__ = "agent_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(String(36), ForeignKey("agent_jobs.id"), nullable=False, index=True)
+    event_hash = Column(String(64), nullable=False, unique=True, index=True)
+    prev_event_hash = Column(String(64), index=True)
+    event_json = Column(JSON, nullable=False)
+    signature = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False, index=True)
