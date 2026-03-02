@@ -104,3 +104,9 @@ logs
 # if they ever become real dirs
 jwks/
 logs/
+
+# --- local backup artifacts ---
+*.broken.*
+*.WORKING_FIX_START.*
+*.bak.*
+*~ 

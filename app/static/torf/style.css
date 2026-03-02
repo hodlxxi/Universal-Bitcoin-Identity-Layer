@@ -1,0 +1,99 @@
+:root {
+  --bg: #000000;
+  --green: #00ff88;
+  --white: #e6e6e6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+body {
+  color: var(--green);
+  font-family: "Courier New", Courier, monospace;
+}
+
+#screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: clamp(18px, 3vw, 40px);
+}
+
+#terminal {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
+  font-size: clamp(15px, 1.35vw, 22px);
+}
+
+#cursor {
+  display: inline-block;
+  color: var(--green);
+  margin-left: 0.2ch;
+  animation: slow-blink 1.8s steps(1, end) infinite;
+}
+
+#cursor.white {
+  color: var(--white);
+}
+
+.white {
+  color: var(--white);
+}
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 3.8s ease;
+}
+
+#overlay.visible {
+  opacity: 1;
+}
+
+.hidden {
+  display: none;
+}
+
+@keyframes slow-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden; /* чтобы не скроллилась вся страница */
+}
+
+#screen {
+  height: 100vh;
+  overflow-y: auto;              /* скролл внутри экрана */
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+#terminal {
+  padding-top: 40vh;
+  padding-bottom: 40vh;
+}
