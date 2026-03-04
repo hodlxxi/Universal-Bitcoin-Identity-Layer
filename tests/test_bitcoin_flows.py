@@ -32,7 +32,7 @@ def app():
     test_config = {
         "FLASK_SECRET_KEY": "test_secret",
         "FLASK_ENV": "testing",
-        "JWKS_DIR": "/tmp/test_jwks",
+        "JWKS_DIR": "/srv/ubid-staging/runtime/test_jwks",
         "DATABASE_URL": "sqlite:///:memory:",
         "TESTING": True,
     }
