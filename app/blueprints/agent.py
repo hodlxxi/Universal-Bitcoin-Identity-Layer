@@ -2,7 +2,9 @@
 
 import hashlib
 import os
-from datetime import datetime, timezone
+import time
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request
 
@@ -16,6 +18,21 @@ agent_bp = Blueprint("agent", __name__)
 PING_SATS = 21
 ATTESTATION_SATS = 1
 MAX_JOBS_PER_DAY = 100
+
+IP_WINDOW_SECONDS = 60
+IP_MAX_REQUESTS = 20
+_ip_requests = defaultdict(list)
+
+
+def _check_ip_rate_limit() -> bool:
+    ip = request.remote_addr or "unknown"
+    now = time.time()
+    arr = _ip_requests[ip]
+    arr[:] = [t for t in arr if now - t < IP_WINDOW_SECONDS]
+    if len(arr) >= IP_MAX_REQUESTS:
+        return False
+    arr.append(now)
+    return True
 
 def _is_production_mode() -> bool:
     env = (os.getenv("FLASK_ENV") or "").lower()
@@ -58,57 +75,102 @@ def _payment_hash(invoice_lookup_id: str) -> str:
     return hashlib.sha256(invoice_lookup_id.encode("utf-8")).hexdigest()
 
 
+JOB_REGISTRY = {
+    "ping": {
+        "price_sats": PING_SATS,
+        "memo": "Agent UBID ping job",
+        "input_schema": {
+            "payload": "object"
+        },
+        "output_schema": {
+            "ok": "boolean",
+            "job_type": "string",
+            "echo": "object"
+        },
+    },
+    "verify_signature": {
+        "price_sats": PING_SATS,
+        "memo": "Agent UBID verify_signature job",
+        "input_schema": {
+            "message": "string",
+            "signature": "hex",
+            "pubkey": "compressed secp256k1 hex"
+        },
+        "output_schema": {
+            "ok": "boolean",
+            "job_type": "string",
+            "valid": "boolean"
+        },
+    },
+    "covenant_decode": {
+        "price_sats": PING_SATS,
+        "memo": "Agent UBID covenant_decode job",
+        "input_schema": {
+            "script_hex": "hex"
+        },
+        "output_schema": {
+            "ok": "boolean",
+            "job_type": "string",
+            "decoded": "string",
+            "has_cltv": "boolean"
+        },
+    },
+}
+
+
+def _job_spec(job_type: str) -> dict | None:
+    return JOB_REGISTRY.get(job_type)
+
+
+def _job_result(job: AgentJob, payload: dict) -> dict:
+    if job.job_type == "verify_signature":
+        message = str(payload.get("message", ""))
+        signature_hex = str(payload.get("signature", ""))
+        pubkey_hex = str(payload.get("pubkey", ""))
+        valid = verify_message(message.encode("utf-8"), signature_hex, pubkey_hex)
+        return {
+            "ok": True,
+            "job_type": job.job_type,
+            "valid": valid,
+        }
+
+    if job.job_type == "covenant_decode":
+        script_hex = str(payload.get("script_hex", ""))
+        return {
+            "ok": True,
+            "job_type": job.job_type,
+            "script_hex": script_hex,
+            "decoded": f"script({script_hex})",
+            "has_cltv": "b1" in script_hex.lower(),
+        }
+
+    return {
+        "ok": True,
+        "job_type": job.job_type,
+        "echo": payload,
+    }
+
+
 @agent_bp.get("/agent/capabilities")
 def capabilities():
     payload = {
         "agent_pubkey": get_agent_pubkey_hex(),
         "version": "0.1",
+        "service_name": "HODLXXI Agent UBID",
+        "service_description": "Lightning-paid agent with signed receipts, attestations, and reputation",
+        "operator": "HODLXXI",
+        "network": "bitcoin",
+        "supports_payment_settlement_check": True,
         "endpoints": {
             "request": "/agent/request",
             "job": "/agent/jobs/<job_id>",
             "verify": "/agent/verify/<job_id>",
             "attestations": "/agent/attestations",
             "reputation": "/agent/reputation",
+            "chain_health": "/agent/chain/health",
         },
         "pricing": {"ping_sats": PING_SATS, "attestation_sats": ATTESTATION_SATS},
-        "job_types": {
-            "ping": {
-                "price_sats": PING_SATS,
-                "input_schema": {
-                    "payload": "object"
-                },
-                "output_schema": {
-                    "ok": "boolean",
-                    "job_type": "string",
-                    "echo": "object"
-                }
-            },
-            "verify_signature": {
-                "price_sats": PING_SATS,
-                "input_schema": {
-                    "message": "string",
-                    "signature": "hex",
-                    "pubkey": "compressed secp256k1 hex"
-                },
-                "output_schema": {
-                    "ok": "boolean",
-                    "job_type": "string",
-                    "valid": "boolean"
-                }
-            },
-            "covenant_decode": {
-                "price_sats": PING_SATS,
-                "input_schema": {
-                    "script_hex": "hex"
-                },
-                "output_schema": {
-                    "ok": "boolean",
-                    "job_type": "string",
-                    "decoded": "string",
-                    "has_cltv": "boolean"
-                }
-            }
-        },
+        "job_types": JOB_REGISTRY,
         "limits": {"max_jobs_per_day": MAX_JOBS_PER_DAY},
         "timestamp": _iso_now(),
         "sig_scheme": "secp256k1",
@@ -119,27 +181,72 @@ def capabilities():
 
 @agent_bp.post("/agent/request")
 def create_job_request():
+    if not _check_ip_rate_limit():
+        return jsonify({"error": "ip_rate_limited"}), 429
+
     data = request.get_json(silent=True) or {}
     job_type = data.get("job_type")
     payload = data.get("payload") or {}
 
-    if job_type not in {"ping", "verify_signature", "covenant_decode"}:
+    if len(str(payload)) > 10000:
+        return jsonify({"error": "payload_too_large"}), 400
+
+    spec = _job_spec(job_type)
+    if not spec:
         return jsonify({"error": "unsupported_job_type"}), 400
+
+    with session_scope() as session:
+        since = datetime.now(timezone.utc) - timedelta(days=1)
+        jobs_last_day = (
+            session.query(AgentJob)
+            .filter(AgentJob.created_at >= since)
+            .count()
+        )
+        if jobs_last_day >= MAX_JOBS_PER_DAY:
+            return jsonify(
+                {"error": "rate_limited", "message": "daily job limit reached"}
+            ), 429
 
     request_payload = {"job_type": job_type, "payload": payload}
     req_hash = _sha256_hex(request_payload)
 
-    if job_type == "ping":
-        sats = PING_SATS
-        memo = "Agent UBID ping job"
-    elif job_type == "verify_signature":
-        sats = PING_SATS
-        memo = "Agent UBID verify_signature job"
-    else:
-        sats = PING_SATS
-        memo = "Agent UBID covenant_decode job"
+    with session_scope() as session:
+        existing_job = (
+            session.query(AgentJob)
+            .filter(AgentJob.request_hash == req_hash)
+            .order_by(AgentJob.created_at.desc())
+            .first()
+        )
+        if existing_job and existing_job.status in {"invoice_pending", "done"}:
+            existing_event = (
+                session.query(AgentEvent)
+                .filter_by(job_id=existing_job.id)
+                .order_by(AgentEvent.created_at.desc())
+                .first()
+            )
+            return jsonify(
+                {
+                    "job_id": existing_job.id,
+                    "invoice": existing_job.payment_request,
+                    "payment_hash": existing_job.payment_hash,
+                    "status": existing_job.status,
+                    "receipt": existing_event.event_json if existing_event else None,
+                    "deduplicated": True,
+                }
+            ), 200
 
-    invoice, invoice_lookup_id = create_invoice(sats, memo, get_agent_pubkey_hex())
+    sats = int(spec["price_sats"])
+    memo = str(spec["memo"])
+
+    try:
+        invoice, invoice_lookup_id = create_invoice(sats, memo, get_agent_pubkey_hex())
+    except Exception as e:
+        return jsonify(
+            {
+                "error": "invoice_create_failed",
+                "message": str(e),
+            }
+        ), 502
 
     with session_scope() as session:
         job = AgentJob(
@@ -171,32 +278,7 @@ def create_job_request():
 
 def _build_receipt(job: AgentJob, prev_event_hash: str | None) -> dict:
     payload = job.request_json.get("payload", {}) or {}
-
-    if job.job_type == "verify_signature":
-        message = str(payload.get("message", ""))
-        signature_hex = str(payload.get("signature", ""))
-        pubkey_hex = str(payload.get("pubkey", ""))
-        valid = verify_message(message.encode("utf-8"), signature_hex, pubkey_hex)
-        result_payload = {
-            "ok": True,
-            "job_type": job.job_type,
-            "valid": valid,
-        }
-    elif job.job_type == "covenant_decode":
-        script_hex = str(payload.get("script_hex", ""))
-        result_payload = {
-            "ok": True,
-            "job_type": job.job_type,
-            "script_hex": script_hex,
-            "decoded": f"script({script_hex})",
-            "has_cltv": "b1" in script_hex.lower(),
-        }
-    else:
-        result_payload = {
-            "ok": True,
-            "job_type": job.job_type,
-            "echo": payload,
-        }
+    result_payload = _job_result(job, payload)
 
     job.result_json = result_payload
     job.result_hash = _sha256_hex(result_payload)
@@ -356,6 +438,46 @@ def verify_job_receipt(job_id: str):
                 "agent_pubkey": agent_pubkey,
                 "event_hash": event_hash,
                 "receipt": receipt,
+            }
+        )
+
+
+@agent_bp.get("/agent/chain/health")
+def chain_health():
+    with session_scope() as session:
+        events = (
+            session.query(AgentEvent)
+            .order_by(AgentEvent.created_at.asc())
+            .all()
+        )
+
+        if not events:
+            return jsonify(
+                {
+                    "agent_pubkey": get_agent_pubkey_hex(),
+                    "count": 0,
+                    "latest_event_hash": None,
+                    "latest_prev_event_hash": None,
+                    "chain_ok": True,
+                }
+            )
+
+        chain_ok = True
+        prev_hash = None
+        for event in events:
+            if event.prev_event_hash != prev_hash:
+                chain_ok = False
+                break
+            prev_hash = event.event_hash
+
+        latest = events[-1]
+        return jsonify(
+            {
+                "agent_pubkey": get_agent_pubkey_hex(),
+                "count": len(events),
+                "latest_event_hash": latest.event_hash,
+                "latest_prev_event_hash": latest.prev_event_hash,
+                "chain_ok": chain_ok,
             }
         )
 
