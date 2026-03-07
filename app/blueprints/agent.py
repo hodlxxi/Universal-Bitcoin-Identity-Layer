@@ -168,6 +168,7 @@ def capabilities():
             "attestations": "/agent/attestations",
             "reputation": "/agent/reputation",
             "chain_health": "/agent/chain/health",
+            "marketplace_listing": "/agent/marketplace/listing",
         },
         "pricing": {"ping_sats": PING_SATS, "attestation_sats": ATTESTATION_SATS},
         "job_types": JOB_REGISTRY,
@@ -478,6 +479,69 @@ def chain_health():
                 "latest_event_hash": latest.event_hash,
                 "latest_prev_event_hash": latest.prev_event_hash,
                 "chain_ok": chain_ok,
+            }
+        )
+
+
+@agent_bp.get("/agent/marketplace/listing")
+def marketplace_listing():
+    with session_scope() as session:
+        jobs = session.query(AgentJob).all()
+        events = (
+            session.query(AgentEvent)
+            .order_by(AgentEvent.created_at.asc())
+            .all()
+        )
+
+        total_jobs = len(jobs)
+        completed_jobs = sum(1 for j in jobs if j.status == "done")
+
+        job_types_count = {}
+        for j in jobs:
+            job_types_count[j.job_type] = job_types_count.get(j.job_type, 0) + 1
+
+        chain_ok = True
+        prev_hash = None
+        for event in events:
+            if event.prev_event_hash != prev_hash:
+                chain_ok = False
+                break
+            prev_hash = event.event_hash
+
+        latest_event_hash = events[-1].event_hash if events else None
+
+        return jsonify(
+            {
+                "service_name": "HODLXXI Agent UBID",
+                "service_description": "Lightning-paid agent with signed receipts, attestations, and reputation",
+                "operator": "HODLXXI",
+                "agent_pubkey": get_agent_pubkey_hex(),
+                "network": "bitcoin",
+                "job_types": JOB_REGISTRY,
+                "pricing": {
+                    "ping_sats": PING_SATS,
+                    "attestation_sats": ATTESTATION_SATS,
+                },
+                "endpoints": {
+                    "request": "/agent/request",
+                    "job": "/agent/jobs/<job_id>",
+                    "verify": "/agent/verify/<job_id>",
+                    "attestations": "/agent/attestations",
+                    "reputation": "/agent/reputation",
+                    "chain_health": "/agent/chain/health",
+                    "marketplace_listing": "/agent/marketplace/listing",
+                },
+                "reputation": {
+                    "total_jobs": total_jobs,
+                    "completed_jobs": completed_jobs,
+                    "job_types": job_types_count,
+                    "attestations_count": len(events),
+                },
+                "chain_health": {
+                    "chain_ok": chain_ok,
+                    "latest_event_hash": latest_event_hash,
+                    "count": len(events),
+                },
             }
         )
 
