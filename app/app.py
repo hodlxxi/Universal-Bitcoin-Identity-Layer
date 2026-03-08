@@ -107,6 +107,7 @@ from app.security import init_security, limiter
 from app.tokens import issue_rs256_jwt
 from app.pof_routes import pof_bp, pof_api_bp
 from app.dev_routes import dev_bp
+from app.blueprints.agent import agent_bp
 
 # from app.playground_routes import playground_bp   # <-- ADD THIS
 from flask import make_response
@@ -928,6 +929,7 @@ app.register_blueprint(pof_bp)
 app.register_blueprint(oidc_bp)
 app.register_blueprint(pof_api_bp)
 app.register_blueprint(dev_bp, url_prefix="/dev")
+app.register_blueprint(agent_bp)
 # app.register_blueprint(playground_bp)
 
 OAUTH_PATH_PREFIXES = ("/oauth/", "/oauthx/")
@@ -9390,7 +9392,7 @@ def root_redirect():
 
     try:
         if session.get("logged_in_pubkey"):
-            return redirect(url_for("home"))
+            return redirect(url_for("ui.legacy_home_route"))
     except Exception:
         pass
     return redirect("/screensaver", code=302)
