@@ -11,7 +11,7 @@ Implements the Flask application factory pattern with:
 import logging
 from typing import Optional
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from flask_socketio import SocketIO
 
 from app.audit_logger import init_audit_logger
@@ -124,6 +124,11 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     register_request_handlers(app)
 
     logger.info("🚀 Application factory completed successfully")
+
+    @app.route("/.well-known/agent.json", methods=["GET"])
+    def well_known_agent_json():
+        return send_from_directory("/srv/ubid-staging/.well-known", "agent.json", mimetype="application/json")
+
     return app
 
 

@@ -12360,3 +12360,6 @@ def api_hide_manifesto():
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+
