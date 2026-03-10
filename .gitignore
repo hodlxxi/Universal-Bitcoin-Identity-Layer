@@ -87,3 +87,27 @@ app/templates/*.bak.*
 # legacy artifacts removed
 app/static/docs.zip
 app/static/play.html
+
+# runtime / generated / secrets
+runtime/
+logs/
+jwks/
+*.log
+*.pem
+*.macaroon
+profiles.json
+
+# root-level symlinks (git sees these as files)
+jwks
+logs
+
+# if they ever become real dirs
+jwks/
+logs/
+
+# --- local backup artifacts ---
+*.broken.*
+*.WORKING_FIX_START.*
+*.bak.*
+*~ 
+venv-staging/

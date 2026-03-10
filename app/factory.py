@@ -9,9 +9,10 @@ Implements the Flask application factory pattern with:
 """
 
 import logging
+from pathlib import Path
 from typing import Optional
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from flask_socketio import SocketIO
 
 from app.audit_logger import init_audit_logger
@@ -124,6 +125,13 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     register_request_handlers(app)
 
     logger.info("🚀 Application factory completed successfully")
+
+    @app.route("/.well-known/agent.json", methods=["GET"])
+    def well_known_agent_json():
+        return send_from_directory(
+            str(Path(app.root_path).parent / ".well-known"), "agent.json", mimetype="application/json"
+        )
+
     return app
 
 
@@ -175,8 +183,10 @@ def register_blueprints(app: Flask) -> None:
 
     # OAuth client billing endpoints
     from app.blueprints.billing_agent import billing_agent_bp
+    from app.blueprints.agent import agent_bp
 
     app.register_blueprint(billing_agent_bp)
+    app.register_blueprint(agent_bp)
 
     logger.info("✅ All blueprints registered")
 
