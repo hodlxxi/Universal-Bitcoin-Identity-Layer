@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-
 AUDIT_ENV_FLAG = "AUDIT_VPS"
 DEFAULT_REPO_PATH = "/srv/ubid"
 DEFAULT_ENV_PATH = "/etc/hodlxxi/hodlxxi.env"

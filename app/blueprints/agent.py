@@ -17,6 +17,7 @@ PING_SATS = 21
 ATTESTATION_SATS = 1
 MAX_JOBS_PER_DAY = 100
 
+
 def _is_production_mode() -> bool:
     env = (os.getenv("FLASK_ENV") or "").lower()
     force_https = (os.getenv("FORCE_HTTPS") or "").lower() == "true"
@@ -30,6 +31,7 @@ def _require_dev_admin() -> None:
     """
     if _is_production_mode():
         from flask import abort
+
         abort(404)
 
     expected = os.getenv("DEV_AGENT_ADMIN_TOKEN") or ""
@@ -39,8 +41,8 @@ def _require_dev_admin() -> None:
         token = auth.split(" ", 1)[1].strip()
     if not expected or token != expected:
         from flask import abort
-        abort(403)
 
+        abort(403)
 
 
 def _iso_now() -> str:
@@ -74,40 +76,19 @@ def capabilities():
         "job_types": {
             "ping": {
                 "price_sats": PING_SATS,
-                "input_schema": {
-                    "payload": "object"
-                },
-                "output_schema": {
-                    "ok": "boolean",
-                    "job_type": "string",
-                    "echo": "object"
-                }
+                "input_schema": {"payload": "object"},
+                "output_schema": {"ok": "boolean", "job_type": "string", "echo": "object"},
             },
             "verify_signature": {
                 "price_sats": PING_SATS,
-                "input_schema": {
-                    "message": "string",
-                    "signature": "hex",
-                    "pubkey": "compressed secp256k1 hex"
-                },
-                "output_schema": {
-                    "ok": "boolean",
-                    "job_type": "string",
-                    "valid": "boolean"
-                }
+                "input_schema": {"message": "string", "signature": "hex", "pubkey": "compressed secp256k1 hex"},
+                "output_schema": {"ok": "boolean", "job_type": "string", "valid": "boolean"},
             },
             "covenant_decode": {
                 "price_sats": PING_SATS,
-                "input_schema": {
-                    "script_hex": "hex"
-                },
-                "output_schema": {
-                    "ok": "boolean",
-                    "job_type": "string",
-                    "decoded": "string",
-                    "has_cltv": "boolean"
-                }
-            }
+                "input_schema": {"script_hex": "hex"},
+                "output_schema": {"ok": "boolean", "job_type": "string", "decoded": "string", "has_cltv": "boolean"},
+            },
         },
         "limits": {"max_jobs_per_day": MAX_JOBS_PER_DAY},
         "timestamp": _iso_now(),
@@ -216,7 +197,6 @@ def _build_receipt(job: AgentJob, prev_event_hash: str | None) -> dict:
     return receipt
 
 
-
 @agent_bp.post("/agent/jobs/<job_id>/dev/mark_paid")
 def dev_mark_paid(job_id: str):
     """
@@ -252,7 +232,6 @@ def dev_mark_paid(job_id: str):
         return jsonify({"job_id": job.id, "status": job.status, "receipt": receipt})
 
 
-
 @agent_bp.get("/agent/jobs/<job_id>")
 def get_job(job_id: str):
     with session_scope() as session:
@@ -262,10 +241,7 @@ def get_job(job_id: str):
 
         # Most recent event for THIS job (if any)
         existing_event = (
-            session.query(AgentEvent)
-            .filter_by(job_id=job.id)
-            .order_by(AgentEvent.created_at.desc())
-            .first()
+            session.query(AgentEvent).filter_by(job_id=job.id).order_by(AgentEvent.created_at.desc()).first()
         )
 
         # If no receipt yet, but invoice is paid -> mint receipt exactly once
@@ -292,10 +268,7 @@ def get_job(job_id: str):
             session.flush()
 
             existing_event = (
-                session.query(AgentEvent)
-                .filter_by(job_id=job.id)
-                .order_by(AgentEvent.created_at.desc())
-                .first()
+                session.query(AgentEvent).filter_by(job_id=job.id).order_by(AgentEvent.created_at.desc()).first()
             )
 
         return jsonify(
@@ -306,6 +279,7 @@ def get_job(job_id: str):
             }
         )
 
+
 @agent_bp.get("/agent/attestations")
 def attestations():
     try:
@@ -315,13 +289,7 @@ def attestations():
         return jsonify({"error": "invalid_pagination"}), 400
 
     with session_scope() as session:
-        events = (
-            session.query(AgentEvent)
-            .order_by(AgentEvent.created_at.desc())
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
+        events = session.query(AgentEvent).order_by(AgentEvent.created_at.desc()).offset(offset).limit(limit).all()
         items = [event.event_json for event in events]
     return jsonify({"items": items, "count": len(items)})
 
@@ -329,12 +297,7 @@ def attestations():
 @agent_bp.get("/agent/verify/<job_id>")
 def verify_job_receipt(job_id: str):
     with session_scope() as session:
-        event = (
-            session.query(AgentEvent)
-            .filter_by(job_id=job_id)
-            .order_by(AgentEvent.created_at.desc())
-            .first()
-        )
+        event = session.query(AgentEvent).filter_by(job_id=job_id).order_by(AgentEvent.created_at.desc()).first()
         if not event:
             return jsonify({"error": "not_found"}), 404
 

@@ -9,6 +9,7 @@ Implements the Flask application factory pattern with:
 """
 
 import logging
+from pathlib import Path
 from typing import Optional
 
 from flask import Flask, jsonify, send_from_directory
@@ -127,7 +128,9 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
 
     @app.route("/.well-known/agent.json", methods=["GET"])
     def well_known_agent_json():
-        return send_from_directory("/srv/ubid-staging/.well-known", "agent.json", mimetype="application/json")
+        return send_from_directory(
+            str(Path(app.root_path).parent / ".well-known"), "agent.json", mimetype="application/json"
+        )
 
     return app
 

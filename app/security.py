@@ -11,7 +11,6 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-
 try:  # pragma: no cover - optional dependency
     from flask_talisman import Talisman  # type: ignore
 except ModuleNotFoundError:  # pragma: no cover - fallback for tests
@@ -21,6 +20,8 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for tests
 logger = logging.getLogger(__name__)
 
 limiter = Limiter(key_func=get_remote_address, storage_uri="memory://")
+
+
 def _as_bool(value: Any, default: bool = False) -> bool:
     if value is None:
         return default
