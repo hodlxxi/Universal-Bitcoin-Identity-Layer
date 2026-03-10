@@ -74,7 +74,7 @@ def agent_create_invoice():
             }
         )
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)[:300]}), 500
+        return jsonify({"ok": False, "error": "internal_error"}), 500
 
 
 @bp.get("/api/internal/agent/invoice/<rhash>")
@@ -95,4 +95,4 @@ def agent_lookup_invoice(rhash: str):
             res.pop("r_preimage", None)
         return jsonify({"ok": True, "invoice": res})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)[:300]}), 500
+        return jsonify({"ok": False, "error": "internal_error"}), 500

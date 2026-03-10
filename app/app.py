@@ -6199,11 +6199,10 @@ def format_asm(asm):
 
 
 def extract_script_from_raw_descriptor(descriptor):
-    match = re.search(r"raw\((.*?)\)", descriptor)
+    match = re.search(r"raw\(([0-9A-Fa-f]+)\)", descriptor)
     if match:
         return match.group(1)
     return None
-
 
 def is_valid_pubkey(pubkey):
     if pubkey.startswith("npub"):
