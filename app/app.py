@@ -1045,6 +1045,8 @@ def _oauth_public_allowlist():
     from flask import request as _req
     if (_req.path or '').startswith('/api/billing/agent/'):
         return None
+    if (_req.path or '').startswith('/agent/'):
+        return None
 
     # OAUTH_ALLOWLIST_SCOPE_GUARD_V1
     # This allowlist is only meant for OAuth/OIDC endpoints.
@@ -1965,6 +1967,27 @@ def check_auth():
         "/pof/verify",
     }
     if p in PUBLIC_PATHS or p.startswith("/docs/"):
+        return None
+
+    # PUBLIC_AGENT_READONLY_V2
+    # Public GET endpoints for marketplace / discovery / verification.
+    # Keep write or paid flows protected.
+    AGENT_PUBLIC_PATHS = {
+        "/agent/capabilities",
+        "/agent/request",
+        "/agent/attestations",
+        "/agent/reputation",
+        "/agent/chain/health",
+        "/agent/marketplace/listing",
+    }
+    if (
+        (request.method == "GET" and (
+            p in AGENT_PUBLIC_PATHS
+            or p.startswith("/agent/verify/")
+            or p.startswith("/agent/jobs/")
+        ))
+        or (request.method == "POST" and p == "/agent/request")
+    ):
         return None
 
     # 2) Public endpoints by function name (handle blueprints)
