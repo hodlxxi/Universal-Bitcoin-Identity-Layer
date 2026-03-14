@@ -9083,22 +9083,19 @@ def api_verify():
     method = rec.get("method", "api")
 
     # --- 🔹 Verification depending on method ---
-    if method == "nostr":
-        # Temporarily trust browser extension (nos2x, Alby) — they already verified key ownership
-        ok = True
+    if method in {"nostr", "lightning"}:
+        # Security hardening: do not accept unverified Nostr/LN shortcuts.
+        # Keep API contract stable by returning explicit unsupported-method error
+        # until cryptographic verification is implemented.
+        return jsonify(error=f"Verification method '{method}' not yet supported"), 501
 
-    elif method == "lightning":
-        # You can later add signature check here if LNURL-auth includes sig/key
-        ok = True
-
-    else:
-        # Default: Bitcoin RPC verification
-        try:
-            rpc = get_rpc_connection()
-            addr = derive_legacy_address_from_pubkey(pubkey)
-            ok = rpc.verifymessage(addr, signature, rec["challenge"])
-        except Exception as e:
-            return jsonify(error=f"Signature verification failed: {e}"), 500
+    # Default: Bitcoin RPC verification
+    try:
+        rpc = get_rpc_connection()
+        addr = derive_legacy_address_from_pubkey(pubkey)
+        ok = rpc.verifymessage(addr, signature, rec["challenge"])
+    except Exception:
+        return jsonify(error="Signature verification temporarily unavailable"), 500
 
     if not ok:
         return jsonify(error="Invalid signature"), 403
@@ -9242,13 +9239,36 @@ def _finish_login(resp, pubkey: str, level: str = "limited"):
     user = on_successful_login(pubkey)
     session["access_level"] = level
 
+    env_name = os.getenv("FLASK_ENV", "development").strip().lower()
+    secure_default = env_name == "production"
+    secure_cookies = _as_bool(os.getenv("SECURE_COOKIES"), default=secure_default)
+    access_cookie_httponly = _as_bool(os.getenv("ACCESS_COOKIE_HTTPONLY"), default=True)
+    cookie_samesite = os.getenv("COOKIE_SAMESITE", "Lax")
+
     # Best-effort: mint and set cookies if JWT machinery is present
     try:
         at = mint_access_token(sub=pubkey)
+        resp.set_cookie(
+            "at",
+            at,
+            max_age=AT_TTL,
+            secure=secure_cookies,
+            httponly=access_cookie_httponly,
+            samesite=cookie_samesite,
+        )
+    except Exception:
+        pass
+
+    try:
         rt = mint_refresh_token(sub=pubkey)
-        # dev defaults: secure=False on localhost; set True in prod behind HTTPS
-        resp.set_cookie("at", at, max_age=AT_TTL, secure=False, samesite="Lax")
-        resp.set_cookie("rt", rt, max_age=RT_TTL, secure=False, httponly=True, samesite="Lax")
+        resp.set_cookie(
+            "rt",
+            rt,
+            max_age=RT_TTL,
+            secure=secure_cookies,
+            httponly=True,
+            samesite=cookie_samesite,
+        )
     except Exception:
         pass
     return resp

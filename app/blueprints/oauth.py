@@ -10,6 +10,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from cryptography.hazmat.primitives import serialization
 from flask import Blueprint, current_app, jsonify, redirect, request, session
 
 from app.audit_logger import get_audit_logger
@@ -355,7 +356,7 @@ def token():
                 )
 
             if not validate_pkce(
-                code_verifier, code_data["code_challenge"], code_data.get("code_challenge_method", "S256")
+                code_data["code_challenge"], code_verifier, code_data.get("code_challenge_method", "S256")
             ):
                 delete_oauth_code(code)
                 audit_logger.log_event(
@@ -399,7 +400,7 @@ def token():
 
     except Exception as e:
         logger.error(f"Token issuance failed: {e}", exc_info=True)
-        return jsonify({"error": "server_error", "error_description": str(e)}), 500
+        return jsonify({"error": "server_error", "error_description": "Token issuance failed"}), 500
 
 
 @oauth_bp.route("/introspect", methods=["POST"])
@@ -408,8 +409,7 @@ def introspect():
     """
     OAuth2 Token Introspection (RFC 7662).
 
-    For now (and for tests), we decode JWTs without signature verification,
-    but we still require valid client_id/client_secret.
+    Requires valid client authentication and verifies JWT signatures.
     """
     data = request.form or request.get_json(silent=True) or {}
     token = data.get("token")
@@ -427,20 +427,67 @@ def introspect():
     except Exception:
         return jsonify({"active": False}), 200
 
-    # Decode token (no signature verification); enforce exp manually
+    # Decode token with signature verification and strict algorithm pinning.
     try:
-        import time as _time
-
         import jwt
 
-        claims = jwt.decode(
-            token,
-            options={"verify_signature": False, "verify_aud": False},
-            algorithms=["RS256", "HS256"],
+        from app.config import get_config
+        from app.jwks import get_key_by_kid
+
+        cfg = current_app.config.get("APP_CONFIG") or get_config()
+        allowed_algs = ["RS256"]
+
+        header = jwt.get_unverified_header(token)
+        kid = header.get("kid")
+        if not kid:
+            return jsonify({"active": False}), 200
+
+        jwks_dirs = []
+        primary_dir = str(cfg.get("JWKS_DIR") or "keys")
+        if primary_dir:
+            jwks_dirs.append(primary_dir)
+        fallback_dir = str(get_config().get("JWKS_DIR") or "keys")
+        if fallback_dir and fallback_dir not in jwks_dirs:
+            jwks_dirs.append(fallback_dir)
+        if "keys" not in jwks_dirs:
+            jwks_dirs.append("keys")
+
+        key = None
+        for jwks_dir in jwks_dirs:
+            key = get_key_by_kid(jwks_dir, str(kid))
+            if key is not None:
+                break
+        if key is None:
+            return jsonify({"active": False}), 200
+
+        public_key = key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
 
-        exp = claims.get("exp")
-        if exp is not None and int(exp) < int(_time.time()):
+        issuers = []
+        primary_issuer = str(cfg.get("JWT_ISSUER") or "").rstrip("/")
+        if primary_issuer:
+            issuers.append(primary_issuer)
+        fallback_issuer = str(get_config().get("JWT_ISSUER") or "").rstrip("/")
+        if fallback_issuer and fallback_issuer not in issuers:
+            issuers.append(fallback_issuer)
+
+        claims = None
+        for issuer in issuers or [None]:
+            try:
+                claims = jwt.decode(
+                    token,
+                    public_key,
+                    algorithms=allowed_algs,
+                    audience=client_id,
+                    issuer=issuer,
+                    options={"require": ["exp", "iat", "sub", "iss", "aud"]},
+                )
+                break
+            except jwt.InvalidIssuerError:
+                continue
+        if claims is None:
             return jsonify({"active": False}), 200
 
         return (
