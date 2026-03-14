@@ -255,6 +255,7 @@ class TestRootEndpoint:
         # Should contain application name or welcome message
         assert response.headers["Location"] == "/screensaver"
 
+
 class TestErrorHandling:
     """Test error handling."""
 
