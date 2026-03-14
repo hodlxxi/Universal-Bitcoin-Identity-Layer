@@ -52,7 +52,7 @@ def require_login(f):
     def decorated_function(*args, **kwargs):
         user_pubkey = session.get("logged_in_pubkey")
         if not user_pubkey:
-            return redirect(url_for("login", next=request.url))
+            return redirect(url_for("auth.login", next=request.url))
 
         if str(user_pubkey).startswith("guest-"):
             return jsonify({"error": "Guests cannot access developer billing. Please login with a real key."}), 403

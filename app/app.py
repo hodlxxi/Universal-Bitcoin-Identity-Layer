@@ -107,6 +107,7 @@ from app.security import init_security, limiter
 from app.tokens import issue_rs256_jwt
 from app.pof_routes import pof_bp, pof_api_bp
 from app.dev_routes import dev_bp
+from app.blueprints.agent import agent_bp
 
 # from app.playground_routes import playground_bp   # <-- ADD THIS
 from flask import make_response
@@ -928,6 +929,7 @@ app.register_blueprint(pof_bp)
 app.register_blueprint(oidc_bp)
 app.register_blueprint(pof_api_bp)
 app.register_blueprint(dev_bp, url_prefix="/dev")
+app.register_blueprint(agent_bp)
 # app.register_blueprint(playground_bp)
 
 OAUTH_PATH_PREFIXES = ("/oauth/", "/oauthx/")
@@ -1042,6 +1044,8 @@ def _oauth_public_allowlist():
     # PAYG_BILLING_AGENT_BYPASS_ALL_V1: never block billing-agent bearer endpoints with session gates
     from flask import request as _req
     if (_req.path or '').startswith('/api/billing/agent/'):
+        return None
+    if (_req.path or '').startswith('/agent/'):
         return None
 
     # OAUTH_ALLOWLIST_SCOPE_GUARD_V1
@@ -1963,6 +1967,27 @@ def check_auth():
         "/pof/verify",
     }
     if p in PUBLIC_PATHS or p.startswith("/docs/"):
+        return None
+
+    # PUBLIC_AGENT_READONLY_V2
+    # Public GET endpoints for marketplace / discovery / verification.
+    # Keep write or paid flows protected.
+    AGENT_PUBLIC_PATHS = {
+        "/agent/capabilities",
+        "/agent/request",
+        "/agent/attestations",
+        "/agent/reputation",
+        "/agent/chain/health",
+        "/agent/marketplace/listing",
+    }
+    if (
+        (request.method == "GET" and (
+            p in AGENT_PUBLIC_PATHS
+            or p.startswith("/agent/verify/")
+            or p.startswith("/agent/jobs/")
+        ))
+        or (request.method == "POST" and p == "/agent/request")
+    ):
         return None
 
     # 2) Public endpoints by function name (handle blueprints)
@@ -9389,7 +9414,7 @@ def root_redirect():
 
     try:
         if session.get("logged_in_pubkey"):
-            return redirect(url_for("home"))
+            return redirect(url_for("ui.legacy_home_route"))
     except Exception:
         pass
     return redirect("/screensaver", code=302)

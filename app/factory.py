@@ -9,10 +9,9 @@ Implements the Flask application factory pattern with:
 """
 
 import logging
-from pathlib import Path
 from typing import Optional
 
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify
 from flask_socketio import SocketIO
 
 from app.audit_logger import init_audit_logger
@@ -125,13 +124,6 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     register_request_handlers(app)
 
     logger.info("🚀 Application factory completed successfully")
-
-    @app.route("/.well-known/agent.json", methods=["GET"])
-    def well_known_agent_json():
-        return send_from_directory(
-            str(Path(app.root_path).parent / ".well-known"), "agent.json", mimetype="application/json"
-        )
-
     return app
 
 
@@ -172,6 +164,12 @@ def register_blueprints(app: Flask) -> None:
 
     app.register_blueprint(admin_bp)
 
+    # Proof-of-Funds blueprints (legacy public frontend + API)
+    from app.pof_routes import pof_bp, pof_api_bp
+
+    app.register_blueprint(pof_bp)
+    app.register_blueprint(pof_api_bp)
+
     # UI/frontend blueprint (dashboard, playground, chat)
     from app.blueprints.ui import ui_bp
     from app.dev_routes import dev_bp
@@ -187,6 +185,39 @@ def register_blueprints(app: Flask) -> None:
 
     app.register_blueprint(billing_agent_bp)
     app.register_blueprint(agent_bp)
+
+    # Legacy human frontend overrides:
+    # keep factory runtime, but route /login and /playground to the old app.py handlers
+    try:
+
+        def _legacy_login_proxy(**kwargs):
+            from app.app import login
+
+            return login(**kwargs)
+
+        if "auth.login" in app.view_functions:
+            app.view_functions["auth.login"] = _legacy_login_proxy
+    except Exception as e:
+        logger.warning(f"Legacy login override failed: {e}")
+
+    try:
+
+        def _legacy_playground_proxy(**kwargs):
+            from app.app import playground
+
+            return playground(**kwargs)
+
+        if "ui.playground" in app.view_functions:
+            app.view_functions["ui.playground"] = _legacy_playground_proxy
+    except Exception as e:
+        logger.warning(f"Legacy playground override failed: {e}")
+
+    # Legacy endpoint aliases for old inline templates that still call url_for("home")
+    try:
+        if "ui.home" in app.view_functions and "home" not in app.view_functions:
+            app.add_url_rule("/home", endpoint="home", view_func=app.view_functions["ui.home"])
+    except Exception as e:
+        logger.warning(f"Legacy endpoint alias registration failed: {e}")
 
     logger.info("✅ All blueprints registered")
 

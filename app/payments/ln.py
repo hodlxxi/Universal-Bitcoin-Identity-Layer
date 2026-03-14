@@ -6,7 +6,6 @@ import logging
 import os
 import secrets
 import subprocess
-import time
 from typing import Tuple
 
 import requests
@@ -110,7 +109,6 @@ def _lncli_base_cmd() -> list[str]:
 
 def _run_lncli(args: list[str], timeout: int = 20) -> dict:
     cmd = _lncli_base_cmd() + args
-    started = time.monotonic()
     try:
         p = subprocess.run(
             cmd,
@@ -120,12 +118,7 @@ def _run_lncli(args: list[str], timeout: int = 20) -> dict:
             check=False,
         )
     except subprocess.TimeoutExpired as e:
-        elapsed = time.monotonic() - started
-        logger.error("lncli timeout after %.3fs: %s", elapsed, " ".join(cmd))
         raise LightningPaymentError(f"lncli timed out after {timeout}s: {' '.join(cmd)}") from e
-
-    elapsed = time.monotonic() - started
-    logger.info("lncli finished in %.3fs rc=%s args=%s", elapsed, p.returncode, args[0] if args else "")
 
     if p.returncode != 0:
         err = (p.stderr or p.stdout or "").strip()
@@ -141,7 +134,7 @@ def _run_lncli(args: list[str], timeout: int = 20) -> dict:
 def _create_invoice_lnd_cli(amount_sats: int, memo: str, expiry_seconds: int) -> Tuple[str, str]:
     j = _run_lncli(
         ["addinvoice", f"--amt={int(amount_sats)}", f"--memo={memo}", f"--expiry={int(expiry_seconds)}"],
-        timeout=60,
+        timeout=30,
     )
     # lncli returns r_hash (hex) + payment_request
     invoice_id = j.get("r_hash")

@@ -1,10 +1,10 @@
 """
-WSGI entry point (staging): factory-based app.
-This ensures all blueprints registered in app.factory are active (including Agent UBID).
+WSGI entry point for standalone app.py + March agent backend.
 """
-from app.factory import create_app
-
-app = create_app()
+from app.app import app
 
 # Gunicorn/uWSGI compatibility
 application = app
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=5000, debug=False)
