@@ -16,6 +16,14 @@ This guide covers security configuration, secret management, and deployment best
 
 ---
 
+## Scope and Production-Safety Notes
+
+- This document mixes secure defaults with deployment examples. Hostnames, service names, and paths are **illustrative placeholders** unless they match your own environment.
+- Avoid publishing environment-specific operational details (internal hostnames, private paths, service-unit names, firewall topology) in public issues or screenshots.
+- For public/open-source collaboration, prefer sanitized examples and generic names over real infrastructure identifiers.
+
+---
+
 ## Secret Management
 
 ### Environment Variables

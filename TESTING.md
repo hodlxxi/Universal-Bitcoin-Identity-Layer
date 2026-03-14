@@ -17,6 +17,8 @@
 
 ## Overview
 
+> **Reality check:** this guide includes both current test workflows and a forward-looking target structure. For the authoritative, currently implemented suite, use `find tests -maxdepth 3 -type f | sort` and `pytest --collect-only -q` in your checkout.
+
 HODLXXI uses a comprehensive testing strategy to ensure reliability, security, and correctness of the Bitcoin identity layer.
 
 ### Testing Stack
@@ -63,9 +65,9 @@ HODLXXI uses a comprehensive testing strategy to ensure reliability, security, a
 
 ## Test Structure
 
-### Directory Layout
+### Directory Layout (target shape)
 
-```
+```text
 tests/
 ├── __init__.py
 ├── conftest.py                      # Shared fixtures
@@ -120,6 +122,8 @@ tests/
     ├── test_psbts/
     └── mock_responses/
 ```
+
+Current repository layout is slimmer than the target tree above (for example, there is no committed `tests/e2e/`, `tests/performance/`, or `tests/security/` directory yet).
 
 ---
 

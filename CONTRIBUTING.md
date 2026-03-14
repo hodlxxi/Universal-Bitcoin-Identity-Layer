@@ -32,6 +32,14 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 
 **DO NOT** open public issues for security vulnerabilities. Instead, please email security@hodlxxi.com or see [SECURITY.md](SECURITY.md).
 
+## Contribution Boundaries (Current State)
+
+To reduce regressions while the architecture migration is in progress:
+
+- Prefer changes in `app/blueprints/*`, `app/security.py`, `app/config.py`, `app/database.py`, `app/db_storage.py`, and `tests/*`.
+- Treat `app/app.py` as a **legacy compatibility surface** unless your PR explicitly fixes runtime behavior that still depends on it.
+- Flag route-level changes touching `/dev/*` as operator/deployment-sensitive and document expected access controls in the PR.
+
 ## Development Process
 
 ### 1. Fork and Clone
