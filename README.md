@@ -9,6 +9,8 @@
 
 A production-focused Flask service that bridges OAuth2/OpenID Connect with Lightning Network authentication. The project couples hardened security defaults, Redis-backed rate limiting, RS256 JWT issuance, and Postgres persistence so Bitcoin-enabled applications can expose standards-compliant identity endpoints.
 
+> **Repository status (important for contributors):** this codebase is currently a hybrid of a legacy monolithic app (`app/app.py`) and newer blueprint/factory modules (`app/factory.py`, `app/blueprints/*`). Production runtime still uses `wsgi.py -> app.app:app`, while the factory path is actively maintained for modularization and tests.
+
 ---
 
 ## 🚀 Highlights
@@ -33,6 +35,15 @@ A production-focused Flask service that bridges OAuth2/OpenID Connect with Light
 | Observability | [`app/app.py`](app/app.py), [`deployment/README.md`](deployment/README.md) | Prometheus counter wiring and deployment guidance |
 
 Further documentation lives in the [`app/`](app/README.md) directory and supporting deployment guides under [`deployment/`](deployment/README.md).
+
+### Runtime & contribution boundaries
+
+- **Primary runtime entrypoint:** `wsgi.py` imports `app.app:app` for current deployments.
+- **Modular/factory path:** `app/factory.py` + `app/blueprints/*` is the target architecture and is already used in tests/refactors.
+- **Stable/public API surface:** OAuth2/OIDC (`/oauth/*`, `/.well-known/openid-configuration`), JWKS, LNURL-auth, PoF pages/API, and health/metrics routes.
+- **Experimental or operator-facing areas:** `/dev/*`, some playground/demo behaviors, and compatibility adapters retained for legacy clients.
+
+If you are contributing externally, prefer isolated changes in blueprints, storage/config/security modules, and tests over large edits in `app/app.py` unless your change is specifically a legacy-runtime fix.
 
 ---
 
