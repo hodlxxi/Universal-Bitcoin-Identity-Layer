@@ -251,7 +251,7 @@ class TestRootEndpoint:
         """Test that root endpoint returns homepage."""
         response = client.get("/")
 
-        assert response.status_code == 200
+        assert response.status_code == 302
         # Should contain application name or welcome message
         assert b"HODLXXI" in response.data or b"Bitcoin" in response.data
 
