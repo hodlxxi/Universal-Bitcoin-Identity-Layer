@@ -186,13 +186,13 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(billing_agent_bp)
     app.register_blueprint(agent_bp)
 
-
-
     # Legacy human frontend overrides:
     # keep factory runtime, but route /login and /playground to the old app.py handlers
     try:
+
         def _legacy_login_proxy(**kwargs):
             from app.app import login
+
             return login(**kwargs)
 
         if "auth.login" in app.view_functions:
@@ -201,8 +201,10 @@ def register_blueprints(app: Flask) -> None:
         logger.warning(f"Legacy login override failed: {e}")
 
     try:
+
         def _legacy_playground_proxy(**kwargs):
             from app.app import playground
+
             return playground(**kwargs)
 
         if "ui.playground" in app.view_functions:

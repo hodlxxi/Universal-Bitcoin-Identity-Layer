@@ -28,29 +28,29 @@ def index():
     return redirect("/screensaver", code=302)
 
 
-
-
 @ui_bp.route("/screensaver")
 def screensaver():
     return render_template("screensaver.html")
 
 
-
 @ui_bp.route("/app")
 def legacy_chat_route():
     from app.app import chat as legacy_chat
+
     return legacy_chat()
 
 
 @ui_bp.route("/home", methods=["GET"], endpoint="home")
 def legacy_home_route():
     from app.app import home_page as legacy_home_page
+
     return legacy_home_page()
 
 
 @ui_bp.route("/account", methods=["GET"])
 def legacy_account_route():
     from app.app import account as legacy_account
+
     return legacy_account()
 
 

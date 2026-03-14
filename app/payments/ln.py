@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 class LightningPaymentError(Exception):
     """Base exception for Lightning payment errors."""
+
     pass
 
 
@@ -34,6 +35,7 @@ def _assert_not_stub_in_production() -> None:
 # -----------------------
 # LND REST backend
 # -----------------------
+
 
 def _lnd_headers() -> dict:
     macaroon = os.getenv("LND_MACAROON") or os.getenv("LND_MACAROON_HEX")
@@ -78,6 +80,7 @@ def _check_invoice_paid_lnd_rest(invoice_id: str) -> bool:
 # -----------------------
 # LND CLI backend (lncli)
 # -----------------------
+
 
 def _lncli_base_cmd() -> list[str]:
     rpcserver = os.getenv("LND_RPCSERVER") or "127.0.0.1:10009"
@@ -150,6 +153,7 @@ def _check_invoice_paid_lnd_cli(invoice_id: str) -> bool:
 # -----------------------
 # Public API
 # -----------------------
+
 
 def create_invoice(amount_sats: int, memo: str, user_pubkey: str, expiry_seconds: int = 3600) -> Tuple[str, str]:
     """Create a Lightning invoice for payment."""
