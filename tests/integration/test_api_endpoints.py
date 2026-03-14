@@ -253,8 +253,7 @@ class TestRootEndpoint:
 
         assert response.status_code == 302
         # Should contain application name or welcome message
-        assert b"HODLXXI" in response.data or b"Bitcoin" in response.data
-
+        assert response.headers["Location"] == "/screensaver"
 
 class TestErrorHandling:
     """Test error handling."""
