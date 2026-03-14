@@ -22,6 +22,9 @@ This guide covers security configuration, secret management, and deployment best
 - Avoid publishing environment-specific operational details (internal hostnames, private paths, service-unit names, firewall topology) in public issues or screenshots.
 - For public/open-source collaboration, prefer sanitized examples and generic names over real infrastructure identifiers.
 
+- **Operator/dev-only boundaries:** `/dev/*`, debug/demo helpers, and operator endpoints are not public-user APIs. Restrict them behind authentication and network policy before exposing any deployment publicly.
+- **Example config caution:** deployment snippets in this repo are templates. Do not copy-paste hostnames, ports, users, or firewall assumptions into production without environment-specific review.
+
 ---
 
 ## Secret Management

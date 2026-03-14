@@ -109,7 +109,7 @@ from app.pof_routes import pof_bp, pof_api_bp
 from app.dev_routes import dev_bp
 from app.blueprints.agent import agent_bp
 
-# from app.playground_routes import playground_bp   # <-- ADD THIS
+# from app.playground_routes import playground_bp   # Optional compatibility/demo module; not canonical runtime owner
 from flask import make_response
 
 
@@ -930,7 +930,7 @@ app.register_blueprint(oidc_bp)
 app.register_blueprint(pof_api_bp)
 app.register_blueprint(dev_bp, url_prefix="/dev")
 app.register_blueprint(agent_bp)
-# app.register_blueprint(playground_bp)
+# app.register_blueprint(playground_bp)  # Keep disabled by default to avoid duplicate /playground ownership
 
 OAUTH_PATH_PREFIXES = ("/oauth/", "/oauthx/")
 OAUTH_PUBLIC_PATHS = (
@@ -11808,7 +11808,7 @@ def oauth_client_rotate_secret(client_id):
 
 @app.route("/playground", methods=["GET"])
 def playground():
-    # Public demo page
+    # Canonical runtime owner for GET /playground in monolith-first deployments.
     from flask import render_template
 
     return render_template("playground.html")
@@ -12248,6 +12248,7 @@ except Exception:
 
 @app.route("/playground/")
 def playground_slash_alias():
+    """Compatibility alias: normalize /playground/ to canonical /playground."""
     from flask import redirect
 
     return redirect("/playground", code=308)

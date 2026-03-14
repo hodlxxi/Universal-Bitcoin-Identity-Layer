@@ -6,6 +6,20 @@ This document describes the modular blueprint architecture for the Universal Bit
 
 ## Architecture Overview
 
+## Runtime Truth vs Migration Target (Contributor Note)
+
+- **Current runtime truth (monolith-first):** production traffic is still primarily served through `wsgi.py -> app.app:app`.
+- **Blueprint/factory direction:** `app/factory.py` + `app/blueprints/*` are the migration direction and test/refactor target, but not yet exclusive runtime truth.
+
+### Playground ownership (important)
+
+- **Canonical user-facing playground implementation today:** `app.app.playground` for `GET /playground` (monolith runtime).
+- **Factory compatibility behavior:** `app.blueprints.ui.playground` exists, but `app/factory.py` intentionally overrides `ui.playground` to proxy into the monolith handler for parity.
+- **Additional compatibility module:** `app/playground_routes.py` is a lightweight compatibility/demo route set and is not registered as the canonical runtime path by default.
+
+When fixing playground behavior, patch the canonical owner first (`app/app.py`) unless your change is explicitly blueprint-only migration work.
+
+
 ### Application Factory Pattern
 
 The application uses the **factory pattern** for better testability, configuration management, and modular design:

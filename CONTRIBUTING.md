@@ -36,9 +36,23 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 
 To reduce regressions while the architecture migration is in progress:
 
-- Prefer changes in `app/blueprints/*`, `app/security.py`, `app/config.py`, `app/database.py`, `app/db_storage.py`, and `tests/*`.
-- Treat `app/app.py` as a **legacy compatibility surface** unless your PR explicitly fixes runtime behavior that still depends on it.
-- Flag route-level changes touching `/dev/*` as operator/deployment-sensitive and document expected access controls in the PR.
+### Start here (safe edit zones)
+
+- Documentation-only fixes (`README.md`, `ARCHITECTURE.md`, `TESTING.md`, route docs) that improve runtime-vs-target clarity.
+- Blueprint-local changes in `app/blueprints/*` when they do not change monolith runtime semantics.
+- Focused fixes in `app/security.py`, `app/config.py`, `app/database.py`, `app/db_storage.py`, and `tests/*`.
+
+### High-risk / compatibility-sensitive areas
+
+- `app/app.py` is **legacy + runtime-critical compatibility code**. Edit only for explicit runtime fixes or clearly labeled compatibility clarifications.
+- Route-level changes touching `/dev/*`, billing/dev endpoints, or deployment/operator surfaces require explicit PR notes about access assumptions.
+- OAuth, session, and auth-path changes should be treated as runtime-sensitive even when code shape looks simple.
+
+### Change-type triage
+
+- **Docs fix:** preferred first contribution; low risk, high trust gain.
+- **Blueprint-local fix:** acceptable when isolated and covered by existing tests.
+- **Runtime-sensitive change (`app/app.py` or auth/route plumbing):** keep surgical, add tests where possible, and document compatibility impact.
 
 ## Development Process
 
@@ -49,6 +63,7 @@ To reduce regressions while the architecture migration is in progress:
 # Then clone your fork
 git clone https://github.com/YOUR_USERNAME/hodlxxi.com.git
 cd hodlxxi.com
+```
 
 ### 2. Set Up Development Environment
 

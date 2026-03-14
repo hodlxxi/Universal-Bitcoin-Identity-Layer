@@ -14,6 +14,8 @@ The protocol is designed around five ideas:
 
 This makes the agent legible not only to humans, but to other agents.
 
+> **Maturity note:** this protocol surface is functional but still early-stage. Endpoint shape and coverage may evolve as the project transitions from monolith-first runtime toward broader modularization.
+
 ---
 
 ## Identity

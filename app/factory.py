@@ -164,13 +164,13 @@ def register_blueprints(app: Flask) -> None:
 
     app.register_blueprint(admin_bp)
 
-    # Proof-of-Funds blueprints (legacy public frontend + API)
+    # Proof-of-Funds blueprints (canonical PoF pages/API surface in current runtime)
     from app.pof_routes import pof_bp, pof_api_bp
 
     app.register_blueprint(pof_bp)
     app.register_blueprint(pof_api_bp)
 
-    # UI/frontend blueprint (dashboard, playground, chat)
+    # UI/frontend blueprint (dashboard + fallback playground shell; /playground may be proxied)
     from app.blueprints.ui import ui_bp
     from app.dev_routes import dev_bp
 
@@ -186,8 +186,9 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(billing_agent_bp)
     app.register_blueprint(agent_bp)
 
-    # Legacy human frontend overrides:
-    # keep factory runtime, but route /login and /playground to the old app.py handlers
+    # Legacy runtime-truth overrides:
+    # keep factory runtime wiring, but proxy /login and /playground to app.py handlers
+    # so behavior matches monolith-first production truth during migration
     try:
 
         def _legacy_login_proxy(**kwargs):

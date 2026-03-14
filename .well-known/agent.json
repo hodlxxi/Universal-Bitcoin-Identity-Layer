@@ -3,7 +3,7 @@
   "version": "0.1",
   "operator": "HODLXXI",
   "network": "bitcoin",
-  "description": "Lightning-paid agent with signed receipts, attestations, and reputation",
+  "description": "Early-stage Lightning-paid agent surface with signed receipts, attestations, and reputation primitives",
   "agent_pubkey": "02019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f92",
   "signature_scheme": "secp256k1",
   "capabilities": {

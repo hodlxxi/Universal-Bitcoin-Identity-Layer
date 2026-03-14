@@ -1,6 +1,6 @@
 # Production Deployment Runbook
 
-This folder contains the operational scripts and guides for taking the Universal Bitcoin Identity Layer into production.  The instructions below describe the default single-node deployment path that ships with this repo; adapt naming, paths, and automation to match your infrastructure standards.
+This folder contains operational scripts and guides for deploying the Universal Bitcoin Identity Layer. The instructions below are template-oriented, single-node examples from this repository; adapt naming, paths, users, and automation to your own infrastructure standards before production use.
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@ This folder contains the operational scripts and guides for taking the Universal
 
 ## Quick Start (Automated)
 
-The [`deploy-production.sh`](./deploy-production.sh) script provisions Nginx, obtains TLS certificates via Certbot, configures a locked-down systemd unit (`app.service`), and installs the backup automation used by the project.
+The [`deploy-production.sh`](./deploy-production.sh) script demonstrates one deployment path: provisioning Nginx, obtaining TLS certificates via Certbot, configuring a systemd unit (`app.service`), and installing backup automation.
 
 ```bash
 cd /srv/app

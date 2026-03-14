@@ -415,6 +415,8 @@ HODLXXI is a production-ready Bitcoin identity and authentication layer that com
 
 ### Proof of Funds Verification Flow
 
+Compatibility note: the currently implemented runtime flow uses `POST /api/challenge` to mint challenges and `POST /api/pof/verify_psbt` for PSBT verification. `POST /api/pof/challenge` and `POST /api/pof/verify` are migration-target names and should be treated as compatibility/target naming, not current canonical runtime endpoints.
+
 ```
 ┌──────────┐                                    ┌──────────┐
 │  Client  │                                    │  HODLXXI │
@@ -422,7 +424,7 @@ HODLXXI is a production-ready Bitcoin identity and authentication layer that com
 └────┬─────┘                                    └────┬─────┘
      │                                               │
      │ 1. Request PoF Challenge                      │
-     │ POST /api/pof/challenge                       │
+     │ POST /api/challenge  (runtime challenge API)    │
      │ {                                             │
      │   "privacy_level": "threshold",               │
      │   "threshold_amount": 1000000                 │
@@ -447,7 +449,7 @@ HODLXXI is a production-ready Bitcoin identity and authentication layer that com
      │ - Does NOT broadcast                          │
      │                                               │
      │ 5. Submit Signed PSBT                         │
-     │ POST /api/pof/verify                          │
+     │ POST /api/pof/verify_psbt (current runtime)      │
      │ {                                             │
      │   "challenge_id": "uuid",                     │
      │   "psbt": "cHNidP8BA...",                     │

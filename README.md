@@ -9,7 +9,14 @@
 
 A production-focused Flask service that bridges OAuth2/OpenID Connect with Lightning Network authentication. The project couples hardened security defaults, Redis-backed rate limiting, RS256 JWT issuance, and Postgres persistence so Bitcoin-enabled applications can expose standards-compliant identity endpoints.
 
-> **Repository status (important for contributors):** this codebase is currently a hybrid of a legacy monolithic app (`app/app.py`) and newer blueprint/factory modules (`app/factory.py`, `app/blueprints/*`). Production runtime still uses `wsgi.py -> app.app:app`, while the factory path is actively maintained for modularization and tests.
+## Project status / contribution map
+
+- **Live / stable now:** monolith-first runtime via `wsgi.py -> app.app:app`, OAuth/OIDC endpoints, LNURL auth handlers, and currently deployed PoF pages/API.
+- **Experimental:** `/dev/*` operator tooling, demo playground stats/activity feeds, and some agent/reputation surfaces.
+- **Conceptual / research direction:** factory-first and blueprint-driven end-state architecture, advanced covenant/marketplace layers, and broader multi-service decomposition.
+- **Legacy / compatibility:** route aliases/proxies retained for older templates and clients (for example legacy login/playground proxies and path aliases).
+
+> **Runtime truth note:** production/runtime truth currently lives in monolith-first paths (`app/app.py` and routes wired through it). `app/factory.py` and blueprint modules reflect the migration direction and should not be read as exclusive runtime truth yet.
 
 ---
 

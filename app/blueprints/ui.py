@@ -115,10 +115,13 @@ def dashboard():
 @ui_bp.route("/playground")
 def playground():
     """
-    API testing playground.
+    Factory-local playground fallback.
+
+    Canonical runtime /playground behavior is currently owned by app.app.playground
+    (monolith-first runtime truth). Factory runtime may proxy to that handler.
 
     Returns:
-        HTML API playground
+        HTML API playground fallback shell
     """
     html = """
 <!DOCTYPE html>

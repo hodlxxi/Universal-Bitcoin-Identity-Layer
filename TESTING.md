@@ -127,6 +127,22 @@ Current repository layout is slimmer than the target tree above (for example, th
 
 ---
 
+
+## Current Coverage vs Future Structure
+
+### Current repository coverage (implemented now)
+
+- `tests/unit/` contains the bulk of currently enforced unit-level checks.
+- `tests/integration/` contains integration coverage for selected API/runtime paths.
+- `tests/audit/` contains focused audit/regression checks tied to pre-open-source hardening work.
+
+### Intended future structure (target)
+
+- Planned directories like `tests/e2e/`, `tests/performance/`, and `tests/security/` in this document describe target organization, not guaranteed current contents.
+- Treat the target tree as roadmap guidance; use `pytest --collect-only -q` as the runtime source of truth for what runs today.
+
+---
+
 ## Running Tests
 
 ### Prerequisites
@@ -157,7 +173,8 @@ pytest --cov=app --cov-report=html
 # Run specific test types
 pytest tests/unit/              # Unit tests only
 pytest tests/integration/       # Integration tests only
-pytest tests/e2e/              # E2E tests only
+pytest tests/audit/             # Audit/regression tests currently in repo
+# pytest tests/e2e/             # Future target path (may not exist yet)
 ```
 
 ### Run Specific Tests
