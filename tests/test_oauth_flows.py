@@ -30,7 +30,7 @@ def app():
     test_config = {
         "FLASK_SECRET_KEY": "test_secret_key_oauth",
         "FLASK_ENV": "testing",
-        "JWKS_DIR": "/tmp/test_jwks_oauth",
+        "JWKS_DIR": "runtime/test_jwks_oauth",
         "DATABASE_URL": "sqlite:///:memory:",
         "JWT_ISSUER": "https://test.example.com",
         "JWT_AUDIENCE": "test_audience",

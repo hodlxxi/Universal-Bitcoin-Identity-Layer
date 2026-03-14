@@ -110,3 +110,4 @@ logs/
 *.WORKING_FIX_START.*
 *.bak.*
 *~ 
+venv-staging/
