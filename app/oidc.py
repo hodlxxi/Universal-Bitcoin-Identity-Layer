@@ -59,8 +59,6 @@ def validate_pkce(code_challenge: Optional[str], code_verifier: Optional[str], m
 
     Compatibility behavior:
       - normalize base64url padding
-      - try (challenge, verifier) order
-      - if that fails, try swapped order (covers call-site argument order bugs)
     """
     # If no challenge was provided, treat as no PKCE required
     if not code_challenge:
@@ -84,11 +82,7 @@ def validate_pkce(code_challenge: Optional[str], code_verifier: Optional[str], m
         computed = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
         return computed == expected
 
-    # normal order
-    if _check(code_challenge, code_verifier):
-        return True
-    # swapped order (defensive)
-    return _check(code_verifier, code_challenge)
+    return _check(code_challenge, code_verifier)
 
 
 __all__ = ["oidc_bp", "validate_pkce"]

@@ -336,6 +336,86 @@ class TestPKCE:
         assert "invalid_grant" in data["error"]
 
 
+class TestPKCESafety:
+    """Security-specific PKCE regression tests."""
+
+    def test_token_rejects_swapped_pkce_values(self, client, registered_client):
+        """Swapped challenge/verifier order must not be accepted."""
+        verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+
+        with client.session_transaction() as sess:
+            sess["logged_in_pubkey"] = "02" + "b" * 64
+
+        auth_response = client.get(
+            "/oauth/authorize",
+            query_string={
+                "response_type": "code",
+                "client_id": registered_client["client_id"],
+                "redirect_uri": registered_client["redirect_uris"][0],
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            },
+        )
+        code = auth_response.location.split("code=")[1].split("&")[0]
+
+        token_response = client.post(
+            "/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": registered_client["redirect_uris"][0],
+                "client_id": registered_client["client_id"],
+                "client_secret": registered_client["client_secret"],
+                # intentionally supply challenge where verifier is expected
+                "code_verifier": challenge,
+            },
+        )
+
+        assert token_response.status_code == 400
+        payload = json.loads(token_response.data)
+        assert payload["error"] == "invalid_grant"
+
+
+class TestOAuthErrorLeakage:
+    """Ensure auth server errors do not expose internals."""
+
+    def test_token_endpoint_hides_exception_details(self, client, registered_client, monkeypatch):
+        with client.session_transaction() as sess:
+            sess["logged_in_pubkey"] = "02" + "d" * 64
+
+        auth_response = client.get(
+            "/oauth/authorize",
+            query_string={
+                "response_type": "code",
+                "client_id": registered_client["client_id"],
+                "redirect_uri": registered_client["redirect_uris"][0],
+            },
+        )
+        code = auth_response.location.split("code=")[1].split("&")[0]
+
+        def _boom(*_args, **_kwargs):
+            raise RuntimeError("DB hostname leaked in error")
+
+        monkeypatch.setattr("app.blueprints.oauth.issue_jwt_compat", _boom)
+
+        token_response = client.post(
+            "/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": registered_client["redirect_uris"][0],
+                "client_id": registered_client["client_id"],
+                "client_secret": registered_client["client_secret"],
+            },
+        )
+
+        assert token_response.status_code == 500
+        payload = json.loads(token_response.data)
+        assert payload["error"] == "server_error"
+        assert payload["error_description"] == "Token issuance failed"
+
+
 class TestTokenEndpoint:
     """Test OAuth2 token endpoint."""
 
@@ -497,6 +577,36 @@ class TestTokenIntrospection:
             "/oauth/introspect",
             data={
                 "token": "invalid.jwt.token",
+                "client_id": registered_client["client_id"],
+                "client_secret": registered_client["client_secret"],
+            },
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["active"] is False
+
+    def test_introspect_rejects_forged_rs256_token(self, client, registered_client):
+        """Introspection must reject forged tokens even if claim shape looks valid."""
+        now = int(time.time())
+        forged = jwt.encode(
+            {
+                "iss": "http://localhost:5000",
+                "aud": registered_client["client_id"],
+                "sub": "forged-user",
+                "iat": now,
+                "exp": now + 3600,
+                "scope": "read",
+            },
+            "attacker-secret",
+            algorithm="HS256",
+            headers={"kid": "9999999999", "alg": "HS256"},
+        )
+
+        response = client.post(
+            "/oauth/introspect",
+            data={
+                "token": forged,
                 "client_id": registered_client["client_id"],
                 "client_secret": registered_client["client_secret"],
             },
