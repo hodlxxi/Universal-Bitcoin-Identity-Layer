@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ agent_name }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="{{ tagline }}">
+  <style>
+    :root{
+      --bg:#06110b;
+      --panel:#0b1b12;
+      --text:#d9ffe7;
+      --muted:#8fd3aa;
+      --line:#1f5a39;
+      --accent:#49ff93;
+      --accent2:#7dd3fc;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      background:linear-gradient(180deg, #030906 0%, var(--bg) 100%);
+      color:var(--text);
+      line-height:1.5;
+    }
+    .wrap{
+      max-width:1100px;
+      margin:0 auto;
+      padding:32px 20px 64px;
+    }
+    .hero, .card{
+      background:rgba(11,27,18,.88);
+      border:1px solid var(--line);
+      border-radius:18px;
+      padding:20px;
+      box-shadow:0 0 0 1px rgba(73,255,147,.05), 0 12px 30px rgba(0,0,0,.25);
+    }
+    .hero h1{
+      margin:0 0 8px;
+      font-size:clamp(28px, 5vw, 44px);
+      color:var(--accent);
+    }
+    .hero p{
+      margin:0 0 18px;
+      color:var(--muted);
+      max-width:850px;
+    }
+    .btns{
+      display:flex;
+      flex-wrap:wrap;
+      gap:12px;
+      margin-top:12px;
+    }
+    .btn{
+      display:inline-block;
+      padding:10px 14px;
+      border:1px solid var(--line);
+      border-radius:12px;
+      color:var(--text);
+      text-decoration:none;
+      background:#0d2117;
+    }
+    .btn:hover{
+      border-color:var(--accent);
+      color:var(--accent);
+    }
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));
+      gap:18px;
+      margin-top:20px;
+    }
+    h2{
+      margin:0 0 12px;
+      font-size:18px;
+      color:var(--accent2);
+    }
+    ul{
+      margin:0;
+      padding-left:18px;
+    }
+    li{
+      margin:8px 0;
+    }
+    a{
+      color:var(--accent);
+    }
+    .endpoint-list{
+      list-style:none;
+      padding:0;
+      margin:0;
+    }
+    .endpoint-list li{
+      padding:10px 0;
+      border-top:1px solid rgba(31,90,57,.6);
+    }
+    .endpoint-list li:first-child{
+      border-top:none;
+      padding-top:0;
+    }
+    code{
+      color:#c8ffe0;
+      background:#08140d;
+      padding:2px 6px;
+      border-radius:8px;
+      border:1px solid #163924;
+    }
+    .footer{
+      margin-top:18px;
+      color:var(--muted);
+      font-size:14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>{{ agent_name }}</h1>
+      <p>{{ tagline }}</p>
+
+      <div class="btns">
+        <a class="btn" href="/agent/capabilities">Read capabilities</a>
+        <a class="btn" href="/agent/marketplace/listing">Marketplace listing</a>
+        <a class="btn" href="/agent/reputation">Reputation</a>
+        <a class="btn" href="/screensaver">Enter human mode</a>
+      </div>
+
+      <div class="footer">
+        Root is now an agent-first entrypoint. Human narrative UI remains available at <code>/screensaver</code>.
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>Identity</h2>
+        <ul>
+          <li>Bitcoin-native service orientation</li>
+          <li>Agent-facing trust and payment surfaces</li>
+          <li>Machine-readable capability surface at <code>/agent/capabilities</code></li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>Capabilities</h2>
+        <ul>
+          {% for name, desc in capabilities %}
+          <li><strong>{{ name }}</strong> — {{ desc }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>Trust Model</h2>
+        <ul>
+          {% for item in trust_features %}
+          <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+    </section>
+
+    <section class="card" style="margin-top:20px;">
+      <h2>Agent Endpoints</h2>
+      <ul class="endpoint-list">
+        {% for path, desc in endpoints %}
+        <li>
+          <div><a href="{{ path }}"><code>{{ path }}</code></a></div>
+          <div>{{ desc }}</div>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+  </div>
+</body>
+</html>

@@ -18,14 +18,42 @@ def index():
     """
     Public front door:
     - logged-in users -> /home
-    - everyone else   -> /screensaver
+    - everyone else   -> agent-first homepage
     """
     try:
         if session.get("logged_in_pubkey"):
             return redirect(url_for("home"))
     except Exception:
         pass
-    return redirect("/screensaver", code=302)
+
+    return render_template(
+        "home_agent.html",
+        agent_name="HODLXXI / UBID",
+        tagline="Cryptographic identity, payment, and trust infrastructure for agents.",
+        endpoints=[
+            ("/agent/capabilities", "Supported jobs and pricing"),
+            ("/agent/request", "Submit paid agent jobs"),
+            ("/agent/reputation", "Public reputation surface"),
+            ("/agent/attestations", "Public attestation chain"),
+            ("/agent/chain/health", "Chain health surface"),
+            ("/agent/marketplace/listing", "Marketplace-facing listing"),
+            ("/screensaver", "Human / narrative interface"),
+            ("/.well-known/openid-configuration", "OpenID discovery surface"),
+        ],
+        capabilities=[
+            ("ping", "Lightweight liveness / protocol test"),
+            ("verify_signature", "Verify secp256k1 signed payloads"),
+            ("covenant_decode", "Decode covenant and script-related requests"),
+        ],
+        trust_features=[
+            "Payment required before work",
+            "Signed receipts",
+            "Public attestations",
+            "Public reputation surface",
+            "Chain health visibility",
+            "Bitcoin-native identity orientation",
+        ],
+    )
 
 
 @ui_bp.route("/screensaver")

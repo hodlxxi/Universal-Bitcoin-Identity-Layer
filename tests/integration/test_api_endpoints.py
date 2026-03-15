@@ -248,12 +248,13 @@ class TestRootEndpoint:
     """Test root endpoint."""
 
     def test_root_endpoint(self, client):
-        """Test that root endpoint returns homepage."""
+        """Test that root endpoint returns agent-first homepage."""
         response = client.get("/")
 
-        assert response.status_code == 302
-        # Should contain application name or welcome message
-        assert response.headers["Location"] == "/screensaver"
+        assert response.status_code == 200
+        assert b"HODLXXI" in response.data
+        assert b"/agent/capabilities" in response.data
+        assert b"/screensaver" in response.data
 
 
 class TestErrorHandling:
