@@ -1,5 +1,5 @@
 import importlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 def _load_monolith():
@@ -15,8 +15,8 @@ def test_api_verify_rejects_nostr_without_crypto_proof(monkeypatch):
         "pubkey": pubkey,
         "label": "",
         "challenge": "HODLXXI:login:test",
-        "created": datetime.utcnow(),
-        "expires": datetime.utcnow() + timedelta(minutes=5),
+        "created": datetime.now(timezone.utc),
+        "expires": datetime.now(timezone.utc) + timedelta(minutes=5),
         "method": "nostr",
     }
 
@@ -40,8 +40,8 @@ def test_api_verify_rejects_lightning_without_crypto_proof(monkeypatch):
         "pubkey": pubkey,
         "label": "",
         "challenge": "HODLXXI:login:test",
-        "created": datetime.utcnow(),
-        "expires": datetime.utcnow() + timedelta(minutes=5),
+        "created": datetime.now(timezone.utc),
+        "expires": datetime.now(timezone.utc) + timedelta(minutes=5),
         "method": "lightning",
     }
 
