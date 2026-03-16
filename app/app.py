@@ -11048,10 +11048,22 @@ def lnurl_create():
     sid = str(uuid.uuid4())
     k1 = secrets.token_hex(32)
 
-    LNURL_SESSION_STORE[sid] = {"k1": k1, "created": time.time(), "authenticated": False, "pubkey": None}
-
+    callback_url = url_for("lnurl_callback", session_id=sid, _external=True)
     params_url = url_for("lnurl_params", _external=True) + f"?sid={sid}"
     lnurl_str = _lnurl_bech32(params_url)
+
+    try:
+        store_lnurl_challenge(
+            sid,
+            {
+                "k1": k1,
+                "callback_url": callback_url,
+                "metadata": {"created_via": "lnurl_create"},
+            },
+            ttl=LNURL_TTL,
+        )
+    except Exception as e:
+        return jsonify({"status": "ERROR", "reason": f"store failed: {e}"}), 500
 
     return jsonify(
         {
@@ -11068,13 +11080,10 @@ def lnurl_create():
 def lnurl_params():
     """LNURL-Auth params (LUD-04)"""
     sid = request.args.get("sid", "").strip()
-    rec = LNURL_SESSION_STORE.get(sid)
+    rec = get_lnurl_challenge(sid)
 
     if not rec:
         return jsonify({"status": "ERROR", "reason": "unknown session"}), 404
-
-    if time.time() - rec["created"] > LNURL_TTL:
-        return jsonify({"status": "ERROR", "reason": "expired"}), 410
 
     callback_url = url_for("lnurl_callback", session_id=sid, _external=True)
 
@@ -11084,7 +11093,7 @@ def lnurl_params():
 @app.route("/api/lnurl-auth/callback/<session_id>", methods=["GET"])
 def lnurl_callback(session_id):
     """LNURL-Auth callback"""
-    rec = LNURL_SESSION_STORE.get(session_id)
+    rec = get_lnurl_challenge(session_id)
 
     if not rec:
         return jsonify({"status": "ERROR", "reason": "unknown session"}), 404
@@ -11099,7 +11108,6 @@ def lnurl_callback(session_id):
     if k1 != rec["k1"]:
         return jsonify({"status": "ERROR", "reason": "k1 mismatch"}), 400
 
-    # Verify signature (simplified - add proper verification)
     try:
         from coincurve import PublicKey
 
@@ -11115,10 +11123,10 @@ def lnurl_callback(session_id):
     except Exception as e:
         return jsonify({"status": "ERROR", "reason": f"verification failed: {e}"}), 400
 
-    # Mark as authenticated
-    rec["authenticated"] = True
-    rec["pubkey"] = key
-    rec["ts"] = time.time()
+    try:
+        update_lnurl_challenge(session_id, key)
+    except Exception as e:
+        return jsonify({"status": "ERROR", "reason": f"update failed: {e}"}), 500
 
     return jsonify({"status": "OK"}), 200
 
@@ -11126,12 +11134,12 @@ def lnurl_callback(session_id):
 @app.route("/api/lnurl-auth/check/<session_id>", methods=["GET"])
 def lnurl_check(session_id):
     """Check LNURL-Auth status"""
-    rec = LNURL_SESSION_STORE.get(session_id)
+    rec = get_lnurl_challenge(session_id)
 
     if not rec:
         return jsonify({"authenticated": False, "error": "unknown session"}), 404
 
-    verified = rec.get("authenticated", False)
+    verified = bool(rec.get("is_verified"))
     return jsonify({"authenticated": verified, "verified": verified, "pubkey": rec.get("pubkey")})
 
 
