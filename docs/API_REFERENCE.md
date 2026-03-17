@@ -197,6 +197,35 @@ Verify signed addresses and calculate balance.
 
 ---
 
+
+## Agent / Skills Marketplace
+
+### GET /.well-known/agent.json
+Machine-readable Agent UBID metadata and discovery endpoints.
+
+### GET /agent/capabilities
+Signed capabilities payload with job types, skills catalog, pricing, and endpoints.
+
+### GET /agent/skills
+List normalized skills (`skill_id`, schemas, tags, pricing, delivery metadata).
+
+**Query params (optional):** `category`, `tag`, `status`, `visibility`, `q`
+
+### GET /agent/skills/<skill_id>
+Fetch one skill by ID.
+
+### GET /agent/marketplace/listing
+Single-agent marketplace listing view with trust and reputation surfaces.
+
+### GET /marketplace/listings
+Collection-style marketplace listings endpoint (supports simple skill filtering by `category` and `tag`).
+
+### GET /agent/reputation
+Aggregate counts for jobs and attestations.
+
+### GET /agent/attestations
+Append-only signed receipt events (`limit` and `offset` supported).
+
 ## Bitcoin/Covenant
 
 ### GET /verify_pubkey_and_list

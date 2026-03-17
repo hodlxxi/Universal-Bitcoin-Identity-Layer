@@ -1,4 +1,4 @@
-"""Minimal Agent UBID routes: capabilities, jobs, and attestations."""
+"""Agent UBID routes: capabilities, skills discovery, jobs, and attestations."""
 
 import hashlib
 import os
@@ -98,9 +98,77 @@ JOB_REGISTRY = {
     },
 }
 
+SKILL_REGISTRY = {
+    "ubid.ping.v1": {
+        "job_type": "ping",
+        "title": "Ping",
+        "description": "Minimal liveness and protocol round-trip check.",
+        "category": "diagnostics",
+        "tags": ["liveness", "debug", "connectivity"],
+        "delivery_mode": "sync",
+        "execution_type": "invoice_gated_job",
+        "status": "active",
+        "visibility": "public",
+    },
+    "ubid.verify_signature.v1": {
+        "job_type": "verify_signature",
+        "title": "Verify Signature",
+        "description": "Validate a secp256k1 signature against a message and compressed pubkey.",
+        "category": "cryptography",
+        "tags": ["bitcoin", "secp256k1", "verification"],
+        "delivery_mode": "sync",
+        "execution_type": "invoice_gated_job",
+        "status": "active",
+        "visibility": "public",
+    },
+    "ubid.covenant_decode.v1": {
+        "job_type": "covenant_decode",
+        "title": "Covenant Decode",
+        "description": "Decode script hex and indicate whether CLTV-style logic is present.",
+        "category": "bitcoin",
+        "tags": ["script", "covenant", "cltv"],
+        "delivery_mode": "sync",
+        "execution_type": "invoice_gated_job",
+        "status": "active",
+        "visibility": "public",
+    },
+}
+
+JOB_TO_SKILL_ID = {meta["job_type"]: skill_id for skill_id, meta in SKILL_REGISTRY.items()}
+
 
 def _job_spec(job_type: str) -> dict | None:
     return JOB_REGISTRY.get(job_type)
+
+
+def _skill_payload(skill_id: str) -> dict | None:
+    meta = SKILL_REGISTRY.get(skill_id)
+    if not meta:
+        return None
+
+    job_spec = _job_spec(meta["job_type"])
+    if not job_spec:
+        return None
+
+    return {
+        "skill_id": skill_id,
+        "job_type": meta["job_type"],
+        "title": meta["title"],
+        "description": meta["description"],
+        "category": meta["category"],
+        "tags": meta["tags"],
+        "input_schema": job_spec["input_schema"],
+        "output_schema": job_spec["output_schema"],
+        "pricing": {"price_sats": int(job_spec["price_sats"]), "currency": "BTC_SAT"},
+        "delivery_mode": meta["delivery_mode"],
+        "execution_type": meta["execution_type"],
+        "status": meta["status"],
+        "visibility": meta["visibility"],
+    }
+
+
+def _skills_catalog() -> list[dict]:
+    return [payload for payload in (_skill_payload(skill_id) for skill_id in SKILL_REGISTRY) if payload is not None]
 
 
 def _job_result(job: AgentJob, payload: dict) -> dict:
@@ -134,6 +202,7 @@ def _job_result(job: AgentJob, payload: dict) -> dict:
 
 @agent_bp.get("/agent/capabilities")
 def capabilities():
+    skills = _skills_catalog()
     payload = {
         "agent_pubkey": get_agent_pubkey_hex(),
         "version": "0.1",
@@ -149,9 +218,18 @@ def capabilities():
             "attestations": "/agent/attestations",
             "reputation": "/agent/reputation",
             "chain_health": "/agent/chain/health",
+            "skills": "/agent/skills",
+            "skill": "/agent/skills/<skill_id>",
             "marketplace_listing": "/agent/marketplace/listing",
+            "marketplace_listings": "/marketplace/listings",
+            "well_known_agent": "/.well-known/agent.json",
         },
         "pricing": {"ping_sats": PING_SATS, "attestation_sats": ATTESTATION_SATS},
+        "skills": {
+            "schema_version": "1.0",
+            "count": len(skills),
+            "items": skills,
+        },
         "job_types": JOB_REGISTRY,
         "limits": {"max_jobs_per_day": MAX_JOBS_PER_DAY},
         "timestamp": _iso_now(),
@@ -161,6 +239,74 @@ def capabilities():
     return jsonify(payload)
 
 
+@agent_bp.get("/agent/skills")
+def list_skills():
+    category = (request.args.get("category") or "").strip().lower()
+    tag = (request.args.get("tag") or "").strip().lower()
+    status = (request.args.get("status") or "").strip().lower()
+    visibility = (request.args.get("visibility") or "").strip().lower()
+    query = (request.args.get("q") or "").strip().lower()
+
+    items = _skills_catalog()
+    if category:
+        items = [i for i in items if i.get("category", "").lower() == category]
+    if tag:
+        items = [i for i in items if tag in [t.lower() for t in i.get("tags", [])]]
+    if status:
+        items = [i for i in items if i.get("status", "").lower() == status]
+    if visibility:
+        items = [i for i in items if i.get("visibility", "").lower() == visibility]
+    if query:
+        items = [
+            i
+            for i in items
+            if query in i.get("skill_id", "").lower()
+            or query in i.get("title", "").lower()
+            or query in i.get("description", "").lower()
+        ]
+
+    return jsonify({"items": items, "count": len(items), "schema_version": "1.0"})
+
+
+@agent_bp.get("/agent/skills/<skill_id>")
+def get_skill(skill_id: str):
+    skill = _skill_payload(skill_id)
+    if not skill:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify(skill)
+
+
+@agent_bp.get("/.well-known/agent.json")
+def well_known_agent():
+    return jsonify(
+        {
+            "name": "HODLXXI Agent UBID",
+            "version": "0.2",
+            "operator": "HODLXXI",
+            "network": "bitcoin",
+            "description": "Lightning-paid agent with signed receipts, attestations, reputation, and skill discovery",
+            "agent_pubkey": get_agent_pubkey_hex(),
+            "signature_scheme": "secp256k1",
+            "endpoints": {
+                "capabilities": "/agent/capabilities",
+                "skills": "/agent/skills",
+                "skill": "/agent/skills/<skill_id>",
+                "request": "/agent/request",
+                "job": "/agent/jobs/<job_id>",
+                "verify": "/agent/verify/<job_id>",
+                "attestations": "/agent/attestations",
+                "reputation": "/agent/reputation",
+                "chain_health": "/agent/chain/health",
+                "marketplace_listing": "/agent/marketplace/listing",
+                "marketplace_listings": "/marketplace/listings",
+            },
+            "skills_endpoint": "/agent/skills",
+            "marketplace_endpoint": "/marketplace/listings",
+            "timestamp": _iso_now(),
+        }
+    )
+
+
 @agent_bp.post("/agent/request")
 def create_job_request():
     if not _check_ip_rate_limit():
@@ -168,6 +314,17 @@ def create_job_request():
 
     data = request.get_json(silent=True) or {}
     job_type = data.get("job_type")
+    skill_id = data.get("skill_id")
+
+    if skill_id and not job_type:
+        skill = _skill_payload(str(skill_id))
+        if not skill:
+            return jsonify({"error": "unsupported_skill_id"}), 400
+        job_type = skill["job_type"]
+    elif skill_id and job_type:
+        skill = _skill_payload(str(skill_id))
+        if not skill or skill["job_type"] != job_type:
+            return jsonify({"error": "skill_job_type_mismatch"}), 400
     payload = data.get("payload") or {}
 
     if len(str(payload)) > 10000:
@@ -204,6 +361,7 @@ def create_job_request():
                 jsonify(
                     {
                         "job_id": existing_job.id,
+                        "skill_id": JOB_TO_SKILL_ID.get(existing_job.job_type),
                         "invoice": existing_job.payment_request,
                         "payment_hash": existing_job.payment_hash,
                         "status": existing_job.status,
@@ -249,6 +407,7 @@ def create_job_request():
         jsonify(
             {
                 "job_id": job_id,
+                "skill_id": JOB_TO_SKILL_ID.get(job_type),
                 "invoice": invoice,
                 "payment_hash": _payment_hash(invoice_lookup_id),
                 "status": "invoice_pending",
@@ -465,40 +624,60 @@ def marketplace_listing():
 
         latest_event_hash = events[-1].event_hash if events else None
 
-        return jsonify(
-            {
-                "service_name": "HODLXXI Agent UBID",
-                "service_description": "Lightning-paid agent with signed receipts, attestations, and reputation",
-                "operator": "HODLXXI",
-                "agent_pubkey": get_agent_pubkey_hex(),
-                "network": "bitcoin",
-                "job_types": JOB_REGISTRY,
-                "pricing": {
-                    "ping_sats": PING_SATS,
-                    "attestation_sats": ATTESTATION_SATS,
-                },
-                "endpoints": {
-                    "request": "/agent/request",
-                    "job": "/agent/jobs/<job_id>",
-                    "verify": "/agent/verify/<job_id>",
-                    "attestations": "/agent/attestations",
-                    "reputation": "/agent/reputation",
-                    "chain_health": "/agent/chain/health",
-                    "marketplace_listing": "/agent/marketplace/listing",
-                },
-                "reputation": {
-                    "total_jobs": total_jobs,
-                    "completed_jobs": completed_jobs,
-                    "job_types": job_types_count,
-                    "attestations_count": len(events),
-                },
-                "chain_health": {
-                    "chain_ok": chain_ok,
-                    "latest_event_hash": latest_event_hash,
-                    "count": len(events),
-                },
-            }
-        )
+        listing = {
+            "service_name": "HODLXXI Agent UBID",
+            "service_description": "Lightning-paid agent with signed receipts, attestations, and reputation",
+            "operator": "HODLXXI",
+            "agent_pubkey": get_agent_pubkey_hex(),
+            "network": "bitcoin",
+            "skills": _skills_catalog(),
+            "job_types": JOB_REGISTRY,
+            "pricing": {
+                "ping_sats": PING_SATS,
+                "attestation_sats": ATTESTATION_SATS,
+            },
+            "endpoints": {
+                "request": "/agent/request",
+                "job": "/agent/jobs/<job_id>",
+                "verify": "/agent/verify/<job_id>",
+                "skills": "/agent/skills",
+                "skill": "/agent/skills/<skill_id>",
+                "attestations": "/agent/attestations",
+                "reputation": "/agent/reputation",
+                "chain_health": "/agent/chain/health",
+                "marketplace_listing": "/agent/marketplace/listing",
+            },
+            "reputation": {
+                "total_jobs": total_jobs,
+                "completed_jobs": completed_jobs,
+                "job_types": job_types_count,
+                "attestations_count": len(events),
+            },
+            "chain_health": {
+                "chain_ok": chain_ok,
+                "latest_event_hash": latest_event_hash,
+                "count": len(events),
+            },
+        }
+        return jsonify(listing)
+
+
+@agent_bp.get("/marketplace/listings")
+def marketplace_listings():
+    category = (request.args.get("category") or "").strip().lower()
+    tag = (request.args.get("tag") or "").strip().lower()
+
+    listing = marketplace_listing().get_json()
+    skills = listing.get("skills", [])
+
+    if category:
+        skills = [item for item in skills if item.get("category", "").lower() == category]
+    if tag:
+        skills = [item for item in skills if tag in [t.lower() for t in item.get("tags", [])]]
+
+    listing["skills"] = skills
+    listing["skills_count"] = len(skills)
+    return jsonify({"items": [listing], "count": 1})
 
 
 @agent_bp.get("/agent/reputation")

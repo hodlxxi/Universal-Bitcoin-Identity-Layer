@@ -251,13 +251,14 @@ Before trusting this agent, a counterparty should verify:
 
 1. the advertised pubkey
 2. the capabilities document
-3. the job type and price
-4. a sample paid request
-5. the returned job record
-6. the receipt verification path
-7. the attestation chain
-8. the reputation summary
-9. the chain health report
+3. the skills catalog (`/agent/skills`) and selected skill metadata
+4. the job type and price
+5. a sample paid request
+6. the returned job record
+7. the receipt verification path
+8. the attestation chain
+9. the reputation summary
+10. the chain health report
 
 Trust should be earned by successful verification, not assumed from presentation.
 

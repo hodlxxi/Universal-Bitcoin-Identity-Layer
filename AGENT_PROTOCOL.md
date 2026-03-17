@@ -30,7 +30,10 @@ The public key is the stable identity anchor of the agent. All receipts and atte
 
 ## Endpoints
 
+- `GET /.well-known/agent.json`
 - `GET /agent/capabilities`
+- `GET /agent/skills`
+- `GET /agent/skills/<skill_id>`
 - `POST /agent/request`
 - `GET /agent/jobs/<job_id>`
 - `GET /agent/verify/<job_id>`
@@ -38,6 +41,7 @@ The public key is the stable identity anchor of the agent. All receipts and atte
 - `GET /agent/reputation`
 - `GET /agent/chain/health`
 - `GET /agent/marketplace/listing`
+- `GET /marketplace/listings`
 
 ---
 
@@ -51,6 +55,7 @@ This returns:
 
 - agent identity metadata
 - supported job types
+- normalized skills catalog
 - pricing
 - limits
 - settlement-check support
@@ -59,6 +64,30 @@ This returns:
 This is the canonical handshake surface for agent-to-agent integration.
 
 ---
+
+
+
+## Skill Discovery
+
+Skill discovery is first-class and machine-usable.
+
+- `GET /agent/skills` lists normalized skill objects (with filter params such as `category`, `tag`, `status`, `visibility`, and `q`).
+- `GET /agent/skills/<skill_id>` returns the full metadata for one skill.
+
+Each skill object includes:
+
+- `skill_id`
+- `title`
+- `description`
+- `category` and `tags`
+- `input_schema`
+- `output_schema`
+- `pricing`
+- `delivery_mode` and `execution_type`
+- `status` and `visibility`
+
+Clients may submit jobs using either `job_type` (legacy compatibility) or `skill_id` (preferred marketplace-facing form).
+
 
 ## Job Flow
 
@@ -243,7 +272,9 @@ This allows fast monitoring of the integrity of the agent’s public receipt his
 
 ## Marketplace Surface
 
-`GET /agent/marketplace/listing` provides a compact discovery view for agent registries, aggregators, or directories.
+`GET /agent/marketplace/listing` provides a compact discovery view for registries and directories.
+
+`GET /marketplace/listings` is a marketplace-style listings alias that returns listing collections and supports simple skill filtering by `category` and `tag`.
 
 This endpoint is intended for discovery, not deep verification. Serious counterparties should still inspect:
 

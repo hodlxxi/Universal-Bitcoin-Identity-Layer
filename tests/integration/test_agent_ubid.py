@@ -320,6 +320,17 @@ def test_reputation_endpoint_returns_basic_agent_stats(client, monkeypatch):
     assert body["completed_jobs"] >= 1
 
 
+def test_capabilities_include_skill_catalog(client):
+    res = client.get("/agent/capabilities")
+    assert res.status_code == 200
+    body = res.get_json()
+
+    assert "skills" in body
+    assert body["skills"]["schema_version"] == "1.0"
+    assert body["skills"]["count"] >= 3
+    assert "well_known_agent" in body["endpoints"]
+
+
 def test_capabilities_advertise_reputation_endpoint(client):
     res = client.get("/agent/capabilities")
     assert res.status_code == 200
@@ -328,3 +339,64 @@ def test_capabilities_advertise_reputation_endpoint(client):
     assert "endpoints" in body
     assert "reputation" in body["endpoints"]
     assert body["endpoints"]["reputation"] == "/agent/reputation"
+
+
+def test_skills_listing_endpoint_returns_normalized_skills(client):
+    res = client.get("/agent/skills")
+    assert res.status_code == 200
+
+    body = res.get_json()
+    assert body["schema_version"] == "1.0"
+    assert body["count"] >= 3
+
+    first = body["items"][0]
+    assert "skill_id" in first
+    assert "job_type" in first
+    assert "input_schema" in first
+    assert "output_schema" in first
+    assert "pricing" in first
+
+
+def test_skill_detail_endpoint_returns_specific_skill(client):
+    res = client.get("/agent/skills/ubid.verify_signature.v1")
+    assert res.status_code == 200
+    body = res.get_json()
+
+    assert body["skill_id"] == "ubid.verify_signature.v1"
+    assert body["job_type"] == "verify_signature"
+    assert body["category"] == "cryptography"
+
+
+def test_request_accepts_skill_id_without_job_type(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.blueprints.agent.create_invoice",
+        lambda amount_sats, memo, user_pubkey, expiry_seconds=3600: ("ln-invoice", "lookup-id-skill-id"),
+    )
+
+    res = client.post(
+        "/agent/request",
+        json={"skill_id": "ubid.ping.v1", "payload": {"message": "hello"}},
+    )
+    assert res.status_code in [200, 201]
+    body = res.get_json()
+    assert body["skill_id"] == "ubid.ping.v1"
+    assert body["status"] in ["invoice_pending", "done"]
+
+
+def test_marketplace_listings_alias_exists(client):
+    res = client.get("/marketplace/listings")
+    assert res.status_code == 200
+    body = res.get_json()
+
+    assert body["count"] == 1
+    assert len(body["items"]) == 1
+    assert "skills" in body["items"][0]
+
+
+def test_well_known_agent_endpoint_includes_skills_surface(client):
+    res = client.get("/.well-known/agent.json")
+    assert res.status_code == 200
+    body = res.get_json()
+
+    assert body["endpoints"]["skills"] == "/agent/skills"
+    assert body["endpoints"]["marketplace_listings"] == "/marketplace/listings"

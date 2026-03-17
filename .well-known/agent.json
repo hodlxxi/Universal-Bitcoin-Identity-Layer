@@ -1,77 +1,25 @@
 {
   "name": "HODLXXI Agent UBID",
-  "version": "0.1",
+  "version": "0.2",
   "operator": "HODLXXI",
   "network": "bitcoin",
-  "description": "Lightning-paid agent with signed receipts, attestations, and reputation",
+  "description": "Lightning-paid agent with signed receipts, attestations, reputation, and skill discovery",
   "agent_pubkey": "02019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f92",
   "signature_scheme": "secp256k1",
-  "capabilities": {
-    "supports_payment_settlement_check": true,
-    "job_types": {
-      "ping": {
-        "price_sats": 21,
-        "input_schema": {
-          "payload": "object"
-        },
-        "output_schema": {
-          "echo": "object",
-          "job_type": "string",
-          "ok": "boolean"
-        },
-        "memo": "Agent UBID ping job"
-      },
-      "verify_signature": {
-        "price_sats": 21,
-        "input_schema": {
-          "message": "string",
-          "pubkey": "compressed secp256k1 hex",
-          "signature": "hex"
-        },
-        "output_schema": {
-          "job_type": "string",
-          "ok": "boolean",
-          "valid": "boolean"
-        },
-        "memo": "Agent UBID verify_signature job"
-      },
-      "covenant_decode": {
-        "price_sats": 21,
-        "input_schema": {
-          "script_hex": "hex"
-        },
-        "output_schema": {
-          "decoded": "string",
-          "has_cltv": "boolean",
-          "job_type": "string",
-          "ok": "boolean"
-        },
-        "memo": "Agent UBID covenant_decode job"
-      }
-    }
-  },
-  "pricing": {
-    "ping_sats": 21,
-    "attestation_sats": 1
-  },
-  "limits": {
-    "max_jobs_per_day": 100
-  },
   "endpoints": {
+    "capabilities": "/agent/capabilities",
+    "skills": "/agent/skills",
+    "skill": "/agent/skills/<skill_id>",
     "request": "/agent/request",
     "job": "/agent/jobs/<job_id>",
     "verify": "/agent/verify/<job_id>",
     "attestations": "/agent/attestations",
     "reputation": "/agent/reputation",
     "chain_health": "/agent/chain/health",
-    "marketplace_listing": "/agent/marketplace/listing"
+    "marketplace_listing": "/agent/marketplace/listing",
+    "marketplace_listings": "/marketplace/listings"
   },
-  "trust_model": {
-    "signed_receipts": true,
-    "public_attestations": true,
-    "reputation_surface": true,
-    "chain_health_surface": true,
-    "payment_required_before_work": true
-  },
-  "timestamp": "2026-03-09T07:07:49.234340+00:00"
+  "skills_endpoint": "/agent/skills",
+  "marketplace_endpoint": "/marketplace/listings",
+  "timestamp": "2026-03-17T00:00:00+00:00"
 }

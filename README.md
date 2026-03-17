@@ -63,6 +63,7 @@ flask run
 The service exposes:
 
 - `/.well-known/openid-configuration`, `/oauth/token`, `/oauth/authorize`
+- `/.well-known/agent.json`, `/agent/capabilities`, `/agent/skills`, `/agent/marketplace/listing`
 - `/lnurl/auth` LNURL challenge endpoints
 - `/metrics/prometheus` for Prometheus scrapers
 - `/health` basic liveness probe
@@ -121,3 +122,17 @@ Bug reports and feature proposals are welcome via [GitHub Issues](https://github
 ## 📄 License
 
 Released under the [MIT License](LICENSE).
+
+
+## 🤖 Agent Skills Marketplace MVP
+
+The Agent UBID surface includes an MVP-grade skills marketplace/discovery layer while preserving existing job APIs:
+
+- Canonical machine-readable capability handshake: `GET /agent/capabilities`
+- First-class skills catalog: `GET /agent/skills` and `GET /agent/skills/<skill_id>`
+- Marketplace listing view: `GET /agent/marketplace/listing`
+- Marketplace listings collection alias: `GET /marketplace/listings`
+- Trust surfaces: `GET /agent/reputation`, `GET /agent/attestations`, `GET /agent/chain/health`
+- Well-known agent metadata: `GET /.well-known/agent.json`
+
+Backwards compatibility is preserved: clients can still submit `job_type` via `POST /agent/request`, while marketplace-oriented clients can now submit `skill_id`.
