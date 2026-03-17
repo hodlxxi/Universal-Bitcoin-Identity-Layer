@@ -5,7 +5,7 @@ Pytest configuration and shared fixtures for HODLXXI tests.
 import os
 import tempfile
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, Mock
 
 # ------------------------------
@@ -126,7 +126,7 @@ def oauth_client_token(sample_pubkey):
     """
     Insert an OAuth client + token into the DB and return token details.
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     import uuid
 
     from app.db_storage import create_user, store_oauth_client, store_oauth_token
@@ -149,7 +149,7 @@ def oauth_client_token(sample_pubkey):
     )
 
     access_token = f"access_{uuid.uuid4().hex}"
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     token_payload = {
         "access_token": access_token,
         "refresh_token": f"refresh_{uuid.uuid4().hex}",

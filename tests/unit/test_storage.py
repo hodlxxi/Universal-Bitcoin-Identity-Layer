@@ -2,7 +2,7 @@
 Unit tests for storage backend.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -72,7 +72,7 @@ class TestOAuthCodeStorage:
             "user_id": "user_123",
             "redirect_uri": "http://localhost:3000/callback",
             "scope": "openid profile",
-            "expires_at": (datetime.utcnow() + timedelta(minutes=10)).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
         }
 
         store_oauth_code("auth_code_123", code_data)
@@ -106,8 +106,8 @@ class TestSessionStorage:
         session_data = {
             "session_id": "sess_123",
             "user_id": "user_456",
-            "created_at": datetime.utcnow().isoformat(),
-            "expires_at": (datetime.utcnow() + timedelta(hours=24)).isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
         }
 
         store_session("sess_123", session_data)
@@ -135,8 +135,8 @@ class TestLNURLChallengeStorage:
         challenge_data = {
             "session_id": "lnurl_sess_123",
             "k1": "a" * 64,
-            "created_at": datetime.utcnow().isoformat(),
-            "expires_at": (datetime.utcnow() + timedelta(minutes=5)).isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
         }
 
         store_lnurl_challenge("lnurl_sess_123", challenge_data)

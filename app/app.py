@@ -9040,12 +9040,13 @@ def api_challenge():
             return jsonify(error="Missing or invalid pubkey"), 400
     cid = str(uuid.uuid4())
     challenge = f"HODLXXI:login:{int(time.time())}:{uuid.uuid4().hex[:8]}"
+    now_utc = datetime.now(timezone.utc)
     ACTIVE_CHALLENGES[cid] = {
         "pubkey": pubkey,
         "label": label,
         "challenge": challenge,
-        "created": datetime.utcnow(),
-        "expires": datetime.utcnow() + timedelta(minutes=5),
+        "created": now_utc,
+        "expires": now_utc + timedelta(minutes=5),
         "method": data.get("method", "api"),
     }
     return jsonify(ok=True, challenge_id=cid, challenge=challenge, expires_in=300)
@@ -9075,7 +9076,7 @@ def api_verify():
             pubkey = spk
 
     rec = ACTIVE_CHALLENGES.get(cid)
-    if not rec or rec["expires"] < datetime.utcnow():
+    if not rec or rec["expires"] < datetime.now(timezone.utc):
         return jsonify(error="Invalid or expired challenge"), 400
     if rec["pubkey"] != pubkey:
         return jsonify(error="Pubkey mismatch"), 400
@@ -12440,6 +12441,5 @@ def api_hide_manifesto():
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
-
 
 
