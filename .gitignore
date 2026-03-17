@@ -111,3 +111,6 @@ logs/
 *.bak.*
 *~ 
 venv-staging/
+
+__pycache__/
+*.pyc
