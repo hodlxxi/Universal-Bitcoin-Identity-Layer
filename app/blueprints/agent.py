@@ -15,6 +15,12 @@ from app.payments.ln import check_invoice_paid, create_invoice
 
 agent_bp = Blueprint("agent", __name__)
 
+AGENT_NAME = "HODLXXI Agent UBID"
+AGENT_OPERATOR = "HODLXXI"
+AGENT_NETWORK = "bitcoin"
+AGENT_VERSION = "0.2"
+AGENT_DESCRIPTION = "Lightning-paid agent with signed receipts, attestations, reputation, and skill discovery"
+
 PING_SATS = 21
 ATTESTATION_SATS = 1
 MAX_JOBS_PER_DAY = 100
@@ -75,6 +81,24 @@ def _payment_hash(invoice_lookup_id: str) -> str:
     if len(candidate) == 64 and all(ch in "0123456789abcdef" for ch in candidate):
         return candidate
     return hashlib.sha256(invoice_lookup_id.encode("utf-8")).hexdigest()
+
+
+def _agent_endpoints() -> dict:
+    return {
+        "capabilities": "/agent/capabilities",
+        "skills": "/agent/skills",
+        "skill": "/agent/skills/<skill_id>",
+        "request": "/agent/request",
+        "job": "/agent/jobs/<job_id>",
+        "verify": "/agent/verify/<job_id>",
+        "attestations": "/agent/attestations",
+        "reputation": "/agent/reputation",
+        "chain_health": "/agent/chain/health",
+        "marketplace_listing": "/agent/marketplace/listing",
+        "marketplace_listings": "/marketplace/listings",
+        "agent_marketplace_listings": "/agent/marketplace/listings",
+        "well_known_agent": "/.well-known/agent.json",
+    }
 
 
 JOB_REGISTRY = {
@@ -205,25 +229,13 @@ def capabilities():
     skills = _skills_catalog()
     payload = {
         "agent_pubkey": get_agent_pubkey_hex(),
-        "version": "0.1",
-        "service_name": "HODLXXI Agent UBID",
-        "service_description": "Lightning-paid agent with signed receipts, attestations, and reputation",
-        "operator": "HODLXXI",
-        "network": "bitcoin",
+        "version": AGENT_VERSION,
+        "service_name": AGENT_NAME,
+        "service_description": AGENT_DESCRIPTION,
+        "operator": AGENT_OPERATOR,
+        "network": AGENT_NETWORK,
         "supports_payment_settlement_check": True,
-        "endpoints": {
-            "request": "/agent/request",
-            "job": "/agent/jobs/<job_id>",
-            "verify": "/agent/verify/<job_id>",
-            "attestations": "/agent/attestations",
-            "reputation": "/agent/reputation",
-            "chain_health": "/agent/chain/health",
-            "skills": "/agent/skills",
-            "skill": "/agent/skills/<skill_id>",
-            "marketplace_listing": "/agent/marketplace/listing",
-            "marketplace_listings": "/marketplace/listings",
-            "well_known_agent": "/.well-known/agent.json",
-        },
+        "endpoints": _agent_endpoints(),
         "pricing": {"ping_sats": PING_SATS, "attestation_sats": ATTESTATION_SATS},
         "skills": {
             "schema_version": "1.0",
@@ -278,30 +290,19 @@ def get_skill(skill_id: str):
 
 @agent_bp.get("/.well-known/agent.json")
 def well_known_agent():
+    endpoints = _agent_endpoints()
     return jsonify(
         {
-            "name": "HODLXXI Agent UBID",
-            "version": "0.2",
-            "operator": "HODLXXI",
-            "network": "bitcoin",
-            "description": "Lightning-paid agent with signed receipts, attestations, reputation, and skill discovery",
+            "name": AGENT_NAME,
+            "version": AGENT_VERSION,
+            "operator": AGENT_OPERATOR,
+            "network": AGENT_NETWORK,
+            "description": AGENT_DESCRIPTION,
             "agent_pubkey": get_agent_pubkey_hex(),
             "signature_scheme": "secp256k1",
-            "endpoints": {
-                "capabilities": "/agent/capabilities",
-                "skills": "/agent/skills",
-                "skill": "/agent/skills/<skill_id>",
-                "request": "/agent/request",
-                "job": "/agent/jobs/<job_id>",
-                "verify": "/agent/verify/<job_id>",
-                "attestations": "/agent/attestations",
-                "reputation": "/agent/reputation",
-                "chain_health": "/agent/chain/health",
-                "marketplace_listing": "/agent/marketplace/listing",
-                "marketplace_listings": "/marketplace/listings",
-            },
-            "skills_endpoint": "/agent/skills",
-            "marketplace_endpoint": "/marketplace/listings",
+            "endpoints": endpoints,
+            "skills_endpoint": endpoints["skills"],
+            "marketplace_endpoint": endpoints["marketplace_listings"],
             "timestamp": _iso_now(),
         }
     )
@@ -625,28 +626,18 @@ def marketplace_listing():
         latest_event_hash = events[-1].event_hash if events else None
 
         listing = {
-            "service_name": "HODLXXI Agent UBID",
-            "service_description": "Lightning-paid agent with signed receipts, attestations, and reputation",
-            "operator": "HODLXXI",
+            "service_name": AGENT_NAME,
+            "service_description": AGENT_DESCRIPTION,
+            "operator": AGENT_OPERATOR,
             "agent_pubkey": get_agent_pubkey_hex(),
-            "network": "bitcoin",
+            "network": AGENT_NETWORK,
             "skills": _skills_catalog(),
             "job_types": JOB_REGISTRY,
             "pricing": {
                 "ping_sats": PING_SATS,
                 "attestation_sats": ATTESTATION_SATS,
             },
-            "endpoints": {
-                "request": "/agent/request",
-                "job": "/agent/jobs/<job_id>",
-                "verify": "/agent/verify/<job_id>",
-                "skills": "/agent/skills",
-                "skill": "/agent/skills/<skill_id>",
-                "attestations": "/agent/attestations",
-                "reputation": "/agent/reputation",
-                "chain_health": "/agent/chain/health",
-                "marketplace_listing": "/agent/marketplace/listing",
-            },
+            "endpoints": _agent_endpoints(),
             "reputation": {
                 "total_jobs": total_jobs,
                 "completed_jobs": completed_jobs,
@@ -662,6 +653,7 @@ def marketplace_listing():
         return jsonify(listing)
 
 
+@agent_bp.get("/agent/marketplace/listings")
 @agent_bp.get("/marketplace/listings")
 def marketplace_listings():
     category = (request.args.get("category") or "").strip().lower()

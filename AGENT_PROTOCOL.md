@@ -41,6 +41,7 @@ The public key is the stable identity anchor of the agent. All receipts and atte
 - `GET /agent/reputation`
 - `GET /agent/chain/health`
 - `GET /agent/marketplace/listing`
+- `GET /agent/marketplace/listings`
 - `GET /marketplace/listings`
 
 ---

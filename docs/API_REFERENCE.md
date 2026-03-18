@@ -217,6 +217,9 @@ Fetch one skill by ID.
 ### GET /agent/marketplace/listing
 Single-agent marketplace listing view with trust and reputation surfaces.
 
+### GET /agent/marketplace/listings
+Agent-prefixed alias for marketplace listings collections.
+
 ### GET /marketplace/listings
 Collection-style marketplace listings endpoint (supports simple skill filtering by `category` and `tag`).
 

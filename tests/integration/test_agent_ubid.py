@@ -400,3 +400,44 @@ def test_well_known_agent_endpoint_includes_skills_surface(client):
 
     assert body["endpoints"]["skills"] == "/agent/skills"
     assert body["endpoints"]["marketplace_listings"] == "/marketplace/listings"
+
+
+def test_agent_marketplace_listings_alias_exists(client):
+    res = client.get("/agent/marketplace/listings")
+    assert res.status_code == 200
+
+    body = res.get_json()
+    assert body["count"] == 1
+    assert len(body["items"]) == 1
+
+
+def test_skills_listing_supports_category_filter(client):
+    res = client.get("/agent/skills", query_string={"category": "cryptography"})
+    assert res.status_code == 200
+
+    body = res.get_json()
+    assert body["count"] >= 1
+    assert all(item["category"] == "cryptography" for item in body["items"])
+
+
+def test_capabilities_and_well_known_share_canonical_endpoints(client):
+    capabilities = client.get("/agent/capabilities").get_json()
+    well_known = client.get("/.well-known/agent.json").get_json()
+
+    assert capabilities["version"] == well_known["version"]
+    assert capabilities["service_name"] == well_known["name"]
+
+    for key in [
+        "skills",
+        "skill",
+        "request",
+        "job",
+        "verify",
+        "attestations",
+        "reputation",
+        "chain_health",
+        "marketplace_listing",
+        "marketplace_listings",
+        "agent_marketplace_listings",
+    ]:
+        assert capabilities["endpoints"][key] == well_known["endpoints"][key]

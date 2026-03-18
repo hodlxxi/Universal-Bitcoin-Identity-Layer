@@ -17,7 +17,8 @@
     "reputation": "/agent/reputation",
     "chain_health": "/agent/chain/health",
     "marketplace_listing": "/agent/marketplace/listing",
-    "marketplace_listings": "/marketplace/listings"
+    "marketplace_listings": "/marketplace/listings",
+    "agent_marketplace_listings": "/agent/marketplace/listings"
   },
   "skills_endpoint": "/agent/skills",
   "marketplace_endpoint": "/marketplace/listings",

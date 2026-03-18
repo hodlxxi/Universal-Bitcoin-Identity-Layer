@@ -131,7 +131,7 @@ The Agent UBID surface includes an MVP-grade skills marketplace/discovery layer 
 - Canonical machine-readable capability handshake: `GET /agent/capabilities`
 - First-class skills catalog: `GET /agent/skills` and `GET /agent/skills/<skill_id>`
 - Marketplace listing view: `GET /agent/marketplace/listing`
-- Marketplace listings collection alias: `GET /marketplace/listings`
+- Marketplace listings collection aliases: `GET /marketplace/listings` and `GET /agent/marketplace/listings`
 - Trust surfaces: `GET /agent/reputation`, `GET /agent/attestations`, `GET /agent/chain/health`
 - Well-known agent metadata: `GET /.well-known/agent.json`
 
