@@ -6,6 +6,10 @@
   "description": "Lightning-paid agent with signed receipts, attestations, and reputation",
   "agent_pubkey": "02019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f92",
   "signature_scheme": "secp256k1",
+  "capability_schema": {
+    "version": "1.0",
+    "uri": "/agent/capabilities/schema"
+  },
   "capabilities": {
     "supports_payment_settlement_check": true,
     "job_types": {
@@ -58,13 +62,45 @@
     "max_jobs_per_day": 100
   },
   "endpoints": {
+    "well_known": "/.well-known/agent.json",
+    "capabilities": "/agent/capabilities",
+    "capabilities_schema": "/agent/capabilities/schema",
     "request": "/agent/request",
     "job": "/agent/jobs/<job_id>",
     "verify": "/agent/verify/<job_id>",
     "attestations": "/agent/attestations",
     "reputation": "/agent/reputation",
     "chain_health": "/agent/chain/health",
-    "marketplace_listing": "/agent/marketplace/listing"
+    "marketplace_listing": "/agent/marketplace/listing",
+    "skills": "/agent/skills"
+  },
+  "skills": {
+    "count": 1,
+    "endpoint": "/agent/skills",
+    "items": [
+      {
+        "skill_id": "hodlxxi-bitcoin-identity",
+        "name": "hodlxxi-bitcoin-identity",
+        "version": "1.0.0",
+        "description": "Integrate HODLXXI as a Bitcoin-native identity provider that bridges OAuth2/OIDC and Lightning LNURL-Auth for client registration, authorization flows, JWT verification, and health monitoring.",
+        "homepage": "https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer",
+        "tags": [
+          "oauth2",
+          "oidc",
+          "lnurl-auth",
+          "jwt",
+          "bitcoin"
+        ],
+        "files": {
+          "skill_markdown": "skills/public/hodlxxi-bitcoin-identity/SKILL.md",
+          "heartbeat_markdown": "skills/public/hodlxxi-bitcoin-identity/HEARTBEAT.md"
+        },
+        "install": {
+          "raw_url": "https://raw.githubusercontent.com/hodlxxi/Universal-Bitcoin-Identity-Layer/main/skills/public/hodlxxi-bitcoin-identity/SKILL.md",
+          "local_path": "skills/public/hodlxxi-bitcoin-identity/SKILL.md"
+        }
+      }
+    ]
   },
   "trust_model": {
     "signed_receipts": true,
@@ -73,5 +109,12 @@
     "chain_health_surface": true,
     "payment_required_before_work": true
   },
-  "timestamp": "2026-03-09T07:07:49.234340+00:00"
+  "discovery": {
+    "well_known_agent": "/.well-known/agent.json",
+    "capabilities": "/agent/capabilities",
+    "capabilities_schema": "/agent/capabilities/schema",
+    "skills": "/agent/skills",
+    "marketplace_listing": "/agent/marketplace/listing"
+  },
+  "timestamp": "2026-03-18T00:00:00+00:00"
 }

@@ -1,10 +1,11 @@
-"""Minimal Agent UBID routes: capabilities, jobs, and attestations."""
+"""Minimal Agent UBID routes: capabilities, jobs, attestations, and discovery."""
 
 import hashlib
 import os
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
@@ -18,6 +19,10 @@ agent_bp = Blueprint("agent", __name__)
 PING_SATS = 21
 ATTESTATION_SATS = 1
 MAX_JOBS_PER_DAY = 100
+CAPABILITIES_SCHEMA_VERSION = "1.0"
+MARKETPLACE_LISTING_VERSION = "1.0"
+SKILLS_ROOT = Path(__file__).resolve().parents[2] / "skills" / "public"
+SKILLS_REPO_RAW_BASE = "https://raw.githubusercontent.com/hodlxxi/Universal-Bitcoin-Identity-Layer/main/skills/public"
 
 IP_WINDOW_SECONDS = 60
 IP_MAX_REQUESTS = 20
@@ -77,6 +82,264 @@ def _payment_hash(invoice_lookup_id: str) -> str:
     return hashlib.sha256(invoice_lookup_id.encode("utf-8")).hexdigest()
 
 
+def _agent_endpoints() -> dict:
+    return {
+        "well_known": "/.well-known/agent.json",
+        "capabilities": "/agent/capabilities",
+        "capabilities_schema": "/agent/capabilities/schema",
+        "request": "/agent/request",
+        "job": "/agent/jobs/<job_id>",
+        "verify": "/agent/verify/<job_id>",
+        "attestations": "/agent/attestations",
+        "reputation": "/agent/reputation",
+        "chain_health": "/agent/chain/health",
+        "marketplace_listing": "/agent/marketplace/listing",
+        "skills": "/agent/skills",
+    }
+
+
+def _parse_front_matter_text(skill_path: Path) -> tuple[dict, str]:
+    text = skill_path.read_text(encoding="utf-8")
+    if not text.startswith("---\n"):
+        return {}, text
+
+    parts = text.split("\n---\n", 1)
+    if len(parts) != 2:
+        return {}, text
+
+    header_text, body = parts
+    header_lines = header_text.splitlines()[1:]
+    metadata: dict[str, object] = {}
+    current_list_key: str | None = None
+
+    for raw_line in header_lines:
+        line = raw_line.rstrip()
+        if not line:
+            continue
+        stripped = line.strip()
+        if stripped.startswith("- ") and current_list_key:
+            metadata.setdefault(current_list_key, [])
+            casted = metadata[current_list_key]
+            if isinstance(casted, list):
+                casted.append(stripped[2:].strip())
+            continue
+
+        current_list_key = None
+        if ":" not in stripped:
+            continue
+
+        key, value = stripped.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        if not value:
+            current_list_key = key
+            metadata.setdefault(key, [])
+            continue
+
+        metadata[key] = value.strip("'\"")
+
+    return metadata, body
+
+
+def _skill_entry(skill_dir: Path) -> dict | None:
+    skill_md = skill_dir / "SKILL.md"
+    if not skill_md.exists():
+        return None
+
+    metadata, body = _parse_front_matter_text(skill_md)
+    skill_name = str(metadata.get("name") or skill_dir.name)
+    description = str(metadata.get("description") or "").strip()
+    body_lines = [line.strip() for line in body.splitlines() if line.strip()]
+
+    return {
+        "skill_id": skill_name,
+        "name": skill_name,
+        "version": str(metadata.get("version") or "0.0.0"),
+        "description": description or (body_lines[0] if body_lines else ""),
+        "homepage": str(metadata.get("homepage") or ""),
+        "tags": metadata.get("tags", []),
+        "files": {
+            "skill_markdown": f"skills/public/{skill_dir.name}/SKILL.md",
+            "heartbeat_markdown": (
+                f"skills/public/{skill_dir.name}/HEARTBEAT.md" if (skill_dir / "HEARTBEAT.md").exists() else None
+            ),
+        },
+        "install": {
+            "raw_url": f"{SKILLS_REPO_RAW_BASE}/{skill_dir.name}/SKILL.md",
+            "local_path": f"skills/public/{skill_dir.name}/SKILL.md",
+        },
+    }
+
+
+def _skills_catalog() -> list[dict]:
+    if not SKILLS_ROOT.exists():
+        return []
+
+    items = []
+    for skill_dir in sorted(path for path in SKILLS_ROOT.iterdir() if path.is_dir()):
+        entry = _skill_entry(skill_dir)
+        if entry:
+            items.append(entry)
+    return items
+
+
+def _public_document_base() -> str:
+    return request.url_root.rstrip("/")
+
+
+def _capabilities_schema_document() -> dict:
+    endpoints = _agent_endpoints()
+    base = _public_document_base()
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": f"{base}{endpoints['capabilities_schema']}",
+        "title": "HODLXXI Agent Capabilities",
+        "description": "Canonical machine-readable schema for the Agent UBID capabilities document.",
+        "type": "object",
+        "required": [
+            "agent_pubkey",
+            "version",
+            "service_name",
+            "service_description",
+            "operator",
+            "network",
+            "supports_payment_settlement_check",
+            "endpoints",
+            "pricing",
+            "job_types",
+            "limits",
+            "timestamp",
+            "sig_scheme",
+            "signature",
+        ],
+        "properties": {
+            "agent_pubkey": {"type": "string"},
+            "version": {"type": "string"},
+            "service_name": {"type": "string"},
+            "service_description": {"type": "string"},
+            "operator": {"type": "string"},
+            "network": {"type": "string"},
+            "supports_payment_settlement_check": {"type": "boolean"},
+            "capability_schema": {
+                "type": "object",
+                "required": ["version", "uri"],
+                "properties": {
+                    "version": {"type": "string"},
+                    "uri": {"type": "string", "pattern": "^/"},
+                },
+            },
+            "endpoints": {
+                "type": "object",
+                "required": list(endpoints.keys()),
+                "properties": {key: {"type": "string", "pattern": "^/"} for key in endpoints},
+                "additionalProperties": False,
+            },
+            "pricing": {"type": "object"},
+            "job_types": {"type": "object"},
+            "limits": {"type": "object"},
+            "skills": {
+                "type": "object",
+                "required": ["count", "endpoint", "items"],
+                "properties": {
+                    "count": {"type": "integer", "minimum": 0},
+                    "endpoint": {"type": "string", "pattern": "^/"},
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["skill_id", "name", "version", "description", "install"],
+                            "properties": {
+                                "skill_id": {"type": "string"},
+                                "name": {"type": "string"},
+                                "version": {"type": "string"},
+                                "description": {"type": "string"},
+                                "homepage": {"type": "string"},
+                                "tags": {"type": "array", "items": {"type": "string"}},
+                                "files": {"type": "object"},
+                                "install": {"type": "object"},
+                            },
+                        },
+                    },
+                },
+            },
+            "timestamp": {"type": "string", "format": "date-time"},
+            "sig_scheme": {"type": "string"},
+            "signature": {"type": "string"},
+        },
+        "additionalProperties": False,
+    }
+
+
+def _capabilities_payload() -> dict:
+    skills = _skills_catalog()
+    endpoints = _agent_endpoints()
+    payload = {
+        "agent_pubkey": get_agent_pubkey_hex(),
+        "version": "0.1",
+        "service_name": "HODLXXI Agent UBID",
+        "service_description": "Lightning-paid agent with signed receipts, attestations, and reputation",
+        "operator": "HODLXXI",
+        "network": "bitcoin",
+        "supports_payment_settlement_check": True,
+        "capability_schema": {
+            "version": CAPABILITIES_SCHEMA_VERSION,
+            "uri": endpoints["capabilities_schema"],
+        },
+        "endpoints": endpoints,
+        "pricing": {"ping_sats": PING_SATS, "attestation_sats": ATTESTATION_SATS},
+        "job_types": JOB_REGISTRY,
+        "limits": {"max_jobs_per_day": MAX_JOBS_PER_DAY},
+        "skills": {
+            "count": len(skills),
+            "endpoint": endpoints["skills"],
+            "items": skills,
+        },
+        "timestamp": _iso_now(),
+        "sig_scheme": "secp256k1",
+    }
+    payload["signature"] = sign_message(canonical_json_bytes(payload))
+    return payload
+
+
+def _agent_identity_document() -> dict:
+    capabilities = _capabilities_payload()
+    skills = capabilities["skills"]
+    endpoints = capabilities["endpoints"]
+    return {
+        "name": capabilities["service_name"],
+        "version": capabilities["version"],
+        "operator": capabilities["operator"],
+        "network": capabilities["network"],
+        "description": capabilities["service_description"],
+        "agent_pubkey": capabilities["agent_pubkey"],
+        "signature_scheme": capabilities["sig_scheme"],
+        "capability_schema": capabilities["capability_schema"],
+        "capabilities": {
+            "supports_payment_settlement_check": capabilities["supports_payment_settlement_check"],
+            "job_types": capabilities["job_types"],
+        },
+        "pricing": capabilities["pricing"],
+        "limits": capabilities["limits"],
+        "endpoints": endpoints,
+        "skills": skills,
+        "trust_model": {
+            "signed_receipts": True,
+            "public_attestations": True,
+            "reputation_surface": True,
+            "chain_health_surface": True,
+            "payment_required_before_work": True,
+        },
+        "discovery": {
+            "well_known_agent": endpoints["well_known"],
+            "capabilities": endpoints["capabilities"],
+            "capabilities_schema": endpoints["capabilities_schema"],
+            "skills": endpoints["skills"],
+            "marketplace_listing": endpoints["marketplace_listing"],
+        },
+        "timestamp": capabilities["timestamp"],
+    }
+
+
 JOB_REGISTRY = {
     "ping": {
         "price_sats": PING_SATS,
@@ -134,31 +397,28 @@ def _job_result(job: AgentJob, payload: dict) -> dict:
 
 @agent_bp.get("/agent/capabilities")
 def capabilities():
-    payload = {
-        "agent_pubkey": get_agent_pubkey_hex(),
-        "version": "0.1",
-        "service_name": "HODLXXI Agent UBID",
-        "service_description": "Lightning-paid agent with signed receipts, attestations, and reputation",
-        "operator": "HODLXXI",
-        "network": "bitcoin",
-        "supports_payment_settlement_check": True,
-        "endpoints": {
-            "request": "/agent/request",
-            "job": "/agent/jobs/<job_id>",
-            "verify": "/agent/verify/<job_id>",
-            "attestations": "/agent/attestations",
-            "reputation": "/agent/reputation",
-            "chain_health": "/agent/chain/health",
-            "marketplace_listing": "/agent/marketplace/listing",
-        },
-        "pricing": {"ping_sats": PING_SATS, "attestation_sats": ATTESTATION_SATS},
-        "job_types": JOB_REGISTRY,
-        "limits": {"max_jobs_per_day": MAX_JOBS_PER_DAY},
-        "timestamp": _iso_now(),
-        "sig_scheme": "secp256k1",
-    }
-    payload["signature"] = sign_message(canonical_json_bytes(payload))
-    return jsonify(payload)
+    return jsonify(_capabilities_payload())
+
+
+@agent_bp.get("/agent/capabilities/schema")
+def capabilities_schema():
+    return jsonify(_capabilities_schema_document())
+
+
+@agent_bp.get("/agent/skills")
+def skills_listing():
+    items = _skills_catalog()
+    return jsonify(
+        {
+            "count": len(items),
+            "items": items,
+        }
+    )
+
+
+@agent_bp.get("/.well-known/agent.json")
+def well_known_agent():
+    return jsonify(_agent_identity_document())
 
 
 @agent_bp.post("/agent/request")
@@ -444,6 +704,9 @@ def chain_health():
 
 @agent_bp.get("/agent/marketplace/listing")
 def marketplace_listing():
+    endpoints = _agent_endpoints()
+    capabilities = _capabilities_payload()
+    skills = capabilities["skills"]
     with session_scope() as session:
         jobs = session.query(AgentJob).all()
         events = session.query(AgentEvent).order_by(AgentEvent.created_at.asc()).all()
@@ -467,25 +730,26 @@ def marketplace_listing():
 
         return jsonify(
             {
+                "listing_version": MARKETPLACE_LISTING_VERSION,
                 "service_name": "HODLXXI Agent UBID",
                 "service_description": "Lightning-paid agent with signed receipts, attestations, and reputation",
                 "operator": "HODLXXI",
                 "agent_pubkey": get_agent_pubkey_hex(),
                 "network": "bitcoin",
+                "capability_schema": capabilities["capability_schema"],
+                "discovery": {
+                    "well_known_agent": endpoints["well_known"],
+                    "capabilities": endpoints["capabilities"],
+                    "capabilities_schema": endpoints["capabilities_schema"],
+                    "skills": endpoints["skills"],
+                },
                 "job_types": JOB_REGISTRY,
                 "pricing": {
                     "ping_sats": PING_SATS,
                     "attestation_sats": ATTESTATION_SATS,
                 },
-                "endpoints": {
-                    "request": "/agent/request",
-                    "job": "/agent/jobs/<job_id>",
-                    "verify": "/agent/verify/<job_id>",
-                    "attestations": "/agent/attestations",
-                    "reputation": "/agent/reputation",
-                    "chain_health": "/agent/chain/health",
-                    "marketplace_listing": "/agent/marketplace/listing",
-                },
+                "endpoints": endpoints,
+                "skills": skills,
                 "reputation": {
                     "total_jobs": total_jobs,
                     "completed_jobs": completed_jobs,

@@ -167,6 +167,7 @@ Mitigation direction:
 
 - prioritize pubkey pinning
 - publish identity metadata under `/.well-known/agent.json`
+- publish capability shape under `/agent/capabilities/schema`
 - encourage counterparties to verify signatures, not branding
 
 ### Payment/result mismatch
@@ -188,6 +189,7 @@ Mitigation direction:
 - check `/agent/reputation`
 - check `/agent/attestations`
 - check `/agent/chain/health`
+- check `/agent/skills` when the integration depends on reusable agent-facing skills
 - discount agents with no operational trail
 
 ---
@@ -250,14 +252,17 @@ The goal is “an agent that can be trusted across time.”
 Before trusting this agent, a counterparty should verify:
 
 1. the advertised pubkey
-2. the capabilities document
-3. the job type and price
-4. a sample paid request
-5. the returned job record
-6. the receipt verification path
-7. the attestation chain
-8. the reputation summary
-9. the chain health report
+2. `/.well-known/agent.json`
+3. the capabilities document
+4. the published capability schema
+5. the advertised skills surface if skill discovery matters
+6. the job type and price
+7. a sample paid request
+8. the returned job record
+9. the receipt verification path
+10. the attestation chain
+11. the reputation summary
+12. the chain health report
 
 Trust should be earned by successful verification, not assumed from presentation.
 

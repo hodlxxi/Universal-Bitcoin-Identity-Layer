@@ -48,6 +48,7 @@ os.environ["RATE_LIMIT_ENABLED"] = "false"
 os.environ["HODLXXI_COST_DEMO_PROTECTED_SATS"] = "1"
 os.environ["HODLXXI_COST_BITCOIN_RPC_SATS"] = "1"
 os.environ["HODLXXI_FREE_QUOTA_CALLS"] = "0"
+os.environ["AGENT_PRIVKEY_HEX"] = "1" * 64
 
 # Import app after setting environment
 import sys
@@ -126,8 +127,8 @@ def oauth_client_token(sample_pubkey):
     """
     Insert an OAuth client + token into the DB and return token details.
     """
-    from datetime import datetime, timedelta, timezone
     import uuid
+    from datetime import datetime, timedelta, timezone
 
     from app.db_storage import create_user, store_oauth_client, store_oauth_token
 
@@ -176,12 +177,14 @@ def funded_oauth_client_token(oauth_client_token):
 
     with session_scope() as session:
         session.execute(
-            text("""
+            text(
+                """
                 INSERT INTO ubid_clients (client_id, payg_enabled, sats_balance, free_quota_remaining, created_at, updated_at)
                 VALUES (:client_id, TRUE, 10, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 ON CONFLICT (client_id)
                 DO UPDATE SET sats_balance = 10, updated_at = CURRENT_TIMESTAMP
-                """),
+                """
+            ),
             {"client_id": oauth_client_token["client_id"]},
         )
 

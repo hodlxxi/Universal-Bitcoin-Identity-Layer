@@ -21,6 +21,47 @@ def test_capabilities_signature_verifies(client):
 
     signature = body.pop("signature")
     assert verify_message(canonical_json_bytes(body), signature, body["agent_pubkey"])
+    assert body["capability_schema"]["uri"] == "/agent/capabilities/schema"
+    assert body["endpoints"]["skills"] == "/agent/skills"
+    assert body["skills"]["count"] >= 1
+
+
+def test_capabilities_schema_is_machine_readable(client):
+    res = client.get("/agent/capabilities/schema")
+    assert res.status_code == 200
+
+    body = res.get_json()
+    assert body["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert body["title"] == "HODLXXI Agent Capabilities"
+    assert "required" in body
+    assert "signature" in body["required"]
+    assert "skills" in body["properties"]
+
+
+def test_skills_endpoint_lists_public_skills(client):
+    res = client.get("/agent/skills")
+    assert res.status_code == 200
+
+    body = res.get_json()
+    assert body["count"] >= 1
+    assert isinstance(body["items"], list)
+
+    skill = body["items"][0]
+    assert skill["skill_id"] == "hodlxxi-bitcoin-identity"
+    assert skill["files"]["skill_markdown"].endswith("/SKILL.md")
+    assert skill["install"]["raw_url"].startswith("https://raw.githubusercontent.com/")
+
+
+def test_well_known_agent_document_matches_discovery_surfaces(client):
+    res = client.get("/.well-known/agent.json")
+    assert res.status_code == 200
+
+    body = res.get_json()
+    assert body["agent_pubkey"]
+    assert body["capability_schema"]["uri"] == "/agent/capabilities/schema"
+    assert body["discovery"]["skills"] == "/agent/skills"
+    assert body["endpoints"]["well_known"] == "/.well-known/agent.json"
+    assert body["skills"]["count"] >= 1
 
 
 def test_request_creates_job_and_invoice(client, monkeypatch):
@@ -328,3 +369,15 @@ def test_capabilities_advertise_reputation_endpoint(client):
     assert "endpoints" in body
     assert "reputation" in body["endpoints"]
     assert body["endpoints"]["reputation"] == "/agent/reputation"
+
+
+def test_marketplace_listing_normalizes_discovery_and_skills(client):
+    res = client.get("/agent/marketplace/listing")
+    assert res.status_code == 200
+
+    body = res.get_json()
+    assert body["listing_version"] == "1.0"
+    assert body["discovery"]["capabilities"] == "/agent/capabilities"
+    assert body["discovery"]["skills"] == "/agent/skills"
+    assert body["capability_schema"]["uri"] == "/agent/capabilities/schema"
+    assert body["skills"]["count"] >= 1
