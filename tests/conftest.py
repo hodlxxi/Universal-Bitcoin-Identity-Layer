@@ -177,14 +177,12 @@ def funded_oauth_client_token(oauth_client_token):
 
     with session_scope() as session:
         session.execute(
-            text(
-                """
+            text("""
                 INSERT INTO ubid_clients (client_id, payg_enabled, sats_balance, free_quota_remaining, created_at, updated_at)
                 VALUES (:client_id, TRUE, 10, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 ON CONFLICT (client_id)
                 DO UPDATE SET sats_balance = 10, updated_at = CURRENT_TIMESTAMP
-                """
-            ),
+                """),
             {"client_id": oauth_client_token["client_id"]},
         )
 
