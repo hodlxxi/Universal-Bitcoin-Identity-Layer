@@ -31,6 +31,7 @@ The public key is the stable identity anchor of the agent. All receipts and atte
 ## Endpoints
 
 - `GET /agent/capabilities`
+- `GET /agent/capabilities/schema`
 - `POST /agent/request`
 - `GET /agent/jobs/<job_id>`
 - `GET /agent/verify/<job_id>`
@@ -38,6 +39,8 @@ The public key is the stable identity anchor of the agent. All receipts and atte
 - `GET /agent/reputation`
 - `GET /agent/chain/health`
 - `GET /agent/marketplace/listing`
+- `GET /agent/skills`
+- `GET /.well-known/agent.json`
 
 ---
 
@@ -50,9 +53,11 @@ A client starts by fetching:
 This returns:
 
 - agent identity metadata
+- capability schema reference
 - supported job types
 - pricing
 - limits
+- skill discovery summary
 - settlement-check support
 - service endpoints
 
@@ -251,6 +256,37 @@ This endpoint is intended for discovery, not deep verification. Serious counterp
 - `/agent/reputation`
 - `/agent/attestations`
 - `/agent/chain/health`
+
+---
+
+## Skills Surface
+
+`GET /agent/skills` exposes the agent's installable public skills in a normalized machine-readable list.
+
+Each item is meant to identify a skill without duplicating the whole skill body. Typical fields include:
+
+- `skill_id`
+- `version`
+- `description`
+- repo file references
+- install metadata such as a raw `SKILL.md` URL
+
+This allows agent registries and clients to discover reusable integration knowledge alongside job capabilities.
+
+---
+
+## Well-Known Agent Document
+
+`GET /.well-known/agent.json` publishes a compact identity and discovery document that ties together:
+
+- the agent pubkey
+- discovery links
+- capability schema reference
+- supported jobs
+- trust features
+- skill summary
+
+This is the broadest discovery entrypoint; deeper protocol details still live under `/agent/*`.
 
 ---
 

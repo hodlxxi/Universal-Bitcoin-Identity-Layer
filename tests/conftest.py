@@ -48,6 +48,7 @@ os.environ["RATE_LIMIT_ENABLED"] = "false"
 os.environ["HODLXXI_COST_DEMO_PROTECTED_SATS"] = "1"
 os.environ["HODLXXI_COST_BITCOIN_RPC_SATS"] = "1"
 os.environ["HODLXXI_FREE_QUOTA_CALLS"] = "0"
+os.environ["AGENT_PRIVKEY_HEX"] = "1" * 64
 
 # Import app after setting environment
 import sys
@@ -126,8 +127,8 @@ def oauth_client_token(sample_pubkey):
     """
     Insert an OAuth client + token into the DB and return token details.
     """
-    from datetime import datetime, timedelta, timezone
     import uuid
+    from datetime import datetime, timedelta, timezone
 
     from app.db_storage import create_user, store_oauth_client, store_oauth_token
 

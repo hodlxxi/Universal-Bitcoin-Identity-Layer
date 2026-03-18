@@ -63,6 +63,8 @@ flask run
 The service exposes:
 
 - `/.well-known/openid-configuration`, `/oauth/token`, `/oauth/authorize`
+- `/.well-known/agent.json`, `/agent/capabilities`, `/agent/capabilities/schema`
+- `/agent/skills`, `/agent/marketplace/listing`, `/agent/reputation`, `/agent/attestations`
 - `/lnurl/auth` LNURL challenge endpoints
 - `/metrics/prometheus` for Prometheus scrapers
 - `/health` basic liveness probe
@@ -104,6 +106,24 @@ pytest
 ```
 
 Unit tests cover configuration parsing/validation along with storage adapters. Integration tests spin up the in-memory backend to exercise OAuth and LNURL flows without external services.
+
+---
+
+## 🤖 Agent, Skills, and Marketplace Discovery
+
+The repository now exposes a coherent machine-readable agent surface:
+
+- `/.well-known/agent.json` for the public identity/discovery document
+- `/agent/capabilities` for the signed capabilities handshake
+- `/agent/capabilities/schema` for the canonical JSON Schema of that handshake
+- `/agent/skills` for first-class skill discovery sourced from `skills/public/`
+- `/agent/marketplace/listing` for normalized directory/marketplace ingestion
+
+For the protocol and trust model, see:
+
+- [`AGENT_PROTOCOL.md`](AGENT_PROTOCOL.md)
+- [`TRUST_MODEL.md`](TRUST_MODEL.md)
+- [`docs/AGENT_SURFACES.md`](docs/AGENT_SURFACES.md)
 
 ---
 

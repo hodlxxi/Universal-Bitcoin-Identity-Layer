@@ -2,6 +2,8 @@
 
 This folder contains agent-friendly “skills” for integrating with HODLXXI / Universal Bitcoin Identity Layer (UBID).
 
+Runtime discovery for these public skills is exposed at `/agent/skills`, so the checked-in files here are the source of truth for the machine-readable skill listing.
+
 ## Public skills
 
 ### hodlxxi-bitcoin-identity
@@ -23,4 +25,3 @@ Raw install link (for agents that can fetch skills from GitHub):
 - Skills should avoid secrets and never include private keys, macaroons, or environment values.
 - Prefer copy/paste command blocks and small scripts.
 - If a skill requires credentials, document the *variable names* and how to obtain them.
-

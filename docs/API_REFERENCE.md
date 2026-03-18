@@ -5,12 +5,13 @@ Complete reference for all 55+ API endpoints.
 ## Table of Contents
 
 1. [Authentication](#authentication)
-2. [OAuth2/OIDC](#oauth2oidc)
-3. [Proof-of-Funds](#proof-of-funds)
-4. [Bitcoin/Covenant](#bitcoincovenant)
-5. [Chat/Real-time](#chatreal-time)
-6. [Admin/Developer](#admindeveloper)
-7. [Playground](#playground)
+2. [Agent Discovery](#agent-discovery)
+3. [OAuth2/OIDC](#oauth2oidc)
+4. [Proof-of-Funds](#proof-of-funds)
+5. [Bitcoin/Covenant](#bitcoincovenant)
+6. [Chat/Real-time](#chatreal-time)
+7. [Admin/Developer](#admindeveloper)
+8. [Playground](#playground)
 
 ---
 
@@ -76,6 +77,60 @@ Admin login with whitelisted pubkey.
 
 ### GET /logout
 End session.
+
+---
+
+## Agent Discovery
+
+### GET /.well-known/agent.json
+Canonical well-known identity and discovery document for Agent UBID.
+
+**Response highlights:**
+- `agent_pubkey`
+- `capability_schema`
+- `endpoints`
+- `skills`
+- `trust_model`
+
+### GET /agent/capabilities
+Signed machine-readable capability handshake for the agent.
+
+**Response highlights:**
+- `signature`
+- `job_types`
+- `pricing`
+- `limits`
+- `capability_schema`
+
+### GET /agent/capabilities/schema
+Canonical JSON Schema for `/agent/capabilities`.
+
+### GET /agent/skills
+First-class public skill listing discovered from `skills/public/`.
+
+**Response highlights:**
+- `count`
+- `items[].skill_id`
+- `items[].install.raw_url`
+
+### GET /agent/marketplace/listing
+Compact normalized listing for registries and directories.
+
+**Response highlights:**
+- `listing_version`
+- `discovery`
+- `skills`
+- `reputation`
+- `chain_health`
+
+### GET /agent/reputation
+Public aggregate history for the agent.
+
+### GET /agent/attestations
+Append-only public signed job receipts.
+
+### GET /agent/chain/health
+Integrity summary for the receipt chain.
 
 ---
 

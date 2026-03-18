@@ -33,6 +33,12 @@
    - Index strategy
    - Migration notes
 
+5. **[AGENT_SURFACES.md](AGENT_SURFACES.md)** - Agent/skills/marketplace discovery
+   - `/.well-known/agent.json`
+   - `/agent/capabilities` + `/agent/capabilities/schema`
+   - `/agent/skills`
+   - `/agent/marketplace/listing`
+
 ---
 
 ## 🚀 Quick Start
@@ -78,6 +84,7 @@ See **API_REFERENCE.md** for endpoint documentation
 - ✅ **21-year covenant contracts** (core feature)
 - 🚧 **Lightning Network** (LNURL-auth, payments - in progress)
 - ✅ **Real-time features** (chat, WebSocket)
+- ✅ **Agent discovery surfaces** (capabilities, trust, attestations, skills)
 
 ---
 
