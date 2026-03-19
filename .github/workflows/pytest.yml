@@ -32,4 +32,13 @@ jobs:
           FLASK_ENV: "testing"
           DATABASE_URL: "sqlite:///:memory:"
         run: |
-          python -X faulthandler -m pytest -q --forked
+          set -euxo pipefail
+          set +e
+          timeout 20m python -X faulthandler -m pytest -q
+          rc=$?
+          set -e
+          if [ "$rc" -eq 124 ]; then
+            echo "pytest timed out after 20 minutes"
+            ps -ef
+          fi
+          exit "$rc"
