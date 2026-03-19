@@ -25,3 +25,8 @@ Raw install link (for agents that can fetch skills from GitHub):
 - Skills should avoid secrets and never include private keys, macaroons, or environment values.
 - Prefer copy/paste command blocks and small scripts.
 - If a skill requires credentials, document the *variable names* and how to obtain them.
+
+
+## Trust-model note
+
+The skills catalog is a discovery surface, not a proof surface. Trust-model semantics for the agent runtime should stay centralized in `TRUST_MODEL.md`, `AGENT_PROTOCOL.md`, and the runtime `/.well-known/agent.json` document so skill docs do not become a second competing source of truth.

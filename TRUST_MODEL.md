@@ -8,17 +8,19 @@ They can answer a prompt, but they cannot easily prove continuity, reliability, 
 
 HODLXXI Agent UBID takes a different approach.
 
-Its trust model is based on:
+HODLXXI treats agent trust not as a social claim but as an economically verifiable commitment. In design terms, an agent identity is modeled as:
 
-- stable public-key identity
-- Lightning-paid service execution
-- signed job receipts
-- append-only attestations
-- public reputation
-- publicly inspectable chain health
+- `public_key`
+- `operator_binding`
+- `time_locked_capital` (optional trust anchor, only when concretely exposed)
+- `observable_behavior`
+
+Trust is derived from continuity, accountability, verifiability, and bounded risk. As a design principle, this shifts trust away from pure reputation graphs and toward economically enforced continuity over time where the runtime exposes the necessary evidence.
+
+In the current runtime, the verifiable surfaces are the public key, declared operator metadata, Lightning-paid execution flow, signed job receipts, append-only attestations, reputation summaries, and chain-health checks. The repository does **not** currently claim verified on-chain proof or verified time-locked capital for the agent runtime unless such a surface is explicitly added and exposed.
 
 This does not create perfect trust.
-It creates **auditable trust**.
+It creates **auditable trust with explicit boundaries**.
 
 ---
 
@@ -26,7 +28,7 @@ It creates **auditable trust**.
 
 ### 1. Public-key identity
 
-The first trust anchor is the agent’s secp256k1 public key.
+The first verified trust anchor is the agent’s secp256k1 public key.
 
 This key is the persistent identity reference for the service. A client should treat the pubkey as more fundamental than the domain name.
 
@@ -38,7 +40,11 @@ The pubkey is the durable identity anchor.
 
 ---
 
-### 2. Signed outputs and receipts
+### 2. Operator binding and signed outputs
+
+The operator name published in discovery documents binds human-readable service metadata to the key at the runtime layer. That helps discovery, but it should be treated as declared metadata unless backed by an additional proof surface outside the current runtime.
+
+Signed outputs and receipts remain the stronger verification path.
 
 A completed job is not just a response payload.
 
@@ -101,8 +107,9 @@ If chain health fails, counterparties should downgrade trust immediately and inv
 
 This model can help prove:
 
-- the agent has a stable cryptographic identity
-- the agent has completed real work
+- the agent exposes a stable cryptographic identity
+- the runtime publishes an operator binding alongside that identity
+- the agent has completed real paid work within this runtime
 - completed work can be tied to signed receipts
 - receipts can be linked into a continuity chain
 - the service exposes public verification and reputation surfaces
@@ -127,7 +134,10 @@ This model does **not** by itself prove:
 - absence of bugs
 - absence of censorship
 - economic solvency
+- legal ownership or organizational control of the named operator
 - long-term persistence of the domain or infrastructure
+- on-chain proof of reserves or collateral
+- time-locked capital backing unless the runtime exposes a verifiable proof surface for it
 
 It also does not prove that the operator will keep the service alive forever.
 
@@ -194,6 +204,17 @@ Mitigation direction:
 
 ---
 
+## Optional trust anchors and design goals
+
+The long-horizon HODLXXI direction may eventually include stronger trust anchors such as Bitcoin-backed reserves, covenant-linked commitments, or other time-locked capital models. In this repository, those should be described conservatively as:
+
+- optional trust anchors
+- design goals
+- possible backing models
+- mechanisms that may be tied to long-horizon Bitcoin commitments
+
+They should not be presented as verified runtime facts unless the agent surface exposes concrete proofs that counterparties can inspect.
+
 ## Why Lightning matters
 
 Lightning is not only a payment rail here.
@@ -237,13 +258,13 @@ In the long run, an agent may be associated with:
 - a persistent public key
 - a public attestation history
 - a Lightning wallet
-- covenant-backed commitments
+- optional Bitcoin-backed or covenant-linked trust anchors when verifiable
 - durable service promises extending beyond a single deployment
 
 That is the real strategic distinction.
 
 The goal is not just “an agent that works.”
-The goal is “an agent that can be trusted across time.”
+The goal is “an agent that can be trusted across time” without overstating what the current runtime actually proves.
 
 ---
 
@@ -272,4 +293,4 @@ Trust should be earned by successful verification, not assumed from presentation
 
 HODLXXI’s trust model is simple:
 
-**identity is a key, work is paid, results are signed, history is chained, and trust is auditability across time.**
+**identity is a key plus declared operator binding, work is paid, results are signed, history is chained, and stronger capital-backed trust anchors remain optional until proven.**

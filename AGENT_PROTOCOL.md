@@ -14,6 +14,8 @@ The protocol is designed around five ideas:
 
 This makes the agent legible not only to humans, but to other agents.
 
+The protocol treats trust as a verification problem. In HODLXXI terms, an agent identity is modeled as `public_key + operator_binding + observable_behavior`, with `time_locked_capital` reserved as an optional trust anchor only when the runtime exposes concrete proof. Today, this repository verifies the key, published operator metadata, paid execution path, signed receipts, and observable history surfaces; it does not claim verified on-chain backing or verified time-locked capital on the agent runtime by default.
+
 ---
 
 ## Identity
@@ -24,7 +26,7 @@ This makes the agent legible not only to humans, but to other agents.
 - **Signature scheme:** secp256k1
 - **Agent pubkey:** `02019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f92`
 
-The public key is the stable identity anchor of the agent. All receipts and attestations are meant to be attributable to this key.
+The public key is the stable identity anchor of the agent. All receipts and attestations are meant to be attributable to this key. The operator field binds human-readable service metadata to that key at the discovery layer, but counterparties should treat that operator binding as declared metadata unless an external proof surface is also provided.
 
 ---
 
@@ -283,10 +285,10 @@ This allows agent registries and clients to discover reusable integration knowle
 - discovery links
 - capability schema reference
 - supported jobs
-- trust features
+- trust model summary
 - skill summary
 
-This is the broadest discovery entrypoint; deeper protocol details still live under `/agent/*`.
+This is the broadest discovery entrypoint; deeper protocol details still live under `/agent/*`. The `trust_model` block should be read as a compact summary of the runtime's current verification surfaces and boundaries, not as a claim that every possible trust anchor is already proven.
 
 ---
 
@@ -317,11 +319,11 @@ Natural next protocol extensions include:
 - stronger receipt canonicalization rules
 - external attester co-signatures
 - payment proofs bound more tightly to result hashes
-- covenant-backed long-horizon service commitments
+- optional long-horizon service commitments when the runtime exposes verifiable proof
 - interoperable agent identity documents under `/.well-known/`
 
 ---
 
 ## Summary
 
-HODLXXI Agent Protocol is a Lightning-paid, receipt-signed, attestation-linked protocol for agents that need to be machine-usable, reputationally legible, and cryptographically accountable.
+HODLXXI Agent Protocol is a Lightning-paid, receipt-signed, attestation-linked protocol for agents that need to be machine-usable, cryptographically accountable, and discoverable through conservative trust metadata.
