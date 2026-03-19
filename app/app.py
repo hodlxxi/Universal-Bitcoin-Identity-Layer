@@ -5619,11 +5619,11 @@ if (qrBox && typeof QRCode !== "undefined") renderQR(qrBox, lnurl);
       const vr = await fetch("/api/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ challenge_id: d.challenge_id, pubkey, signature: signed.sig }),
+        body: JSON.stringify({ challenge_id: d.challenge_id, pubkey, nostr_event: signed }),
       });
       const j2 = await vr.json();
       if (j2.verified) window.location.href = getRedirectUrl();
-      else alert("Verification failed");
+      else alert(j2.error || "Verification failed");
     }
 
     // --- Bind pill buttons (mobile-safe) ---
@@ -8950,6 +8950,137 @@ def is_valid_pubkey(pubkey: str) -> bool:
         return False
 
 
+NOSTR_LOGIN_MAX_AGE_SECONDS = int(os.getenv("NOSTR_LOGIN_MAX_AGE_SECONDS", "300"))
+NOSTR_LOGIN_MAX_FUTURE_SKEW_SECONDS = int(os.getenv("NOSTR_LOGIN_MAX_FUTURE_SKEW_SECONDS", "60"))
+
+
+def _nostr_compact_json(value) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+# Developer note:
+# Nostr login currently uses a server-issued one-time challenge plus a signed
+# Nostr event at kind 22242 for compatibility with the existing frontend.
+# Future HTTP-native auth could migrate toward NIP-98 / kind 27235, but that is
+# not implemented here.
+def _nostr_event_id(event: dict) -> str:
+    payload = [
+        0,
+        event["pubkey"],
+        event["created_at"],
+        event["kind"],
+        event["tags"],
+        event["content"],
+    ]
+    return hashlib.sha256(_nostr_compact_json(payload).encode("utf-8")).hexdigest()
+
+
+def _nostr_get_tag(event: dict, name: str) -> Optional[str]:
+    tags = event.get("tags")
+    if not isinstance(tags, list):
+        return None
+
+    for tag in tags:
+        if (
+            isinstance(tag, list)
+            and len(tag) >= 2
+            and isinstance(tag[0], str)
+            and isinstance(tag[1], str)
+            and tag[0] == name
+        ):
+            return tag[1]
+    return None
+
+
+def verify_nostr_login_event(
+    event: dict,
+    *,
+    expected_pubkey: str,
+    expected_challenge: str,
+    expected_verify_url: Optional[str] = None,
+    now_ts: Optional[int] = None,
+) -> tuple[bool, Optional[str]]:
+    if not isinstance(event, dict):
+        return False, "Invalid nostr_event"
+
+    required_fields = ("id", "pubkey", "created_at", "kind", "tags", "content", "sig")
+    missing = [field for field in required_fields if field not in event]
+    if missing:
+        return False, f"Missing nostr_event field: {missing[0]}"
+
+    event_pubkey = (event.get("pubkey") or "").strip().lower()
+    event_id = (event.get("id") or "").strip().lower()
+    event_sig = (event.get("sig") or "").strip().lower()
+    expected_pubkey = (expected_pubkey or "").strip().lower()
+
+    if not re.fullmatch(r"[0-9a-f]{64}", event_pubkey):
+        return False, "Invalid nostr pubkey"
+    if not re.fullmatch(r"[0-9a-f]{64}", event_id):
+        return False, "Invalid nostr event id"
+    if not re.fullmatch(r"[0-9a-f]{128}", event_sig):
+        return False, "Invalid nostr signature"
+    if event_pubkey != expected_pubkey:
+        return False, "Pubkey mismatch"
+
+    try:
+        created_at = int(event.get("created_at"))
+    except Exception:
+        return False, "Invalid nostr created_at"
+
+    try:
+        kind = int(event.get("kind"))
+    except Exception:
+        return False, "Invalid nostr kind"
+
+    if kind != 22242:
+        return False, "Invalid nostr kind"
+    if not isinstance(event.get("tags"), list):
+        return False, "Invalid nostr tags"
+    if not isinstance(event.get("content"), str):
+        return False, "Invalid nostr content"
+
+    now_ts = int(now_ts if now_ts is not None else time.time())
+    if created_at < now_ts - NOSTR_LOGIN_MAX_AGE_SECONDS:
+        return False, "Nostr event is too old"
+    if created_at > now_ts + NOSTR_LOGIN_MAX_FUTURE_SKEW_SECONDS:
+        return False, "Nostr event is too far in the future"
+
+    challenge_tag = _nostr_get_tag(event, "challenge")
+    if not challenge_tag or challenge_tag != expected_challenge:
+        return False, "Challenge mismatch"
+
+    url_tag = _nostr_get_tag(event, "u")
+    if url_tag and expected_verify_url and url_tag != expected_verify_url:
+        return False, "Nostr event URL mismatch"
+
+    normalized_event = dict(event)
+    normalized_event["pubkey"] = event_pubkey
+    normalized_event["id"] = event_id
+    normalized_event["sig"] = event_sig
+    normalized_event["created_at"] = created_at
+    normalized_event["kind"] = kind
+
+    recomputed_id = _nostr_event_id(normalized_event)
+    if recomputed_id != event_id:
+        return False, "Nostr event id mismatch"
+
+    try:
+        from coincurve import PublicKeyXOnly
+
+        verified = PublicKeyXOnly(bytes.fromhex(event_pubkey)).verify(
+            bytes.fromhex(event_sig),
+            bytes.fromhex(recomputed_id),
+        )
+    except Exception as e:
+        logger.error("Nostr login verification error: %s", e)
+        return False, "Nostr signature verification unavailable"
+
+    if not verified:
+        return False, "Invalid nostr signature"
+
+    return True, None
+
+
 # WHOAMI_V2_USERSTATS
 # WHOAMI_V3 (screensaver-compatible)
 @app.route("/api/whoami", methods=["GET"])
@@ -9067,13 +9198,13 @@ def api_verify():
     pubkey = (data.get("pubkey") or "").strip()
     signature = (data.get("signature") or "").strip()
 
-    if not (cid and signature):
-        return jsonify(error="Missing required parameters"), 400
-
     if not pubkey:
         spk = (session.get("logged_in_pubkey") or "").strip()
         if spk and is_valid_pubkey(spk):
             pubkey = spk
+
+    if not cid:
+        return jsonify(error="Missing required parameters"), 400
 
     rec = ACTIVE_CHALLENGES.get(cid)
     if not rec or rec["expires"] < datetime.now(timezone.utc):
@@ -9084,22 +9215,35 @@ def api_verify():
     method = rec.get("method", "api")
 
     # --- 🔹 Verification depending on method ---
-    if method in {"nostr", "lightning"}:
-        # Security hardening: do not accept unverified Nostr/LN shortcuts.
-        # Keep API contract stable by returning explicit unsupported-method error
-        # until cryptographic verification is implemented.
+    if method == "nostr":
+        nostr_event = data.get("nostr_event")
+        if not nostr_event:
+            return jsonify(error="Missing nostr_event"), 400
+
+        ok, error = verify_nostr_login_event(
+            nostr_event,
+            expected_pubkey=pubkey,
+            expected_challenge=rec["challenge"],
+            expected_verify_url=request.url_root.rstrip("/") + url_for("api_verify"),
+        )
+        if not ok:
+            return jsonify(error=error or "Nostr verification failed"), 403
+    elif method == "lightning":
         return jsonify(error=f"Verification method '{method}' not yet supported"), 501
+    else:
+        if not signature:
+            return jsonify(error="Missing required parameters"), 400
 
-    # Default: Bitcoin RPC verification
-    try:
-        rpc = get_rpc_connection()
-        addr = derive_legacy_address_from_pubkey(pubkey)
-        ok = rpc.verifymessage(addr, signature, rec["challenge"])
-    except Exception:
-        return jsonify(error="Signature verification temporarily unavailable"), 500
+        # Default: Bitcoin RPC verification
+        try:
+            rpc = get_rpc_connection()
+            addr = derive_legacy_address_from_pubkey(pubkey)
+            ok = rpc.verifymessage(addr, signature, rec["challenge"])
+        except Exception:
+            return jsonify(error="Signature verification temporarily unavailable"), 500
 
-    if not ok:
-        return jsonify(error="Invalid signature"), 403
+        if not ok:
+            return jsonify(error="Invalid signature"), 403
 
     # --- 🔹 Determine access level ---
     try:
@@ -12441,5 +12585,3 @@ def api_hide_manifesto():
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
-
-

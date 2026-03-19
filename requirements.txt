@@ -10,6 +10,7 @@ python-bitcoinrpc>=1.0
 # Cryptocurrency Libraries
 bech32>=1.2.0
 base58>=2.1.1
+coincurve>=20.0.0
 
 # QR Code Generation
 qrcode[pil]>=7.4.2
