@@ -1974,6 +1974,8 @@ def check_auth():
     # Keep write or paid flows protected.
     AGENT_PUBLIC_PATHS = {
         "/agent/capabilities",
+        "/agent/capabilities/schema",
+        "/agent/skills",
         "/agent/request",
         "/agent/attestations",
         "/agent/reputation",
