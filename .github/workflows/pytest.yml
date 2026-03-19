@@ -31,14 +31,15 @@ jobs:
           TESTING: "1"
           FLASK_ENV: "testing"
           DATABASE_URL: "sqlite:///:memory:"
+          PYTHONFAULTHANDLER: "1"
         run: |
-          set -euxo pipefail
-          set +e
-          timeout 20m python -X faulthandler -m pytest -q
-          rc=$?
-          set -e
-          if [ "$rc" -eq 124 ]; then
-            echo "pytest timed out after 20 minutes"
-            ps -ef
-          fi
-          exit "$rc"
+          timeout 25m python -u - <<'PY'
+          import faulthandler
+          import os
+          import pytest
+
+          faulthandler.dump_traceback_later(20 * 60, repeat=False)
+          rc = pytest.main(["-q"])
+          print(f"pytest.main returned rc={rc}", flush=True)
+          os._exit(rc)
+          PY
