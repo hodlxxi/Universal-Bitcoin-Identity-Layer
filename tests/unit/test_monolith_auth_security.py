@@ -216,7 +216,9 @@ def test_api_verify_rejects_nostr_without_event(monkeypatch):
     pubkey = "a" * 64
     _seed_challenge(m, challenge_id, pubkey)
 
-    with m.app.test_request_context("/api/verify", method="POST", json={"challenge_id": challenge_id, "pubkey": pubkey}):
+    with m.app.test_request_context(
+        "/api/verify", method="POST", json={"challenge_id": challenge_id, "pubkey": pubkey}
+    ):
         resp, status = m.api_verify()
         assert status == 400
         assert resp.get_json()["error"] == "Missing nostr_event"
