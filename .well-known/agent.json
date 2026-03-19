@@ -103,11 +103,57 @@
     ]
   },
   "trust_model": {
-    "signed_receipts": true,
-    "public_attestations": true,
-    "reputation_surface": true,
-    "chain_health_surface": true,
-    "payment_required_before_work": true
+    "principle": "HODLXXI treats agent trust not as a social claim but as an economically verifiable commitment.",
+    "identity_model": {
+      "public_key": {
+        "status": "verified_runtime_surface",
+        "description": "Stable cryptographic identity anchor exposed by the runtime.",
+        "surfaces": [
+          "/.well-known/agent.json",
+          "/agent/capabilities"
+        ]
+      },
+      "operator_binding": {
+        "status": "declared_runtime_surface",
+        "description": "Operator metadata is published by the runtime, but the current trust surface does not independently prove legal or organizational control.",
+        "surfaces": [
+          "/.well-known/agent.json",
+          "/agent/capabilities"
+        ]
+      },
+      "time_locked_capital": {
+        "status": "optional_not_verified",
+        "description": "Optional trust anchor and design goal. The current runtime does not expose concrete proof of time-locked capital or long-horizon Bitcoin commitments for this agent surface.",
+        "possible_backing_model": "May be tied to long-horizon Bitcoin commitments when such proofs exist."
+      },
+      "observable_behavior": {
+        "status": "verified_runtime_surface",
+        "description": "Operational history that can be inspected through signed receipts, reputation, and chain health.",
+        "surfaces": [
+          "/agent/attestations",
+          "/agent/reputation",
+          "/agent/chain/health"
+        ]
+      }
+    },
+    "trust_derivation": [
+      "continuity",
+      "accountability",
+      "verifiability",
+      "bounded_risk"
+    ],
+    "verified_runtime_properties": {
+      "signed_receipts": true,
+      "public_attestations": true,
+      "reputation_surface": true,
+      "chain_health_surface": true,
+      "payment_required_before_work": true
+    },
+    "assurance_boundaries": {
+      "economically_enforced_continuity": "Design principle with partial runtime support via paid jobs and public history.",
+      "on_chain_proof_exposed": false,
+      "time_locked_capital_proof_exposed": false
+    }
   },
   "discovery": {
     "well_known_agent": "/.well-known/agent.json",

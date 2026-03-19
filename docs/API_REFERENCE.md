@@ -90,7 +90,7 @@ Canonical well-known identity and discovery document for Agent UBID.
 - `capability_schema`
 - `endpoints`
 - `skills`
-- `trust_model`
+- `trust_model` (verified surfaces, declared metadata, and optional trust anchors)
 
 ### GET /agent/capabilities
 Signed machine-readable capability handshake for the agent.

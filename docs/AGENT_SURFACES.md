@@ -1,6 +1,6 @@
 # HODLXXI Agent Surfaces
 
-This document describes the machine-readable discovery surface for HODLXXI Agent UBID.
+This document describes the machine-readable discovery surface for HODLXXI Agent UBID. The goal is to expose verifiable runtime metadata without overstating trust anchors that are not currently proven by the live surface.
 
 ## Discovery entrypoints
 
@@ -60,8 +60,14 @@ Registries can use it as a lightweight listing document, while serious clients s
 
 ## Trust linkage
 
-The trust story spans three documents:
+The trust story spans three layers:
 
-1. [`AGENT_PROTOCOL.md`](../AGENT_PROTOCOL.md) — protocol contract
-2. [`TRUST_MODEL.md`](../TRUST_MODEL.md) — verification and threat model
-3. `/.well-known/agent.json` + `/agent/capabilities` — machine-readable runtime surfaces
+1. [`TRUST_MODEL.md`](../TRUST_MODEL.md) — normative trust language, design goals, and assurance boundaries
+2. [`AGENT_PROTOCOL.md`](../AGENT_PROTOCOL.md) — protocol contract for discovery, paid execution, receipts, and verification
+3. `/.well-known/agent.json` + `/agent/capabilities` — machine-readable runtime surfaces that summarize only what the current runtime exposes
+
+The `trust_model` block in `/.well-known/agent.json` is the compact runtime summary. It distinguishes:
+
+- verified runtime surfaces such as public-key identity and observable behavior
+- declared metadata such as operator binding
+- optional trust anchors such as time-locked capital, which remain design goals unless a concrete proof surface is published

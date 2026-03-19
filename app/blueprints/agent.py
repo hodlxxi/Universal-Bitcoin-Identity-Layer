@@ -187,6 +187,56 @@ def _public_document_base() -> str:
     return request.url_root.rstrip("/")
 
 
+def _trust_model_document() -> dict:
+    endpoints = _agent_endpoints()
+    return {
+        "principle": (
+            "HODLXXI treats agent trust not as a social claim but as an economically verifiable " "commitment."
+        ),
+        "identity_model": {
+            "public_key": {
+                "status": "verified_runtime_surface",
+                "description": "Stable cryptographic identity anchor exposed by the runtime.",
+                "surfaces": [endpoints["well_known"], endpoints["capabilities"]],
+            },
+            "operator_binding": {
+                "status": "declared_runtime_surface",
+                "description": (
+                    "Operator metadata is published by the runtime, but the current trust surface does not "
+                    "independently prove legal or organizational control."
+                ),
+                "surfaces": [endpoints["well_known"], endpoints["capabilities"]],
+            },
+            "time_locked_capital": {
+                "status": "optional_not_verified",
+                "description": (
+                    "Optional trust anchor and design goal. The current runtime does not expose concrete proof of "
+                    "time-locked capital or long-horizon Bitcoin commitments for this agent surface."
+                ),
+                "possible_backing_model": "May be tied to long-horizon Bitcoin commitments when such proofs exist.",
+            },
+            "observable_behavior": {
+                "status": "verified_runtime_surface",
+                "description": "Operational history that can be inspected through signed receipts, reputation, and chain health.",
+                "surfaces": [endpoints["attestations"], endpoints["reputation"], endpoints["chain_health"]],
+            },
+        },
+        "trust_derivation": ["continuity", "accountability", "verifiability", "bounded_risk"],
+        "verified_runtime_properties": {
+            "signed_receipts": True,
+            "public_attestations": True,
+            "reputation_surface": True,
+            "chain_health_surface": True,
+            "payment_required_before_work": True,
+        },
+        "assurance_boundaries": {
+            "economically_enforced_continuity": "Design principle with partial runtime support via paid jobs and public history.",
+            "on_chain_proof_exposed": False,
+            "time_locked_capital_proof_exposed": False,
+        },
+    }
+
+
 def _capabilities_schema_document() -> dict:
     endpoints = _agent_endpoints()
     base = _public_document_base()
@@ -322,13 +372,7 @@ def _agent_identity_document() -> dict:
         "limits": capabilities["limits"],
         "endpoints": endpoints,
         "skills": skills,
-        "trust_model": {
-            "signed_receipts": True,
-            "public_attestations": True,
-            "reputation_surface": True,
-            "chain_health_surface": True,
-            "payment_required_before_work": True,
-        },
+        "trust_model": _trust_model_document(),
         "discovery": {
             "well_known_agent": endpoints["well_known"],
             "capabilities": endpoints["capabilities"],
@@ -750,6 +794,7 @@ def marketplace_listing():
                 },
                 "endpoints": endpoints,
                 "skills": skills,
+                "trust_model": _trust_model_document(),
                 "reputation": {
                     "total_jobs": total_jobs,
                     "completed_jobs": completed_jobs,

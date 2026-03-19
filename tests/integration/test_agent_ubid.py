@@ -62,6 +62,11 @@ def test_well_known_agent_document_matches_discovery_surfaces(client):
     assert body["discovery"]["skills"] == "/agent/skills"
     assert body["endpoints"]["well_known"] == "/.well-known/agent.json"
     assert body["skills"]["count"] >= 1
+    assert body["trust_model"]["principle"].startswith("HODLXXI treats agent trust")
+    assert body["trust_model"]["identity_model"]["public_key"]["status"] == "verified_runtime_surface"
+    assert body["trust_model"]["identity_model"]["operator_binding"]["status"] == "declared_runtime_surface"
+    assert body["trust_model"]["identity_model"]["time_locked_capital"]["status"] == "optional_not_verified"
+    assert body["trust_model"]["assurance_boundaries"]["on_chain_proof_exposed"] is False
 
 
 def test_request_creates_job_and_invoice(client, monkeypatch):
@@ -381,3 +386,5 @@ def test_marketplace_listing_normalizes_discovery_and_skills(client):
     assert body["discovery"]["skills"] == "/agent/skills"
     assert body["capability_schema"]["uri"] == "/agent/capabilities/schema"
     assert body["skills"]["count"] >= 1
+    assert body["trust_model"]["identity_model"]["observable_behavior"]["status"] == "verified_runtime_surface"
+    assert body["trust_model"]["assurance_boundaries"]["time_locked_capital_proof_exposed"] is False

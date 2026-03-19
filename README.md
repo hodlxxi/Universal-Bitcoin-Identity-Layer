@@ -121,9 +121,11 @@ The repository now exposes a coherent machine-readable agent surface:
 
 For the protocol and trust model, see:
 
-- [`AGENT_PROTOCOL.md`](AGENT_PROTOCOL.md)
-- [`TRUST_MODEL.md`](TRUST_MODEL.md)
-- [`docs/AGENT_SURFACES.md`](docs/AGENT_SURFACES.md)
+- [`AGENT_PROTOCOL.md`](AGENT_PROTOCOL.md) for the signed discovery and job protocol
+- [`TRUST_MODEL.md`](TRUST_MODEL.md) for the normative trust language and verification boundaries
+- [`docs/AGENT_SURFACES.md`](docs/AGENT_SURFACES.md) for how the runtime discovery endpoints expose those claims
+
+The current agent surface is intentionally conservative: it exposes public-key identity, declared operator metadata, paid execution, signed receipts, and observable history, while treating time-locked capital and on-chain backing as optional trust anchors rather than verified runtime facts.
 
 ---
 
