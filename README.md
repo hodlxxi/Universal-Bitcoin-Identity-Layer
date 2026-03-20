@@ -116,7 +116,7 @@ The repository now exposes a coherent machine-readable agent surface:
 - `/.well-known/agent.json` for the public identity/discovery document
 - `/agent/capabilities` for the signed capabilities handshake
 - `/agent/capabilities/schema` for the canonical JSON Schema of that handshake
-- `/agent/skills` for first-class skill discovery sourced from `skills/public/`
+- `/agent/skills` for first-class task-oriented skill discovery sourced from the top-level `skills/` folders
 - `/agent/marketplace/listing` for normalized directory/marketplace ingestion
 
 For the protocol and trust model, see:

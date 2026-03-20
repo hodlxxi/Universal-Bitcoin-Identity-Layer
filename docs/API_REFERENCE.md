@@ -106,11 +106,12 @@ Signed machine-readable capability handshake for the agent.
 Canonical JSON Schema for `/agent/capabilities`.
 
 ### GET /agent/skills
-First-class public skill listing discovered from `skills/public/`.
+First-class task-oriented skill listing discovered from the top-level `skills/` folders.
 
 **Response highlights:**
 - `count`
 - `items[].skill_id`
+- `items[].path`
 - `items[].install.raw_url`
 
 ### GET /agent/marketplace/listing

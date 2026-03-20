@@ -263,7 +263,7 @@ This endpoint is intended for discovery, not deep verification. Serious counterp
 
 ## Skills Surface
 
-`GET /agent/skills` exposes the agent's installable public skills in a normalized machine-readable list.
+`GET /agent/skills` exposes the agent's installable task-oriented skills in a normalized machine-readable list.
 
 Each item is meant to identify a skill without duplicating the whole skill body. Typical fields include:
 
