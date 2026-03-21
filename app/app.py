@@ -1984,7 +1984,7 @@ def check_auth():
         "/agent/marketplace/listing",
     }
     if (
-        (request.method == "GET" and (
+        (request.method in {"GET", "HEAD"} and (
             p in AGENT_PUBLIC_PATHS
             or p.startswith("/agent/verify/")
             or p.startswith("/agent/jobs/")
