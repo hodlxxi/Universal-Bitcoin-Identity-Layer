@@ -1949,6 +1949,7 @@ def check_auth():
         "/explorer",
         "/verify_pubkey_and_list",
         "/.well-known/openid-configuration",
+        "/.well-known/agent.json",
         "/oauth/jwks.json",
         "/oauth/authorize",
         "/oauth/token",
