@@ -241,7 +241,7 @@ new_kid = rotate_keys_manually("/path/to/keys")
 
 ### Phase 1: Parallel Deployment (Current State)
 
-**Status:** Factory and blueprints exist alongside monolithic app.py
+**Status:** Factory is now the canonical constructor; `app/app.py` remains only as a compatibility shim for older imports/tests.
 
 **What works:**
 - New modular code in `app/blueprints/`
@@ -256,13 +256,12 @@ new_kid = rotate_keys_manually("/path/to/keys")
 
 **Usage:**
 ```python
-# Option 1: Use old app (default)
-from app.app import create_app
-app = create_app()
-
-# Option 2: Use new factory
+# Canonical runtime
 from app.factory import create_app
 app = create_app()
+
+# Compatibility only
+from app.app import app  # thin shim for older imports
 ```
 
 ### Phase 2: Incremental Migration
