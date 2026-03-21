@@ -21,8 +21,8 @@ ATTESTATION_SATS = 1
 MAX_JOBS_PER_DAY = 100
 CAPABILITIES_SCHEMA_VERSION = "1.0"
 MARKETPLACE_LISTING_VERSION = "1.0"
-SKILLS_ROOT = Path(__file__).resolve().parents[2] / "skills" / "public"
-SKILLS_REPO_RAW_BASE = "https://raw.githubusercontent.com/hodlxxi/Universal-Bitcoin-Identity-Layer/main/skills/public"
+SKILLS_ROOT = Path(__file__).resolve().parents[2] / "skills"
+SKILLS_REPO_RAW_BASE = "https://raw.githubusercontent.com/hodlxxi/Universal-Bitcoin-Identity-Layer/main/skills"
 
 IP_WINDOW_SECONDS = 60
 IP_MAX_REQUESTS = 20
@@ -150,23 +150,20 @@ def _skill_entry(skill_dir: Path) -> dict | None:
     skill_name = str(metadata.get("name") or skill_dir.name)
     description = str(metadata.get("description") or "").strip()
     body_lines = [line.strip() for line in body.splitlines() if line.strip()]
+    relative_skill_path = f"skills/{skill_dir.name}/SKILL.md"
 
     return {
         "skill_id": skill_name,
         "name": skill_name,
+        "path": relative_skill_path,
         "version": str(metadata.get("version") or "0.0.0"),
         "description": description or (body_lines[0] if body_lines else ""),
-        "homepage": str(metadata.get("homepage") or ""),
-        "tags": metadata.get("tags", []),
         "files": {
-            "skill_markdown": f"skills/public/{skill_dir.name}/SKILL.md",
-            "heartbeat_markdown": (
-                f"skills/public/{skill_dir.name}/HEARTBEAT.md" if (skill_dir / "HEARTBEAT.md").exists() else None
-            ),
+            "skill_markdown": relative_skill_path,
         },
         "install": {
             "raw_url": f"{SKILLS_REPO_RAW_BASE}/{skill_dir.name}/SKILL.md",
-            "local_path": f"skills/public/{skill_dir.name}/SKILL.md",
+            "local_path": relative_skill_path,
         },
     }
 
@@ -176,7 +173,7 @@ def _skills_catalog() -> list[dict]:
         return []
 
     items = []
-    for skill_dir in sorted(path for path in SKILLS_ROOT.iterdir() if path.is_dir()):
+    for skill_dir in sorted(path for path in SKILLS_ROOT.iterdir() if path.is_dir() and path.name != "public"):
         entry = _skill_entry(skill_dir)
         if entry:
             items.append(entry)
@@ -297,10 +294,11 @@ def _capabilities_schema_document() -> dict:
                         "type": "array",
                         "items": {
                             "type": "object",
-                            "required": ["skill_id", "name", "version", "description", "install"],
+                            "required": ["skill_id", "name", "path", "version", "description", "install"],
                             "properties": {
                                 "skill_id": {"type": "string"},
                                 "name": {"type": "string"},
+                                "path": {"type": "string"},
                                 "version": {"type": "string"},
                                 "description": {"type": "string"},
                                 "homepage": {"type": "string"},

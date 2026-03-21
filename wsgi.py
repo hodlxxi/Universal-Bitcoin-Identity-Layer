@@ -1,9 +1,8 @@
-"""
-WSGI entry point for standalone app.py + March agent backend.
-"""
-from app.app import app
+"""Canonical WSGI entry point for HODLXXI deployments."""
 
-# Gunicorn/uWSGI compatibility
+from app.factory import create_app
+
+app = create_app()
 application = app
 
 if __name__ == "__main__":

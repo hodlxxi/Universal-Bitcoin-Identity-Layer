@@ -224,7 +224,7 @@ sudo systemctl restart hodlxxi
 
 # If using gunicorn directly
 pkill gunicorn
-gunicorn --worker-class gevent --workers 4 --bind 0.0.0.0:5000 app.app:app
+gunicorn --worker-class gevent --workers 4 --bind 0.0.0.0:5000 wsgi:app
 
 # If using screen/tmux
 # Kill old process and start new one
