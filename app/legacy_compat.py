@@ -142,8 +142,12 @@ def docs_alias():
                     raw = path.read_text(encoding="utf-8", errors="replace")
                 except Exception:
                     raw = ""
-                desc = next((line.strip() for line in raw.splitlines() if line.strip() and not line.startswith("#")), "")[:220]
-                md_items.append({"slug": path.stem, "display": title, "desc": desc, "size_kb": (path.stat().st_size + 1023) // 1024})
+                desc = next(
+                    (line.strip() for line in raw.splitlines() if line.strip() and not line.startswith("#")), ""
+                )[:220]
+                md_items.append(
+                    {"slug": path.stem, "display": title, "desc": desc, "size_kb": (path.stat().st_size + 1023) // 1024}
+                )
             elif path.suffix.lower() == ".pdf":
                 pdf_items.append({"name": path.name, "size_kb": (path.stat().st_size + 1023) // 1024})
     return render_template("docs_index.html", title="HODLXXI Docs", md_items=md_items, pdf_items=pdf_items)
