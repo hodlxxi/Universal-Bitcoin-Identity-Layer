@@ -126,6 +126,14 @@ def create_app(config_object: Optional[AppConfig] = None, config_override: Optio
     # Register before/after request handlers
     register_request_handlers(app)
 
+    # Initialize Socket.IO for realtime/chat surfaces
+    try:
+        app.extensions['socketio'] = create_socketio(app)
+        logger.info("✅ Socket.IO initialized")
+    except Exception as e:
+        logger.error(f"❌ Socket.IO initialization failed: {e}", exc_info=True)
+        raise
+
     logger.info("🚀 Application factory completed successfully")
     return app
 
