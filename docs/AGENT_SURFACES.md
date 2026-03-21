@@ -28,15 +28,16 @@ Clients that want strict validation should fetch the schema from the URI adverti
 
 ## Skills
 
-`/agent/skills` lists installable task-oriented skills discovered from the top-level `skills/` folders.
+`/agent/skills` lists installable public skills discovered from `skills/public/`.
 
 Each item includes:
 
 - `skill_id`
 - `name`
-- `path`
 - `version`
 - `description`
+- `homepage`
+- `tags`
 - file paths for the checked-in skill assets
 - install metadata, including the raw GitHub URL for `SKILL.md`
 

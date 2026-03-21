@@ -15,8 +15,6 @@ from flask import Flask, jsonify
 from flask_socketio import SocketIO
 
 from app.audit_logger import init_audit_logger
-from app.legacy_auth import legacy_auth_bp
-from app.legacy_compat import register_legacy_compat
 from app.config import AppConfig, get_config
 from app.database import close_all, init_all
 from app.jwks import ensure_rsa_keypair
@@ -25,13 +23,12 @@ from app.security import init_security
 logger = logging.getLogger(__name__)
 
 
-def create_app(config_object: Optional[AppConfig] = None, config_override: Optional[AppConfig] = None) -> Flask:
+def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     """
     Create and configure the Flask application using the factory pattern.
 
     Args:
-        config_object: Optional configuration override for testing
-        config_override: Backward-compatible alias for older callers
+        config_override: Optional configuration override for testing
 
     Returns:
         Configured Flask application instance
@@ -73,7 +70,7 @@ def create_app(config_object: Optional[AppConfig] = None, config_override: Optio
     app.config.setdefault("APP_VERSION", "1.0.0-beta")
 
     # Load configuration
-    cfg = config_object or config_override or get_config()
+    cfg = config_override or get_config()
     app.config["APP_CONFIG"] = cfg
 
     # Set Flask secret key (required for sessions)
@@ -126,14 +123,6 @@ def create_app(config_object: Optional[AppConfig] = None, config_override: Optio
     # Register before/after request handlers
     register_request_handlers(app)
 
-    # Initialize Socket.IO for realtime/chat surfaces
-    try:
-        app.extensions["socketio"] = create_socketio(app)
-        logger.info("✅ Socket.IO initialized")
-    except Exception as e:
-        logger.error(f"❌ Socket.IO initialization failed: {e}", exc_info=True)
-        raise
-
     logger.info("🚀 Application factory completed successfully")
     return app
 
@@ -180,7 +169,6 @@ def register_blueprints(app: Flask) -> None:
 
     app.register_blueprint(pof_bp)
     app.register_blueprint(pof_api_bp)
-    app.register_blueprint(legacy_auth_bp)
 
     # UI/frontend blueprint (dashboard, playground, chat)
     from app.blueprints.ui import ui_bp
@@ -198,14 +186,31 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(billing_agent_bp)
     app.register_blueprint(agent_bp)
 
-    register_legacy_compat(app)
-
-    # Preserve legacy auth verification contract at /api/verify.
+    # Legacy human frontend overrides:
+    # keep factory runtime, but route /login and /playground to the old app.py handlers
     try:
-        if "legacy_auth.api_verify" in app.view_functions and "bitcoin.verify_proof_of_funds" in app.view_functions:
-            app.view_functions["bitcoin.verify_proof_of_funds"] = app.view_functions["legacy_auth.api_verify"]
+
+        def _legacy_login_proxy(**kwargs):
+            from app.app import login
+
+            return login(**kwargs)
+
+        if "auth.login" in app.view_functions:
+            app.view_functions["auth.login"] = _legacy_login_proxy
     except Exception as e:
-        logger.warning(f"Legacy /api/verify override failed: {e}")
+        logger.warning(f"Legacy login override failed: {e}")
+
+    try:
+
+        def _legacy_playground_proxy(**kwargs):
+            from app.app import playground
+
+            return playground(**kwargs)
+
+        if "ui.playground" in app.view_functions:
+            app.view_functions["ui.playground"] = _legacy_playground_proxy
+    except Exception as e:
+        logger.warning(f"Legacy playground override failed: {e}")
 
     # Legacy endpoint aliases for old inline templates that still call url_for("home")
     try:

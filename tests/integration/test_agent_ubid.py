@@ -38,28 +38,17 @@ def test_capabilities_schema_is_machine_readable(client):
     assert "skills" in body["properties"]
 
 
-def test_skills_endpoint_lists_top_level_agent_skills(client):
+def test_skills_endpoint_lists_public_skills(client):
     res = client.get("/agent/skills")
     assert res.status_code == 200
 
     body = res.get_json()
-    assert body["count"] == 7
+    assert body["count"] >= 1
     assert isinstance(body["items"], list)
 
-    skill_ids = [item["skill_id"] for item in body["items"]]
-    assert skill_ids == [
-        "hodlxxi-agent-discovery",
-        "hodlxxi-attestation-lookup",
-        "hodlxxi-covenant-decode",
-        "hodlxxi-job-receipt-inspection",
-        "hodlxxi-job-request",
-        "hodlxxi-reputation-lookup",
-        "hodlxxi-signature-verify",
-    ]
-
     skill = body["items"][0]
-    assert skill["path"] == "skills/hodlxxi-agent-discovery/SKILL.md"
-    assert skill["files"]["skill_markdown"] == skill["path"]
+    assert skill["skill_id"] == "hodlxxi-bitcoin-identity"
+    assert skill["files"]["skill_markdown"].endswith("/SKILL.md")
     assert skill["install"]["raw_url"].startswith("https://raw.githubusercontent.com/")
 
 

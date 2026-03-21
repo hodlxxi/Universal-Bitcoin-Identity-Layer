@@ -1,21 +1,32 @@
 # Skills
 
-This folder contains task-oriented Agent Skills for integrating with the HODLXXI runtime.
+This folder contains agent-friendly “skills” for integrating with HODLXXI / Universal Bitcoin Identity Layer (UBID).
 
-Runtime discovery for these checked-in skills is exposed at `/agent/skills`, and the runtime registry points to the `SKILL.md` file for each top-level skill folder.
+Runtime discovery for these public skills is exposed at `/agent/skills`, so the checked-in files here are the source of truth for the machine-readable skill listing.
 
-## Available skills
+## Public skills
 
-- `skills/hodlxxi-agent-discovery/SKILL.md`
-- `skills/hodlxxi-job-request/SKILL.md`
-- `skills/hodlxxi-covenant-decode/SKILL.md`
-- `skills/hodlxxi-signature-verify/SKILL.md`
-- `skills/hodlxxi-reputation-lookup/SKILL.md`
-- `skills/hodlxxi-attestation-lookup/SKILL.md`
-- `skills/hodlxxi-job-receipt-inspection/SKILL.md`
+### hodlxxi-bitcoin-identity
+Path: `skills/public/hodlxxi-bitcoin-identity/`
+
+- **SKILL.md**: OAuth2/OIDC + LNURL-auth integration guide and code examples
+- **HEARTBEAT.md**: health-check checklist for production monitoring
+- **scripts/**: helper scripts (e.g., signature verification)
+- **templates/**: JSON templates (e.g., OAuth client registration payload)
+
+Quick link:
+- `skills/public/hodlxxi-bitcoin-identity/SKILL.md`
+
+Raw install link (for agents that can fetch skills from GitHub):
+- `https://raw.githubusercontent.com/hodlxxi/Universal-Bitcoin-Identity-Layer/main/skills/public/hodlxxi-bitcoin-identity/SKILL.md`
 
 ## Conventions
 
-- Treat runtime endpoints and runtime schemas as authoritative.
-- Keep skills task-oriented, concise, and explicit about endpoint use.
-- Do not include secrets, private keys, or speculative capabilities.
+- Skills should avoid secrets and never include private keys, macaroons, or environment values.
+- Prefer copy/paste command blocks and small scripts.
+- If a skill requires credentials, document the *variable names* and how to obtain them.
+
+
+## Trust-model note
+
+The skills catalog is a discovery surface, not a proof surface. Trust-model semantics for the agent runtime should stay centralized in `TRUST_MODEL.md`, `AGENT_PROTOCOL.md`, and the runtime `/.well-known/agent.json` document so skill docs do not become a second competing source of truth.
