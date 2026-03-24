@@ -98,6 +98,7 @@ def test_agent_message_executes_job_proposal_and_returns_signed_result(client):
     assert body["payload"]["job_type"] == "ping"
     assert body["payload"]["result"]["job_type"] == "ping"
     assert body["payload"]["agent_pubkey"] == body["from_pubkey"]
+    assert body["payload"]["attestation_ref"]["endpoint"] == "/agent/attestations"
 
     signature = body.pop("signature")
     assert verify_message(canonical_json_bytes(body), signature, body["from_pubkey"])
@@ -109,20 +110,47 @@ def test_agent_message_rejects_bad_signature(client):
 
     res = client.post("/agent/message", json=msg)
     assert res.status_code == 400
-    body = res.get_json()
-    assert body["type"] == "rejection"
-    assert body["payload"]["error"]["code"] == "invalid_signature"
+    assert res.get_json()["error"] == "invalid_signature"
 
 
-def test_agent_message_rejects_duplicate_message_id(client):
+def test_agent_message_rejects_wrong_recipient(client):
+    msg = _signed_agent_message({"job_type": "ping", "payload": {"message": "hello"}})
+    msg["to_pubkey"] = "02" + "22" * 32
+    msg["signature"] = sign_message(canonical_json_bytes({k: v for k, v in msg.items() if k != "signature"}))
+
+    res = client.post("/agent/message", json=msg)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "wrong_recipient"
+
+
+def test_agent_message_rejects_unsupported_message_type(client):
+    msg = _signed_agent_message({"job_type": "ping", "payload": {"message": "hello"}}, msg_type="delegation")
+
+    res = client.post("/agent/message", json=msg)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "unsupported_type"
+
+
+def test_agent_message_rejects_invalid_payload_shape(client):
+    msg = _signed_agent_message({"job_type": "ping", "payload": "not-an-object"})
+
+    res = client.post("/agent/message", json=msg)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_payload"
+
+
+def test_agent_message_duplicate_message_id_returns_cached_result_without_reexecution(client):
     msg = _signed_agent_message({"job_type": "ping", "payload": {"message": "hello"}})
 
     first = client.post("/agent/message", json=msg)
     assert first.status_code == 200
+    first_body = first.get_json()
 
     second = client.post("/agent/message", json=msg)
-    assert second.status_code == 409
-    assert second.get_json()["payload"]["error"]["code"] == "invalid_payload"
+    assert second.status_code == 200
+    second_body = second.get_json()
+
+    assert second_body == first_body
 
 
 def test_agent_message_rejects_unsupported_job_type(client):
@@ -130,7 +158,8 @@ def test_agent_message_rejects_unsupported_job_type(client):
 
     res = client.post("/agent/message", json=msg)
     assert res.status_code == 400
-    assert res.get_json()["payload"]["error"]["code"] == "unsupported_type"
+    assert res.get_json()["error"] == "unsupported_job_type"
+
 
 def test_request_creates_job_and_invoice(client, monkeypatch):
     monkeypatch.setattr(

@@ -468,64 +468,52 @@ def well_known_agent():
 
 
 def _signed_message_bytes(envelope: dict) -> bytes:
+    """Canonical bytes used for signature verification/signing.
+
+    Protocol rule: signature is computed over the canonical JSON envelope
+    with the `signature` field omitted.
+    """
     unsigned = dict(envelope)
     unsigned.pop("signature", None)
     return canonical_json_bytes(unsigned)
 
 
 _AGENT_MESSAGE_IDEMPOTENCY_WINDOW_SECONDS = 600
-_recent_agent_message_ids: dict[tuple[str, str], float] = {}
+_recent_agent_message_cache: dict[tuple[str, str], dict] = {}
 
 
 def _prune_agent_message_cache(now: float) -> None:
     cutoff = now - _AGENT_MESSAGE_IDEMPOTENCY_WINDOW_SECONDS
-    stale = [k for k, ts in _recent_agent_message_ids.items() if ts < cutoff]
+    stale = [k for k, v in _recent_agent_message_cache.items() if float(v.get("ts", 0.0)) < cutoff]
     for key in stale:
-        _recent_agent_message_ids.pop(key, None)
+        _recent_agent_message_cache.pop(key, None)
 
 
-def _remember_message_id(from_pubkey: str, message_id: str) -> bool:
+def _cached_agent_message_response(from_pubkey: str, message_id: str) -> dict | None:
     now = time.time()
     _prune_agent_message_cache(now)
-    key = (from_pubkey, message_id)
-    if key in _recent_agent_message_ids:
-        return False
-    _recent_agent_message_ids[key] = now
-    return True
+    cached = _recent_agent_message_cache.get((from_pubkey, message_id))
+    if not cached:
+        return None
+    response = cached.get("response")
+    return response if isinstance(response, dict) else None
 
 
-def _make_agent_message_response(
-    request_envelope: dict,
-    *,
-    msg_type: str,
-    payload: dict,
-) -> dict:
-    response = {
-        "message_id": str(uuid.uuid4()),
-        "conversation_id": str(request_envelope.get("conversation_id") or ""),
-        "thread_id": str(request_envelope.get("thread_id") or ""),
-        "type": msg_type,
-        "from_pubkey": get_agent_pubkey_hex(),
-        "to_pubkey": str(request_envelope.get("from_pubkey") or ""),
-        "created_at": _iso_now(),
-        "payload": payload,
-        "references": {"parent_message_id": str(request_envelope.get("message_id") or "")},
+def _store_agent_message_response(from_pubkey: str, message_id: str, response: dict) -> None:
+    now = time.time()
+    _prune_agent_message_cache(now)
+    _recent_agent_message_cache[(from_pubkey, message_id)] = {
+        "response": response,
+        "ts": now,
     }
-    response["signature"] = sign_message(canonical_json_bytes(response))
-    return response
 
 
-def _agent_message_rejection(request_envelope: dict, code: str, status: int):
-    envelope = _make_agent_message_response(
-        request_envelope,
-        msg_type="rejection",
-        payload={
-            "error": {
-                "code": code,
-            }
-        },
-    )
-    return jsonify(envelope), status
+def _validate_rfc3339_timestamp(value: str) -> bool:
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return True
+    except ValueError:
+        return False
 
 
 def _validate_agent_message_envelope(envelope: dict) -> tuple[bool, str | None]:
@@ -540,14 +528,20 @@ def _validate_agent_message_envelope(envelope: dict) -> tuple[bool, str | None]:
         "payload",
         "signature",
     }
+
     if required - set(envelope.keys()):
-        return False, "invalid_payload"
+        return False, "invalid_envelope"
 
     for key in ("message_id", "conversation_id", "thread_id", "type", "from_pubkey", "to_pubkey", "created_at"):
-        if not isinstance(envelope.get(key), str) or not envelope.get(key):
-            return False, "invalid_payload"
+        value = envelope.get(key)
+        if not isinstance(value, str) or not value.strip():
+            return False, "invalid_envelope"
 
-    if not isinstance(envelope.get("payload"), dict):
+    if not _validate_rfc3339_timestamp(envelope["created_at"]):
+        return False, "invalid_envelope"
+
+    payload = envelope.get("payload")
+    if not isinstance(payload, dict):
         return False, "invalid_payload"
 
     signature = envelope.get("signature")
@@ -566,55 +560,80 @@ def _validate_agent_message_envelope(envelope: dict) -> tuple[bool, str | None]:
         return False, "unsupported_type"
 
     if envelope["to_pubkey"] != get_agent_pubkey_hex():
-        return False, "invalid_payload"
+        return False, "wrong_recipient"
 
     return True, None
+
+
+def _sign_envelope(envelope: dict) -> str:
+    return sign_message(_signed_message_bytes(envelope))
+
+
+def _result_envelope_for_request(request_envelope: dict, payload: dict) -> dict:
+    response = {
+        "message_id": str(uuid.uuid4()),
+        "conversation_id": request_envelope["conversation_id"],
+        "thread_id": request_envelope["thread_id"],
+        "type": "result",
+        "from_pubkey": get_agent_pubkey_hex(),
+        "to_pubkey": request_envelope["from_pubkey"],
+        "created_at": _iso_now(),
+        "payload": payload,
+        "references": {"parent_message_id": request_envelope["message_id"]},
+    }
+    response["signature"] = _sign_envelope(response)
+    return response
 
 
 @agent_bp.post("/agent/message")
 def post_agent_message():
     if not _check_ip_rate_limit():
-        return _agent_message_rejection({}, "invalid_payload", 429)
+        return jsonify({"error": "invalid_payload"}), 429
 
     envelope = request.get_json(silent=True)
     if not isinstance(envelope, dict):
-        return _agent_message_rejection({}, "invalid_payload", 400)
+        return jsonify({"error": "invalid_json"}), 400
 
     ok, error = _validate_agent_message_envelope(envelope)
     if not ok and error:
-        status = 400
-        return _agent_message_rejection(envelope, error, status)
+        return jsonify({"error": error}), 400
 
-    message_id = envelope["message_id"]
     from_pubkey = envelope["from_pubkey"]
-    if not _remember_message_id(from_pubkey, message_id):
-        return _agent_message_rejection(envelope, "invalid_payload", 409)
+    message_id = envelope["message_id"]
+
+    cached_response = _cached_agent_message_response(from_pubkey, message_id)
+    if cached_response:
+        return jsonify(cached_response), 200
 
     payload = envelope["payload"]
     job_type = payload.get("job_type")
     job_payload = payload.get("payload")
 
     if not isinstance(job_type, str) or not isinstance(job_payload, dict):
-        return _agent_message_rejection(envelope, "invalid_payload", 400)
+        return jsonify({"error": "invalid_payload"}), 400
 
     spec = _job_spec(job_type)
     if not spec:
-        return _agent_message_rejection(envelope, "unsupported_type", 400)
+        return jsonify({"error": "unsupported_job_type"}), 400
 
     result_payload = _job_result(
         AgentJob(job_type=job_type, request_json={"payload": job_payload}),
         job_payload,
     )
 
-    response_envelope = _make_agent_message_response(
+    response_envelope = _result_envelope_for_request(
         envelope,
-        msg_type="result",
         payload={
             "job_type": job_type,
             "result": result_payload,
             "agent_pubkey": get_agent_pubkey_hex(),
+            "attestation_ref": {
+                "endpoint": "/agent/attestations",
+                "note": "future-linkable; no receipt persisted by /agent/message MVP",
+            },
         },
     )
+    _store_agent_message_response(from_pubkey, message_id, response_envelope)
     return jsonify(response_envelope), 200
 
 
