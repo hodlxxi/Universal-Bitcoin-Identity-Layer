@@ -1987,7 +1987,7 @@ def check_auth():
         "/agent/marketplace/listing",
     }
     if (
-        (request.method == "GET" and (
+        (request.method in {"GET", "HEAD"} and (
             p in AGENT_PUBLIC_PATHS
             or p.startswith("/agent/verify/")
             or p.startswith("/agent/jobs/")
@@ -1995,7 +1995,6 @@ def check_auth():
         or (request.method == "POST" and p == "/agent/request")
     ):
         return None
-
     # 2) Public endpoints by function name (handle blueprints)
     public_endpoints = {
         "login",
