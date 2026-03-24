@@ -1,400 +1,191 @@
 # HODLXXI System Architecture
 
-**Version:** 1.0 (Stabilized December 2025)  
-**Status:** Production, preparing for event-based refactor
-
----
+**Status:** Current-state architecture (repo/runtime truth as of 2026-03-24)
+**Scope:** Detailed architecture and drift map for contributors/reviewers
 
 ## Executive Summary
 
-HODLXXI is a Bitcoin-native identity and authorization platform that bridges Web2 applications with Bitcoin's cryptographic identity model. It combines:
+HODLXXI is currently a **hybrid architecture**:
 
-- **Bitcoin signature authentication** (BIP-322, ECDSA)
-- **OAuth2/OIDC provider** (Auth0-like service)
-- **Proof-of-Funds verification** (PSBT-based)
-- **21-year covenant contracts** (descriptor wallets)
-- **Lightning Network integration** (LNURL-auth, payments - in progress)
-- **Real-time chat/video** (Socket.IO + WebRTC)
+- **Production runtime entrypoint is monolith-first**: `wsgi.py` imports `app.app:app` directly.
+- A **factory runtime exists** (`app/factory.py`) and is actively used by tests, but it is **not the current WSGI entrypoint**.
+- Agent, OAuth, PoF, LNURL, and admin surfaces exist both as modern blueprints and/or legacy monolith routes, creating overlap.
+
+This document is the canonical detailed architecture reference. `ARCHITECTURE.md` is now a short top-level overview and pointer.
+
+---
+
+## Status Legend
+
+- **Confirmed**: Implemented in current repo and exercised by tests and/or active route wiring.
+- **Partial**: Implemented but incomplete, compatibility-heavy, or environment-dependent.
+- **Planned**: Mentioned goals/surfaces not present in current route/runtime wiring.
+
+---
+
+## Current Runtime Truth
+
+## Runtime entrypoint and app construction
+
+- `wsgi.py` imports `app` from `app/app.py` and exposes it as `application`; Gunicorn/uWSGI run this monolith object directly. **(Confirmed)**
+- `app/factory.py` exposes `create_app()` and registers modular blueprints, but this is currently the test/default factory path, not the production WSGI path in this repo snapshot. **(Confirmed, secondary runtime)**
+
+## Monolith vs factory drift
+
+- `app/app.py` remains large (`~12.5k` lines), with direct `@app.route` endpoints and its own blueprint registrations. **(Confirmed)**
+- `create_app()` also registers many of the same logical surfaces (auth, OAuth, LNURL, PoF, admin, agent), and includes explicit legacy overrides for `/login` and `/playground` to old monolith handlers. **(Confirmed)**
+- Result: architecture is not yet a completed migration; it is a **hybrid monolith + incremental factory extraction**. **(Confirmed)**
+
+## Production vs staging/test truth
+
+- **Production/runtime truth (repo entrypoint):** monolith-first via `wsgi:app`.
+- **Staging/test-validated behavior:** factory app (`create_app`) is validated through integration/unit tests.
+- **Planned direction:** further decomposition toward fully factory-driven modular runtime, but not complete in current code.
 
 ---
 
 ## High-Level Architecture
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         HODLXXI Platform                         │
-│                      https://hodlxxi.com                         │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-              ┌───────────────┼───────────────┐
-              ▼               ▼               ▼
-         ┌─────────┐    ┌──────────┐   ┌──────────┐
-         │  Nginx  │    │  Flask   │   │ Socket.IO│
-         │ (Proxy) │───▶│  (WSGI)  │◀──│(Real-time)│
-         └─────────┘    └──────────┘   └──────────┘
-              │               │               │
-              │         ┌─────┴─────┐        │
-              │         ▼           ▼        │
-              │    ┌─────────┐ ┌────────┐   │
-              │    │Postgres │ │ Redis  │   │
-              │    │  (DB)   │ │(Cache) │   │
-              │    └─────────┘ └────────┘   │
-              │         │                    │
-              └─────────┼────────────────────┘
-                        ▼
-                  ┌──────────────┐
-                  │ Bitcoin Core │ (via SSH tunnel)
-                  │  Full Node   │
-                  └──────────────┘
-```
+
+1. **Edge/Web tier:** Flask HTTP + Socket.IO surfaces (WebRTC signaling included in monolith UI flow).
+2. **Identity/Auth tier:** Bitcoin signature login, guest login, OAuth2/OIDC issuance and discovery.
+3. **Agent UBID tier:** paid jobs, signed receipts, attestations, reputation, and chain-health verification.
+4. **Bitcoin integration tier:** Bitcoin RPC usage for descriptor/covenant and verification surfaces.
+5. **Persistence tier:** SQLAlchemy models for users/OAuth/LNURL/PoF/agent/payment artifacts; optional Redis support in surrounding infrastructure.
 
 ---
 
 ## Core Components
 
-### 1. Web Server Layer
+## 1) Web runtime
 
-**Nginx** (Port 443)
-- TLS termination (Let's Encrypt)
-- Rate limiting (10 req/s general, 5 req/min auth)
-- WebSocket proxy for Socket.IO
-- Static file serving
+- Monolith Flask app: `app/app.py`.
+- Factory Flask app creator: `app/factory.py`.
+- WSGI entrypoint: `wsgi.py` -> `app.app:app`.
+- Operational endpoints exist in both monolith and admin blueprint paths (`/health`, `/metrics`, `/metrics/prometheus`).
 
-**Gunicorn** (Port 5000, internal)
-- WSGI server with eventlet worker
-- Single worker (for Socket.IO compatibility)
-- Handles HTTP and WebSocket connections
+## 2) Authentication and identity
 
-### 2. Application Layer
+- Bitcoin-signature verification (`/verify_signature`) with session challenge checks and RPC-backed verification path.
+- Guest/PIN login (`/guest_login`) supported.
+- Session identity fields (`logged_in_pubkey`, access levels) drive downstream access behavior.
 
-**Flask Monolith** (`app/app.py` - 12,805 lines)
-- Main application logic
-- 55+ HTTP routes
-- Socket.IO event handlers
-- Bitcoin RPC integration
-- OAuth2/OIDC provider
+## 3) OAuth2/OIDC
 
-**Blueprints** (Partial modularization)
-- `pof_bp` - Proof-of-Funds routes
-- `oidc_bp` - OpenID Connect
-- `pof_api_bp` - PoF API
-- `oauth_bp` - OAuth2 endpoints
+- OAuth blueprint (`/oauth/register`, `/oauth/authorize`, `/oauth/token`, `/oauth/introspect`).
+- OIDC discovery + JWKS (`/.well-known/openid-configuration`, `/oauth/jwks.json`).
+- Additional monolith diagnostics/docs surface (`/oauthx/status`, `/oauthx/docs`).
+- Compatibility adapters remain in monolith for legacy object/storage expectations (not fully cleaned up).
 
-### 3. Data Layer
+## 4) LNURL and Lightning payment surfaces
 
-**PostgreSQL** (17 tables)
-- Identity: `users`, `ubid_users`
-- Sessions: `sessions`, `rate_limits`
-- OAuth: `oauth_clients`, `oauth_codes`, `oauth_tokens`
-- PoF: `proof_of_funds`, `pof_challenges`
-- Payments: `payments`, `subscriptions`
-- Chat: `chat_messages`
-- Admin: `audit_logs`, `usage_stats`
+- LNURL auth blueprint under `/api/lnurl-auth/*` (create/callback/check/params).
+- LNURL callback currently marks verification based on challenge matching and records supplied key; the signature-verification step is noted in code as a future hardening point. **(Partial)**
+- Lightning invoice module supports `lnd_rest`, `lnd_cli`, and `stub` backend controlled by `LN_BACKEND`; production guard rejects stub/testing mode when production flags are set. **(Partial)**
 
-**Redis**
-- Session storage
-- Real-time presence tracking
-- Rate limit counters
-- Challenge/nonce caching
+## 5) Proof-of-Funds and Bitcoin/covenant surfaces
 
-### 4. Bitcoin Integration
+- PoF web/API blueprints under `/pof/*` and `/api/pof/*` with DB-backed stats route (`/api/pof/stats`).
+- Monolith includes descriptor/covenant explorer routes such as `/verify_pubkey_and_list` and decode/import flows.
+- Agent job type `covenant_decode` exists, but currently returns a lightweight decoded placeholder (`script(<hex>)`) + CLTV heuristic, not a full script interpreter. **(Partial)**
 
-**Bitcoin Core** (Remote via SSH)
-- Wallet: `hodlandwatch`
-- Descriptor-based covenant storage
-- UTXO scanning for PoF
-- Message signature verification
-- Script validation
+## 6) Agent UBID runtime surfaces
 
-**Connection:**
-```bash
-ssh -L 8332:localhost:8332 user@remote-node
-```
-
-**RPC Methods Used:**
-- `verifymessage()` - Auth
-- `scantxoutset()` - PoF balance
-- `listdescriptors()` - Covenant management
-- `getbalance()`, `getblockcount()` - Stats
+- Discovery/capabilities: `/.well-known/agent.json`, `/agent/capabilities`, `/agent/capabilities/schema`, `/agent/skills`.
+- Paid job flow: `/agent/request` -> invoice -> `/agent/jobs/<job_id>` settlement/status.
+- Verification/reputation: `/agent/verify/<job_id>`, `/agent/attestations`, `/agent/reputation`, `/agent/chain/health`, `/agent/marketplace/listing`.
+- Signed receipt chain: receipts are signed, hashed, and linked through `prev_event_hash`.
 
 ---
 
-## Authentication Flows
+## Authentication and Authorization Model
 
-### Flow 1: Bitcoin Signature Login
-```
-1. User visits /login
-2. Server generates challenge (UUID)
-3. User signs challenge with Bitcoin key
-4. POST /verify_signature with (message, signature, address)
-5. Server verifies via Bitcoin Core RPC
-6. Session created with pubkey as identity
-7. Access level determined (limited/full/special)
-```
-
-### Flow 2: Guest Login
-```
-1. POST /guest_login (optionally with PIN)
-2. Server generates guest identity: "guest-random-{uuid}"
-3. Session created with limited access
-4. No Bitcoin signature required
-```
-
-### Flow 3: Special/Admin Login
-```
-1. User signs challenge with whitelisted pubkey
-2. POST /special_login
-3. Server checks against SPECIAL_USERS env var
-4. If match: access_level = "special" (admin)
-```
-
-### Flow 4: OAuth2 for Web2 Apps
-```
-Client App                 HODLXXI                  User
-    │                         │                       │
-    │─── GET /oauth/authorize ────────────────────────▶
-    │                         │                       │
-    │                         │◀──── Login (BTC) ─────│
-    │                         │                       │
-    │◀──── Redirect + code ───│                       │
-    │                         │                       │
-    │─── POST /oauth/token ───▶                       │
-    │    (code + secret)      │                       │
-    │                         │                       │
-    │◀──── access_token ──────│                       │
-    │                         │                       │
-    │─── API calls + token ───▶                       │
-```
+- Browser/session model: Flask sessions with pubkey/access-level markers.
+- API auth model: OAuth bearer token checks via decorators (e.g., `require_oauth_token`).
+- Billing gate model: some protected API surfaces can return 402 (`payment_required`) and use invoice top-up endpoints.
 
 ---
 
-## Key Features
+## Agent Runtime and Verification Surfaces
 
-### 1. Proof-of-Funds (PoF)
+## Confirmed
 
-**Two implementations:**
-- **Simple:** Message signature per address
-- **Enhanced:** PSBT-based (in `pof_routes.py`)
+- Capability documents are signed and verifiable.
+- Jobs persist request hash + payment hash and produce signed receipts after paid status.
+- Attestation feed and per-job verification endpoints expose the proof artifacts.
+- Reputation and chain-health endpoints summarize continuity and chain-link integrity.
 
-**Privacy Levels:**
-- `boolean` - Just proves ownership (no amount)
-- `threshold` - Proves balance > X (no exact amount)
-- `full` - Full disclosure
+## Partial
 
-**Flow:**
-```
-1. Generate challenge: POST /pof/api/generate-challenge
-2. Sign message with each address
-3. Submit signatures: POST /pof/api/verify-signatures
-4. Server queries UTXO set via scantxoutset
-5. Returns total balance + certificate
-```
-
-### 2. Covenant System (Core Feature)
-
-**Purpose:** 21-year Bitcoin contracts (expires 2042)
-
-**Implementation:**
-- Descriptor-based: `raw(script_hex)#checksum`
-- Two account types: SAVE (P2WSH) and CHECK (P2WPKH)
-- Explorer UI at `/home` (lines 5488-5860)
-
-**Script Structure:**
-```
-OP_IF
-  <pubkey_A> OP_CHECKSIG        # Path 1: Immediate spend
-OP_ELSE
-  <2042-01-01> OP_CLTV OP_DROP  # Path 2: Time-locked
-  <pubkey_B> OP_CHECKSIG
-OP_ENDIF
-```
-
-**API:**
-- List: `GET /verify_pubkey_and_list?pubkey=...`
-- Import: `POST /import_descriptor`
-- Export: `GET /export_wallet`
-- Decode: `POST /decode_raw_script`
-
-### 3. Real-Time Chat
-
-**Technology:** Socket.IO over WebSocket
-
-**Events:**
-- `connect` / `disconnect`
-- `message` - Chat messages
-- `user:logged_in` / `user:left`
-- `online:list` - Active users
-
-**Status:** Infrastructure ready, 0 messages in production
-
-### 4. Playground
-
-**Location:** `/playground`
-
-**Purpose:** Interactive API testing environment
-
-**Features:**
-- Test all auth methods
-- PoF demos
-- Lightning simulation
-- Nostr key auth
-- Live code execution
+- Payment settlement depends on configured LN backend (or stub mode in non-production/testing).
+- Trust-model metadata correctly distinguishes optional/not-verified time-locked-capital proof instead of claiming on-chain proof exposure.
 
 ---
 
-## Membership Tiers
+## Bounded Sovereignty Stage 1 (Current Truth)
 
-**Plans:**
-- **Free** - Basic access, rate-limited
-- **Builder** - 1000 sats/month, increased limits
-- **Pro** - 5000 sats/month, full API access
+The following distinction is intentional to avoid overstating maturity.
 
-**Payment:** Lightning Network invoices (LND integration pending)
+## Confirmed in current repo
 
----
+- Public agent trust/pay surfaces listed above (`/agent/request`, `/agent/attestations`, `/agent/reputation`, receipt verification, chain health).
+- Economic gating and “pay before work” behavior at the agent job interface.
+- Signed receipt/attestation chain for completed jobs.
 
-## Security Model
+## Not present as routes in current snapshot (therefore not claimed as active Stage 1 runtime)
 
-### Authentication
-- No passwords, only cryptographic signatures
-- Session-based (secure cookies)
-- OAuth2 Bearer tokens for API access
-- Rate limiting on all endpoints
+- `/agent/policy`
+- `/agent/bounded-status`
+- `/agent/actions`
+- dedicated protected executor route for bounded actions
 
-### Authorization
-Access levels:
-- `guest` - Limited, read-only
-- `limited` - Standard user
-- `full` - Verified Bitcoin identity
-- `special` - Admin (whitelisted pubkeys)
+## Consequence
 
-### Bitcoin Integration
-- Non-custodial (no private keys stored)
-- All balances verified on-chain
-- Message signatures verified via Bitcoin Core
-- Descriptors only (no seed phrases)
-
-### Data Privacy
-- No email required
-- Pseudonymous pubkey identities
-- Optional PoF privacy modes
-- Covenant scripts hashed (P2WSH/Taproot)
+- **Observe-only spending policy** and **signed manifest / signed action-log executor workflow** are not exposed as first-class runtime routes in current code.
+- These should be treated as **planned Stage 1 bounded sovereignty surfaces**, not current production/runtime truth.
 
 ---
 
-## Deployment Architecture
+## Bitcoin, Lightning, and Covenant-Related Surfaces
 
-**Server:** Ubuntu 24.04 (1 vCPU, 1GB RAM)
-
-**Services:**
-```
-systemd:
-├─ hodlxxi.service   (Flask + Gunicorn + Socket.IO)
-├─ nginx.service     (Reverse proxy)
-├─ postgresql.service (Database)
-└─ redis-server.service (Cache)
-```
-
-**External Dependencies:**
-- Bitcoin Core (via SSH tunnel)
-- Let's Encrypt (TLS certificates)
-- DNS: hodlxxi.com
-
-**File Structure:**
-```
-/srv/ubid/
-├── app/
-│   ├── app.py              (12,805 lines - main monolith)
-│   ├── blueprints/         (Modular routes)
-│   ├── templates/          (Jinja2 HTML)
-│   └── static/             (CSS, JS, images)
-├── backups/                (Database dumps)
-├── docs/                   (This documentation)
-├── venv/                   (Python 3.12 virtualenv)
-├── .env                    (Environment config)
-└── wsgi.py                 (Gunicorn entrypoint)
-```
+- Bitcoin RPC is used for identity and descriptor/covenant-related operations (including `listdescriptors` path in explorer/API functionality).
+- Covenant-related UX/API exists, but implementation depth varies by endpoint (some are strong runtime utilities, others are simplified helpers).
+- Lightning is integrated enough for invoice-driven job/billing flows but remains backend-configuration dependent; production safety checks exist, full operational hardening is still ongoing.
 
 ---
 
-## Performance Metrics
+## Deployment and Environment Model
 
-**Current Load:**
-- Memory: ~90MB (Flask + Gunicorn)
-- CPU: Minimal (<5% avg)
-- Uptime: Days without restart
-- Response time: <100ms (auth endpoints)
+## Confirmed in repo/runtime wiring
 
-**Capacity:**
-- Current: 2 users, 0 OAuth clients (after cleanup)
-- Rate limits: 10 req/s general, 5 req/min auth
-- Database: <1MB (after test data removal)
+- WSGI entrypoint contract: `wsgi:app`.
+- Gunicorn-compatible app export in `wsgi.py` (`application = app`).
 
----
+## Common deployment shape (documented in repo, environment-dependent)
 
-## Migration Path: Event-Based Architecture
+- Reverse proxy + Gunicorn + Flask app, with Postgres and optional Redis services.
+- Test/development frequently runs factory-based app initialization and in-memory/testing fallbacks.
 
-**Goal:** Transition from monolithic to event-sourced identity system
+## Not claimed as active baseline
 
-**Target Architecture:**
-```
-Identity Events (signed)
-    ↓
-Relay Network (distributed)
-    ↓
-App Queries Events (verify signatures)
-```
-
-**Phase 1: Design** (Current)
-- [x] Document current architecture
-- [x] Clean up monolith
-- [ ] Design identity_events table
-- [ ] Spec relay API
-
-**Phase 2: Build** (Next 2-3 weeks)
-- [ ] Create `hodlxxi/bitcoin.py` module
-- [ ] Implement identity_events model
-- [ ] Build relay API
-- [ ] Migrate existing data
-
-**Phase 3: Deploy** (Following month)
-- [ ] Run dual systems (legacy + events)
-- [ ] Gradual cutover
-- [ ] Deprecate old tables
-- [ ] Federation testing
+- Kubernetes horizontal scaling as an active, validated production default.
+- Full observability stack (e.g., ELK/Sentry) as guaranteed active deployment truth.
 
 ---
 
-## Known Limitations
+## Known Drift, Gaps, and Limitations
 
-1. **No Lightning Node:** LNURL-auth routes exist but non-functional
-2. **Monolithic codebase:** 12k+ lines in single file
-3. **Dual user tables:** `users` and `ubid_users` (redundant)
-4. **Manual payments:** No automated Lightning invoice processing
-5. **Covenant storage:** Descriptors in Bitcoin Core, not database
-
----
-
-## Next Steps
-
-**Immediate (Week 1):**
-- [ ] Install LND
-- [ ] Implement LNURL-auth
-- [ ] Test all authentication flows
-
-**Short-term (Month 1):**
-- [ ] Refactor Bitcoin integration into module
-- [ ] Design identity_events schema
-- [ ] Build relay API prototype
-
-**Long-term (Quarter 1):**
-- [ ] Event-based identity migration
-- [ ] Federation/relay network
-- [ ] Mobile apps (React Native)
-- [ ] Hardware wallet support
+1. **Runtime split-brain risk:** monolith entrypoint vs factory migration can cause behavior divergence.
+2. **Route overlap:** some surfaces exist in both monolith and blueprint versions, plus legacy compatibility shims.
+3. **LNURL security depth:** callback path currently does not enforce full cryptographic signature verification hardening.
+4. **Covenant decode depth:** agent `covenant_decode` is intentionally lightweight.
+5. **Bounded sovereignty Stage 1 routes:** policy/status/actions/executor surfaces are not yet present as concrete endpoints.
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** December 12, 2025  
-**Maintained By:** alnostru  
-**Repository:** (Add when public)
+## Near-Term Architecture Priorities
+
+1. **Choose one canonical runtime path** (prefer factory or monolith, but remove ambiguity).
+2. **Unify duplicate routes and compatibility shims** to reduce drift.
+3. **Implement/ship bounded sovereignty Stage 1 HTTP surfaces** (`/agent/policy`, `/agent/bounded-status`, `/agent/actions`, executor route) with explicit observe-only guarantees.
+4. **Harden LNURL verification logic** to full signature validation guarantees.
+5. **Formalize covenant tooling boundaries** (what is full decode vs heuristic convenience).
