@@ -4,9 +4,15 @@ import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+from flask import jsonify
 
-def _load_monolith():
-    return importlib.import_module("app.app")
+from app.factory import create_app
+
+
+def _load_legacy_auth():
+    module = importlib.import_module("app.legacy_auth")
+    module.app = create_app()
+    return module
 
 
 def _seed_challenge(m, challenge_id, pubkey, challenge="HODLXXI:login:test", method="nostr"):
@@ -46,7 +52,7 @@ def _build_nostr_event(m, *, pubkey, challenge, created_at=None, sig=None, tags=
 
 
 def test_verify_nostr_login_event_accepts_valid_event(monkeypatch):
-    m = _load_monolith()
+    m = _load_legacy_auth()
     pubkey = "a" * 64
     challenge = "HODLXXI:login:test"
     event = _build_nostr_event(m, pubkey=pubkey, challenge=challenge)
@@ -73,7 +79,7 @@ def test_verify_nostr_login_event_accepts_valid_event(monkeypatch):
 
 
 def test_verify_nostr_login_event_rejects_malformed_event(monkeypatch):
-    m = _load_monolith()
+    m = _load_legacy_auth()
     _install_fake_coincurve(monkeypatch, lambda *_: True)
 
     ok, error = m.verify_nostr_login_event(
@@ -87,7 +93,7 @@ def test_verify_nostr_login_event_rejects_malformed_event(monkeypatch):
 
 
 def test_verify_nostr_login_event_rejects_wrong_pubkey(monkeypatch):
-    m = _load_monolith()
+    m = _load_legacy_auth()
     challenge = "HODLXXI:login:test"
     event = _build_nostr_event(m, pubkey="a" * 64, challenge=challenge)
     _install_fake_coincurve(monkeypatch, lambda *_: True)
@@ -104,7 +110,7 @@ def test_verify_nostr_login_event_rejects_wrong_pubkey(monkeypatch):
 
 
 def test_verify_nostr_login_event_rejects_wrong_challenge(monkeypatch):
-    m = _load_monolith()
+    m = _load_legacy_auth()
     event = _build_nostr_event(m, pubkey="a" * 64, challenge="HODLXXI:login:test")
     _install_fake_coincurve(monkeypatch, lambda *_: True)
 
@@ -120,7 +126,7 @@ def test_verify_nostr_login_event_rejects_wrong_challenge(monkeypatch):
 
 
 def test_verify_nostr_login_event_rejects_stale_created_at(monkeypatch):
-    m = _load_monolith()
+    m = _load_legacy_auth()
     created_at = int(datetime.now(timezone.utc).timestamp()) - (m.NOSTR_LOGIN_MAX_AGE_SECONDS + 1)
     event = _build_nostr_event(m, pubkey="a" * 64, challenge="HODLXXI:login:test", created_at=created_at)
     _install_fake_coincurve(monkeypatch, lambda *_: True)
@@ -136,7 +142,7 @@ def test_verify_nostr_login_event_rejects_stale_created_at(monkeypatch):
 
 
 def test_verify_nostr_login_event_rejects_tampered_id(monkeypatch):
-    m = _load_monolith()
+    m = _load_legacy_auth()
     event = _build_nostr_event(m, pubkey="a" * 64, challenge="HODLXXI:login:test")
     event["id"] = "f" * 64
     _install_fake_coincurve(monkeypatch, lambda *_: True)
@@ -153,7 +159,7 @@ def test_verify_nostr_login_event_rejects_tampered_id(monkeypatch):
 
 
 def test_verify_nostr_login_event_rejects_tampered_sig(monkeypatch):
-    m = _load_monolith()
+    m = _load_legacy_auth()
     event = _build_nostr_event(m, pubkey="a" * 64, challenge="HODLXXI:login:test")
     _install_fake_coincurve(monkeypatch, lambda *_: False)
 
@@ -169,7 +175,7 @@ def test_verify_nostr_login_event_rejects_tampered_sig(monkeypatch):
 
 
 def test_api_verify_accepts_valid_nostr_event_and_consumes_challenge(monkeypatch):
-    m = _load_monolith()
+    m = _load_legacy_auth()
     challenge_id = "cid-nostr-1"
     pubkey = "a" * 64
     challenge = "HODLXXI:login:test"
@@ -211,7 +217,7 @@ def test_api_verify_accepts_valid_nostr_event_and_consumes_challenge(monkeypatch
 
 
 def test_api_verify_rejects_nostr_without_event(monkeypatch):
-    m = _load_monolith()
+    m = _load_legacy_auth()
     challenge_id = "cid-nostr-missing"
     pubkey = "a" * 64
     _seed_challenge(m, challenge_id, pubkey)
@@ -225,7 +231,7 @@ def test_api_verify_rejects_nostr_without_event(monkeypatch):
 
 
 def test_api_verify_rejects_lightning_without_crypto_proof(monkeypatch):
-    m = _load_monolith()
+    m = _load_legacy_auth()
 
     challenge_id = "cid-ln-1"
     pubkey = "b" * 64
@@ -243,7 +249,7 @@ def test_api_verify_rejects_lightning_without_crypto_proof(monkeypatch):
 
 
 def test_api_verify_keeps_legacy_bitcoin_message_flow(monkeypatch):
-    m = _load_monolith()
+    m = _load_legacy_auth()
     challenge_id = "cid-btc-1"
     pubkey = "02" + "c" * 64
     _seed_challenge(m, challenge_id, pubkey, method="api")
@@ -280,18 +286,16 @@ def test_api_verify_keeps_legacy_bitcoin_message_flow(monkeypatch):
 
 
 def test_finish_login_sets_secure_and_httponly_cookies_in_production(monkeypatch):
-    m = _load_monolith()
+    m = _load_legacy_auth()
 
     monkeypatch.setenv("FLASK_ENV", "production")
     monkeypatch.delenv("SECURE_COOKIES", raising=False)
     monkeypatch.delenv("ACCESS_COOKIE_HTTPONLY", raising=False)
     monkeypatch.setattr(m, "on_successful_login", lambda pubkey: {"pubkey": pubkey})
     monkeypatch.setattr(m, "mint_access_token", lambda sub=None, scope=None: "at-test")
-    monkeypatch.setattr(m, "AT_TTL", 900, raising=False)
-    monkeypatch.setattr(m, "RT_TTL", 2592000, raising=False)
 
     with m.app.test_request_context("/", method="GET"):
-        resp = m.jsonify({"ok": True})
+        resp = jsonify({"ok": True})
         out = m._finish_login(resp, "02" + "c" * 64, "limited")
         cookies = out.headers.getlist("Set-Cookie")
 

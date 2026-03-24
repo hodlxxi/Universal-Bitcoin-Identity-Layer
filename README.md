@@ -25,7 +25,7 @@ A production-focused Flask service that bridges OAuth2/OpenID Connect with Light
 
 | Layer | Key Modules | Responsibilities |
 | --- | --- | --- |
-| Web application | [`app/app.py`](app/app.py), [`app/factory.py`](app/factory.py) | Flask application, OAuth2/LNURL routes, Prometheus metrics, Socket.IO events, plus the factory-based app initialization |
+| Web application | [`app/factory.py`](app/factory.py), [`app/app.py`](app/app.py) | Canonical Flask application factory, blueprint registration, legacy compatibility shim, OAuth2/LNURL routes, and runtime initialization |
 | Security | [`app/security.py`](app/security.py) | Proxy/header fixes, HTTPS enforcement, Flask-Limiter setup, logging defaults |
 | Identity tokens | [`app/tokens.py`](app/tokens.py), [`app/jwks.py`](app/jwks.py) | RS256 JWT issuance, keypair persistence, JWKS publication |
 | Storage | [`app/db_storage.py`](app/db_storage.py), [`app/database.py`](app/database.py), [`app/storage.py`](app/storage.py) | Postgres session helpers, Redis utilities, and in-memory parity for tests |
@@ -53,7 +53,7 @@ For local development you can omit Postgres/Redis by exporting `DATABASE_URL` an
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-export FLASK_APP=app.app:app
+export FLASK_APP=wsgi:app
 export FLASK_ENV=development
 export RPC_USER=bitcoinrpc
 export RPC_PASSWORD=change-me
@@ -61,6 +61,9 @@ flask run
 ```
 
 The service exposes:
+
+> **Runtime truth:** production and tests now construct the application through `app.factory:create_app()`, with `wsgi:app` as the canonical deployment entrypoint and `app/app.py` retained only as a compatibility shim.
+
 
 - `/.well-known/openid-configuration`, `/oauth/token`, `/oauth/authorize`
 - `/.well-known/agent.json`, `/agent/capabilities`, `/agent/capabilities/schema`
