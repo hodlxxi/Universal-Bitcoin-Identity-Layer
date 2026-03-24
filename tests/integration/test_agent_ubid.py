@@ -1,5 +1,6 @@
 import hashlib
 import os
+import uuid
 
 os.environ.setdefault("AGENT_PRIVKEY_HEX", "1" * 64)
 
@@ -15,10 +16,10 @@ def _receipt_message(receipt: dict) -> bytes:
 
 
 
-def _signed_agent_message(payload: dict, *, msg_type: str = "job_proposal") -> dict:
+def _signed_agent_message(payload: dict, *, msg_type: str = "job_proposal", message_id: str | None = None) -> dict:
     sender = get_agent_pubkey_hex()
     message = {
-        "message_id": "msg-1",
+        "message_id": message_id or str(uuid.uuid4()),
         "conversation_id": "conv-1",
         "thread_id": "thread-1",
         "type": msg_type,
@@ -108,7 +109,28 @@ def test_agent_message_rejects_bad_signature(client):
 
     res = client.post("/agent/message", json=msg)
     assert res.status_code == 400
-    assert res.get_json()["error"] == "invalid_signature"
+    body = res.get_json()
+    assert body["type"] == "rejection"
+    assert body["payload"]["error"]["code"] == "invalid_signature"
+
+
+def test_agent_message_rejects_duplicate_message_id(client):
+    msg = _signed_agent_message({"job_type": "ping", "payload": {"message": "hello"}})
+
+    first = client.post("/agent/message", json=msg)
+    assert first.status_code == 200
+
+    second = client.post("/agent/message", json=msg)
+    assert second.status_code == 409
+    assert second.get_json()["payload"]["error"]["code"] == "invalid_payload"
+
+
+def test_agent_message_rejects_unsupported_job_type(client):
+    msg = _signed_agent_message({"job_type": "does_not_exist", "payload": {}})
+
+    res = client.post("/agent/message", json=msg)
+    assert res.status_code == 400
+    assert res.get_json()["payload"]["error"]["code"] == "unsupported_type"
 
 def test_request_creates_job_and_invoice(client, monkeypatch):
     monkeypatch.setattr(
