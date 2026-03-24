@@ -79,7 +79,7 @@ def _spending_policy() -> dict:
     mode = (os.getenv("BOUNDED_SPENDING_MODE") or "observe_only").strip() or "observe_only"
     daily_limit_sats = max(int(os.getenv("BOUNDED_SPENDING_DAILY_LIMIT_SATS", "0")), 0)
     per_action_limit_sats = max(int(os.getenv("BOUNDED_SPENDING_PER_ACTION_LIMIT_SATS", "0")), 0)
-    requires_manual_approval = (os.getenv("BOUNDED_SPENDING_MANUAL_APPROVAL", "true").lower() != "false")
+    requires_manual_approval = os.getenv("BOUNDED_SPENDING_MANUAL_APPROVAL", "true").lower() != "false"
     return {
         "mode": mode,
         "daily_limit_sats": daily_limit_sats,
@@ -101,7 +101,13 @@ def _requires_escalation_actions() -> list[str]:
 
 
 def _forbidden_actions() -> list[str]:
-    return ["execute_shell", "run_arbitrary_command", "unbounded_wallet_spend", "modify_production_deploy", "root_access"]
+    return [
+        "execute_shell",
+        "run_arbitrary_command",
+        "unbounded_wallet_spend",
+        "modify_production_deploy",
+        "root_access",
+    ]
 
 
 def _policy_manifest_payload() -> dict:
