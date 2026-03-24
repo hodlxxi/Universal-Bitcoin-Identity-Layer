@@ -480,3 +480,17 @@ class AgentEvent(Base):
     event_json = Column(JSON, nullable=False)
     signature = Column(Text, nullable=False)
     created_at = Column(DateTime, default=utc_now, nullable=False, index=True)
+
+
+class BoundedAgentActionEvent(Base):
+    """Append-only signed log for bounded sovereignty Stage 1 runtime events."""
+
+    __tablename__ = "bounded_agent_action_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_hash = Column(String(64), nullable=False, unique=True, index=True)
+    prev_event_hash = Column(String(64), index=True)
+    event_type = Column(String(64), nullable=False, index=True)
+    event_json = Column(JSON, nullable=False)
+    signature = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False, index=True)

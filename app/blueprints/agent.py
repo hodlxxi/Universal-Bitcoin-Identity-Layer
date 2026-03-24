@@ -11,7 +11,7 @@ from flask import Blueprint, jsonify, request
 
 from app.agent_signer import canonical_json_bytes, get_agent_pubkey_hex, sign_message, verify_message
 from app.database import session_scope
-from app.models import AgentEvent, AgentJob
+from app.models import AgentEvent, AgentJob, BoundedAgentActionEvent
 from app.payments.ln import check_invoice_paid, create_invoice
 
 agent_bp = Blueprint("agent", __name__)
@@ -75,6 +75,138 @@ def _sha256_hex(payload: dict) -> str:
     return hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
 
 
+def _spending_policy() -> dict:
+    mode = (os.getenv("BOUNDED_SPENDING_MODE") or "observe_only").strip() or "observe_only"
+    daily_limit_sats = max(int(os.getenv("BOUNDED_SPENDING_DAILY_LIMIT_SATS", "0")), 0)
+    per_action_limit_sats = max(int(os.getenv("BOUNDED_SPENDING_PER_ACTION_LIMIT_SATS", "0")), 0)
+    requires_manual_approval = (os.getenv("BOUNDED_SPENDING_MANUAL_APPROVAL", "true").lower() != "false")
+    return {
+        "mode": mode,
+        "daily_limit_sats": daily_limit_sats,
+        "per_action_limit_sats": per_action_limit_sats,
+        "requires_manual_approval": requires_manual_approval,
+        "status": "active",
+        "notes": (
+            "Stage 1 wrapper only. Live outbound spending execution is intentionally not enabled in this runtime stage."
+        ),
+    }
+
+
+def _allowed_bounded_actions() -> list[str]:
+    return ["publish_policy_manifest", "report_agent_budget_status"]
+
+
+def _requires_escalation_actions() -> list[str]:
+    return ["pause_new_jobs", "resume_new_jobs", "request_spending_action"]
+
+
+def _forbidden_actions() -> list[str]:
+    return ["execute_shell", "run_arbitrary_command", "unbounded_wallet_spend", "modify_production_deploy", "root_access"]
+
+
+def _policy_manifest_payload() -> dict:
+    payload = {
+        "policy_version": "stage1-v1",
+        "published_at": _iso_now(),
+        "agent_pubkey": get_agent_pubkey_hex(),
+        "bounded_sovereignty_stage": 1,
+        "allowed_bounded_actions": _allowed_bounded_actions(),
+        "requires_escalation_actions": _requires_escalation_actions(),
+        "forbidden_actions": _forbidden_actions(),
+        "spending_policy": _spending_policy(),
+        "signature_strategy": {
+            "type": "inline_signature",
+            "scheme": "secp256k1",
+            "signed_fields": "all_manifest_fields_except_signature",
+        },
+    }
+    payload["signature"] = sign_message(canonical_json_bytes(payload))
+    return payload
+
+
+def _append_bounded_action_event(event_type: str, details: dict | None = None) -> dict:
+    with session_scope() as session:
+        last_event = session.query(BoundedAgentActionEvent).order_by(BoundedAgentActionEvent.id.desc()).first()
+        prev_event_hash = last_event.event_hash if last_event else None
+        payload = {
+            "event_type": event_type,
+            "timestamp": _iso_now(),
+            "agent_pubkey": get_agent_pubkey_hex(),
+            "prev_event_hash": prev_event_hash,
+            "details": details or {},
+        }
+        payload["signature"] = sign_message(canonical_json_bytes(payload))
+        event_hash = hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
+        session.add(
+            BoundedAgentActionEvent(
+                event_hash=event_hash,
+                prev_event_hash=prev_event_hash,
+                event_type=event_type,
+                event_json=payload,
+                signature=payload["signature"],
+            )
+        )
+        return payload
+
+
+def _spending_policy_check(action: str, amount_sats: int) -> dict:
+    policy = _spending_policy()
+    allowed = True
+    reason = "approved"
+    if amount_sats < 0:
+        allowed = False
+        reason = "negative_amount_not_allowed"
+    elif policy["mode"] != "bounded_enabled":
+        allowed = False
+        reason = "spending_mode_disabled"
+    elif policy["per_action_limit_sats"] and amount_sats > policy["per_action_limit_sats"]:
+        allowed = False
+        reason = "per_action_limit_exceeded"
+    elif policy["requires_manual_approval"] and amount_sats > 0:
+        allowed = False
+        reason = "manual_approval_required"
+
+    _append_bounded_action_event(
+        "spending_check_passed" if allowed else "spending_check_denied",
+        {
+            "action": action,
+            "amount_sats": amount_sats,
+            "allowed": allowed,
+            "reason": reason,
+            "policy_mode": policy["mode"],
+        },
+    )
+    return {"allowed": allowed, "reason": reason, "policy": policy}
+
+
+def _bounded_status_summary() -> dict:
+    with session_scope() as session:
+        latest = (
+            session.query(BoundedAgentActionEvent.event_hash, BoundedAgentActionEvent.event_type)
+            .order_by(BoundedAgentActionEvent.id.desc())
+            .first()
+        )
+        count = session.query(BoundedAgentActionEvent).count()
+    return {
+        "stage": "bounded_sovereignty_stage1",
+        "agent_pubkey": get_agent_pubkey_hex(),
+        "policy_version": "stage1-v1",
+        "spending_policy": _spending_policy(),
+        "executor": {
+            "allowed_actions": _allowed_bounded_actions(),
+            "requires_escalation_actions": _requires_escalation_actions(),
+            "forbidden_actions": _forbidden_actions(),
+        },
+        "action_log": {
+            "count": count,
+            "latest_event_hash": latest[0] if latest else None,
+            "latest_event_type": latest[1] if latest else None,
+            "append_only": True,
+            "signature_scheme": "secp256k1",
+        },
+    }
+
+
 def _payment_hash(invoice_lookup_id: str) -> str:
     candidate = (invoice_lookup_id or "").lower()
     if len(candidate) == 64 and all(ch in "0123456789abcdef" for ch in candidate):
@@ -87,6 +219,10 @@ def _agent_endpoints() -> dict:
         "well_known": "/.well-known/agent.json",
         "capabilities": "/agent/capabilities",
         "capabilities_schema": "/agent/capabilities/schema",
+        "policy_manifest": "/agent/policy",
+        "bounded_status": "/agent/bounded-status",
+        "bounded_actions": "/agent/actions",
+        "bounded_executor": "/agent/bounded/execute",
         "request": "/agent/request",
         "job": "/agent/jobs/<job_id>",
         "verify": "/agent/verify/<job_id>",
@@ -456,6 +592,73 @@ def skills_listing():
         {
             "count": len(items),
             "items": items,
+        }
+    )
+
+
+@agent_bp.get("/agent/policy")
+def bounded_policy_manifest():
+    manifest = _policy_manifest_payload()
+    _append_bounded_action_event(
+        "policy_manifest_published",
+        {"policy_version": manifest["policy_version"]},
+    )
+    return jsonify(manifest)
+
+
+@agent_bp.get("/agent/bounded-status")
+def bounded_status():
+    return jsonify(_bounded_status_summary())
+
+
+@agent_bp.get("/agent/actions")
+def bounded_actions():
+    try:
+        limit = min(max(int(request.args.get("limit", 20)), 1), 100)
+    except ValueError:
+        return jsonify({"error": "invalid_limit"}), 400
+
+    with session_scope() as session:
+        events = session.query(BoundedAgentActionEvent).order_by(BoundedAgentActionEvent.id.desc()).limit(limit).all()
+        items = [event.event_json for event in events]
+    return jsonify({"items": items, "count": len(items), "append_only": True})
+
+
+@agent_bp.post("/agent/bounded/execute")
+def bounded_execute():
+    expected = os.getenv("BOUNDED_AGENT_ADMIN_TOKEN", "").strip()
+    auth = request.headers.get("Authorization", "")
+    token = auth.split(" ", 1)[1].strip() if auth.lower().startswith("bearer ") else ""
+    if not expected or token != expected:
+        _append_bounded_action_event("bounded_action_denied", {"reason": "unauthorized"})
+        return jsonify({"error": "forbidden"}), 403
+
+    data = request.get_json(silent=True) or {}
+    action = str(data.get("action", "")).strip()
+    if action not in _allowed_bounded_actions():
+        _append_bounded_action_event(
+            "bounded_action_denied",
+            {"action": action, "reason": "action_not_allowed", "allowed_actions": _allowed_bounded_actions()},
+        )
+        return jsonify({"error": "action_not_allowed", "allowed_actions": _allowed_bounded_actions()}), 400
+
+    if action == "publish_policy_manifest":
+        manifest = _policy_manifest_payload()
+        _append_bounded_action_event("bounded_action_invoked", {"action": action})
+        _append_bounded_action_event("policy_manifest_published", {"policy_version": manifest["policy_version"]})
+        return jsonify({"ok": True, "action": action, "manifest": manifest})
+
+    status = _bounded_status_summary()
+    spending_check = _spending_policy_check("report_agent_budget_status", 0)
+    _append_bounded_action_event("bounded_action_invoked", {"action": action})
+    return jsonify(
+        {
+            "ok": True,
+            "action": action,
+            "budget_status": {
+                "spending_policy": status["spending_policy"],
+                "check": spending_check,
+            },
         }
     )
 

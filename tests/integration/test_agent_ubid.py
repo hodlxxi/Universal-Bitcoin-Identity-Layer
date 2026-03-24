@@ -69,6 +69,94 @@ def test_well_known_agent_document_matches_discovery_surfaces(client):
     assert body["trust_model"]["assurance_boundaries"]["on_chain_proof_exposed"] is False
 
 
+def test_policy_manifest_endpoint_returns_signed_policy(client):
+    res = client.get("/agent/policy")
+    assert res.status_code == 200
+
+    body = res.get_json()
+    signature = body.pop("signature")
+    assert verify_message(canonical_json_bytes(body), signature, body["agent_pubkey"])
+    assert body["policy_version"] == "stage1-v1"
+    assert "publish_policy_manifest" in body["allowed_bounded_actions"]
+    assert "execute_shell" in body["forbidden_actions"]
+
+
+def test_bounded_status_endpoint_returns_stage1_summary(client):
+    client.get("/agent/policy")
+
+    res = client.get("/agent/bounded-status")
+    assert res.status_code == 200
+
+    body = res.get_json()
+    assert body["stage"] == "bounded_sovereignty_stage1"
+    assert "spending_policy" in body
+    assert body["action_log"]["append_only"] is True
+
+
+def test_action_log_endpoint_returns_recent_entries(client):
+    client.get("/agent/policy")
+
+    res = client.get("/agent/actions?limit=5")
+    assert res.status_code == 200
+
+    body = res.get_json()
+    assert body["append_only"] is True
+    assert body["count"] >= 1
+    assert body["items"][0]["event_type"] in {
+        "policy_manifest_published",
+        "bounded_action_invoked",
+        "bounded_action_denied",
+        "spending_check_passed",
+        "spending_check_denied",
+    }
+    assert "signature" in body["items"][0]
+
+
+def test_bounded_executor_rejects_unknown_actions(client):
+    res = client.post(
+        "/agent/bounded/execute",
+        headers={"Authorization": "Bearer stage1-token"},
+        json={"action": "unknown_action"},
+    )
+    assert res.status_code == 403
+
+    res = client.post(
+        "/agent/bounded/execute",
+        headers={"Authorization": "Bearer"},
+        json={"action": "unknown_action"},
+    )
+    assert res.status_code == 403
+
+
+def test_bounded_executor_rejects_unknown_action_with_valid_admin_token(client, monkeypatch):
+    monkeypatch.setenv("BOUNDED_AGENT_ADMIN_TOKEN", "stage1-token")
+    res = client.post(
+        "/agent/bounded/execute",
+        headers={"Authorization": "Bearer stage1-token"},
+        json={"action": "unknown_action"},
+    )
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "action_not_allowed"
+
+
+def test_spending_policy_wrapper_denies_out_of_policy_action_and_logs_decision(client, monkeypatch):
+    monkeypatch.setenv("BOUNDED_AGENT_ADMIN_TOKEN", "stage1-token")
+    monkeypatch.setenv("BOUNDED_SPENDING_MODE", "observe_only")
+
+    res = client.post(
+        "/agent/bounded/execute",
+        headers={"Authorization": "Bearer stage1-token"},
+        json={"action": "report_agent_budget_status"},
+    )
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["budget_status"]["check"]["allowed"] is False
+    assert body["budget_status"]["check"]["reason"] == "spending_mode_disabled"
+
+    actions = client.get("/agent/actions").get_json()["items"]
+    assert any(item["event_type"] == "spending_check_denied" for item in actions)
+
+
 def test_request_creates_job_and_invoice(client, monkeypatch):
     monkeypatch.setattr(
         "app.blueprints.agent.create_invoice",
