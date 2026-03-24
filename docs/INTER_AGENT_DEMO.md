@@ -9,7 +9,7 @@ This demo proves the current hardened MVP inter-agent loop:
 3. Agent B verifies signature + envelope, executes the request, and returns a signed `result` envelope.
 4. Agent A verifies Agent B's result signature.
 
-This demo does **not** prove full protocol completion. It does not cover negotiation state machines, discovery networks, escrow/dispute layers, or autonomous spending.
+This demo is a **development harness** for local verification. It is not a production deployment recipe and does **not** prove full protocol completion. It does not cover negotiation state machines, discovery networks, escrow/dispute layers, or autonomous spending.
 
 ## 2. Topology
 
@@ -40,11 +40,13 @@ export AGENT_B_PUBKEY_HEX=<agent-b-compressed-pubkey-hex>
 
 ## 4. Demo Steps
 
-1. Start Agent B (HODLXXI app) on localhost:
+1. Start Agent B (HODLXXI app) on localhost (dev/demo only):
 
 ```bash
 FLASK_APP=app.factory:create_app flask run --host 127.0.0.1 --port 5000
 ```
+
+> **Dev vs production note:** this launch path (`flask run`) is intentionally for local/demo validation. Production runtime, networking, and hardening are out of scope for this document.
 
 2. In another shell, run Agent A demo sender/verifier:
 

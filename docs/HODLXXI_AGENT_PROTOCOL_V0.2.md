@@ -15,6 +15,11 @@ This extension is designed to compose with existing HODLXXI surfaces, including 
 - No breaking changes are introduced to current clients or agents.
 - Agents that do not implement v0.2 continue operating under existing protocol behavior.
 
+Implementation profile note (current branch):
+
+- The current MVP runtime implements a subset centered on `POST /agent/message` with `job_proposal -> result`.
+- Negotiation, discovery exchanges, and settlement remain specified but are not implemented in this runtime slice.
+
 ## 3. Protocol Layers
 
 ### 3.1 Messaging Layer
@@ -80,7 +85,7 @@ Ordering and idempotency:
 - No global ordering is assumed across agents.
 - Per-conversation ordering is best-effort and inferred by `(created_at, message_id)`.
 - A receiver MUST treat `(from_pubkey, message_id)` as the idempotency key.
-- If an already-processed `(from_pubkey, message_id)` is received again with byte-identical canonical body, the receiver MUST return an idempotent success `ack` and MUST NOT re-execute side effects.
+- If an already-processed `(from_pubkey, message_id)` is received again with byte-identical canonical body, the receiver MUST NOT re-execute side effects and SHOULD return a deterministic idempotent success response (for example, replaying the prior signed `result`).
 - If an already-seen `(from_pubkey, message_id)` is received again with a different canonical body, the receiver MUST reject it as `message_id_conflict`.
 
 ## 5. Messaging Model
@@ -133,6 +138,8 @@ Standard `error.code` values for v0.2:
 - `temporarily_unavailable`
 
 `retryable` SHOULD be `true` only for transient conditions such as `temporarily_unavailable`.
+
+Runtime MVP note: the current `/agent/message` implementation uses a compact error payload form `{"error": "<code>"}` for deterministic minimal handling.
 
 ## 6. Negotiation Model
 
