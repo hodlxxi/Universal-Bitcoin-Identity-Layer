@@ -7,6 +7,7 @@ It is intentionally conservative. It distinguishes between code that exists, cod
 
 ## Status Legend
 - ✅ Working end-to-end
+- 🔷 Validated on staging (verified runtime surface, but not yet proven as the default path for all deployments)
 - 🟡 Implemented but incomplete / needs hardening
 - 🧪 Experimental / stubbed / partially wired
 - ❌ Planned / not implemented
@@ -20,6 +21,8 @@ This repository is a mixed-state Flask codebase with two overlapping runtime sha
 The strongest, most coherent subsystem today is the machine-readable agent/discovery surface plus the small paid-job flow around it. OAuth2/OIDC, Bitcoin signature auth, basic LNURL-auth, and some billing/PAYG logic are implemented and tested locally. Proof-of-Funds, covenant UX, and some broader identity claims exist, but much of that surface is partial, duplicated, or not validated as a true production-grade end-to-end flow.
 
 There is substantial evidence of active refactoring, backward-compatibility shims, and duplicated route implementations. Reviewers should read the repository as a real prototype with some working subsystems, not as a uniformly production-hardened platform.
+
+For bounded sovereignty Stage 1 specifically: this snapshot now includes staging-validated surfaces that were verified outside this branch review. Those are called out separately from code paths directly found in this checkout.
 
 ## Subsystem Status
 
@@ -95,6 +98,22 @@ There is substantial evidence of active refactoring, backward-compatibility shim
     - Simulates payment and receipt creation in non-production mode.
   - Important limitations:
     - Explicitly a dev-only helper, not part of a production payment flow.
+
+#### Bounded sovereignty Stage 1 (staging-validated)
+- 🔷 `GET /agent/policy`, `GET /agent/bounded-status`, `GET /agent/actions`
+  - What works today:
+    - These surfaces are verified as reachable and returning structured responses on staging after Stage 1 validation.
+  - Important limitations:
+    - On this branch checkout, matching route handlers were not found in the scanned runtime code paths.
+    - Treat these as staging-validated runtime truth, not yet as branch-local implementation proof.
+
+- 🟡 `POST /agent/bounded/execute`
+  - What works today:
+    - Remains protected (not an open unauthenticated spending endpoint).
+    - Current behavior remains observe-only / policy-bounded and not live outbound autonomous spending.
+  - Important limitations:
+    - This is still a guarded Stage 1 control surface, not full autonomous execution.
+    - Survivability and independent fail-safe behavior are still partial.
 
 #### OAuth/OIDC/public identity API surfaces
 - ✅ `GET /.well-known/openid-configuration`
@@ -286,12 +305,14 @@ There is substantial evidence of active refactoring, backward-compatibility shim
 
 ## What Works End-to-End Today
 - ✅ The agent discovery/documentation surface appears to work end-to-end locally: `/.well-known/agent.json`, `/agent/capabilities`, `/agent/capabilities/schema`, `/agent/skills`, `/agent/reputation`, `/agent/attestations`, and `/agent/chain/health` all have concrete implementations and targeted tests.
+- 🔷 Bounded sovereignty Stage 1 staging flow: `GET /agent/policy`, `GET /agent/bounded-status`, and `GET /agent/actions` were validated on staging as live runtime surfaces.
 - ✅ A local/dev paid-agent flow appears to work end-to-end: create job request → receive invoice payload → simulate or detect payment → poll job status → mint signed receipt → verify receipt.
 - ✅ OAuth client registration and auth-code + PKCE token issuance appear to work end-to-end in the tested application-factory stack.
 - ✅ Bitcoin-signature login appears to work end-to-end in the tested path, assuming Bitcoin RPC is available.
 - ✅ OAuth client PAYG top-up appears to work end-to-end in test conditions when invoice payment is simulated.
 
 ## Implemented but Incomplete
+- 🟡 Bounded sovereignty execution controls: Stage 1 read surfaces are validated on staging, but execution remains protected and observe-only rather than live outbound autonomous spending.
 - 🟡 OAuth/OIDC as a full production identity provider: implemented, but confidence is reduced by duplicate route stacks and the fact that tests lean on the factory app while default deployment uses the monolith.
 - 🟡 LNURL-auth: implemented, but route duplication and inconsistent verification behavior across implementations mean it still needs consolidation/hardening.
 - 🟡 Proof-of-Funds pages and stats: public pages and stats endpoint exist, but the actual issuance/verification flow is fragmented across multiple route families and is not convincingly covered end-to-end.
@@ -303,6 +324,7 @@ There is substantial evidence of active refactoring, backward-compatibility shim
 - 🧪 Lightning payments in default config: the code defaults to stub mode unless LND environment is configured.
 - 🧪 Agent `covenant_decode` job: implemented, but the “decode” behavior is shallow and heuristic, not a robust covenant analysis engine.
 - 🧪 Dev-only payment bypass (`/agent/jobs/<job_id>/dev/mark_paid`): useful for testing, not part of a real production flow.
+- 🧪 Bounded sovereignty Stage 1 execution posture: still deliberately constrained to protected, observe-only behavior and not autonomous outbound spend authority.
 - 🧪 Some PoF verification handling: `api_pof_verify_psbt` is substantial code, but it is still best described as a specialized/partial verifier rather than a clearly finished product.
 - 🧪 Real-time chat/WebRTC in the open-source repo story: substantial monolith code exists, but there is limited automated validation and the current repository center of gravity has shifted toward agent/API surfaces.
 
@@ -326,6 +348,7 @@ There is substantial evidence of active refactoring, backward-compatibility shim
 8. Real-time chat/WebRTC functionality may exist in the monolith, but it is not a well-validated part of the current technical story.
 9. Operational readiness depends heavily on correct external configuration (Postgres, Redis, Bitcoin Core, optional LND, secrets, TLS, reverse proxy).
 10. There is no evidence in-repo of external trust anchoring for attestation history or agent-capital claims.
+11. Centralization and survivability gaps remain material: bounded Stage 1 improves policy visibility, but independent long-horizon continuity guarantees are not yet fully proven.
 
 ## Notes for Reviewers
 Read this repository as a serious prototype with several real subsystems, not as a finished, uniform production platform.
