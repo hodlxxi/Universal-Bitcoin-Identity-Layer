@@ -55,21 +55,33 @@ All inter-agent messages MUST use the following canonical JSON envelope:
 }
 ```
 
-Normative requirements:
+Canonical signing rules:
 
-- `signature` MUST be produced by `from_pubkey` over a deterministic serialization of the envelope fields excluding `signature`.
-- The signed body MUST include: `message_id`, `conversation_id`, `thread_id`, `type`, `from_pubkey`, `to_pubkey`, `created_at`, `payload`, `payment_hash` (if present), and `references` (if present).
-- `message_id` MUST be globally unique per sender and SHOULD be UUIDv7 or equivalent sortable unique identifier.
-- `conversation_id` groups related negotiation/delegation exchanges.
-- `thread_id` groups subflows within a conversation (for example, delegated branches).
+- `signature` MUST be a secp256k1 signature verifiable by `from_pubkey`.
+- The signature input MUST be UTF-8 bytes of the canonical JSON serialization of the envelope with `signature` removed.
+- Canonical JSON serialization for v0.2 is defined as:
+  1. JSON object keys sorted lexicographically at every nesting level.
+  2. No insignificant whitespace.
+  3. UTF-8 encoding.
+  4. Numbers encoded as JSON numbers (not quoted).
+  5. Omitted optional fields are not serialized; present optional fields are serialized normally.
+- Verifiers MUST reject messages whose signature validates only under a non-canonical serialization.
+
+Field semantics:
+
+- `message_id` MUST be globally unique per `from_pubkey` and SHOULD be UUIDv7 or equivalent sortable unique identifier.
+- `conversation_id` identifies a bilateral work context between the same `from_pubkey` and `to_pubkey` pair. Reuse across different counterparty pairs is invalid.
+- `thread_id` identifies a branch within a `conversation_id`. New delegated branches SHOULD use new `thread_id` values.
 - `created_at` SHOULD use RFC 3339 UTC timestamps.
+- `references.parent_message_id` links causal parentage and SHOULD refer to a prior message in the same `conversation_id`.
 
 Ordering and idempotency:
 
 - No global ordering is assumed across agents.
 - Per-conversation ordering is best-effort and inferred by `(created_at, message_id)`.
-- Receivers MUST treat repeated `message_id` values from the same `from_pubkey` as idempotent duplicates.
-- Receivers MAY accept out-of-order delivery and reconstruct causal chains via `references.parent_message_id`.
+- A receiver MUST treat `(from_pubkey, message_id)` as the idempotency key.
+- If an already-processed `(from_pubkey, message_id)` is received again with byte-identical canonical body, the receiver MUST return an idempotent success `ack` and MUST NOT re-execute side effects.
+- If an already-seen `(from_pubkey, message_id)` is received again with a different canonical body, the receiver MUST reject it as `message_id_conflict`.
 
 ## 5. Messaging Model
 
@@ -96,6 +108,32 @@ Behavioral model:
 - Streaming transports are out of scope for v0.2 and reserved for future extensions.
 - Shared memory/state between agents is not required.
 
+Minimal error model:
+
+Errors are returned as JSON with this shape:
+
+```json
+{
+  "error": {
+    "code": "...",
+    "message": "...",
+    "retryable": false
+  }
+}
+```
+
+Standard `error.code` values for v0.2:
+
+- `invalid_signature`
+- `invalid_envelope`
+- `unknown_message_type`
+- `message_id_conflict`
+- `conversation_mismatch`
+- `policy_denied`
+- `temporarily_unavailable`
+
+`retryable` SHOULD be `true` only for transient conditions such as `temporarily_unavailable`.
+
 ## 6. Negotiation Model
 
 Negotiation follows a proposal → counter → agreement pattern.
@@ -104,6 +142,15 @@ Negotiation follows a proposal → counter → agreement pattern.
 - A `counter_offer` modifies one or more terms.
 - Agreement exists only when both sides produce signed messages containing matching final terms.
 - No implicit agreement is valid.
+
+Agreement definition (machine-verifiable):
+
+- Let `terms_hash` be SHA-256 over canonical JSON serialization of agreed terms object.
+- A negotiation is in `agreed` state only when both counterparties have each sent one signed message in the same `conversation_id` with:
+  - `type` equal to `ack` or `result`, and
+  - identical `terms_hash`, and
+  - `references.parent_message_id` pointing to the last proposal/counter message being accepted.
+- Any mismatch in `terms_hash` means no agreement.
 
 Optional terms schema example:
 
