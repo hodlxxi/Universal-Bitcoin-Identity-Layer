@@ -298,3 +298,21 @@ def test_finish_login_sets_secure_and_httponly_cookies_in_production(monkeypatch
     at_cookie = next(c for c in cookies if c.startswith("at="))
     assert "Secure" in at_cookie
     assert "HttpOnly" in at_cookie
+
+
+def test_monolith_allows_anonymous_public_bounded_get_surfaces():
+    m = _load_monolith()
+    client = m.app.test_client()
+
+    for path in ("/agent/policy", "/agent/bounded-status", "/agent/actions"):
+        response = client.get(path)
+        assert response.status_code == 200, f"expected 200 for {path}, got {response.status_code}"
+
+
+def test_monolith_keeps_bounded_executor_post_protected_for_anonymous():
+    m = _load_monolith()
+    client = m.app.test_client()
+
+    response = client.post("/agent/bounded/execute", json={"action": "report_agent_budget_status"})
+    assert response.status_code == 302
+    assert "/login" in (response.headers.get("Location") or "")
