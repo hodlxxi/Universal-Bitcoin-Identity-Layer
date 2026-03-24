@@ -3,6 +3,7 @@
 import hashlib
 import os
 import time
+import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -88,6 +89,7 @@ def _agent_endpoints() -> dict:
         "capabilities": "/agent/capabilities",
         "capabilities_schema": "/agent/capabilities/schema",
         "request": "/agent/request",
+        "message": "/agent/message",
         "job": "/agent/jobs/<job_id>",
         "verify": "/agent/verify/<job_id>",
         "attestations": "/agent/attestations",
@@ -463,6 +465,100 @@ def skills_listing():
 @agent_bp.get("/.well-known/agent.json")
 def well_known_agent():
     return jsonify(_agent_identity_document())
+
+
+def _agent_message_error(code: str, status: int):
+    return jsonify({"error": code}), status
+
+
+def _signed_message_bytes(envelope: dict) -> bytes:
+    unsigned = dict(envelope)
+    unsigned.pop("signature", None)
+    return canonical_json_bytes(unsigned)
+
+
+def _validate_agent_message_envelope(envelope: dict) -> tuple[bool, str | None]:
+    required = {
+        "message_id",
+        "conversation_id",
+        "thread_id",
+        "type",
+        "from_pubkey",
+        "to_pubkey",
+        "created_at",
+        "payload",
+        "signature",
+    }
+    missing = sorted(required - set(envelope.keys()))
+    if missing:
+        return False, "invalid_envelope"
+
+    if not isinstance(envelope.get("payload"), dict):
+        return False, "invalid_payload"
+
+    signature = str(envelope.get("signature") or "")
+    from_pubkey = str(envelope.get("from_pubkey") or "")
+    if not signature or not from_pubkey:
+        return False, "invalid_signature"
+
+    if not verify_message(_signed_message_bytes(envelope), signature, from_pubkey):
+        return False, "invalid_signature"
+
+    if str(envelope.get("type")) != "job_proposal":
+        return False, "unsupported_type"
+
+    if str(envelope.get("to_pubkey")) != get_agent_pubkey_hex():
+        return False, "wrong_recipient"
+
+    return True, None
+
+
+@agent_bp.post("/agent/message")
+def post_agent_message():
+    if not _check_ip_rate_limit():
+        return _agent_message_error("ip_rate_limited", 429)
+
+    envelope = request.get_json(silent=True)
+    if not isinstance(envelope, dict):
+        return _agent_message_error("invalid_json", 400)
+
+    ok, error = _validate_agent_message_envelope(envelope)
+    if not ok and error:
+        return _agent_message_error(error, 400)
+
+    payload = envelope.get("payload") or {}
+    job_type = payload.get("job_type")
+    job_payload = payload.get("payload") or {}
+
+    if not isinstance(job_payload, dict):
+        return _agent_message_error("invalid_payload", 400)
+
+    spec = _job_spec(job_type)
+    if not spec:
+        return _agent_message_error("unsupported_job_type", 400)
+
+    result_payload = _job_result(
+        AgentJob(job_type=str(job_type), request_json={"payload": job_payload}),
+        job_payload,
+    )
+
+    response_envelope = {
+        "message_id": str(uuid.uuid4()),
+        "conversation_id": str(envelope.get("conversation_id")),
+        "thread_id": str(envelope.get("thread_id")),
+        "type": "result",
+        "from_pubkey": get_agent_pubkey_hex(),
+        "to_pubkey": str(envelope.get("from_pubkey")),
+        "created_at": _iso_now(),
+        "payload": {
+            "job_type": str(job_type),
+            "result": result_payload,
+            "agent_pubkey": get_agent_pubkey_hex(),
+        },
+        "references": {"parent_message_id": str(envelope.get("message_id"))},
+    }
+    response_envelope["signature"] = sign_message(canonical_json_bytes(response_envelope))
+    return jsonify(response_envelope), 200
 
 
 @agent_bp.post("/agent/request")

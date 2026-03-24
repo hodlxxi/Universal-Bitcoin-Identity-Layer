@@ -3,7 +3,7 @@ import os
 
 os.environ.setdefault("AGENT_PRIVKEY_HEX", "1" * 64)
 
-from app.agent_signer import canonical_json_bytes, verify_message
+from app.agent_signer import canonical_json_bytes, get_agent_pubkey_hex, sign_message, verify_message
 from app.database import session_scope
 from app.models import AgentJob
 
@@ -13,6 +13,22 @@ def _receipt_message(receipt: dict) -> bytes:
     payload.pop("signature", None)
     return canonical_json_bytes(payload)
 
+
+
+def _signed_agent_message(payload: dict, *, msg_type: str = "job_proposal") -> dict:
+    sender = get_agent_pubkey_hex()
+    message = {
+        "message_id": "msg-1",
+        "conversation_id": "conv-1",
+        "thread_id": "thread-1",
+        "type": msg_type,
+        "from_pubkey": sender,
+        "to_pubkey": get_agent_pubkey_hex(),
+        "created_at": "2026-01-01T00:00:00Z",
+        "payload": payload,
+    }
+    message["signature"] = sign_message(canonical_json_bytes(message))
+    return message
 
 def test_capabilities_signature_verifies(client):
     res = client.get("/agent/capabilities")
@@ -68,6 +84,31 @@ def test_well_known_agent_document_matches_discovery_surfaces(client):
     assert body["trust_model"]["identity_model"]["time_locked_capital"]["status"] == "optional_not_verified"
     assert body["trust_model"]["assurance_boundaries"]["on_chain_proof_exposed"] is False
 
+
+
+def test_agent_message_executes_job_proposal_and_returns_signed_result(client):
+    msg = _signed_agent_message({"job_type": "ping", "payload": {"message": "hello"}})
+
+    res = client.post("/agent/message", json=msg)
+    assert res.status_code == 200
+
+    body = res.get_json()
+    assert body["type"] == "result"
+    assert body["payload"]["job_type"] == "ping"
+    assert body["payload"]["result"]["job_type"] == "ping"
+    assert body["payload"]["agent_pubkey"] == body["from_pubkey"]
+
+    signature = body.pop("signature")
+    assert verify_message(canonical_json_bytes(body), signature, body["from_pubkey"])
+
+
+def test_agent_message_rejects_bad_signature(client):
+    msg = _signed_agent_message({"job_type": "ping", "payload": {"message": "hello"}})
+    msg["signature"] = "00"
+
+    res = client.post("/agent/message", json=msg)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_signature"
 
 def test_request_creates_job_and_invoice(client, monkeypatch):
     monkeypatch.setattr(

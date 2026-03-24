@@ -1989,7 +1989,7 @@ def check_auth():
             or p.startswith("/agent/verify/")
             or p.startswith("/agent/jobs/")
         ))
-        or (request.method == "POST" and p == "/agent/request")
+        or (request.method == "POST" and p in {"/agent/request", "/agent/message"})
     ):
         return None
 
