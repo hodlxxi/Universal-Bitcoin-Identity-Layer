@@ -1,443 +1,182 @@
-# HODLXXI API Reference
+# API Reference
 
-Complete reference for all 55+ API endpoints.
+## Status Notes
 
-## Table of Contents
+- This document is grounded in **current registered routes in the Flask factory runtime** (`app.factory.create_app`) and integration tests that exercise those routes.
+- Labels used in this file:
+  - **Confirmed**: route exists in the factory runtime today.
+  - **Protected**: route enforces auth and/or billing requirements.
+  - **Staging-validated**: route behavior is covered by current tests.
+  - **Partial**: route exists but implementation is intentionally limited or placeholder.
+  - **Monolith-only**: route exists in `app/app.py` but is **not** part of the factory-registered route map used by current tests.
+- Bounded sovereignty Stage 1 routes requested in this audit (`/agent/policy`, `/agent/bounded-status`, `/agent/actions`, `/agent/bounded/execute`) are **not present** in current Python route definitions.
 
-1. [Authentication](#authentication)
-2. [Agent Discovery](#agent-discovery)
-3. [OAuth2/OIDC](#oauth2oidc)
-4. [Proof-of-Funds](#proof-of-funds)
-5. [Bitcoin/Covenant](#bitcoincovenant)
-6. [Chat/Real-time](#chatreal-time)
-7. [Admin/Developer](#admindeveloper)
-8. [Playground](#playground)
+## Public Discovery and Status Endpoints
 
----
+| Method | Path | Status | Auth | Notes |
+|---|---|---|---|---|
+| GET | `/.well-known/agent.json` | Confirmed + Staging-validated | Public | Agent discovery doc (identity, capabilities, trust model, discovery links). |
+| GET | `/agent/capabilities` | Confirmed + Staging-validated | Public | Signed capability payload including endpoints, job types, pricing. |
+| GET | `/agent/capabilities/schema` | Confirmed + Staging-validated | Public | JSON Schema for capability payload. |
+| GET | `/agent/skills` | Confirmed + Staging-validated | Public | Enumerates skills from `skills/public/*/SKILL.md`. |
+| GET | `/agent/marketplace/listing` | Confirmed | Public | Marketplace-friendly composite listing (discovery + reputation + chain health). |
+| GET | `/agent/reputation` | Confirmed | Public | Aggregate totals by job type/completion. |
+| GET | `/agent/attestations` | Confirmed + Staging-validated | Public | Signed receipt events with pagination (`limit`, `offset`). |
+| GET | `/agent/chain/health` | Confirmed | Public | Receipt chain integrity summary (`chain_ok`, latest hash, count). |
+| GET | `/health` | Confirmed + Staging-validated | Public | App health. Returns `503` when unhealthy outside testing mode. |
+| GET | `/health/live` | Confirmed | Public | Liveness probe (`alive`). |
+| GET | `/health/ready` | Confirmed | Public | Readiness probe (`ready`/`not_ready`). |
+| GET | `/metrics` | Confirmed + Staging-validated | Public | JSON metrics payload. |
+| GET | `/metrics/prometheus` | Confirmed | Public | Prometheus text format metrics. |
 
-## Authentication
+## Agent Runtime Endpoints
 
-### POST /verify_signature
-Verify Bitcoin message signature.
+| Method | Path | Status | Auth | Request / Response Notes |
+|---|---|---|---|---|
+| POST | `/agent/request` | Confirmed + Staging-validated | Public | Body: `job_type`, `payload`. Returns `job_id`, Lightning invoice, `payment_hash`, status `invoice_pending`. Deduplicates identical recent requests. |
+| GET | `/agent/jobs/<job_id>` | Confirmed + Staging-validated | Public | Returns job status and receipt (once invoice marked paid / detected paid). |
+| GET | `/agent/verify/<job_id>` | Confirmed + Staging-validated | Public | Verifies stored receipt signature and returns `valid` + receipt hash. |
+| POST | `/agent/jobs/<job_id>/dev/mark_paid` | Confirmed | Protected (dev token) | Dev-only helper to simulate payment and mint receipt. Disabled in production-like mode; requires `Authorization: Bearer <DEV_AGENT_ADMIN_TOKEN>`. |
 
-**Request:**
-```json
-{
-  "message": "challenge_string",
-  "signature": "base64_sig",
-  "address": "bc1q..."
-}
-```
+### Supported `job_type` values (current)
 
-**Response:**
-```json
-{
-  "verified": true,
-  "pubkey": "02abc...",
-  "access_level": "full"
-}
-```
+- `ping` (Confirmed)
+- `verify_signature` (Confirmed + Staging-validated)
+- `covenant_decode` (Confirmed + Staging-validated, **Partial** decode semantics)
 
-### POST /guest_login
-Anonymous guest access.
+## Agent Job Payment and Receipt Endpoints
 
-**Request:**
-```json
-{
-  "pin": "optional_pin_code"
-}
-```
+| Method | Path | Status | Auth | Notes |
+|---|---|---|---|---|
+| POST | `/api/billing/agent/create-invoice` | Confirmed | Protected | Requires OAuth Bearer token with `read_limited`; creates PAYG top-up invoice for OAuth client. |
+| POST | `/api/billing/agent/check-invoice` | Confirmed | Protected | Requires OAuth Bearer token with `read_limited`; checks invoice/crediting status. |
 
-**Response:**
-```json
-{
-  "ok": true,
-  "label": "Guest-abc123"
-}
-```
+Both endpoints return JSON and are tied to `request.oauth_client_id` resolved from the bearer token.
 
-### POST /special_login
-Admin login with whitelisted pubkey.
+## Bounded Sovereignty Stage 1 Endpoints
 
-**Request:**
-```json
-{
-  "signature": "base64_sig"
-}
-```
+The following routes are **not currently implemented** in the repo route surfaces audited for this refresh:
 
-**Response:**
-```json
-{
-  "verified": true,
-  "pubkey": "023d34...",
-  "access_level": "special"
-}
-```
+- `GET /agent/policy` — **Planned / missing**
+- `GET /agent/bounded-status` — **Planned / missing**
+- `GET /agent/actions` — **Planned / missing**
+- `POST /agent/bounded/execute` — **Planned / missing**
 
-### GET /logout
-End session.
+No active route-level evidence currently supports documenting bounded sovereignty execution APIs as live.
 
----
+## Authentication and Identity Endpoints
 
-## Agent Discovery
+| Method | Path | Status | Auth | Notes |
+|---|---|---|---|---|
+| GET | `/login` | Confirmed + Staging-validated | Public | Login UI endpoint. |
+| POST | `/verify_signature` | Confirmed | Public | Verifies Bitcoin signature against session challenge; sets session on success. |
+| POST | `/guest_login` | Confirmed | Public | Guest/PIN login, sets guest session state. |
+| GET | `/logout` | Confirmed + Staging-validated | Session | Clears session and redirects to login. |
 
-### GET /.well-known/agent.json
-Canonical well-known identity and discovery document for Agent UBID.
+## OAuth / OIDC Endpoints
 
-**Response highlights:**
-- `agent_pubkey`
-- `capability_schema`
-- `endpoints`
-- `skills`
-- `trust_model` (verified surfaces, declared metadata, and optional trust anchors)
+| Method | Path | Status | Auth | Notes |
+|---|---|---|---|---|
+| GET | `/.well-known/openid-configuration` | Confirmed + Staging-validated | Public | OIDC discovery metadata. |
+| GET | `/oauth/jwks.json` | Confirmed + Staging-validated | Public | RS256 JWKS document. |
+| POST | `/oauth/register` | Confirmed + Staging-validated | Public | Dynamic client registration (requires `client_name`, `redirect_uris`). |
+| GET | `/oauth/authorize` | Confirmed + Staging-validated | Session required to complete | If no session user, redirects to `/login`; supports code flow with optional PKCE. |
+| POST | `/oauth/token` | Confirmed + Staging-validated | Client credentials | Authorization code exchange; validates redirect URI and PKCE when present. |
+| POST | `/oauth/introspect` | Confirmed | Client credentials | Returns OAuth introspection response shape (`active` true/false). |
 
-### GET /agent/capabilities
-Signed machine-readable capability handshake for the agent.
+### OAuthx status/docs compatibility surfaces
 
-**Response highlights:**
-- `signature`
-- `job_types`
-- `pricing`
-- `limits`
-- `capability_schema`
+- `GET /oauthx/status` — **Monolith-only** (present in `app/app.py`, not in factory route map).
+- `GET /oauthx/docs` — **Monolith-only** (present in `app/app.py`, not in factory route map).
 
-### GET /agent/capabilities/schema
-Canonical JSON Schema for `/agent/capabilities`.
+These should not be treated as factory-runtime guaranteed surfaces without deployment-specific confirmation.
 
-### GET /agent/skills
-First-class public skill listing discovered from `skills/public/`.
+## Lightning / LNURL Endpoints
 
-**Response highlights:**
-- `count`
-- `items[].skill_id`
-- `items[].install.raw_url`
+| Method | Path | Status | Auth | Notes |
+|---|---|---|---|---|
+| POST | `/api/lnurl-auth/create` | Confirmed + Staging-validated | Public | Creates session/challenge and returns `session_id`, `k1`, callback URL. |
+| GET | `/api/lnurl-auth/params` | Confirmed | Public | Returns LNURL login params for a `session_id`. |
+| GET | `/api/lnurl-auth/callback/<session_id>` | Confirmed | Public | Callback endpoint for wallet auth response. |
+| GET | `/api/lnurl-auth/check/<session_id>` | Confirmed + Staging-validated | Public | Poll session verification state. |
 
-### GET /agent/marketplace/listing
-Compact normalized listing for registries and directories.
+**Current limitation:** callback flow marks verification state but contains placeholder signature-validation behavior (not full cryptographic verification), so treat as **Partial**.
 
-**Response highlights:**
-- `listing_version`
-- `discovery`
-- `skills`
-- `reputation`
-- `chain_health`
+## Proof-of-Funds Endpoints
 
-### GET /agent/reputation
-Public aggregate history for the agent.
+| Method | Path | Status | Auth | Notes |
+|---|---|---|---|---|
+| POST | `/api/challenge` | Confirmed + Staging-validated | Public | PoF challenge creation compatibility endpoint. Requires `pubkey`. |
+| POST | `/api/verify` | Confirmed | Public | PSBT-based proof verification endpoint. |
+| GET | `/api/pof/stats` | Confirmed | Public | Aggregated PoF stats from DB (`verified_users`, `total_btc`, `addresses_verified`). |
+| GET | `/pof/` | Confirmed | Public | PoF landing page. |
+| GET | `/pof/verify` | Confirmed | Public | PoF verification UI. |
+| GET | `/pof/leaderboard` | Confirmed | Public | PoF leaderboard UI from verified records. |
+| GET | `/pof/certificate/<cert_id>` | Confirmed | Public | Shareable verified certificate page. |
 
-### GET /agent/attestations
-Append-only public signed job receipts.
+## Covenant / Descriptor / Script Endpoints
 
-### GET /agent/chain/health
-Integrity summary for the receipt chain.
+| Method | Path | Status | Auth | Notes |
+|---|---|---|---|---|
+| POST | `/api/decode_raw_script` | Confirmed | Public | Decodes provided script via Bitcoin Core `decodescript`. |
+| GET | `/api/descriptors` | Confirmed | Protected | Requires OAuth token + PAYG enforcement; returns wallet descriptors. |
+| GET | `/api/rpc/<cmd>` | Confirmed | Protected | Requires OAuth token + PAYG enforcement; command allowlist enforced. |
 
----
+### Monolith-only covenant/descriptor surfaces
 
-## OAuth2/OIDC
+The following legacy routes exist in `app/app.py` but are not factory-runtime guaranteed:
 
-### POST /oauth/register
-Register new OAuth2 client.
+- `GET /verify_pubkey_and_list`
+- `POST /decode_raw_script` (non-`/api` form)
+- `POST /import_descriptor`
+- `GET /export_descriptors`
+- `GET /export_wallet`
+- `GET /rpc/<cmd>` (non-`/api` form)
 
-**Request:**
-```json
-{
-  "client_name": "MyApp",
-  "redirect_uris": ["https://myapp.com/callback"],
-  "grant_types": ["authorization_code"],
-  "response_types": ["code"]
-}
-```
+Document or rely on these only when deployment is explicitly monolith-driven.
 
-**Response:**
-```json
-{
-  "client_id": "client_abc123",
-  "client_secret": "secret_xyz789",
-  "created_at": "2025-12-12T17:00:00Z"
-}
-```
+## Capabilities / Skills / Attestations / Reputation / Chain Health
 
-### GET /oauth/authorize
-OAuth2 authorization endpoint.
+These surfaces are active and public in current factory runtime:
 
-**Parameters:**
-- `client_id` - Client identifier
-- `redirect_uri` - Callback URL
-- `response_type` - "code"
-- `scope` - Requested scopes
-- `state` - CSRF protection
+- Capabilities: `/agent/capabilities`, `/agent/capabilities/schema`
+- Skills catalog: `/agent/skills`
+- Attestations: `/agent/attestations`
+- Reputation: `/agent/reputation`
+- Chain health: `/agent/chain/health`
 
-### POST /oauth/token
-Exchange authorization code for tokens.
+All are confirmed by code; key portions are staging-validated via `tests/integration/test_agent_ubid.py`.
 
-**Request:**
-```json
-{
-  "grant_type": "authorization_code",
-  "code": "auth_code_here",
-  "redirect_uri": "https://myapp.com/callback",
-  "client_id": "client_abc123",
-  "client_secret": "secret_xyz789"
-}
-```
+## Public Status / Docs Endpoints
 
-**Response:**
-```json
-{
-  "access_token": "eyJhbGc...",
-  "token_type": "Bearer",
-  "expires_in": 3600,
-  "refresh_token": "refresh_xyz",
-  "scope": "profile:read"
-}
-```
+| Method | Path | Status | Auth | Notes |
+|---|---|---|---|---|
+| GET | `/` | Confirmed + Staging-validated | Public | Agent-first homepage listing core public surfaces. |
+| GET | `/screensaver` | Confirmed | Public | Public UI route. |
+| GET | `/playground` | Confirmed | Public | Lightweight API playground page. |
 
-### POST /oauth/introspect
-Validate access token.
+Monolith-only docs endpoints (not factory-guaranteed): `/oauthx/docs`, `/docs.json` aliasing, and rich `/docs` handlers in `app/app.py`.
 
-### POST /oauth/revoke
-Revoke token.
+## Protected / Operator-Oriented Endpoints
 
-### GET /oauth/clients
-List client's OAuth applications.
+| Method | Path | Status | Auth | Notes |
+|---|---|---|---|---|
+| GET | `/api/demo/protected` | Confirmed + Staging-validated | OAuth + PAYG | Requires `read_limited` scope and sufficient free quota / sats balance. |
+| POST | `/api/billing/agent/create-invoice` | Confirmed | OAuth | Top-up invoice creation for OAuth client billing. |
+| POST | `/api/billing/agent/check-invoice` | Confirmed | OAuth | Invoice status/credit polling. |
+| GET | `/dev/dashboard` | Confirmed | Session (full access) | Developer dashboard HTML. |
+| POST | `/dev/billing/create-invoice` | Confirmed | Session (limited access policy) | Session-based billing top-up flow. |
+| POST | `/dev/billing/check-invoice` | Confirmed | Session (limited access policy) | Session-based billing status flow. |
+
+## Known Gaps and Partial Surfaces
+
+1. **Bounded sovereignty Stage 1 endpoints are missing** (not implemented as routes).
+2. **LNURL callback verification is partial** (placeholder verification path in callback handler).
+3. **Runtime split exists**:
+   - Factory runtime (`app.factory`) is test-covered and has the routes documented as confirmed above.
+   - Monolith runtime (`wsgi.py` importing `app.app`) exposes additional legacy routes not currently staging-validated through factory tests.
+4. **Do not assume full autonomous spending/control surfaces** from current code; no active bounded-execute API is present.
 
 ---
 
-## Proof-of-Funds
-
-### POST /pof/api/generate-challenge
-Generate PoF challenge.
-
-**Request:**
-```json
-{
-  "addresses": ["bc1q...", "bc1p..."]
-}
-```
-
-**Response:**
-```json
-{
-  "challenge": "hex_challenge",
-  "message": "HODLXXI Proof of Funds\nChallenge: ...",
-  "addresses": ["bc1q..."]
-}
-```
-
-### POST /pof/api/verify-signatures
-Verify signed addresses and calculate balance.
-
-**Request:**
-```json
-{
-  "signatures": [
-    {"address": "bc1q...", "signature": "base64_sig"}
-  ],
-  "privacy_level": "threshold"
-}
-```
-
-**Response:**
-```json
-{
-  "verified_addresses": [
-    {"address": "bc1q...", "balance": 0.5}
-  ],
-  "total_balance": 0.5,
-  "tier": "whale",
-  "certificate_id": "cert_abc123"
-}
-```
-
----
-
-## Bitcoin/Covenant
-
-### GET /verify_pubkey_and_list
-List all descriptors for a pubkey.
-
-**Parameters:**
-- `pubkey` - Compressed hex pubkey
-
-**Response:**
-```json
-{
-  "descriptors": [
-    {
-      "desc": "raw(6382...)#checksum",
-      "saving_balance_usd": "1234.56",
-      "checking_balance_usd": "789.01",
-      "op_if_pub": "02abc...",
-      "op_else_pub": "03def..."
-    }
-  ]
-}
-```
-
-### POST /decode_raw_script
-Decode Bitcoin script hex.
-
-**Request:**
-```json
-{
-  "script_hex": "6382012088ac..."
-}
-```
-
-**Response:**
-```json
-{
-  "asm": "OP_IF OP_1 <pubkey> OP_CHECKSIG OP_ELSE ...",
-  "type": "nonstandard",
-  "reqSigs": 1
-}
-```
-
-### POST /import_descriptor
-Import descriptor to wallet.
-
-**Request:**
-```json
-{
-  "descriptor": "raw(...)#checksum",
-  "label": "MyContract",
-  "rescan": false
-}
-```
-
-### GET /export_descriptors
-Export all wallet descriptors.
-
-### GET /export_wallet
-Download complete wallet backup.
-
-### GET /rpc/<cmd>
-Execute Bitcoin RPC command (admin only).
-
----
-
-## Chat/Real-time
-
-### Socket.IO Events
-
-**Connection:**
-```javascript
-const socket = io('https://hodlxxi.com');
-```
-
-**Events:**
-- `connect` - Connection established
-- `user:logged_in` - User joined
-- `user:left` - User disconnected
-- `message` - New chat message
-- `online:list` - Online users list
-
----
-
-## Admin/Developer
-
-### GET /dev-dashboard
-Developer dashboard (requires auth).
-
-### GET /metrics
-Application metrics.
-
-### GET /metrics/prometheus
-Prometheus-format metrics.
-
-### GET /health
-Health check endpoint.
-
-**Response:**
-```json
-{
-  "status": "ok",
-  "timestamp": "2025-12-12T17:00:00Z",
-  "services": {
-    "database": "healthy",
-    "redis": "healthy",
-    "bitcoin_rpc": "healthy"
-  }
-}
-```
-
----
-
-## Playground
-
-### GET /playground
-Interactive API testing interface.
-
-### POST /api/playground/pof/challenge
-Playground PoF challenge.
-
-### POST /api/playground/pof/verify
-Playground PoF verification.
-
-### POST /api/playground/lightning/init
-Initialize Lightning authentication flow.
-
-### GET /api/playground/lightning/callback
-Lightning auth callback.
-
-### POST /api/playground/nostr/auth
-Nostr key authentication.
-
-### GET /api/playground/stats
-Playground usage statistics.
-
-### GET /playground-globals
-Global playground configuration.
-
----
-
-## LNURL-auth
-
-### POST /api/lnurl-auth/create
-Create LNURL-auth session.
-
-### GET /api/lnurl-auth/params
-Get LNURL-auth parameters.
-
-### GET /api/lnurl-auth/callback/<session_id>
-LNURL-auth callback handler.
-
-### GET /api/lnurl-auth/check/<session_id>
-Check auth status.
-
----
-
-## Rate Limits
-
-**General:** 10 requests/second  
-**Auth endpoints:** 5 requests/minute  
-**Socket.IO:** 1000 burst allowed
-
-## Authentication
-
-Most endpoints require authentication via:
-1. Session cookie (after login)
-2. OAuth2 Bearer token
-3. API key (future)
-
-## Error Responses
-```json
-{
-  "error": "Error message",
-  "code": "ERROR_CODE",
-  "details": {}
-}
-```
-
-**Common HTTP status codes:**
-- `200` - Success
-- `400` - Bad request
-- `401` - Unauthorized
-- `403` - Forbidden
-- `429` - Rate limited
-- `500` - Server error
-
----
-
-**Last updated:** December 12, 2025
+Last refreshed: 2026-03-24 (UTC)
