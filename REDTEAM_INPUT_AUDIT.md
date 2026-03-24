@@ -21,6 +21,13 @@ The economics that are actually enforced today split into two separate systems:
 1. **Agent jobs**: fixed 21-sat pricing per supported job type.
 2. **OAuth client PAYG**: OAuth clients can hit protected endpoints, receive 402 responses, top up via Lightning invoices, and spend a sats balance or free quota.
 
+There is also a **staging-validated bounded sovereignty Stage 1 update** that needs to be treated carefully:
+- public GET surfaces now work for `/agent/policy`, `/agent/bounded-status`, and `/agent/actions`
+- `/agent/bounded/execute` remains protected
+- current spending posture is still `observe_only`, not live outbound autonomous spending
+
+That is a meaningful runtime change, but it does **not** convert the system into a fully autonomous or decentralized spending agent. It adds bounded-policy disclosure and bounded-status visibility, not sovereign outbound financial autonomy.
+
 The repo therefore supports the thesis only **partially**:
 - “agent with its own pubkey” — yes.
 - “agent can be paid” — yes, via Lightning invoice flow.
@@ -48,6 +55,9 @@ The repo therefore supports the thesis only **partially**:
 - `GET /.well-known/agent.json`
 - `GET /agent/capabilities`
 - `GET /agent/capabilities/schema`
+- `GET /agent/policy` *(staging-validated Stage 1 public surface)*
+- `GET /agent/bounded-status` *(staging-validated Stage 1 public surface)*
+- `GET /agent/actions` *(staging-validated Stage 1 public surface)*
 - `GET /agent/skills`
 - `POST /agent/request`
 - `GET /agent/jobs/<job_id>`
@@ -89,6 +99,7 @@ These are explicitly exempted from session auth in the monolith request guard.
 - `GET /api/public/status` exposes aggregated online user counts, bitcoind health, and LND service state.
 - `GET /verify_pubkey_and_list` exposes covenant/descriptor-derived metadata for a queried pubkey or npub.
 - `POST /decode_raw_script` can derive descriptor and QR outputs for submitted script hex.
+- `GET /agent/policy`, `GET /agent/bounded-status`, and `GET /agent/actions` now add staging-validated bounded-sovereignty disclosure surfaces. These improve visibility into bounded runtime posture, but they also give hostile reviewers more policy and action-surface material to inspect.
 
 ## Confirmed protected route classes
 
@@ -107,6 +118,7 @@ These require a bearer token through `require_oauth_token(...)`, and some also r
 - `POST /set_labels_from_zpub` requires full access JSON guard.
 - `GET /api/lnd/status` requires a logged-in full-access session.
 - `GET /rpc/<cmd>` in the monolith requires full access.
+- `POST /agent/bounded/execute` remains protected in the bounded-sovereignty Stage 1 runtime and should not be treated as a public autonomous spending endpoint.
 
 ## Confirmed identity/auth surfaces
 
@@ -147,6 +159,24 @@ These require a bearer token through `require_oauth_token(...)`, and some also r
 # Public Agent Surface
 
 ## Discovery documents
+
+### Staging-validated bounded sovereignty Stage 1 read surfaces
+**Implemented on staging:** yes.
+
+The current bounded-sovereignty Stage 1 runtime now exposes these additional public GET surfaces:
+- `/agent/policy`
+- `/agent/bounded-status`
+- `/agent/actions`
+
+What that changes:
+- outsiders can inspect more of the bounded operating posture
+- the runtime now discloses a more explicit bounded-control layer than the earlier audit captured
+
+What it does **not** change:
+- it does not make spending autonomous
+- it does not make outbound spend authority public
+- it does not reduce operator dependency
+- it does not improve survivability in any meaningful decentralized sense
 
 ### `GET /.well-known/agent.json`
 **Implemented:** yes.
@@ -259,6 +289,19 @@ Current behavior:
 Critical limitation:
 - It verifies the receipt signature only.
 - It does not prove the result payload to the caller because the result payload is not returned here either.
+
+### `POST /agent/bounded/execute`
+**Implemented at Stage 1, but protected:** yes.
+
+Current bounded-sovereignty reality:
+- this route should be treated as protected, not public
+- current runtime posture remains `observe_only`
+- the system still does not expose live outbound autonomous spending
+
+Red-team implication:
+- Stage 1 bounded execution narrows the gap between “agent with policies” and “agent with guarded action paths”
+- but it is still materially different from a self-authorizing spend agent
+- operator/server controls remain the decisive choke point
 
 ## History/continuity surfaces
 
@@ -506,6 +549,7 @@ These routes are loopback-only and bearer-token protected for internal agent→w
 - On-chain reserves or capital backing.
 - Time-locked capital backing.
 - Persistence beyond the current server/database.
+- Any claim that bounded-sovereignty Stage 1 has crossed into autonomous spending rather than guarded observe-only execution.
 
 ## What is merely asserted
 
@@ -561,6 +605,7 @@ There is no independent witness or anchored ledger for the receipt chain.
 - Organizational control of HODLXXI.
 - Relationship to logged-in human keys.
 - That the result payload is available to counterparties through the public API.
+- That the bounded Stage 1 execution surface has autonomous spending authority; current validated posture remains observe-only.
 
 ## Is there a formal linkage between operator identity and agent identity?
 
@@ -854,6 +899,7 @@ The system can produce cryptographically signed artifacts, but continuity and hi
 | Public reputation | Aggregate counters only | Real but minimal |
 | Chain health | Linear prev-hash integrity check only | Real but shallow |
 | Agent-to-agent market readiness | Enough for custom integrations, not standard-ready | Partial |
+| Bounded sovereignty Stage 1 | Public policy/status/actions surfaces exist; execute path remains protected | Partial / staging-validated |
 | Return signed job results to caller | Result hashes exist; result payload not returned publicly | Partial / broken for external use |
 | Verify Bitcoin signatures as agent job | Generic secp256k1 verification over message bytes | Real but custom |
 | Covenant decode as agent job | Placeholder string + substring CLTV heuristic | Stubbed |
@@ -885,6 +931,7 @@ The system can produce cryptographically signed artifacts, but continuity and hi
 13. That `/api/public/status` is an acceptable amount of operational exposure for a live service.
 14. That “operator” metadata will be interpreted conservatively by integrators.
 15. That job/day limits implemented globally will not create trivial denial-of-service conditions.
+16. That readers will not overread Stage 1 bounded sovereignty as evidence of live autonomous outbound spending when the runtime remains `observe_only`.
 
 # Questions a Hostile Reviewer Will Ask
 
@@ -951,6 +998,7 @@ The system can produce cryptographically signed artifacts, but continuity and hi
 - `app/agent_signer.py` — canonical JSON signing and pubkey derivation.
 - `app/models.py` — `AgentJob`, `AgentEvent` persistence model.
 - `tests/integration/test_agent_ubid.py` — confirms capabilities signature, job creation, receipt minting, verify endpoint, attestation listing, marketplace listing, and stub covenant job behavior.
+- **Staging-validated bounded Stage 1 runtime note:** public GET surfaces `/agent/policy`, `/agent/bounded-status`, and `/agent/actions` are now treated as working on staging; `/agent/bounded/execute` remains protected; spending posture remains `observe_only`, not live outbound autonomous spending. This refresh captures validated runtime reality without upgrading the decentralization/survivability assessment.
 
 ## Lightning/payment evidence
 - `app/payments/ln.py` — LND REST, lncli, and stub backends; production guard against stub/testing modes.
@@ -999,6 +1047,7 @@ The system can produce cryptographically signed artifacts, but continuity and hi
 | signed receipts | Receipts are signed and publicly verifiable | High | `app/blueprints/agent.py`, `tests/integration/test_agent_ubid.py` | Receipt omits actual result payload |
 | attestations | Public DB-backed append-only receipt events exist | High | `app/models.py`, `app/blueprints/agent.py` | No external anchoring or replication |
 | public discovery | Well-known, capabilities, schema, skills, listing, reputation, attestations, chain health all exist | High | `app/blueprints/agent.py`, `README.md`, `docs/AGENT_SURFACES.md` | Mostly custom/proprietary formats |
+| bounded sovereignty Stage 1 | Public policy/status/actions surfaces now work on staging; execute remains protected | Medium | staging-validated runtime update captured in this audit refresh | Still observe_only; not autonomous spend |
 | covenant support | Real descriptor/script inspection tooling exists; agent covenant job is stubbed | High | `app/app.py`, `app/utils.py`, `app/blueprints/bitcoin.py`, `tests/test_bitcoin_flows.py`, `tests/integration/test_agent_ubid.py` | Docs heavily overstate end-to-end covenant system maturity |
 | survivability | Very low beyond saved signed artifacts | High | `TRUST_MODEL.md`, `app/blueprints/agent.py`, `app/models.py` | History is DB-local and operator-controlled |
 | operator dependency | Operator/server controls key, DB, billing, discovery, and continuity | High | `wsgi.py`, `app/app.py`, `app/agent_signer.py`, `app/models.py` | No external witness or federation |
