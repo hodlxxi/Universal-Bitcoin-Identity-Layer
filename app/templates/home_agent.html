@@ -14,6 +14,7 @@
       --line:#1f5a39;
       --accent:#49ff93;
       --accent2:#7dd3fc;
+      --warn:#f6c45c;
     }
     *{box-sizing:border-box}
     body{
@@ -36,15 +37,30 @@
       box-shadow:0 0 0 1px rgba(73,255,147,.05), 0 12px 30px rgba(0,0,0,.25);
     }
     .hero h1{
-      margin:0 0 8px;
+      margin:0 0 10px;
       font-size:clamp(28px, 5vw, 44px);
       color:var(--accent);
     }
     .hero p{
-      margin:0 0 18px;
+      margin:0 0 10px;
       color:var(--muted);
-      max-width:850px;
+      max-width:900px;
     }
+    .status-row{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin:12px 0 14px;
+    }
+    .status-badge{
+      border:1px solid var(--line);
+      border-radius:999px;
+      padding:5px 10px;
+      font-size:13px;
+      background:#0a1911;
+      color:var(--accent2);
+    }
+    .status-badge.warn{ color:var(--warn); }
     .btns{
       display:flex;
       flex-wrap:wrap;
@@ -66,7 +82,7 @@
     }
     .grid{
       display:grid;
-      grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));
+      grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));
       gap:18px;
       margin-top:20px;
     }
@@ -79,24 +95,24 @@
       margin:0;
       padding-left:18px;
     }
-    li{
-      margin:8px 0;
-    }
-    a{
-      color:var(--accent);
-    }
+    li{ margin:8px 0; }
+    a{ color:var(--accent); }
     .endpoint-list{
       list-style:none;
       padding:0;
       margin:0;
     }
     .endpoint-list li{
-      padding:10px 0;
+      padding:12px 0;
       border-top:1px solid rgba(31,90,57,.6);
     }
     .endpoint-list li:first-child{
       border-top:none;
       padding-top:0;
+    }
+    .endpoint-name{
+      display:inline-block;
+      margin-bottom:4px;
     }
     code{
       color:#c8ffe0;
@@ -106,7 +122,7 @@
       border:1px solid #163924;
     }
     .footer{
-      margin-top:18px;
+      margin-top:16px;
       color:var(--muted);
       font-size:14px;
     }
@@ -116,57 +132,86 @@
   <div class="wrap">
     <section class="hero">
       <h1>{{ agent_name }}</h1>
-      <p>{{ tagline }}</p>
+      <p><strong>Bitcoin-native agent identity and execution layer.</strong> This entrypoint exposes the current HODLXXI MVP surface: public capabilities, Lightning-paid jobs, signed receipts/attestations, and a minimal inter-agent execution loop.</p>
+      <p>Designed for agent-first interaction, with a human-readable fallback for operators and reviewers.</p>
+
+      <div class="status-row">
+        <span class="status-badge">Current stage: verified MVP execution layer</span>
+        <span class="status-badge">Inter-agent execution: implemented via <code>/agent/message</code></span>
+        <span class="status-badge warn">Negotiation / discovery / escrow: future work</span>
+      </div>
 
       <div class="btns">
         <a class="btn" href="/agent/capabilities">Read capabilities</a>
-        <a class="btn" href="/agent/marketplace/listing">Marketplace listing</a>
-        <a class="btn" href="/agent/reputation">Reputation</a>
+        <a class="btn" href="/agent/reputation">Reputation + trust signals</a>
+        <a class="btn" href="/agent/marketplace/listing">Lightning job listing</a>
         <a class="btn" href="/screensaver">Enter human mode</a>
       </div>
 
       <div class="footer">
-        Root is now an agent-first entrypoint. Human narrative UI remains available at <code>/screensaver</code>.
+        Root remains agent-first. Human narrative UI is available at <code>/screensaver</code>.
       </div>
     </section>
 
     <section class="grid">
       <article class="card">
-        <h2>Identity</h2>
+        <h2>Agent Identity</h2>
         <ul>
-          <li>Bitcoin-native service orientation</li>
-          <li>Agent-facing trust and payment surfaces</li>
+          <li>Bitcoin-native service identity for machine-first integration</li>
           <li>Machine-readable capability surface at <code>/agent/capabilities</code></li>
+          <li>Public entrypoint for payment, trust, and execution metadata</li>
         </ul>
       </article>
 
       <article class="card">
-        <h2>Capabilities</h2>
+        <h2>What Works Today</h2>
         <ul>
-          {% for name, desc in capabilities %}
-          <li><strong>{{ name }}</strong> — {{ desc }}</li>
-          {% endfor %}
+          <li>Lightning-paid job flow for execution requests</li>
+          <li>Minimal agent-to-agent loop using <code>POST /agent/message</code></li>
+          <li>Capability and endpoint visibility for basic routing</li>
         </ul>
       </article>
 
       <article class="card">
-        <h2>Trust Model</h2>
+        <h2>Trust + Verification</h2>
         <ul>
-          {% for item in trust_features %}
-          <li>{{ item }}</li>
-          {% endfor %}
+          <li>Signed receipts and attestations for completed execution</li>
+          <li>Reputation/trust features published for counterparties</li>
+          <li>Verifiable output focus over opaque claims</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>Current Limits (MVP)</h2>
+        <ul>
+          <li>No full negotiation protocol yet</li>
+          <li>No discovery mesh or autonomous matching yet</li>
+          <li>No escrow/dispute rails yet</li>
         </ul>
       </article>
     </section>
 
     <section class="card" style="margin-top:20px;">
-      <h2>Agent Endpoints</h2>
+      <h2>Agent Endpoints (Current Verifiable Surface)</h2>
       <ul class="endpoint-list">
+        <li>
+          <div class="endpoint-name"><code>POST /agent/message</code></div>
+          <div>Minimal inter-agent execution entrypoint for job messages and execution loop handoff.</div>
+        </li>
         {% for path, desc in endpoints %}
         <li>
-          <div><a href="{{ path }}"><code>{{ path }}</code></a></div>
+          <div class="endpoint-name"><a href="{{ path }}"><code>{{ path }}</code></a></div>
           <div>{{ desc }}</div>
         </li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="card" style="margin-top:20px;">
+      <h2>Live Capability Listing</h2>
+      <ul>
+        {% for name, desc in capabilities %}
+        <li><strong>{{ name }}</strong> — {{ desc }}</li>
         {% endfor %}
       </ul>
     </section>
