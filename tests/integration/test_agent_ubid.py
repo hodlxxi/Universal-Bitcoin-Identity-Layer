@@ -15,7 +15,6 @@ def _receipt_message(receipt: dict) -> bytes:
     return canonical_json_bytes(payload)
 
 
-
 def _signed_agent_message(payload: dict, *, msg_type: str = "job_proposal", message_id: str | None = None) -> dict:
     sender = get_agent_pubkey_hex()
     message = {
@@ -30,6 +29,7 @@ def _signed_agent_message(payload: dict, *, msg_type: str = "job_proposal", mess
     }
     message["signature"] = sign_message(canonical_json_bytes(message))
     return message
+
 
 def test_capabilities_signature_verifies(client):
     res = client.get("/agent/capabilities")
@@ -84,7 +84,6 @@ def test_well_known_agent_document_matches_discovery_surfaces(client):
     assert body["trust_model"]["identity_model"]["operator_binding"]["status"] == "declared_runtime_surface"
     assert body["trust_model"]["identity_model"]["time_locked_capital"]["status"] == "optional_not_verified"
     assert body["trust_model"]["assurance_boundaries"]["on_chain_proof_exposed"] is False
-
 
 
 def test_agent_message_executes_job_proposal_and_returns_signed_result(client):
