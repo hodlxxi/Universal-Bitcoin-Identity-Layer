@@ -1,9 +1,10 @@
 import hashlib
 import os
+import uuid
 
 os.environ.setdefault("AGENT_PRIVKEY_HEX", "1" * 64)
 
-from app.agent_signer import canonical_json_bytes, verify_message
+from app.agent_signer import canonical_json_bytes, get_agent_pubkey_hex, sign_message, verify_message
 from app.database import session_scope
 from app.models import AgentJob
 
@@ -12,6 +13,22 @@ def _receipt_message(receipt: dict) -> bytes:
     payload = dict(receipt)
     payload.pop("signature", None)
     return canonical_json_bytes(payload)
+
+
+def _signed_agent_message(payload: dict, *, msg_type: str = "job_proposal", message_id: str | None = None) -> dict:
+    sender = get_agent_pubkey_hex()
+    message = {
+        "message_id": message_id or str(uuid.uuid4()),
+        "conversation_id": "conv-1",
+        "thread_id": "thread-1",
+        "type": msg_type,
+        "from_pubkey": sender,
+        "to_pubkey": get_agent_pubkey_hex(),
+        "created_at": "2026-01-01T00:00:00Z",
+        "payload": payload,
+    }
+    message["signature"] = sign_message(canonical_json_bytes(message))
+    return message
 
 
 def test_capabilities_signature_verifies(client):
@@ -67,6 +84,80 @@ def test_well_known_agent_document_matches_discovery_surfaces(client):
     assert body["trust_model"]["identity_model"]["operator_binding"]["status"] == "declared_runtime_surface"
     assert body["trust_model"]["identity_model"]["time_locked_capital"]["status"] == "optional_not_verified"
     assert body["trust_model"]["assurance_boundaries"]["on_chain_proof_exposed"] is False
+
+
+def test_agent_message_executes_job_proposal_and_returns_signed_result(client):
+    msg = _signed_agent_message({"job_type": "ping", "payload": {"message": "hello"}})
+
+    res = client.post("/agent/message", json=msg)
+    assert res.status_code == 200
+
+    body = res.get_json()
+    assert body["type"] == "result"
+    assert body["payload"]["job_type"] == "ping"
+    assert body["payload"]["result"]["job_type"] == "ping"
+    assert body["payload"]["agent_pubkey"] == body["from_pubkey"]
+    assert body["payload"]["attestation_ref"]["endpoint"] == "/agent/attestations"
+
+    signature = body.pop("signature")
+    assert verify_message(canonical_json_bytes(body), signature, body["from_pubkey"])
+
+
+def test_agent_message_rejects_bad_signature(client):
+    msg = _signed_agent_message({"job_type": "ping", "payload": {"message": "hello"}})
+    msg["signature"] = "00"
+
+    res = client.post("/agent/message", json=msg)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_signature"
+
+
+def test_agent_message_rejects_wrong_recipient(client):
+    msg = _signed_agent_message({"job_type": "ping", "payload": {"message": "hello"}})
+    msg["to_pubkey"] = "02" + "22" * 32
+    msg["signature"] = sign_message(canonical_json_bytes({k: v for k, v in msg.items() if k != "signature"}))
+
+    res = client.post("/agent/message", json=msg)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "wrong_recipient"
+
+
+def test_agent_message_rejects_unsupported_message_type(client):
+    msg = _signed_agent_message({"job_type": "ping", "payload": {"message": "hello"}}, msg_type="delegation")
+
+    res = client.post("/agent/message", json=msg)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "unsupported_type"
+
+
+def test_agent_message_rejects_invalid_payload_shape(client):
+    msg = _signed_agent_message({"job_type": "ping", "payload": "not-an-object"})
+
+    res = client.post("/agent/message", json=msg)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_payload"
+
+
+def test_agent_message_duplicate_message_id_returns_cached_result_without_reexecution(client):
+    msg = _signed_agent_message({"job_type": "ping", "payload": {"message": "hello"}})
+
+    first = client.post("/agent/message", json=msg)
+    assert first.status_code == 200
+    first_body = first.get_json()
+
+    second = client.post("/agent/message", json=msg)
+    assert second.status_code == 200
+    second_body = second.get_json()
+
+    assert second_body == first_body
+
+
+def test_agent_message_rejects_unsupported_job_type(client):
+    msg = _signed_agent_message({"job_type": "does_not_exist", "payload": {}})
+
+    res = client.post("/agent/message", json=msg)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "unsupported_job_type"
 
 
 def test_request_creates_job_and_invoice(client, monkeypatch):
