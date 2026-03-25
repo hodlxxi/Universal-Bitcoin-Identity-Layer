@@ -21,6 +21,10 @@ session_id=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["session
 curl -fsS "$BASE_URL/api/lnurl-auth/check/$session_id"
 ```
 
+## Inter-agent execution sanity check (MVP)
+
+- Confirm signed `job_proposal` -> signed `result` round-trips are succeeding through `POST /agent/message`.
+
 ## Alerting suggestions
 
 - Trigger an alert if `/health` or `/oauthx/status` fails twice in a row.
