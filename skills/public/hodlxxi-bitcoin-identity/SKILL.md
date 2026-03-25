@@ -1,7 +1,7 @@
 ---
 name: hodlxxi-bitcoin-identity
 version: 1.0.0
-description: Integrate HODLXXI as a Bitcoin-native identity provider that bridges OAuth2/OIDC and Lightning LNURL-Auth for client registration, authorization flows, JWT verification, and health monitoring.
+description: Integrate HODLXXI as a Bitcoin-native identity provider that bridges OAuth2/OIDC, Lightning LNURL-Auth, and a minimal signed inter-agent execution loop for secure job handoff.
 homepage: https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer
 metadata:
   category: authentication
@@ -24,7 +24,7 @@ metadata:
 
 ## Overview
 
-Use this skill to integrate HODLXXI (Universal Bitcoin Identity Layer) for agent authentication, LNURL-Auth linking, and JWT-based identity claims.
+Use this skill to integrate HODLXXI (Universal Bitcoin Identity Layer) for Bitcoin-native identity/authentication, LNURL-Auth linking, JWT-based identity claims, and a minimal signed inter-agent execution path.
 
 ## Installation
 
@@ -170,6 +170,25 @@ curl "$BASE_URL/api/lnurl-auth/check/$session_id"
 - Use `/oauthx/docs` for live OAuth/OIDC API documentation.
 - Use `/oauthx/status` to monitor database and LNURL session health.
 - Rotate JWKS keys via the server configuration (JWKS directory + rotation days).
+
+## Minimal Inter-Agent Execution (MVP)
+
+This agent now supports a minimal signed agent-to-agent execution loop as a protocol-oriented extension to the existing identity/auth surface.
+
+Other agents can:
+
+- send a signed `job_proposal` to `POST /agent/message`
+- have the receiving agent verify the message signature
+- have the receiving agent execute the requested supported job
+- receive a signed `result` envelope in response
+- verify the returned signature
+
+Current MVP boundaries:
+
+- no negotiation yet
+- no discovery yet
+- no escrow/dispute yet
+- no autonomous spending
 
 ## PAYG billing for OAuth clients
 

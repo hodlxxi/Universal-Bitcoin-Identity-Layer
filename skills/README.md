@@ -9,8 +9,8 @@ Runtime discovery for these public skills is exposed at `/agent/skills`, so the 
 ### hodlxxi-bitcoin-identity
 Path: `skills/public/hodlxxi-bitcoin-identity/`
 
-- **SKILL.md**: OAuth2/OIDC + LNURL-auth integration guide and code examples
-- **HEARTBEAT.md**: health-check checklist for production monitoring
+- **SKILL.md**: OAuth2/OIDC + LNURL-auth integration guide plus minimal signed inter-agent execution (MVP)
+- **HEARTBEAT.md**: health-check checklist for production monitoring (including signed `job_proposal` -> signed `result` sanity checks)
 - **scripts/**: helper scripts (e.g., signature verification)
 - **templates/**: JSON templates (e.g., OAuth client registration payload)
 
