@@ -84,7 +84,7 @@ services:
       - ./app:/app/app
       - ./logs:/app/logs
       - ./keys:/app/keys
-    command: gunicorn -k gevent -w 1 --bind 0.0.0.0:5000 --reload wsgi:app
+    command: gunicorn -k gevent -w 1 --bind 0.0.0.0:5000 --reload app.app:app
     restart: unless-stopped
 
 volumes:
