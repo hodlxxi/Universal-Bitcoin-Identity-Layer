@@ -144,6 +144,7 @@
       <div class="btns">
         <a class="btn" href="/agent/capabilities">Read capabilities</a>
         <a class="btn" href="/agent/reputation">Reputation + trust signals</a>
+        <a class="btn" href="/agent/trust/hodlxxi-herald-01">Herald trust surface</a>
         <a class="btn" href="/agent/marketplace/listing">Lightning job listing</a>
         <a class="btn" href="/screensaver">Enter human mode</a>
       </div>
@@ -189,6 +190,38 @@
           <li>No escrow/dispute rails yet</li>
         </ul>
       </article>
+    </section>
+
+    <section class="card" style="margin-top:20px;">
+      <h2>Public Agent Trust Surface</h2>
+      <p>HODLXXI now exposes a public trust surface for HODLXXI Herald: runtime-verifiable behavior history plus a declared operator↔agent covenant alignment layer. Funding attachment may be added later.</p>
+      <div class="status-row" style="margin-top:8px;">
+        <span class="status-badge">Declared public Herald identity</span>
+        <span class="status-badge">Receipts / attestations / reputation</span>
+        <span class="status-badge warn">Declared trust layer today (unfunded)</span>
+      </div>
+      <ul class="endpoint-list" style="margin-top:10px;">
+        <li>
+          <div class="endpoint-name"><a href="/agent/trust/hodlxxi-herald-01"><code>/agent/trust/hodlxxi-herald-01</code></a></div>
+          <div>Public trust page and current proof boundaries.</div>
+        </li>
+        <li>
+          <div class="endpoint-name"><a href="/agent/binding/hodlxxi-herald-01"><code>/agent/binding/hodlxxi-herald-01</code></a></div>
+          <div>Declared identity binding artifact.</div>
+        </li>
+        <li>
+          <div class="endpoint-name"><a href="/agent/covenants/hodlxxi-herald-covenant-v1.json"><code>/agent/covenants/hodlxxi-herald-covenant-v1.json</code></a></div>
+          <div>Operator↔agent covenant declaration.</div>
+        </li>
+        <li>
+          <div class="endpoint-name"><a href="/reports/hodlxxi-herald-01-daily-20260327"><code>/reports/hodlxxi-herald-01-daily-20260327</code></a></div>
+          <div>Daily runtime report surface.</div>
+        </li>
+        <li>
+          <div class="endpoint-name"><a href="/verify/report/hodlxxi-herald-01-daily-20260327"><code>/verify/report/hodlxxi-herald-01-daily-20260327</code></a></div>
+          <div>Report verification entrypoint.</div>
+        </li>
+      </ul>
     </section>
 
     <section class="card" style="margin-top:20px;">
