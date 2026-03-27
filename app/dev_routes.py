@@ -11,6 +11,7 @@ from flask import abort
 from sqlalchemy import text
 
 from app.database import session_scope
+from app.services.herald_nostr_discovery import HeraldNostrDiscoveryEngine
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +210,30 @@ def get_usage_stats(client_id: str, days: int = 30) -> Dict:
         )
 
         return {"logins_30d": code_count, "tokens_issued_30d": token_count, "api_calls_30d": token_count}
+
+
+@dev_bp.get("/agent/discovery/candidates.json")
+@require_login
+def discovery_candidates_json():
+    """Dev-only candidate inspection surface for Herald discovery dry-run output."""
+    if session.get("access_level") != "full":
+        return jsonify({"ok": False, "error": "full_access_required"}), 403
+
+    engine = HeraldNostrDiscoveryEngine()
+    run_scan = request.args.get("run_scan", "").lower() in {"1", "true", "yes"}
+    scan_rows = engine.discover_and_evaluate() if run_scan else []
+    recent_rows = engine.store.recent_assessments(limit=50)
+
+    return jsonify(
+        {
+            "ok": True,
+            "declared_herald_pubkey": engine.config.declared_herald_pubkey,
+            "zap_mode": engine.config.zap_mode,
+            "scan_performed": run_scan,
+            "scan_candidates_found": len(scan_rows),
+            "recent_candidates": recent_rows,
+        }
+    )
 
 
 @dev_bp.route("/dashboard")
