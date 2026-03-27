@@ -1982,12 +1982,23 @@ def check_auth():
         "/agent/reputation",
         "/agent/chain/health",
         "/agent/marketplace/listing",
+        "/agent/trust/hodlxxi-herald-01",
+        "/agent/binding/hodlxxi-herald-01",
+        "/agent/trust-summary/hodlxxi-herald-01.json",
+        "/agent/covenants/hodlxxi-herald-covenant-v1.json",
     }
     if (
         (request.method in {"GET", "HEAD"} and (
             p in AGENT_PUBLIC_PATHS
             or p.startswith("/agent/verify/")
             or p.startswith("/agent/jobs/")
+            or p.startswith("/reports/")
+            or p.startswith("/verify/report/")
+            or p.startswith("/verify/nostr/")
+            or p.startswith("/agent/trust/")
+            or p.startswith("/agent/binding/")
+            or p.startswith("/agent/trust-summary/")
+            or p.startswith("/agent/covenants/")
         ))
         or (request.method == "POST" and p in {"/agent/request", "/agent/message"})
     ):
@@ -8855,6 +8866,16 @@ def _public_guard_for_lnurl():
 
     # Allow public docs/pages
     if p == "/" or p.startswith("/screensaver"):
+        return None
+    if (
+        p.startswith("/agent/trust/")
+        or p.startswith("/agent/binding/")
+        or p.startswith("/agent/trust-summary/")
+        or p.startswith("/agent/covenants/")
+        or p.startswith("/reports/")
+        or p.startswith("/verify/report/")
+        or p.startswith("/verify/nostr/")
+    ):
         return None
     if p.startswith("/docs") or p.startswith("/docs/"):
         return None

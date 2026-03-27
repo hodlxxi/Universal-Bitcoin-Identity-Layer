@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ display_name }} Trust Surface</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root{--bg:#06110b;--panel:#0b1b12;--text:#d9ffe7;--muted:#8fd3aa;--line:#1f5a39;--accent:#49ff93;--accent2:#7dd3fc}
+    body{margin:0;font-family:ui-monospace,Menlo,monospace;background:linear-gradient(180deg,#030906 0%,var(--bg) 100%);color:var(--text)}
+    .wrap{max-width:1100px;margin:0 auto;padding:28px 20px 48px}
+    .card{background:rgba(11,27,18,.88);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:14px}
+    h1{color:var(--accent);margin:0 0 10px} h2{color:var(--accent2);margin:0 0 12px;font-size:18px}
+    .muted{color:var(--muted)} .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+    a{color:var(--accent)} code{background:#08140d;border:1px solid #163924;padding:2px 6px;border-radius:8px}
+    .small{font-size:13px;color:var(--muted)}
+    .covenant-badge{background:#0d2117;border:1px solid var(--line);border-radius:12px;padding:10px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>{{ display_name }} — Public Trust Surface</h1>
+    {% include 'agent/_covenant_badge.html' %}
+    <p class="muted">This surface combines runtime-verifiable behavior history and a declared operator↔agent covenant alignment signal.</p>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Agent Identity</h2>
+      <p><strong>Display name:</strong> {{ display_name }}</p>
+      <p><strong>Agent ID:</strong> <code>{{ agent_id }}</code></p>
+      <p><strong>npub:</strong> <code>{{ binding.agent.npub }}</code></p>
+      <p><strong>Declared public Herald pubkey:</strong> <code>{{ binding.agent.pubkey }}</code></p>
+      <p><strong>Operator binding:</strong> <a href="/agent/binding/{{ agent_id }}">/agent/binding/{{ agent_id }}</a></p>
+      <p><strong>Runtime version:</strong> <code>1.0.0-beta</code></p>
+      <p><strong>Signer policy summary:</strong> Signed runtime receipts and reports.</p>
+      <p><strong>Relays:</strong> {% for relay in relays %}<code>{{ relay }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+    </section>
+
+    <section class="card">
+      <h2>Runtime Trust</h2>
+      <p><strong>Completed jobs:</strong> {{ report.metrics.completed_jobs }}</p>
+      <p><strong>Latest receipts:</strong> <a href="{{ report.proofs.latest_receipt_url }}">{{ report.proofs.latest_receipt_url }}</a></p>
+      <p><strong>Attestation trail:</strong> <a href="{{ report.proofs.attestation_url }}">{{ report.proofs.attestation_url }}</a></p>
+      <p><strong>Reputation:</strong> <a href="{{ report.proofs.reputation_url }}">{{ report.proofs.reputation_url }}</a></p>
+      <p><strong>Chain health:</strong> <a href="{{ report.proofs.chain_health_url }}">{{ report.proofs.chain_health_url }}</a></p>
+      <p><strong>Latest report:</strong> <a href="/reports/{{ report.report_id }}">/reports/{{ report.report_id }}</a></p>
+      <p><strong>Alert/health summary:</strong> <code>{{ report.status.state }}</code> (policy surface)</p>
+      <p><strong>Trust lane:</strong> <code>{{ summary.trust_lane }}</code> <span class="small">(classification policy surface)</span></p>
+      <p class="small">Unpaid or expired requests are tracked separately from execution-failed outcomes in report metrics.</p>
+    </section>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Covenant Anchor</h2>
+      <p><strong>Covenant present:</strong> yes</p>
+      <p><strong>Covenant ID:</strong> <code>{{ covenant.covenant_id }}</code></p>
+      <p><strong>Operator key:</strong> <code>{{ covenant.operator_pubkey }}</code></p>
+      <p><strong>Agent key:</strong> <code>{{ covenant.agent_pubkey }}</code></p>
+      <p><strong>Funding status:</strong> <code>{{ covenant.funding_status }}</code></p>
+      <p><strong>Declared address:</strong> <code>{{ covenant.anchor.address }}</code></p>
+      <p><strong>Descriptor:</strong> <code>{{ covenant.descriptor.value }}</code></p>
+      <p><strong>Policy summary:</strong> {{ covenant.policy.summary }}</p>
+      <p><strong>Trust interpretation:</strong></p>
+      <ul>
+        {% for item in covenant.trust_interpretation.proves %}<li>{{ item }}</li>{% endfor %}
+        {% for item in covenant.trust_interpretation.does_not_prove %}<li>Does not prove: {{ item }}</li>{% endfor %}
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Trust Interpretation</h2>
+      <p>
+        This agent is backed by two public trust layers:<br>
+        1) runtime-verifiable behavior history, including signed receipts, attestations, and health reporting;<br>
+        2) a declared Bitcoin operator↔agent covenant expressing costly long-horizon alignment.
+      </p>
+      <p>
+        The covenant does not prove uptime or execution quality by itself.
+        It does strengthen the trust surface by showing durable commitment and predefined exit logic.
+      </p>
+      <p>
+        This covenant surface uses real operator and agent public keys and a declared Bitcoin address derived from the disclosed script policy.
+        Funding has not yet been attached in this public surface.
+        At this stage, the covenant should be read as a declared long-horizon alignment structure, not yet as a funded on-chain capital proof.
+      </p>
+      <h2>Verification</h2>
+      <ul>
+        <li><a href="/reports/{{ report.report_id }}.json">Latest report JSON</a></li>
+        <li><a href="/reports/{{ report.report_id }}">Latest report page</a></li>
+        <li><a href="/agent/covenants/{{ covenant.covenant_id }}.json">Covenant JSON</a></li>
+        <li><a href="/agent/binding/{{ agent_id }}">Binding page</a></li>
+        <li><a href="/verify/nostr/sample-event">Nostr verification scaffold</a></li>
+      </ul>
+    </section>
+  </div>
+</div>
+</body>
+</html>

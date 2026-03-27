@@ -8,12 +8,23 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, render_template, request
 
 from app.agent_signer import canonical_json_bytes, get_agent_pubkey_hex, sign_message, verify_message
 from app.database import session_scope
 from app.models import AgentEvent, AgentJob
 from app.payments.ln import check_invoice_paid, create_invoice
+from app.services.trust_surface import (
+    DEFAULT_AGENT_ID,
+    DEFAULT_COVENANT_ID,
+    build_trust_report,
+    build_trust_summary,
+    compute_report_hash,
+    has_covenant_artifact,
+    load_agent_binding,
+    load_covenant,
+    trust_page_context,
+)
 
 agent_bp = Blueprint("agent", __name__)
 
@@ -97,6 +108,13 @@ def _agent_endpoints() -> dict:
         "chain_health": "/agent/chain/health",
         "marketplace_listing": "/agent/marketplace/listing",
         "skills": "/agent/skills",
+        "trust_page": "/agent/trust/<agent_id>",
+        "trust_summary": "/agent/trust-summary/<agent_id>.json",
+        "binding_page": "/agent/binding/<agent_id>",
+        "report_page": "/reports/<report_id>",
+        "report_json": "/reports/<report_id>.json",
+        "verify_report": "/verify/report/<report_id>",
+        "verify_nostr": "/verify/nostr/<event_id>",
     }
 
 
@@ -1004,3 +1022,63 @@ def reputation():
                 "attestations_count": len(events),
             }
         )
+
+
+@agent_bp.get("/agent/trust/<agent_id>")
+def trust_page(agent_id: str):
+    context = trust_page_context(agent_id)
+    return render_template("agent/trust_page.html", **context)
+
+
+@agent_bp.get("/agent/binding/<agent_id>")
+def binding_page(agent_id: str):
+    binding = load_agent_binding(agent_id)
+    return render_template("agent/binding_page.html", agent_id=agent_id, binding=binding)
+
+
+@agent_bp.get("/agent/trust-summary/<agent_id>.json")
+def trust_summary_json(agent_id: str):
+    return jsonify(build_trust_summary(agent_id))
+
+
+@agent_bp.get("/agent/covenants/<covenant_id>.json")
+def covenant_json(covenant_id: str):
+    if not has_covenant_artifact(covenant_id):
+        return jsonify({"error": "not_found"}), 404
+    covenant = load_covenant(covenant_id)
+    return jsonify(covenant)
+
+
+@agent_bp.get("/reports/<report_id>.json")
+def report_json(report_id: str):
+    report = build_trust_report(DEFAULT_AGENT_ID, report_id=report_id)
+    return jsonify(report)
+
+
+@agent_bp.get("/reports/<report_id>")
+def report_page(report_id: str):
+    report = build_trust_report(DEFAULT_AGENT_ID, report_id=report_id)
+    covenant = load_covenant(report["covenant"].get("covenant_id", DEFAULT_COVENANT_ID))
+    return render_template("agent/report_page.html", report=report, covenant=covenant, agent_id=DEFAULT_AGENT_ID)
+
+
+@agent_bp.get("/verify/report/<report_id>")
+def verify_report_page(report_id: str):
+    report = build_trust_report(DEFAULT_AGENT_ID, report_id=report_id)
+    expected_hash = compute_report_hash(report)
+    hash_matches = expected_hash == report.get("report_sha256")
+    return render_template(
+        "agent/verify_report.html",
+        report=report,
+        canonical_hash=expected_hash,
+        hash_matches=hash_matches,
+    )
+
+
+@agent_bp.get("/verify/nostr/<event_id>")
+def verify_nostr_page(event_id: str):
+    return render_template(
+        "agent/verify_nostr.html",
+        event_id=event_id,
+        trust_summary=build_trust_summary(DEFAULT_AGENT_ID),
+    )

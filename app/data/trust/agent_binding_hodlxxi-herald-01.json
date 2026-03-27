@@ -1,0 +1,31 @@
+{
+  "binding_version": "1.0",
+  "agent_id": "hodlxxi-herald-01",
+  "operator": {
+    "name": "HODLXXI Operator",
+    "pubkey": "023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923",
+    "website": "https://hodlxxi.com"
+  },
+  "agent": {
+    "name": "HODLXXI Herald",
+    "pubkey": "02019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f92",
+    "npub": "npub-declared-not-published-in-this-surface"
+  },
+  "authority": {
+    "may_publish": [
+      "runtime heartbeat and status notes",
+      "execution receipt summaries",
+      "daily trust reports"
+    ]
+  },
+  "sources_of_truth": [
+    "/agent/capabilities",
+    "/agent/attestations",
+    "/agent/reputation",
+    "/agent/chain/health",
+    "/agent/trust-summary/hodlxxi-herald-01.json"
+  ],
+  "identity_scope": "declared_public_trust_identity",
+  "created_at": "2026-01-01T00:00:00+00:00",
+  "updated_at": "2026-03-27T00:00:00+00:00"
+}
