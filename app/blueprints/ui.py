@@ -36,6 +36,7 @@ def index():
             ("/agent/reputation", "Public reputation surface"),
             ("/agent/attestations", "Public attestation chain"),
             ("/agent/chain/health", "Chain health surface"),
+            ("/agent/trust/hodlxxi-herald-01", "Public trust surface for HODLXXI Herald"),
             ("/agent/marketplace/listing", "Marketplace-facing listing"),
             ("/screensaver", "Human / narrative interface"),
             ("/.well-known/openid-configuration", "OpenID discovery surface"),

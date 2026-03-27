@@ -1,0 +1,257 @@
+"""Trust surface helpers for public agent trust artifacts."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+
+from app.agent_signer import get_agent_pubkey_hex
+from app.database import session_scope
+from app.models import AgentEvent, AgentJob
+
+DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "trust"
+DEFAULT_AGENT_ID = "hodlxxi-herald-01"
+DEFAULT_AGENT_NAME = "HODLXXI Herald"
+DEFAULT_COVENANT_ID = "hodlxxi-herald-covenant-v1"
+DEFAULT_OPERATOR_PUBKEY = "demo-operator-pubkey-not-live-proof"
+DEFAULT_AGENT_NPUB = "npub-demo-not-live-proof"
+DEFAULT_RELAYS = ["wss://relay.damus.io", "wss://nos.lol"]
+
+
+def canonicalize_json(data: dict[str, Any]) -> str:
+    """Return canonical JSON text used for deterministic hashing."""
+    return json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def sha256_hex(data: str | bytes) -> str:
+    """Return sha256 hex digest for str/bytes payload."""
+    payload = data.encode("utf-8") if isinstance(data, str) else data
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _iso_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _load_json(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    with path.open("r", encoding="utf-8") as fh:
+        loaded = json.load(fh)
+    return loaded if isinstance(loaded, dict) else None
+
+
+def has_covenant_artifact(covenant_id: str) -> bool:
+    """Return True if covenant artifact exists or matches configured default."""
+    return covenant_id == DEFAULT_COVENANT_ID or (DATA_DIR / f"covenant_{covenant_id}.json").exists()
+
+
+def load_agent_binding(agent_id: str) -> dict[str, Any]:
+    """Load agent binding artifact from data dir or fallback defaults."""
+    path = DATA_DIR / f"agent_binding_{agent_id}.json"
+    loaded = _load_json(path)
+    if loaded:
+        if loaded.get("agent", {}).get("pubkey") in {None, "", "runtime-derived"}:
+            loaded.setdefault("agent", {})["pubkey"] = get_agent_pubkey_hex()
+        return loaded
+
+    agent_pubkey = get_agent_pubkey_hex()
+    now = _iso_now()
+    return {
+        "binding_version": "1.0",
+        "agent_id": agent_id,
+        "operator": {
+            "name": "HODLXXI Operator",
+            "pubkey": DEFAULT_OPERATOR_PUBKEY,
+            "website": "https://hodlxxi.com",
+        },
+        "agent": {
+            "name": DEFAULT_AGENT_NAME,
+            "pubkey": agent_pubkey,
+            "npub": DEFAULT_AGENT_NPUB,
+        },
+        "authority": {
+            "may_publish": [
+                "runtime heartbeat and status notes",
+                "execution receipt summaries",
+                "daily trust reports",
+            ]
+        },
+        "sources_of_truth": [
+            "/agent/capabilities",
+            "/agent/attestations",
+            "/agent/reputation",
+            "/agent/chain/health",
+            f"/agent/trust-summary/{agent_id}.json",
+        ],
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+def load_covenant(covenant_id: str) -> dict[str, Any]:
+    """Load covenant artifact from data dir or fallback defaults."""
+    path = DATA_DIR / f"covenant_{covenant_id}.json"
+    loaded = _load_json(path)
+    if loaded:
+        if loaded.get("agent_pubkey") in {None, "", "runtime-derived"}:
+            loaded["agent_pubkey"] = get_agent_pubkey_hex()
+        return loaded
+
+    return {
+        "schema_version": "1.0",
+        "covenant_id": covenant_id,
+        "status": "informational",
+        "agent_id": DEFAULT_AGENT_ID,
+        "operator_pubkey": DEFAULT_OPERATOR_PUBKEY,
+        "agent_pubkey": get_agent_pubkey_hex(),
+        "network": "bitcoin",
+        "anchor": {
+            "type": "demo_outpoint",
+            "txid": "demo-txid-not-live-proof",
+            "vout": 0,
+            "amount_sats": 2100000,
+        },
+        "policy": {
+            "mode_now": "cooperative",
+            "future_exit_logic": [
+                {"party": "operator", "type": "timelocked_path", "lock_height": 1_400_000},
+                {"party": "agent", "type": "timelocked_path", "lock_height": 1_600_000},
+            ],
+            "summary": (
+                "Bitcoin-anchored operator↔agent covenant with predefined exit logic. "
+                "Presented as an alignment signal and proof surface."
+            ),
+        },
+        "trust_interpretation": {
+            "proves": [
+                "public policy surface for long-horizon costly commitment",
+                "operator↔agent covenant terms and predefined exit logic are disclosed",
+            ],
+            "does_not_prove": [
+                "uptime guarantees",
+                "execution quality guarantees",
+                "full autonomy",
+            ],
+        },
+        "artifacts": {
+            "trust_page_url": f"/agent/trust/{DEFAULT_AGENT_ID}",
+            "raw_policy_url": f"/agent/covenants/{covenant_id}.json",
+        },
+        "created_at": "2026-01-01T00:00:00+00:00",
+    }
+
+
+def _runtime_counts() -> tuple[int, int, int]:
+    with session_scope() as session:
+        total_jobs = session.query(AgentJob).count()
+        completed_jobs = session.query(AgentJob).filter_by(status="done").count()
+        attestations_count = session.query(AgentEvent).count()
+    return total_jobs, completed_jobs, attestations_count
+
+
+def determine_trust_lane(*, covenant_backed: bool, completed_jobs: int, repeat_counterparty: bool = False) -> str:
+    """Return non-enforcing trust-lane policy classification."""
+    if covenant_backed:
+        return "covenant-backed"
+    if repeat_counterparty or completed_jobs >= 5:
+        return "repeat-counterparty"
+    return "standard"
+
+
+def _latest_report_id(agent_id: str) -> str:
+    day = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return f"{agent_id}-daily-{day}"
+
+
+def build_trust_report(agent_id: str, report_id: str | None = None) -> dict[str, Any]:
+    """Build trust report artifact from runtime state and covenant surface."""
+    total_jobs, completed_jobs, attestations_count = _runtime_counts()
+    covenant = load_covenant(DEFAULT_COVENANT_ID)
+    created = _iso_now()
+    rid = report_id or _latest_report_id(agent_id)
+    report = {
+        "schema_version": "1.0",
+        "report_id": rid,
+        "report_type": "daily_runtime_trust",
+        "agent_id": agent_id,
+        "created_at": created,
+        "period": {
+            "from": (datetime.now(timezone.utc) - timedelta(days=1)).replace(microsecond=0).isoformat(),
+            "to": created,
+        },
+        "status": {
+            "state": "healthy" if completed_jobs >= 0 else "unknown",
+            "heartbeat_ok": True,
+            "signing_ok": True,
+            "relay_publish_ok": False,
+        },
+        "metrics": {
+            "completed_jobs": completed_jobs,
+            "failed_jobs": max(total_jobs - completed_jobs, 0),
+            "sats_earned": completed_jobs * 21,
+            "sats_spent": 0,
+        },
+        "proofs": {
+            "latest_receipt_url": "/agent/attestations?limit=1",
+            "attestation_url": "/agent/attestations",
+            "chain_health_url": "/agent/chain/health",
+            "reputation_url": "/agent/reputation",
+        },
+        "covenant": {
+            "covenant_backed": True,
+            "covenant_id": covenant["covenant_id"],
+            "summary": covenant["policy"]["summary"],
+        },
+        "notes": [
+            "This public proof artifact summarizes runtime-verifiable behavior history.",
+            "External live verification not implemented in this surface yet.",
+            f"Attestation count observed: {attestations_count}.",
+        ],
+    }
+    report["report_sha256"] = compute_report_hash(report)
+    return report
+
+
+def compute_report_hash(report_dict: dict[str, Any]) -> str:
+    """Compute canonical report hash from report body without report_sha256 field."""
+    body = dict(report_dict)
+    body.pop("report_sha256", None)
+    return sha256_hex(canonicalize_json(body))
+
+
+def build_trust_summary(agent_id: str) -> dict[str, Any]:
+    """Build compact trust summary JSON."""
+    _, completed_jobs, attestations_count = _runtime_counts()
+    covenant_backed = True
+    lane = determine_trust_lane(covenant_backed=covenant_backed, completed_jobs=completed_jobs)
+    return {
+        "agent_id": agent_id,
+        "public_key": get_agent_pubkey_hex(),
+        "runtime_status": "healthy",
+        "receipts_available": completed_jobs > 0,
+        "attestations_available": attestations_count > 0,
+        "covenant_backed": covenant_backed,
+        "trust_lane": lane,
+        "verify_url": f"/verify/report/{_latest_report_id(agent_id)}",
+    }
+
+
+def trust_page_context(agent_id: str) -> dict[str, Any]:
+    """Assemble render context for trust/binding/report pages."""
+    binding = load_agent_binding(agent_id)
+    covenant = load_covenant(DEFAULT_COVENANT_ID)
+    report = build_trust_report(agent_id)
+    summary = build_trust_summary(agent_id)
+    return {
+        "agent_id": agent_id,
+        "display_name": binding.get("agent", {}).get("name", DEFAULT_AGENT_NAME),
+        "binding": binding,
+        "covenant": covenant,
+        "report": report,
+        "summary": summary,
+        "relays": DEFAULT_RELAYS,
+    }

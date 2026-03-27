@@ -1,0 +1,30 @@
+{
+  "binding_version": "1.0",
+  "agent_id": "hodlxxi-herald-01",
+  "operator": {
+    "name": "HODLXXI Operator",
+    "pubkey": "demo-operator-pubkey-not-live-proof",
+    "website": "https://hodlxxi.com"
+  },
+  "agent": {
+    "name": "HODLXXI Herald",
+    "pubkey": "runtime-derived",
+    "npub": "npub-demo-not-live-proof"
+  },
+  "authority": {
+    "may_publish": [
+      "runtime heartbeat and status notes",
+      "execution receipt summaries",
+      "daily trust reports"
+    ]
+  },
+  "sources_of_truth": [
+    "/agent/capabilities",
+    "/agent/attestations",
+    "/agent/reputation",
+    "/agent/chain/health",
+    "/agent/trust-summary/hodlxxi-herald-01.json"
+  ],
+  "created_at": "2026-01-01T00:00:00+00:00",
+  "updated_at": "2026-01-01T00:00:00+00:00"
+}

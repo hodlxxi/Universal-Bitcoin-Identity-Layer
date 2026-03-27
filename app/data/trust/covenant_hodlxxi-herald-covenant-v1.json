@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "covenant_id": "hodlxxi-herald-covenant-v1",
+  "status": "informational",
+  "agent_id": "hodlxxi-herald-01",
+  "operator_pubkey": "demo-operator-pubkey-not-live-proof",
+  "agent_pubkey": "runtime-derived",
+  "network": "bitcoin",
+  "anchor": {
+    "type": "demo_outpoint",
+    "txid": "demo-txid-not-live-proof",
+    "vout": 0,
+    "amount_sats": 2100000
+  },
+  "policy": {
+    "mode_now": "cooperative",
+    "future_exit_logic": [
+      {
+        "party": "operator",
+        "type": "timelocked_path",
+        "lock_height": 1400000
+      },
+      {
+        "party": "agent",
+        "type": "timelocked_path",
+        "lock_height": 1600000
+      }
+    ],
+    "summary": "Bitcoin-anchored operator↔agent covenant with predefined exit logic. Presented as an alignment signal and proof surface."
+  },
+  "trust_interpretation": {
+    "proves": [
+      "public policy surface for long-horizon costly commitment",
+      "operator↔agent covenant terms and predefined exit logic are disclosed"
+    ],
+    "does_not_prove": [
+      "uptime guarantees",
+      "execution quality guarantees",
+      "full autonomy"
+    ]
+  },
+  "artifacts": {
+    "trust_page_url": "/agent/trust/hodlxxi-herald-01",
+    "raw_policy_url": "/agent/covenants/hodlxxi-herald-covenant-v1.json"
+  },
+  "created_at": "2026-01-01T00:00:00+00:00"
+}
