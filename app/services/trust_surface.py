@@ -16,8 +16,16 @@ DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "trust"
 DEFAULT_AGENT_ID = "hodlxxi-herald-01"
 DEFAULT_AGENT_NAME = "HODLXXI Herald"
 DEFAULT_COVENANT_ID = "hodlxxi-herald-covenant-v1"
-DEFAULT_OPERATOR_PUBKEY = "demo-operator-pubkey-not-live-proof"
-DEFAULT_AGENT_NPUB = "npub-demo-not-live-proof"
+DECLARED_AGENT_PUBKEY = "02019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f92"
+DEFAULT_OPERATOR_PUBKEY = "023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923"
+DECLARED_COVENANT_ADDRESS = "bc1qsrpjjn3w8ly8da7u59y7ywzly4he7lfnl8462qrxp3d368gexess3tjdz3"
+DECLARED_COVENANT_DESCRIPTOR = (
+    "raw(63522102019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f92"
+    "21023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e92352ae67630371201bb1"
+    "752102019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f92ac670301211bb1752"
+    "1023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923ac6868)#yemvdjs8"
+)
+DEFAULT_AGENT_NPUB = "npub-declared-not-published-in-this-surface"
 DEFAULT_RELAYS = ["wss://relay.damus.io", "wss://nos.lol"]
 
 
@@ -70,7 +78,7 @@ def load_agent_binding(agent_id: str) -> dict[str, Any]:
         },
         "agent": {
             "name": DEFAULT_AGENT_NAME,
-            "pubkey": agent_pubkey,
+            "pubkey": DECLARED_AGENT_PUBKEY if agent_id == DEFAULT_AGENT_ID else agent_pubkey,
             "npub": DEFAULT_AGENT_NPUB,
         },
         "authority": {
@@ -104,34 +112,39 @@ def load_covenant(covenant_id: str) -> dict[str, Any]:
     return {
         "schema_version": "1.0",
         "covenant_id": covenant_id,
-        "status": "informational",
+        "status": "unfunded_declared",
         "agent_id": DEFAULT_AGENT_ID,
         "operator_pubkey": DEFAULT_OPERATOR_PUBKEY,
-        "agent_pubkey": get_agent_pubkey_hex(),
+        "agent_pubkey": DECLARED_AGENT_PUBKEY,
         "network": "bitcoin",
+        "funding_status": "unfunded_declared",
         "anchor": {
-            "type": "demo_outpoint",
-            "txid": "demo-txid-not-live-proof",
-            "vout": 0,
-            "amount_sats": 2100000,
+            "type": "declared_address",
+            "address": DECLARED_COVENANT_ADDRESS,
+        },
+        "descriptor": {
+            "type": "raw",
+            "value": DECLARED_COVENANT_DESCRIPTOR,
         },
         "policy": {
             "mode_now": "cooperative",
             "future_exit_logic": [
-                {"party": "operator", "type": "timelocked_path", "lock_height": 1_400_000},
-                {"party": "agent", "type": "timelocked_path", "lock_height": 1_600_000},
+                {"party": "agent", "type": "timelocked_path", "lock_height": 1_777_777},
+                {"party": "operator", "type": "timelocked_path", "lock_height": 1_777_921},
             ],
             "summary": (
-                "Bitcoin-anchored operator↔agent covenant with predefined exit logic. "
-                "Presented as an alignment signal and proof surface."
+                "2-of-2 cooperative path now; delayed unilateral exits later; "
+                "agent has the earlier unilateral exit path; operator has the later unilateral exit path."
             ),
         },
         "trust_interpretation": {
             "proves": [
-                "public policy surface for long-horizon costly commitment",
-                "operator↔agent covenant terms and predefined exit logic are disclosed",
+                "declared long-horizon operator↔agent alignment structure",
+                "real operator and agent public keys are disclosed",
+                "script policy and declared address are disclosed",
             ],
             "does_not_prove": [
+                "funded on-chain capital proof",
                 "uptime guarantees",
                 "execution quality guarantees",
                 "full autonomy",
@@ -202,9 +215,15 @@ def build_trust_report(agent_id: str, report_id: str | None = None) -> dict[str,
             "reputation_url": "/agent/reputation",
         },
         "covenant": {
-            "covenant_backed": True,
+            "covenant_present": True,
+            "covenant_declared": True,
+            "covenant_funded": False,
+            "funding_status": covenant.get("funding_status", "unfunded_declared"),
             "covenant_id": covenant["covenant_id"],
-            "summary": covenant["policy"]["summary"],
+            "summary": (
+                "Declared operator↔agent covenant with real public keys and declared address; "
+                "funding not yet attached in this surface."
+            ),
         },
         "notes": [
             "This public proof artifact summarizes runtime-verifiable behavior history.",
@@ -226,15 +245,18 @@ def compute_report_hash(report_dict: dict[str, Any]) -> str:
 def build_trust_summary(agent_id: str) -> dict[str, Any]:
     """Build compact trust summary JSON."""
     _, completed_jobs, attestations_count = _runtime_counts()
-    covenant_backed = True
-    lane = determine_trust_lane(covenant_backed=covenant_backed, completed_jobs=completed_jobs)
+    covenant_present = True
+    lane = determine_trust_lane(covenant_backed=covenant_present, completed_jobs=completed_jobs)
     return {
         "agent_id": agent_id,
         "public_key": get_agent_pubkey_hex(),
         "runtime_status": "healthy",
         "receipts_available": completed_jobs > 0,
         "attestations_available": attestations_count > 0,
-        "covenant_backed": covenant_backed,
+        "covenant_present": covenant_present,
+        "covenant_declared": True,
+        "covenant_funded": False,
+        "funding_status": "unfunded_declared",
         "trust_lane": lane,
         "verify_url": f"/verify/report/{_latest_report_id(agent_id)}",
     }

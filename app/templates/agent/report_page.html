@@ -1,1 +1,51 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Trust Report {{ report.report_id }}</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:ui-monospace,monospace;background:#06110b;color:#d9ffe7;margin:0}.wrap{max-width:980px;margin:0 auto;padding:24px}.card{background:#0b1b12;border:1px solid #1f5a39;border-radius:14px;padding:16px;margin-bottom:12px}a{color:#49ff93}.small{font-size:13px;color:#8fd3aa}.covenant-badge{background:#0d2117;border:1px solid #1f5a39;border-radius:12px;padding:10px}</style></head><body><div class="wrap"><div class="card"><h1>Public Report {{ report.report_id }}</h1>{% include 'agent/_covenant_badge.html' %}<p class="small">Public proof artifact for runtime-verifiable behavior history and alignment policy surface.</p></div><div class="card"><h2>Summary</h2><p><strong>Agent:</strong> {{ report.agent_id }}</p><p><strong>State:</strong> {{ report.status.state }}</p><p><strong>Period:</strong> {{ report.period.from }} → {{ report.period.to }}</p><p><strong>report_sha256:</strong> <code>{{ report.report_sha256 }}</code></p><p><a href="/reports/{{ report.report_id }}.json">Raw JSON</a></p></div><div class="card"><h2>Metrics</h2><ul><li>completed_jobs: {{ report.metrics.completed_jobs }}</li><li>failed_jobs: {{ report.metrics.failed_jobs }}</li><li>sats_earned: {{ report.metrics.sats_earned }}</li><li>sats_spent: {{ report.metrics.sats_spent }}</li></ul></div><div class="card"><h2>Proof links</h2><ul><li><a href="{{ report.proofs.latest_receipt_url }}">Latest receipt</a></li><li><a href="{{ report.proofs.attestation_url }}">Attestation trail</a></li><li><a href="{{ report.proofs.chain_health_url }}">Chain health</a></li><li><a href="{{ report.proofs.reputation_url }}">Reputation</a></li></ul><p><strong>Covenant summary:</strong> {{ report.covenant.summary }}</p></div></div></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Trust Report {{ report.report_id }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body{font-family:ui-monospace,monospace;background:#06110b;color:#d9ffe7;margin:0}
+    .wrap{max-width:980px;margin:0 auto;padding:24px}
+    .card{background:#0b1b12;border:1px solid #1f5a39;border-radius:14px;padding:16px;margin-bottom:12px}
+    a{color:#49ff93}.small{font-size:13px;color:#8fd3aa}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Public Report {{ report.report_id }}</h1>
+    {% include 'agent/_covenant_badge.html' %}
+    <p class="small">Public proof artifact for runtime-verifiable behavior history and declared covenant policy surface.</p>
+  </div>
+  <div class="card">
+    <h2>Summary</h2>
+    <p><strong>Agent:</strong> {{ report.agent_id }}</p>
+    <p><strong>State:</strong> {{ report.status.state }}</p>
+    <p><strong>Period:</strong> {{ report.period.from }} → {{ report.period.to }}</p>
+    <p><strong>report_sha256:</strong> <code>{{ report.report_sha256 }}</code></p>
+    <p><strong>Covenant funding status:</strong> <code>{{ report.covenant.funding_status }}</code></p>
+    <p><a href="/reports/{{ report.report_id }}.json">Raw JSON</a></p>
+  </div>
+  <div class="card">
+    <h2>Metrics</h2>
+    <ul>
+      <li>completed_jobs: {{ report.metrics.completed_jobs }}</li>
+      <li>failed_jobs: {{ report.metrics.failed_jobs }}</li>
+      <li>sats_earned: {{ report.metrics.sats_earned }}</li>
+      <li>sats_spent: {{ report.metrics.sats_spent }}</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h2>Proof links</h2>
+    <ul>
+      <li><a href="{{ report.proofs.latest_receipt_url }}">Latest receipt</a></li>
+      <li><a href="{{ report.proofs.attestation_url }}">Attestation trail</a></li>
+      <li><a href="{{ report.proofs.chain_health_url }}">Chain health</a></li>
+      <li><a href="{{ report.proofs.reputation_url }}">Reputation</a></li>
+    </ul>
+    <p><strong>Covenant summary:</strong> {{ report.covenant.summary }}</p>
+  </div>
+</div>
+</body>
+</html>

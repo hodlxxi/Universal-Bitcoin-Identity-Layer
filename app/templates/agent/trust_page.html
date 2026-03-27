@@ -21,7 +21,7 @@
   <div class="card">
     <h1>{{ display_name }} — Public Trust Surface</h1>
     {% include 'agent/_covenant_badge.html' %}
-    <p class="muted">This surface combines runtime-verifiable behavior history and a Bitcoin-anchored operator↔agent covenant alignment signal.</p>
+    <p class="muted">This surface combines runtime-verifiable behavior history and a declared operator↔agent covenant alignment signal.</p>
   </div>
 
   <div class="grid">
@@ -30,7 +30,7 @@
       <p><strong>Display name:</strong> {{ display_name }}</p>
       <p><strong>Agent ID:</strong> <code>{{ agent_id }}</code></p>
       <p><strong>npub:</strong> <code>{{ binding.agent.npub }}</code></p>
-      <p><strong>Hex pubkey:</strong> <code>{{ binding.agent.pubkey }}</code></p>
+      <p><strong>Declared public Herald pubkey:</strong> <code>{{ binding.agent.pubkey }}</code></p>
       <p><strong>Operator binding:</strong> <a href="/agent/binding/{{ agent_id }}">/agent/binding/{{ agent_id }}</a></p>
       <p><strong>Runtime version:</strong> <code>1.0.0-beta</code></p>
       <p><strong>Signer policy summary:</strong> Signed runtime receipts and reports.</p>
@@ -57,7 +57,9 @@
       <p><strong>Covenant ID:</strong> <code>{{ covenant.covenant_id }}</code></p>
       <p><strong>Operator key:</strong> <code>{{ covenant.operator_pubkey }}</code></p>
       <p><strong>Agent key:</strong> <code>{{ covenant.agent_pubkey }}</code></p>
-      <p><strong>Funding reference:</strong> <code>{{ covenant.anchor.txid }}:{{ covenant.anchor.vout }}</code></p>
+      <p><strong>Funding status:</strong> <code>{{ covenant.funding_status }}</code></p>
+      <p><strong>Declared address:</strong> <code>{{ covenant.anchor.address }}</code></p>
+      <p><strong>Descriptor:</strong> <code>{{ covenant.descriptor.value }}</code></p>
       <p><strong>Policy summary:</strong> {{ covenant.policy.summary }}</p>
       <p><strong>Trust interpretation:</strong></p>
       <ul>
@@ -71,11 +73,16 @@
       <p>
         This agent is backed by two public trust layers:<br>
         1) runtime-verifiable behavior history, including signed receipts, attestations, and health reporting;<br>
-        2) a Bitcoin-anchored operator↔agent covenant expressing costly long-horizon alignment.
+        2) a declared Bitcoin operator↔agent covenant expressing costly long-horizon alignment.
       </p>
       <p>
         The covenant does not prove uptime or execution quality by itself.
         It does strengthen the trust surface by showing durable commitment and predefined exit logic.
+      </p>
+      <p>
+        This covenant surface uses real operator and agent public keys and a declared Bitcoin address derived from the disclosed script policy.
+        Funding has not yet been attached in this public surface.
+        At this stage, the covenant should be read as a declared long-horizon alignment structure, not yet as a funded on-chain capital proof.
       </p>
       <h2>Verification</h2>
       <ul>

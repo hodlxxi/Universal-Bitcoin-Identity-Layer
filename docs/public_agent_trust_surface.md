@@ -1,32 +1,31 @@
 # Public Agent Trust Surface (HODLXXI Herald)
 
-This document describes the public proof/trust surface for `hodlxxi-herald-01` (HODLXXI Herald).
+This document describes the public trust surface for `hodlxxi-herald-01` (HODLXXI Herald).
 
 ## What this trust surface is
 
 A public package of machine-readable and human-readable artifacts intended to help counterparties inspect:
 
 1. runtime-verifiable behavior history, and
-2. a Bitcoin-anchored operator↔agent covenant alignment signal.
+2. a declared operator↔agent covenant alignment structure.
 
-## Two trust layers
+## Current declared covenant state
 
-1. **Runtime behavior history**
-   - signed receipts / attestations
-   - chain health surface
-   - reputation counters
-
-2. **Covenant anchor**
-   - operator↔agent covenant policy artifact
-   - stated long-horizon costly commitment and predefined exit logic
+- real operator pubkey is disclosed
+- real agent pubkey is disclosed
+- real declared SegWit address is disclosed
+- real descriptor/policy string is disclosed
+- funding is **not** yet attached in this public surface (`unfunded_declared`)
+- therefore this covenant is currently a declared proof/policy surface, not a funded on-chain capital proof
 
 ## What the covenant proves
 
-- Publicly disclosed policy and alignment signal.
-- Presence of an operator↔agent covenant artifact with predefined exit logic.
+- Declared long-horizon operator↔agent alignment structure.
+- Public disclosure of operator/agent keys, declared address, and script policy.
 
 ## What the covenant does not prove
 
+- It does **not** prove funded on-chain capital in this current surface.
 - It does **not** prove uptime.
 - It does **not** prove execution quality.
 - It does **not** prove full autonomy.
@@ -53,5 +52,5 @@ A public package of machine-readable and human-readable artifacts intended to he
 ## Current limitations
 
 - Nostr live relay verification is currently partial/placeholder.
-- Covenant surface may be informational unless wired to live on-chain proof checks.
+- Covenant funding attachment and on-chain proof checks are not implemented in this surface yet.
 - Trust lanes are currently policy classification surface (non-enforcing).

@@ -1,39 +1,44 @@
 {
   "schema_version": "1.0",
   "covenant_id": "hodlxxi-herald-covenant-v1",
-  "status": "informational",
+  "status": "unfunded_declared",
   "agent_id": "hodlxxi-herald-01",
-  "operator_pubkey": "demo-operator-pubkey-not-live-proof",
-  "agent_pubkey": "runtime-derived",
+  "operator_pubkey": "023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923",
+  "agent_pubkey": "02019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f92",
   "network": "bitcoin",
+  "funding_status": "unfunded_declared",
   "anchor": {
-    "type": "demo_outpoint",
-    "txid": "demo-txid-not-live-proof",
-    "vout": 0,
-    "amount_sats": 2100000
+    "type": "declared_address",
+    "address": "bc1qsrpjjn3w8ly8da7u59y7ywzly4he7lfnl8462qrxp3d368gexess3tjdz3"
+  },
+  "descriptor": {
+    "type": "raw",
+    "value": "raw(63522102019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f9221023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e92352ae67630371201bb1752102019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f92ac670301211bb17521023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923ac6868)#yemvdjs8"
   },
   "policy": {
     "mode_now": "cooperative",
     "future_exit_logic": [
       {
-        "party": "operator",
-        "type": "timelocked_path",
-        "lock_height": 1400000
-      },
-      {
         "party": "agent",
         "type": "timelocked_path",
-        "lock_height": 1600000
+        "lock_height": 1777777
+      },
+      {
+        "party": "operator",
+        "type": "timelocked_path",
+        "lock_height": 1777921
       }
     ],
-    "summary": "Bitcoin-anchored operator↔agent covenant with predefined exit logic. Presented as an alignment signal and proof surface."
+    "summary": "2-of-2 cooperative path now; delayed unilateral exits later; agent has the earlier unilateral exit path; operator has the later unilateral exit path."
   },
   "trust_interpretation": {
     "proves": [
-      "public policy surface for long-horizon costly commitment",
-      "operator↔agent covenant terms and predefined exit logic are disclosed"
+      "declared long-horizon operator↔agent alignment structure",
+      "real operator and agent public keys are disclosed",
+      "script policy and declared address are disclosed"
     ],
     "does_not_prove": [
+      "funded on-chain capital proof",
       "uptime guarantees",
       "execution quality guarantees",
       "full autonomy"
