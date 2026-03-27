@@ -6,6 +6,25 @@ from app.services.nostr_reports import (
     build_trust_signal_note,
 )
 from app.services.trust_surface import canonicalize_json, compute_report_hash
+from app.database import session_scope
+from app.models import AgentJob
+
+
+def _insert_agent_job(status: str, *, suffix: str) -> None:
+    with session_scope() as session:
+        session.add(
+            AgentJob(
+                id=f"job-{suffix}",
+                job_type="ping",
+                request_json={"job_type": "ping", "payload": {"suffix": suffix}},
+                request_hash=f"req-{suffix}",
+                sats=21,
+                payment_request=f"lnbc1{suffix}",
+                payment_lookup_id=f"lookup-{suffix}",
+                payment_hash=f"hash-{suffix}",
+                status=status,
+            )
+        )
 
 
 def test_trust_summary_json_route_has_expected_keys(client):
@@ -66,12 +85,12 @@ def test_report_hash_is_deterministic_under_canonicalization():
     report_a = {
         "schema_version": "1.0",
         "report_id": "r1",
-        "metrics": {"completed_jobs": 1, "failed_jobs": 0},
+        "metrics": {"completed_jobs": 1, "unpaid_or_expired_jobs": 0, "execution_failed_jobs": 0, "expired_jobs": 0},
         "notes": ["x"],
     }
     report_b = {
         "notes": ["x"],
-        "metrics": {"failed_jobs": 0, "completed_jobs": 1},
+        "metrics": {"expired_jobs": 0, "execution_failed_jobs": 0, "unpaid_or_expired_jobs": 0, "completed_jobs": 1},
         "report_id": "r1",
         "schema_version": "1.0",
     }
@@ -148,3 +167,40 @@ def test_report_json_does_not_overclaim_funded_status(client):
     assert body["covenant"]["covenant_declared"] is True
     assert body["covenant"]["covenant_funded"] is False
     assert body["covenant"]["funding_status"] == "unfunded_declared"
+
+
+def test_report_metrics_are_categorized_and_not_single_failed_jobs(client):
+    _insert_agent_job("done", suffix="done-1")
+    _insert_agent_job("invoice_pending", suffix="pending-1")
+    _insert_agent_job("failed", suffix="failed-1")
+    _insert_agent_job("expired", suffix="expired-1")
+
+    res = client.get("/reports/hodlxxi-herald-01-daily-test.json")
+    assert res.status_code == 200
+    body = res.get_json()
+    metrics = body["metrics"]
+
+    assert "failed_jobs" not in metrics
+    for key in [
+        "completed_jobs",
+        "unpaid_or_expired_jobs",
+        "execution_failed_jobs",
+        "expired_jobs",
+        "sats_earned",
+        "sats_spent",
+    ]:
+        assert key in metrics
+
+    assert metrics["completed_jobs"] >= 1
+    assert metrics["unpaid_or_expired_jobs"] >= 1
+    assert metrics["execution_failed_jobs"] >= 1
+    assert metrics["expired_jobs"] >= 1
+
+
+def test_report_page_wording_separates_unpaid_from_execution_failures(client):
+    res = client.get("/reports/hodlxxi-herald-01-daily-test")
+    assert res.status_code == 200
+    text = res.get_data(as_text=True)
+    assert "unpaid_or_expired_jobs" in text
+    assert "execution_failed_jobs" in text
+    assert "do not necessarily indicate execution errors" in text

@@ -31,10 +31,14 @@
     <h2>Metrics</h2>
     <ul>
       <li>completed_jobs: {{ report.metrics.completed_jobs }}</li>
-      <li>failed_jobs: {{ report.metrics.failed_jobs }}</li>
+      <li>unpaid_or_expired_jobs: {{ report.metrics.unpaid_or_expired_jobs }}</li>
+      <li>execution_failed_jobs: {{ report.metrics.execution_failed_jobs }}</li>
+      <li>expired_jobs: {{ report.metrics.expired_jobs }}</li>
+      <li>unclassified_jobs: {{ report.metrics.unclassified_jobs }}</li>
       <li>sats_earned: {{ report.metrics.sats_earned }}</li>
       <li>sats_spent: {{ report.metrics.sats_spent }}</li>
     </ul>
+    <p class="small">Unpaid or expired requests do not necessarily indicate execution errors.</p>
   </div>
   <div class="card">
     <h2>Proof links</h2>

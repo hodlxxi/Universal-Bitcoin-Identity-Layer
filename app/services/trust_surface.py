@@ -27,6 +27,9 @@ DECLARED_COVENANT_DESCRIPTOR = (
 )
 DEFAULT_AGENT_NPUB = "npub-declared-not-published-in-this-surface"
 DEFAULT_RELAYS = ["wss://relay.damus.io", "wss://nos.lol"]
+INVOICE_PENDING_STATUSES = {"invoice_pending", "pending", "awaiting_payment", "created"}
+EXPIRED_STATUSES = {"expired", "invoice_expired", "timeout"}
+EXECUTION_FAILED_STATUSES = {"failed", "execution_failed", "error"}
 
 
 def canonicalize_json(data: dict[str, Any]) -> str:
@@ -166,6 +169,34 @@ def _runtime_counts() -> tuple[int, int, int]:
     return total_jobs, completed_jobs, attestations_count
 
 
+def _job_outcome_metrics() -> dict[str, int]:
+    """Categorize job outcomes conservatively from persisted status fields."""
+    metrics = {
+        "completed_jobs": 0,
+        "unpaid_or_expired_jobs": 0,
+        "execution_failed_jobs": 0,
+        "expired_jobs": 0,
+        "unclassified_jobs": 0,
+    }
+    with session_scope() as session:
+        statuses = [str(row[0] or "").strip().lower() for row in session.query(AgentJob.status).all()]
+
+    for status in statuses:
+        if status == "done":
+            metrics["completed_jobs"] += 1
+        elif status in EXECUTION_FAILED_STATUSES:
+            metrics["execution_failed_jobs"] += 1
+        elif status in EXPIRED_STATUSES:
+            metrics["expired_jobs"] += 1
+        elif status in INVOICE_PENDING_STATUSES:
+            # Honest fallback: persisted status does not always prove whether this is merely unpaid
+            # or already expired (without active invoice lookup here).
+            metrics["unpaid_or_expired_jobs"] += 1
+        else:
+            metrics["unclassified_jobs"] += 1
+    return metrics
+
+
 def determine_trust_lane(*, covenant_backed: bool, completed_jobs: int, repeat_counterparty: bool = False) -> str:
     """Return non-enforcing trust-lane policy classification."""
     if covenant_backed:
@@ -182,7 +213,9 @@ def _latest_report_id(agent_id: str) -> str:
 
 def build_trust_report(agent_id: str, report_id: str | None = None) -> dict[str, Any]:
     """Build trust report artifact from runtime state and covenant surface."""
-    total_jobs, completed_jobs, attestations_count = _runtime_counts()
+    _, _, attestations_count = _runtime_counts()
+    outcome_metrics = _job_outcome_metrics()
+    completed_jobs = outcome_metrics["completed_jobs"]
     covenant = load_covenant(DEFAULT_COVENANT_ID)
     created = _iso_now()
     rid = report_id or _latest_report_id(agent_id)
@@ -204,7 +237,10 @@ def build_trust_report(agent_id: str, report_id: str | None = None) -> dict[str,
         },
         "metrics": {
             "completed_jobs": completed_jobs,
-            "failed_jobs": max(total_jobs - completed_jobs, 0),
+            "unpaid_or_expired_jobs": outcome_metrics["unpaid_or_expired_jobs"],
+            "execution_failed_jobs": outcome_metrics["execution_failed_jobs"],
+            "expired_jobs": outcome_metrics["expired_jobs"],
+            "unclassified_jobs": outcome_metrics["unclassified_jobs"],
             "sats_earned": completed_jobs * 21,
             "sats_spent": 0,
         },
@@ -228,6 +264,9 @@ def build_trust_report(agent_id: str, report_id: str | None = None) -> dict[str,
         "notes": [
             "This public proof artifact summarizes runtime-verifiable behavior history.",
             "External live verification not implemented in this surface yet.",
+            "Unpaid or expired requests do not necessarily indicate execution errors.",
+            "Invoice-pending states are conservatively grouped as unpaid_or_expired_jobs.",
+            "Expired jobs are counted separately only when explicit expired/timeout status exists.",
             f"Attestation count observed: {attestations_count}.",
         ],
     }

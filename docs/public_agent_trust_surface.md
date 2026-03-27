@@ -54,3 +54,16 @@ A public package of machine-readable and human-readable artifacts intended to he
 - Nostr live relay verification is currently partial/placeholder.
 - Covenant funding attachment and on-chain proof checks are not implemented in this surface yet.
 - Trust lanes are currently policy classification surface (non-enforcing).
+
+## Job outcome metrics
+
+Older `failed_jobs` aggregation was too coarse for trust interpretation.  
+The report surface now separates:
+
+- `completed_jobs`
+- `unpaid_or_expired_jobs`
+- `execution_failed_jobs`
+- `expired_jobs` (only when explicit expired/timeout status is persisted)
+- `unclassified_jobs` (for unknown legacy statuses)
+
+Unpaid requests are not treated as execution failures in this model.

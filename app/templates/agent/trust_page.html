@@ -47,6 +47,7 @@
       <p><strong>Latest report:</strong> <a href="/reports/{{ report.report_id }}">/reports/{{ report.report_id }}</a></p>
       <p><strong>Alert/health summary:</strong> <code>{{ report.status.state }}</code> (policy surface)</p>
       <p><strong>Trust lane:</strong> <code>{{ summary.trust_lane }}</code> <span class="small">(classification policy surface)</span></p>
+      <p class="small">Unpaid or expired requests are tracked separately from execution-failed outcomes in report metrics.</p>
     </section>
   </div>
 
