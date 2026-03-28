@@ -90,5 +90,6 @@ def register_legacy_human_routes(app: Flask) -> None:
     # Legacy templates call url_for("home"). Keep explicit endpoint alias intact.
     if not _endpoint_exists("home"):
         app.add_url_rule("/home", endpoint="home", view_func=legacy_app_module.home_page, methods=["GET"])
-
+    if not _endpoint_exists("login"):
+        app.add_url_rule("/login", endpoint="login", view_func=legacy_app_module.login, methods=["GET"])
     logger.info("✓ Legacy human routes registered (transitional compatibility)")
