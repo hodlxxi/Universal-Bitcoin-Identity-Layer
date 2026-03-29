@@ -50,8 +50,7 @@ def test_important_paths_bound_to_legacy_handlers(app):
 
         resolved = {_view_identity(app, r.endpoint) for r in matched}
         assert expected_view in resolved, (
-            f"{path} not bound to expected legacy view {expected_view}. "
-            f"Resolved={sorted(resolved)}"
+            f"{path} not bound to expected legacy view {expected_view}. " f"Resolved={sorted(resolved)}"
         )
 
 
@@ -61,10 +60,7 @@ def test_legacy_home_url_for_alias_exists(app):
         assert url_for("home") == "/home"
 
 
-
 def test_lightweight_request_behavior_for_key_human_routes(client):
     for path in ["/", "/home", "/app", "/login"]:
         resp = client.get(path, follow_redirects=False)
-        assert resp.status_code in {200, 302, 401, 403}, (
-            f"Unexpected status for {path}: {resp.status_code}"
-        )
+        assert resp.status_code in {200, 302, 401, 403}, f"Unexpected status for {path}: {resp.status_code}"
