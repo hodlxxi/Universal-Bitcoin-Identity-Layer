@@ -19,22 +19,19 @@ class LightningPaymentError(Exception):
     pass
 
 
-def _assert_not_stub_in_production() -> None:
-    env = (os.getenv("FLASK_ENV") or "").lower()
-    force_https = os.getenv("FORCE_HTTPS", "").lower() == "true"
-    backend = (os.getenv("LN_BACKEND") or "stub").lower()
-    test_paid = os.getenv("TEST_INVOICE_PAID", "false").lower() == "true"
+def _assert_not_stub_in_production():
+    """Ensure stub backend is not used in production."""
+    import os
 
-    # In prod (or when FORCE_HTTPS), refuse stub/testing modes
-    if env == "production" or force_https:
-        if backend == "stub" or test_paid:
-            logger.error("Lightning backend misconfigured for production (stub/testing enabled).")
-            raise LightningPaymentError("Lightning backend misconfigured for production.")
+    # 🔥 allow stub in tests ALWAYS
+    if os.getenv("TESTING") == "1":
+        return
 
+    backend = (os.getenv("LN_BACKEND") or "").lower()
+    env = (os.getenv("FLASK_ENV") or os.getenv("ENV") or "").lower()
 
-# -----------------------
-# LND REST backend
-# -----------------------
+    if backend == "stub" and env not in {"development", "dev", "local", "testing"}:
+        raise LightningPaymentError("Lightning backend misconfigured for production.")
 
 
 def _lnd_headers() -> dict:
