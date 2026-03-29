@@ -233,6 +233,18 @@ def register_blueprints(app: Flask) -> None:
     # Post-bridge ownership: browser/UI routes are served by blueprint/web layer.
     # Keep app.legacy_human_routes module on disk for reference only; do not register it.
 
+    try:
+        import os
+
+        logger.info(
+            "Session/redis diag: REDIS_URL=%s SESSION_TYPE=%s FLASK_ENV=%s",
+            bool(os.getenv("REDIS_URL")),
+            os.getenv("SESSION_TYPE"),
+            os.getenv("FLASK_ENV") or os.getenv("ENV"),
+        )
+    except Exception:
+        pass
+
     logger.info("✅ All blueprints registered")
 
 
