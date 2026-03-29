@@ -206,13 +206,44 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(billing_agent_bp)
     app.register_blueprint(agent_bp)
 
-    # Transitional compatibility: preserve browser-facing legacy flow from monolith.
-    try:
-        from app.legacy_human_routes import register_legacy_human_routes
+    # Backward-compatible endpoint aliases used by existing templates.
+    if "ui.playground" in app.view_functions and "playground" not in app.view_functions:
+        app.add_url_rule(
+            "/playground", endpoint="playground", view_func=app.view_functions["ui.playground"], methods=["GET"]
+        )
+    if "ui.upgrade_route" in app.view_functions and "upgrade" not in app.view_functions:
+        app.add_url_rule(
+            "/upgrade",
+            endpoint="upgrade",
+            view_func=app.view_functions["ui.upgrade_route"],
+            methods=["GET", "POST"],
+        )
+    if "ui.account_route" in app.view_functions and "account" not in app.view_functions:
+        app.add_url_rule(
+            "/account", endpoint="account", view_func=app.view_functions["ui.account_route"], methods=["GET"]
+        )
+    if "ui.home" in app.view_functions and "home" not in app.view_functions:
+        app.add_url_rule("/home", endpoint="home", view_func=app.view_functions["ui.home"], methods=["GET"])
 
-        register_legacy_human_routes(app)
-    except Exception as e:
-        logger.warning(f"Legacy human route registration failed: {e}")
+    if "auth.login" in app.view_functions and "login" not in app.view_functions:
+        app.add_url_rule("/login", endpoint="login", view_func=app.view_functions["auth.login"], methods=["GET"])
+    if "auth.logout" in app.view_functions and "logout" not in app.view_functions:
+        app.add_url_rule("/logout", endpoint="logout", view_func=app.view_functions["auth.logout"], methods=["GET"])
+
+    # Post-bridge ownership: browser/UI routes are served by blueprint/web layer.
+    # Keep app.legacy_human_routes module on disk for reference only; do not register it.
+
+    try:
+        import os
+
+        logger.info(
+            "Session/redis diag: REDIS_URL=%s SESSION_TYPE=%s FLASK_ENV=%s",
+            bool(os.getenv("REDIS_URL")),
+            os.getenv("SESSION_TYPE"),
+            os.getenv("FLASK_ENV") or os.getenv("ENV"),
+        )
+    except Exception:
+        pass
 
     logger.info("✅ All blueprints registered")
 
