@@ -225,6 +225,11 @@ def register_blueprints(app: Flask) -> None:
     if "ui.home" in app.view_functions and "home" not in app.view_functions:
         app.add_url_rule("/home", endpoint="home", view_func=app.view_functions["ui.home"], methods=["GET"])
 
+    if "auth.login" in app.view_functions and "login" not in app.view_functions:
+        app.add_url_rule("/login", endpoint="login", view_func=app.view_functions["auth.login"], methods=["GET"])
+    if "auth.logout" in app.view_functions and "logout" not in app.view_functions:
+        app.add_url_rule("/logout", endpoint="logout", view_func=app.view_functions["auth.logout"], methods=["GET"])
+
     # Post-bridge ownership: browser/UI routes are served by blueprint/web layer.
     # Keep app.legacy_human_routes module on disk for reference only; do not register it.
 
