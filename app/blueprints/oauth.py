@@ -69,6 +69,16 @@ audit_logger = get_audit_logger()
 
 oauth_bp = Blueprint("oauth", __name__)
 
+
+def _public_base_url() -> str:
+    return (
+        os.getenv("HODLXXI_PUBLIC_BASE_URL")
+        or os.getenv("PUBLIC_BASE_URL")
+        or os.getenv("APP_BASE_URL")
+        or _public_base_url()
+    ).rstrip("/")
+
+
 OAUTH_RATE_LIMIT = "30 per minute"
 
 
