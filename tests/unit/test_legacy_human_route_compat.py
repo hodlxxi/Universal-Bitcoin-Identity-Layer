@@ -83,3 +83,22 @@ def test_lightweight_request_behavior_for_key_human_routes(client):
     oneword_resp = client.get("/oneword", follow_redirects=False)
     assert oneword_resp.status_code == 302
     assert oneword_resp.headers.get("Location") == "/home"
+
+
+def test_login_flow_sets_challenge_session(client):
+    resp = client.get("/login", follow_redirects=False)
+    assert resp.status_code == 200
+
+    with client.session_transaction() as sess:
+        assert "challenge" in sess
+        assert "challenge_timestamp" in sess
+
+
+def test_app_route_usable_with_session_backed_access(client):
+    with client.session_transaction() as sess:
+        sess["logged_in_pubkey"] = "02" + "11" * 32
+        sess["access_level"] = "limited"
+
+    resp = client.get("/app", follow_redirects=False)
+    assert resp.status_code in {200, 302}
+    assert resp.headers.get("Location") != "/home#chat"
