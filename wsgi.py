@@ -1,10 +1,10 @@
-"""
-WSGI entry point for standalone app.py + March agent backend.
-"""
-from app.app import app
+"""WSGI entry point — CORRECT for Flask-SocketIO + Gunicorn"""
 
-# Gunicorn/uWSGI compatibility
+from app.app import app, socketio
+
+# ✅ Gunicorn должен видеть Flask app
 application = app
 
+# ✅ Локальный запуск (не влияет на gunicorn)
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    socketio.run(app, host="127.0.0.1", port=5000)

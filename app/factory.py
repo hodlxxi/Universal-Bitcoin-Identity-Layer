@@ -73,8 +73,28 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     cfg = config_override or get_config()
     app.config["APP_CONFIG"] = cfg
 
-    # Set Flask secret key (required for sessions)
+    # Set Flask secret key (required for browser session flow).
+    # Transitional rule:
+    # - allow ephemeral fallback in explicit dev/testing contexts
+    # - fail fast in production-like runtime if key is missing
     app.secret_key = cfg["FLASK_SECRET_KEY"]
+    if not app.secret_key:
+        import os
+        import secrets
+
+        env_name = str(cfg.get("FLASK_ENV", "")).lower()
+        allow_ephemeral = (
+            env_name in {"development", "dev", "local", "testing"}
+            or cfg.get("FLASK_DEBUG", False)
+            or os.environ.get("TESTING") == "1"
+            or "PYTEST_CURRENT_TEST" in os.environ
+        )
+
+        if allow_ephemeral:
+            app.secret_key = secrets.token_urlsafe(32)
+            logger.warning("FLASK_SECRET_KEY missing; using ephemeral secret in dev/testing mode")
+        else:
+            raise RuntimeError("FLASK_SECRET_KEY is required in production-like mode")
 
     # Initialize RSA keypair for RS256 JWT signing with key rotation
     try:
@@ -186,38 +206,44 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(billing_agent_bp)
     app.register_blueprint(agent_bp)
 
-    # Legacy human frontend overrides:
-    # keep factory runtime, but route /login and /playground to the old app.py handlers
+    # Backward-compatible endpoint aliases used by existing templates.
+    if "ui.playground" in app.view_functions and "playground" not in app.view_functions:
+        app.add_url_rule(
+            "/playground", endpoint="playground", view_func=app.view_functions["ui.playground"], methods=["GET"]
+        )
+    if "ui.upgrade_route" in app.view_functions and "upgrade" not in app.view_functions:
+        app.add_url_rule(
+            "/upgrade",
+            endpoint="upgrade",
+            view_func=app.view_functions["ui.upgrade_route"],
+            methods=["GET", "POST"],
+        )
+    if "ui.account_route" in app.view_functions and "account" not in app.view_functions:
+        app.add_url_rule(
+            "/account", endpoint="account", view_func=app.view_functions["ui.account_route"], methods=["GET"]
+        )
+    if "ui.home" in app.view_functions and "home" not in app.view_functions:
+        app.add_url_rule("/home", endpoint="home", view_func=app.view_functions["ui.home"], methods=["GET"])
+
+    if "auth.login" in app.view_functions and "login" not in app.view_functions:
+        app.add_url_rule("/login", endpoint="login", view_func=app.view_functions["auth.login"], methods=["GET"])
+    if "auth.logout" in app.view_functions and "logout" not in app.view_functions:
+        app.add_url_rule("/logout", endpoint="logout", view_func=app.view_functions["auth.logout"], methods=["GET"])
+
+    # Post-bridge ownership: browser/UI routes are served by blueprint/web layer.
+    # Keep app.legacy_human_routes module on disk for reference only; do not register it.
+
     try:
+        import os
 
-        def _legacy_login_proxy(**kwargs):
-            from app.app import login
-
-            return login(**kwargs)
-
-        if "auth.login" in app.view_functions:
-            app.view_functions["auth.login"] = _legacy_login_proxy
-    except Exception as e:
-        logger.warning(f"Legacy login override failed: {e}")
-
-    try:
-
-        def _legacy_playground_proxy(**kwargs):
-            from app.app import playground
-
-            return playground(**kwargs)
-
-        if "ui.playground" in app.view_functions:
-            app.view_functions["ui.playground"] = _legacy_playground_proxy
-    except Exception as e:
-        logger.warning(f"Legacy playground override failed: {e}")
-
-    # Legacy endpoint aliases for old inline templates that still call url_for("home")
-    try:
-        if "ui.home" in app.view_functions and "home" not in app.view_functions:
-            app.add_url_rule("/home", endpoint="home", view_func=app.view_functions["ui.home"])
-    except Exception as e:
-        logger.warning(f"Legacy endpoint alias registration failed: {e}")
+        logger.info(
+            "Session/redis diag: REDIS_URL=%s SESSION_TYPE=%s FLASK_ENV=%s",
+            bool(os.getenv("REDIS_URL")),
+            os.getenv("SESSION_TYPE"),
+            os.getenv("FLASK_ENV") or os.getenv("ENV"),
+        )
+    except Exception:
+        pass
 
     logger.info("✅ All blueprints registered")
 
