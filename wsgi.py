@@ -1,11 +1,10 @@
-"""WSGI entry point using the Flask application factory."""
+"""WSGI entry point — CORRECT for Flask-SocketIO + Gunicorn"""
 
-from app.factory import create_app
+from app.app import app, socketio
 
-app = create_app()
-
-# Gunicorn/uWSGI compatibility
+# ✅ Gunicorn должен видеть Flask app
 application = app
 
+# ✅ Локальный запуск (не влияет на gunicorn)
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    socketio.run(app, host="127.0.0.1", port=5000)
