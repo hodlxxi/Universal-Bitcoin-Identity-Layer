@@ -257,6 +257,8 @@ def init_redis() -> None:
         logger.error(f"Failed to initialize Redis: {e}")
         logger.warning("Falling back to in-memory session storage")
         _redis_client = None
+
+
 def get_redis() -> Optional[redis.Redis]:
     """
     Get Redis client instance.
