@@ -218,29 +218,41 @@ def init_redis() -> None:
         return
 
     config = get_config()
-
-    redis_host = config.get("REDIS_HOST", "localhost")
-    redis_port = config.get("REDIS_PORT", 6379)
-    redis_password = config.get("REDIS_PASSWORD")
-    redis_db = config.get("REDIS_DB", 0)
+    redis_url = config.get("REDIS_URL")
 
     try:
-        _redis_client = redis.Redis(
-            host=redis_host,
-            port=redis_port,
-            password=redis_password,
-            db=redis_db,
-            decode_responses=True,  # Return strings instead of bytes
-            socket_connect_timeout=5,
-            socket_timeout=5,
-            max_connections=50,
-            health_check_interval=30,
-        )
+        if redis_url:
+            _redis_client = redis.from_url(
+                redis_url,
+                decode_responses=True,
+                socket_connect_timeout=5,
+                socket_timeout=5,
+                max_connections=50,
+                health_check_interval=30,
+            )
+            logger.info("Redis initialized from REDIS_URL")
 
-        # Test connection
+        else:
+            redis_host = config.get("REDIS_HOST", "localhost")
+            redis_port = config.get("REDIS_PORT", 6379)
+            redis_password = config.get("REDIS_PASSWORD")
+            redis_db = config.get("REDIS_DB", 0)
+
+            _redis_client = redis.Redis(
+                host=redis_host,
+                port=redis_port,
+                password=redis_password,
+                db=redis_db,
+                decode_responses=True,
+                socket_connect_timeout=5,
+                socket_timeout=5,
+                max_connections=50,
+                health_check_interval=30,
+            )
+            logger.info(f"Redis initialized: {redis_host}:{redis_port}")
+
         _redis_client.ping()
 
-        logger.info(f"Redis initialized: {redis_host}:{redis_port}")
     except Exception as e:
         logger.error(f"Failed to initialize Redis: {e}")
         logger.warning("Falling back to in-memory session storage")
