@@ -108,6 +108,16 @@ from app.tokens import issue_rs256_jwt
 from app.pof_routes import pof_bp, pof_api_bp
 from app.dev_routes import dev_bp
 from app.blueprints.agent import agent_bp
+from app.auth_session_gate import (
+    is_allowlist_no_session_path,
+    is_always_exempt_path,
+    is_public_agent_path,
+    is_public_browser_path,
+    is_public_endpoint,
+    should_allow_bearer_api_without_session,
+    should_return_401_for_unauthenticated,
+    should_skip_session_gate,
+)
 
 # from app.playground_routes import playground_bp   # <-- ADD THIS
 from flask import make_response
@@ -1865,199 +1875,60 @@ def generate_challenge():
 # --- Minimal login/guest/dev helpers ---------------------------------
 @app.before_request
 def check_auth():
+    from flask import jsonify, redirect, request, session, url_for
 
     # EXEMPT: agent invoice endpoints bypass session/login gate (protected by localhost + Bearer token)
-    from flask import request as _req
-    p = (_req.path or "")
-    if p.startswith("/api/internal/agent/invoice"):
+    p = request.path or ""
+    if is_always_exempt_path(p):
         return None
-    # PUBLIC PREVIEW ROUTES (no login required)
-    from flask import request as flask_request
 
     # ALLOW_POF_API_V1
     # These endpoints are safe to hit without redirecting users to login,
     # and are used by the Playground/PoF flows.
-    if flask_request.path in (
-        "/api/whoami",
-        "/api/debug/session",
-        "/api/challenge",
-        "/api/verify",
-        "/api/pof/verify_psbt",
-    ):
+    if is_allowlist_no_session_path(p):
         return None
 
-    if flask_request.path == "/special_login":
+    if p == "/special_login":
         return None
-    if flask_request.path.startswith("/api/lnurl-auth/"):
+    if p.startswith("/api/lnurl-auth/"):
         return None
     # /ALLOW_POF_API_V1
 
-    if flask_request.path in ("/new-index", "/new-keyauth", "/new-signup", "/docs2", "/screensaver"):
+    if p in ("/new-index", "/new-keyauth", "/new-signup", "/docs2", "/screensaver"):
         return None
-
-    from flask import jsonify, redirect, request, session, url_for
 
     p = request.path or "/"
-
-
-    # PAYG_BILLING_AGENT_ALLOWLIST_V1: billing-agent endpoints are Bearer-authenticated
-    # and must never be blocked by session/login gates.
-    if p.startswith('/api/billing/agent/'):
-        return None
-    auth_header = request.headers.get("Authorization","")
-    # Bearer API calls should NOT be redirected to /login. Token validation happens in the route.
-    if auth_header.startswith("Bearer ") and p.startswith("/api/"):
+    auth_header = request.headers.get("Authorization", "")
+    if should_skip_session_gate(p, request.method, auth_header):
         return None
 
     # Canonicalize legacy dev dashboard URL early
-    m = request.method
     endpoint = request.endpoint or ""
     endpoint_base = endpoint.rsplit(".", 1)[-1]  # handle blueprint endpoints
 
-    # 0) Always allow preflight + simple assets
-    if m == "OPTIONS" or p in ("/favicon.ico", "/robots.txt", "/health", "/metrics", "/metrics/prometheus"):
-        return None
-
-    # 1) Always bypass session login for token/OAuth routes & Socket.IO
-    if (
-        p.startswith("/oauth/")
-        or p.startswith("/oauthx/")
-        or p.startswith("/oauthdemo/")
-        or p.startswith("/socket.io/")
-        or p.startswith("/static/")
-        or p == "/dashboard"
-        or p == "/playground"
-        or p.startswith("/p/") \
-        or p.startswith("/api/playground") or p in ("/api/pof/stats", "/api/pof/stats/") \
-        or p.startswith("/play") \
-        or p.startswith("/p/")
-        or p.startswith("/api/playground")
-        or p.startswith("/play")
-    ):
-        return None
-
     # 1.6) Public paths (no session required)
-    PUBLIC_PATHS = {
-        "/",
-        "/oidc",
-        "/docs",
-        "/docs/",
-        "/docs.json",
-        "/oicd",
-        "/pof/",
-        "/pof/leaderboard",
-        "/explorer",
-        "/verify_pubkey_and_list",
-        "/.well-known/openid-configuration",
-        "/.well-known/agent.json",
-        "/oauth/jwks.json",
-        "/oauth/authorize",
-        "/oauth/token",
-        "/oauth/register",
-        "/oauth/introspect",
-        "/oauthx/status",
-        "/oauthx/docs",
-        "/login",
-        "/logout",
-        "/metrics",
-        "/metrics/prometheus",
-        "/pof/verify",
-        "/pof/verify/",
-        "/api/challenge",
-        "/api/verify",
-        "/pof/verify",
-    }
-    if p in PUBLIC_PATHS or p.startswith("/docs/"):
+    if is_public_browser_path(p):
         return None
 
     # PUBLIC_AGENT_READONLY_V2
     # Public GET endpoints for marketplace / discovery / verification.
     # Keep write or paid flows protected.
-    AGENT_PUBLIC_PATHS = {
-        "/agent/capabilities",
-        "/agent/capabilities/schema",
-        "/agent/skills",
-        "/agent/request",
-        "/agent/attestations",
-        "/agent/reputation",
-        "/agent/chain/health",
-        "/agent/marketplace/listing",
-        "/agent/trust/hodlxxi-herald-01",
-        "/agent/binding/hodlxxi-herald-01",
-        "/agent/trust-summary/hodlxxi-herald-01.json",
-        "/agent/covenants/hodlxxi-herald-covenant-v1.json",
-    }
-    if (
-        (request.method in {"GET", "HEAD"} and (
-            p in AGENT_PUBLIC_PATHS
-            or p.startswith("/agent/verify/")
-            or p.startswith("/agent/jobs/")
-            or p.startswith("/reports/")
-            or p.startswith("/verify/report/")
-            or p.startswith("/verify/nostr/")
-            or p.startswith("/agent/trust/")
-            or p.startswith("/agent/binding/")
-            or p.startswith("/agent/trust-summary/")
-            or p.startswith("/agent/covenants/")
-        ))
-        or (request.method == "POST" and p in {"/agent/request", "/agent/message"})
-    ):
+    if is_public_agent_path(p, request.method):
         return None
 
     # 2) Public endpoints by function name (handle blueprints)
-    public_endpoints = {
-        "login",
-        "logout",
-        "verify_signature",
-        "guest_login",
-        "static",
-        "convert_wif",
-        "decode_raw_script",
-        "turn_credentials",
-        "api_challenge",
-        "api_verify",
-        "api_demo_free_v2",
-        "userinfo",
-        "set_labels_from_zpub",
-        "universal_login",
-        "lnurl_create",
-        "lnurl_params",
-        "lnurl_callback",
-        "lnurl_check",
-        "oauth_register",
-        "oauth_authorize",
-        "oauth_token",
-        "oauthx_status",
-        "oauthx_docs",
-        "docs_json_alias",
-        "api_docs",
-        # landing & explorer
-        "landing_page",
-        "root_redirect",
-        "oidc_alias",
-        "explorer_page",
-        "verify_pubkey_and_list",
-            "api_public_status",
-}
     if not endpoint_base:
         return None
 
-    if endpoint_base in public_endpoints:
+    if is_public_endpoint(endpoint_base):
         return None
 
     # 3) Everything else requires a logged-in session
     if not session.get("logged_in_pubkey"):
-        auth_header = request.headers.get("Authorization", "")
         # Allow Bearer-token API calls without requiring a web session
-        if auth_header.startswith("Bearer ") and p.startswith("/api/"):
+        if should_allow_bearer_api_without_session(p, auth_header):
             return None
-        auth_header = request.headers.get("Authorization", "")
-        if (
-            p.startswith("/api/")
-            and not p.startswith("/api/playground")
-            and not p.startswith("/api/public/")
-            and not (p == "/api/demo/protected" and auth_header.startswith("Bearer "))
-        ) or p.endswith("/set_labels_from_zpub"):
+        if should_return_401_for_unauthenticated(p, auth_header):
             return jsonify(ok=False, error="Not logged in"), 401
         nxt = request.full_path if request.query_string else request.path
         return redirect(url_for("login", next=nxt))
