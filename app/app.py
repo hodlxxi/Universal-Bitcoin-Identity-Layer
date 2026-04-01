@@ -2140,8 +2140,7 @@ def purge_old_messages():
     CHAT_HISTORY[:] = [m for m in CHAT_HISTORY if is_fresh(m)]
 
 
-@app.route("/app")
-def chat():
+def _browser_chat():
     my_pubkey = session.get("logged_in_pubkey", "")
     online_users_list = list(ONLINE_USERS)
 
@@ -4491,8 +4490,7 @@ KEYRING = {}  # {kid: {"private": str, "public": str, "alg": "RS256", "created":
 
 
 # --- Load/ensure RSA keys (single KID demo; rotate in prod) ---
-@app.route("/login", methods=["GET"])
-def login():
+def _browser_login():
     # Session challenge for legacy /verify_signature flow
     challenge_str = generate_challenge()
     session["challenge"] = challenge_str
@@ -6410,8 +6408,7 @@ def fetch_balance_via_rpc(address):
     return total_sats
 
 
-@app.route("/home", methods=["GET"], endpoint="home")  # 👈 alias keeps url_for('home') working
-def home_page():
+def _browser_home_page():
     access_level = session.get("access_level", "limited")
     initial_pubkey = request.args.get("pubkey", "")
 
@@ -8202,24 +8199,20 @@ function maskDeepLinkedKeyForLimited() {
 
 # --- Aliases: panels live inside /home (hash router) ---
 # If any UI link navigates by path, keep it working.
-@app.route("/explorer", methods=["GET"])
-def explorer_alias():
+def _browser_explorer_alias():
     return redirect("/home#explorer")
 
 
-@app.route("/onboard", methods=["GET"])
-def onboard_alias():
+def _browser_onboard_alias():
     return redirect("/home#onboard")
 
 
-@app.route("/oneword", methods=["GET"])
-def oneword_alias():
+def _browser_oneword_alias():
     # legacy / typo route - keep backwards compatibility
     return redirect("/home")
 
 
-@app.route("/logout")
-def logout():
+def _browser_logout():
     session.clear()
     return redirect(url_for("login"))
 
@@ -9593,8 +9586,7 @@ def _lnurl_bech32(url_str: str) -> str:
     return _bech32_encode("lnurl", _convertbits(url_str.encode("utf-8"), 8, 5))
 
 
-@app.route("/", methods=["GET"])
-def root_redirect():
+def _browser_root_redirect():
     """Public front door:
     - logged-in users -> /home
     - everyone else   -> agent-first homepage
@@ -12011,8 +12003,7 @@ def oauth_client_rotate_secret(client_id):
     return resp, 200
 
 
-@app.route("/playground", methods=["GET"])
-def playground():
+def _browser_playground():
     # Public demo page
     from flask import render_template
 
@@ -12609,3 +12600,7 @@ def api_hide_manifesto():
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+from app.browser_routes import register_browser_routes
+register_browser_routes(app)
