@@ -108,6 +108,18 @@ from app.tokens import issue_rs256_jwt
 from app.pof_routes import pof_bp, pof_api_bp
 from app.dev_routes import dev_bp
 from app.blueprints.agent import agent_bp
+from app.presence_chat_state import (
+    ACTIVE_SOCKETS,
+    CHAT_HISTORY,
+    ONLINE_META,
+    ONLINE_USER_META,
+    ONLINE_USERS,
+    build_online_list_payload,
+    classify_presence,
+    format_chat_message,
+    normalize_chat_text,
+    purge_old_messages,
+)
 
 # from app.playground_routes import playground_bp   # <-- ADD THIS
 from flask import make_response
@@ -307,8 +319,6 @@ def _as_bool(v, default=False):
 
 
 LNURL_SESSIONS = {}
-
-ONLINE_META: Dict[str, str] = {}
 
 # Improved secret key handling
 FLASK_SECRET_KEY = CFG.get("FLASK_SECRET_KEY")
@@ -551,13 +561,6 @@ def _pop_auth_code_pkce(code: str):
 
     return AUTH_CODE_STORE.pop(code, None)
 
-
-EXPIRY_SECONDS = 45
-ACTIVE_SOCKETS: Dict[str, str] = {}
-ONLINE_USER_META = {}  # pubkey -> {'role': <role>, 'label': <label>}
-
-ONLINE_USERS: Set[str] = set()
-CHAT_HISTORY: List[Dict[str, any]] = []
 
 # ============================================================================
 # GROUP VIDEO CALLS (up to 4 participants)
@@ -1308,46 +1311,6 @@ def extract_script_from_any_descriptor(descriptor: str) -> str | None:
     return m.group(1) if m else None
 
 
-def classify_presence(pubkey: str | None, access_level: str | None) -> str:
-    """
-    Decide chip color role for a user:
-      full    -> Orange
-      limited -> Green
-      pin     -> White (PIN guest)
-      random  -> Red   (anonymous guest like 'guest-xxxx')
-
-    HARDENED:
-      - tolerate None / whitespace
-      - tolerate missing PIN maps
-      - never raise (socket connect must not crash)
-    """
-    pk = (pubkey or "").strip()
-    lvl = (access_level or "").strip().lower()
-
-    if not pk:
-        return "limited"
-
-    if pk.startswith("guest-"):
-        return "random"
-
-    if pk.isdigit():
-        return "pin"
-
-    try:
-        pin_map = globals().get("GUEST_PINS") or globals().get("GUEST_STATIC_PINS") or {}
-        if pk in pin_map:
-            return "pin"
-    except Exception:
-        pass
-
-    if lvl == "full":
-        return "full"
-    if lvl == "limited":
-        return "limited"
-
-    return "limited"
-
-
 # --- WebRTC signaling relay (server) ---
 
 
@@ -1613,7 +1576,7 @@ def _broadcast_chat_message(text: str):
         logger.warning("Message received from unauthenticated user")
         return
 
-    m = {"pubkey": pk, "text": str(text), "ts": time.time()}
+    m = format_chat_message(pk, text)
     CHAT_HISTORY.append(m)
     purge_old_messages()
 
@@ -1639,12 +1602,7 @@ def handle_chat_send(data):
     Client sends: socket.emit('chat:send', { text: 'hello' })
     """
     try:
-        # data can be dict or string; normalize to text
-        if isinstance(data, dict):
-            text = (data.get("text") or "").strip()
-        else:
-            text = str(data or "").strip()
-
+        text = normalize_chat_text(data)
         if not text:
             return
 
@@ -2069,7 +2027,8 @@ def on_connect(auth=None):
     level = session.get("access_level")
     if not pubkey:
         return False
-    role = classify_presence(pubkey, level)
+    pin_map = globals().get("GUEST_PINS") or globals().get("GUEST_STATIC_PINS") or {}
+    role = classify_presence(pubkey, level, pin_map=pin_map)
 
     ACTIVE_SOCKETS[request.sid] = pubkey
     ONLINE_USERS.add(pubkey)
@@ -2088,15 +2047,7 @@ def on_connect(auth=None):
     except Exception:
         pass
     emit("user:joined", {"pubkey": pubkey, "role": role, "label": label}, broadcast=True)
-    online_list = [{"pubkey": pk, "role": ONLINE_META.get(pk, "limited")} for pk in ONLINE_USERS]
-    # PRESENCE_LABEL_BROADCAST_V2: ensure online:list items include label when available
-    try:
-        for it in online_list:
-            if isinstance(it, dict) and "pubkey" in it and "label" not in it:
-                meta = ONLINE_USER_META.get(it["pubkey"], {})
-                it["label"] = meta.get("label")
-    except Exception:
-        pass
+    online_list = build_online_list_payload(ONLINE_USERS, ONLINE_META, ONLINE_USER_META)
     emit("online:list", online_list, broadcast=True)
 
 
@@ -2114,30 +2065,8 @@ def on_disconnect(*args, **kwargs):
         # Use emit() not socketio.emit()
         emit("user:left", {"pubkey": pubkey}, broadcast=True)
 
-        online_list = [{"pubkey": pk, "role": ONLINE_META.get(pk, "limited")} for pk in ONLINE_USERS]
-        # PRESENCE_LABEL_BROADCAST_V2: ensure online:list items include label when available
-        try:
-            for it in online_list:
-                if isinstance(it, dict) and "pubkey" in it and "label" not in it:
-                    meta = ONLINE_USER_META.get(it["pubkey"], {})
-                    it["label"] = meta.get("label")
-        except Exception:
-            pass
+        online_list = build_online_list_payload(ONLINE_USERS, ONLINE_META, ONLINE_USER_META)
         emit("online:list", online_list, broadcast=True)
-
-
-def purge_old_messages():
-    """Keep only messages newer than EXPIRY_SECONDS."""
-    import time
-
-    now = time.time()
-
-    def is_fresh(m):
-        ts = m.get("ts") if isinstance(m, dict) else None
-        return ts is not None and (now - ts) <= EXPIRY_SECONDS
-
-    global CHAT_HISTORY
-    CHAT_HISTORY[:] = [m for m in CHAT_HISTORY if is_fresh(m)]
 
 
 @app.route("/app")
