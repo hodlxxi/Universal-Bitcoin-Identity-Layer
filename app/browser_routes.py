@@ -1,6 +1,12 @@
 import time
 from flask import redirect, render_template, render_template_string, session, url_for
 
+_BROWSER_ROUTE_HANDLERS = {}
+
+
+def get_browser_route_handler(name):
+    return _BROWSER_ROUTE_HANDLERS.get(name)
+
 
 def register_browser_routes(app, *, generate_challenge, get_rpc_connection, logger):
     """Register minimal browser entry routes."""
@@ -1319,6 +1325,7 @@ def register_browser_routes(app, *, generate_challenge, get_rpc_connection, logg
             mempool_txs=mempool_txs,
             mempool_usage=mempool_usage,
         )
+    _BROWSER_ROUTE_HANDLERS["login"] = login
     
     
 
@@ -1326,6 +1333,7 @@ def register_browser_routes(app, *, generate_challenge, get_rpc_connection, logg
     def logout():
         session.clear()
         return redirect(url_for("login"))
+    _BROWSER_ROUTE_HANDLERS["logout"] = logout
     
 
     @app.route("/", methods=["GET"])
@@ -1370,6 +1378,7 @@ def register_browser_routes(app, *, generate_challenge, get_rpc_connection, logg
                 "Bitcoin-native identity orientation",
             ],
         )
+    _BROWSER_ROUTE_HANDLERS["root_redirect"] = root_redirect
     
     
 
@@ -1377,7 +1386,7 @@ def register_browser_routes(app, *, generate_challenge, get_rpc_connection, logg
     def playground():
         # Public demo page
         from flask import render_template
-    
-        return render_template("playground.html")
-    
 
+        return render_template("playground.html")
+    _BROWSER_ROUTE_HANDLERS["playground"] = playground
+    

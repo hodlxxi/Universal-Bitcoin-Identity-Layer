@@ -108,7 +108,7 @@ from app.tokens import issue_rs256_jwt
 from app.pof_routes import pof_bp, pof_api_bp
 from app.dev_routes import dev_bp
 from app.blueprints.agent import agent_bp
-from app.browser_routes import register_browser_routes
+from app.browser_routes import get_browser_route_handler, register_browser_routes
 
 # from app.playground_routes import playground_bp   # <-- ADD THIS
 from flask import make_response
@@ -10656,6 +10656,29 @@ register_browser_routes(
     get_rpc_connection=get_rpc_connection,
     logger=logger,
 )
+
+
+def _call_browser_route_alias(alias_name):
+    handler = get_browser_route_handler(alias_name)
+    if handler is None:
+        raise RuntimeError(f"Browser route handler '{alias_name}' is not registered")
+    return handler()
+
+
+def login():
+    return _call_browser_route_alias("login")
+
+
+def logout():
+    return _call_browser_route_alias("logout")
+
+
+def root_redirect():
+    return _call_browser_route_alias("root_redirect")
+
+
+def playground():
+    return _call_browser_route_alias("playground")
 
 @app.route("/api/debug/session", methods=["GET"])
 def api_debug_session_alias():
