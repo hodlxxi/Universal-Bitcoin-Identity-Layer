@@ -6887,11 +6887,6 @@ function maskDeepLinkedKeyForLimited() {
 
 # --- Aliases: panels live inside /home (hash router) ---
 # If any UI link navigates by path, keep it working.
-@app.route("/explorer", methods=["GET"])
-def explorer_alias():
-    return redirect("/home#explorer")
-
-
 @app.route("/onboard", methods=["GET"])
 def onboard_alias():
     return redirect("/home#onboard")
