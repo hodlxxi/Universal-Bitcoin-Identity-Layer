@@ -6892,11 +6892,6 @@ def explorer_alias():
     return redirect("/home#explorer")
 
 
-@app.route("/onboard", methods=["GET"])
-def onboard_alias():
-    return redirect("/home#onboard")
-
-
 @app.route("/oneword", methods=["GET"])
 def oneword_alias():
     # legacy / typo route - keep backwards compatibility
