@@ -2141,15 +2141,8 @@ def purge_old_messages():
     CHAT_HISTORY[:] = [m for m in CHAT_HISTORY if is_fresh(m)]
 
 
-@app.route("/app")
-def chat():
-    my_pubkey = session.get("logged_in_pubkey", "")
-    online_users_list = list(ONLINE_USERS)
-
-    # Make sure only fresh messages are in memory (<= 45 seconds old)
-    purge_old_messages()
-
-    chat_html = r"""
+def _build_chat_html():
+    return r"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -4462,16 +4455,53 @@ function addRemoteTile(pk, stream){
 
 
     """
-    return render_template_string(
-        chat_html,
-        history=CHAT_HISTORY,
+
+
+def _resolve_chat_session_identity():
+    return session.get("logged_in_pubkey", ""), session.get("access_level", "limited")
+
+
+def _build_chat_dependency_bundle():
+    return {
+        "special_names": SPECIAL_NAMES,
+        "force_relay": FORCE_RELAY,
+    }
+
+
+def _assemble_chat_template_context(*, my_pubkey, online_users, access_level, dependency_bundle):
+    return {
+        "history": CHAT_HISTORY,
+        "my_pubkey": my_pubkey,
+        "online_users": online_users,
+        "online_count": len(online_users),
+        "special_names": dependency_bundle["special_names"],
+        "force_relay": dependency_bundle["force_relay"],
+        "access_level": access_level,
+    }
+
+
+def _prepare_chat_render(*, html, template_context):
+    return html, template_context
+
+
+def _app_chat_handler():
+    my_pubkey, access_level = _resolve_chat_session_identity()
+    online_users = list(ONLINE_USERS)
+    purge_old_messages()
+    dependency_bundle = _build_chat_dependency_bundle()
+    template_context = _assemble_chat_template_context(
         my_pubkey=my_pubkey,
-        online_users=online_users_list,
-        online_count=len(online_users_list),
-        special_names=SPECIAL_NAMES,
-        force_relay=FORCE_RELAY,
-        access_level=session.get("access_level", "limited"),
+        online_users=online_users,
+        access_level=access_level,
+        dependency_bundle=dependency_bundle,
     )
+    chat_html, render_context = _prepare_chat_render(html=_build_chat_html(), template_context=template_context)
+    return render_template_string(chat_html, **render_context)
+
+
+@app.route("/app")
+def chat():
+    return _app_chat_handler()
 
 
 import base64
