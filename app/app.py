@@ -107,6 +107,7 @@ from app.security import init_security, limiter
 from app.tokens import issue_rs256_jwt
 from app.pof_routes import pof_bp, pof_api_bp
 from app.dev_routes import dev_bp
+from app.browser_routes import register_browser_routes
 from app.blueprints.agent import agent_bp
 
 # from app.playground_routes import playground_bp   # <-- ADD THIS
@@ -931,6 +932,7 @@ app.register_blueprint(pof_api_bp)
 app.register_blueprint(dev_bp, url_prefix="/dev")
 app.register_blueprint(agent_bp)
 # app.register_blueprint(playground_bp)
+register_browser_routes(app)
 
 OAUTH_PATH_PREFIXES = ("/oauth/", "/oauthx/")
 OAUTH_PUBLIC_PATHS = (
@@ -8198,13 +8200,6 @@ function maskDeepLinkedKeyForLimited() {
     logger.debug("home → access_level=%s", access_level)
     
     return render_template_string(html, access_level=access_level, initial_pubkey=initial_pubkey)
-
-
-# --- Aliases: panels live inside /home (hash router) ---
-# If any UI link navigates by path, keep it working.
-@app.route("/explorer", methods=["GET"])
-def explorer_alias():
-    return redirect("/home#explorer")
 
 
 @app.route("/onboard", methods=["GET"])
