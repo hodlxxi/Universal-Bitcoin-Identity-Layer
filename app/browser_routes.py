@@ -1389,4 +1389,10 @@ def register_browser_routes(app, *, generate_challenge, get_rpc_connection, logg
 
         return render_template("playground.html")
     _BROWSER_ROUTE_HANDLERS["playground"] = playground
+
+    @app.route("/oneword", methods=["GET"], endpoint="oneword_alias")
+    def oneword_alias():
+        # legacy / typo route - keep backwards compatibility
+        return redirect("/home")
+    _BROWSER_ROUTE_HANDLERS["oneword_alias"] = oneword_alias
     
