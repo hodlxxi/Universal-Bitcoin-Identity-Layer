@@ -108,6 +108,7 @@ from app.tokens import issue_rs256_jwt
 from app.pof_routes import pof_bp, pof_api_bp
 from app.dev_routes import dev_bp
 from app.blueprints.agent import agent_bp
+from app.browser_routes import register_browser_routes
 
 # from app.playground_routes import playground_bp   # <-- ADD THIS
 from flask import make_response
@@ -663,6 +664,11 @@ except Exception as _e:
     # Docs are non-critical; do not break service if something is misconfigured.
     app.logger.warning(f"Docs routes not registered: {_e}")
 # === /DOCS_ROUTES_REGISTER_V1 ===
+
+try:
+    register_browser_routes(app, redirect=redirect)
+except Exception as _e:
+    app.logger.warning(f"Browser routes not registered: {_e}")
 
 
 @app.route("/screensaver")
@@ -8202,11 +8208,6 @@ function maskDeepLinkedKeyForLimited() {
 
 # --- Aliases: panels live inside /home (hash router) ---
 # If any UI link navigates by path, keep it working.
-@app.route("/explorer", methods=["GET"])
-def explorer_alias():
-    return redirect("/home#explorer")
-
-
 @app.route("/onboard", methods=["GET"])
 def onboard_alias():
     return redirect("/home#onboard")
