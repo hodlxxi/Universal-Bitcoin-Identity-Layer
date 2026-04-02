@@ -2141,15 +2141,22 @@ def purge_old_messages():
     CHAT_HISTORY[:] = [m for m in CHAT_HISTORY if is_fresh(m)]
 
 
-@app.route("/app")
-def chat():
-    my_pubkey = session.get("logged_in_pubkey", "")
-    online_users_list = list(ONLINE_USERS)
+def _resolve_chat_session_pubkey():
+    return session.get("logged_in_pubkey", "")
 
+
+def _prepare_chat_state():
+    online_users_list = list(ONLINE_USERS)
     # Make sure only fresh messages are in memory (<= 45 seconds old)
     purge_old_messages()
+    return {
+        "online_users": online_users_list,
+        "online_count": len(online_users_list),
+    }
 
-    chat_html = r"""
+
+def _build_chat_html():
+    return r"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -4462,16 +4469,27 @@ function addRemoteTile(pk, stream){
 
 
     """
+
+
+def _app_chat_handler():
+    my_pubkey = _resolve_chat_session_pubkey()
+    state = _prepare_chat_state()
+
     return render_template_string(
-        chat_html,
+        _build_chat_html(),
         history=CHAT_HISTORY,
         my_pubkey=my_pubkey,
-        online_users=online_users_list,
-        online_count=len(online_users_list),
+        online_users=state["online_users"],
+        online_count=state["online_count"],
         special_names=SPECIAL_NAMES,
         force_relay=FORCE_RELAY,
         access_level=session.get("access_level", "limited"),
     )
+
+
+@app.route("/app")
+def chat():
+    return _app_chat_handler()
 
 
 import base64
