@@ -1389,4 +1389,9 @@ def register_browser_routes(app, *, generate_challenge, get_rpc_connection, logg
 
         return render_template("playground.html")
     _BROWSER_ROUTE_HANDLERS["playground"] = playground
+
+    @app.route("/explorer", methods=["GET"], endpoint="explorer_alias")
+    def explorer_alias():
+        return redirect("/home#explorer")
+    _BROWSER_ROUTE_HANDLERS["explorer_alias"] = explorer_alias
     
