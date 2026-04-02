@@ -2141,10 +2141,40 @@ def purge_old_messages():
     CHAT_HISTORY[:] = [m for m in CHAT_HISTORY if is_fresh(m)]
 
 
-@app.route("/app")
-def chat():
-    my_pubkey = session.get("logged_in_pubkey", "")
+def _resolve_chat_access_level():
+    return session.get("access_level", "limited")
+
+
+def _prepare_online_user_state():
     online_users_list = list(ONLINE_USERS)
+    return {
+        "online_users": online_users_list,
+        "online_count": len(online_users_list),
+    }
+
+
+def _prepare_chat_template_context(my_pubkey, online_state, access_level):
+    return {
+        "history": CHAT_HISTORY,
+        "my_pubkey": my_pubkey,
+        "online_users": online_state["online_users"],
+        "online_count": online_state["online_count"],
+        "special_names": SPECIAL_NAMES,
+        "force_relay": FORCE_RELAY,
+        "access_level": access_level,
+    }
+
+
+def _build_chat_render_args(chat_html, template_context):
+    render_args = {"chat_html": chat_html}
+    render_args.update(template_context)
+    return render_args
+
+
+def _app_chat_handler():
+    my_pubkey = session.get("logged_in_pubkey", "")
+    online_state = _prepare_online_user_state()
+    access_level = _resolve_chat_access_level()
 
     # Make sure only fresh messages are in memory (<= 45 seconds old)
     purge_old_messages()
@@ -4462,16 +4492,14 @@ function addRemoteTile(pk, stream){
 
 
     """
-    return render_template_string(
-        chat_html,
-        history=CHAT_HISTORY,
-        my_pubkey=my_pubkey,
-        online_users=online_users_list,
-        online_count=len(online_users_list),
-        special_names=SPECIAL_NAMES,
-        force_relay=FORCE_RELAY,
-        access_level=session.get("access_level", "limited"),
-    )
+    template_context = _prepare_chat_template_context(my_pubkey, online_state, access_level)
+    render_args = _build_chat_render_args(chat_html, template_context)
+    return render_template_string(render_args.pop("chat_html"), **render_args)
+
+
+@app.route("/app")
+def chat():
+    return _app_chat_handler()
 
 
 import base64
