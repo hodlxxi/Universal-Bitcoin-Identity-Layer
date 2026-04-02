@@ -1389,4 +1389,10 @@ def register_browser_routes(app, *, generate_challenge, get_rpc_connection, logg
 
         return render_template("playground.html")
     _BROWSER_ROUTE_HANDLERS["playground"] = playground
+
+
+    @app.route("/onboard", methods=["GET"], endpoint="onboard_alias")
+    def onboard_alias():
+        return redirect("/home#onboard")
+    _BROWSER_ROUTE_HANDLERS["onboard_alias"] = onboard_alias
     
