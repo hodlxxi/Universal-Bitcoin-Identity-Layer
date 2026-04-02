@@ -6897,13 +6897,6 @@ def onboard_alias():
     return redirect("/home#onboard")
 
 
-@app.route("/oneword", methods=["GET"])
-def oneword_alias():
-    # legacy / typo route - keep backwards compatibility
-    return redirect("/home")
-
-
-
 @app.route("/verify_pubkey_and_list", methods=["GET"])
 def verify_pubkey_and_list():
     import re
