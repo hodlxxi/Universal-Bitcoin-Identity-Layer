@@ -664,6 +664,15 @@ except Exception as _e:
     app.logger.warning(f"Docs routes not registered: {_e}")
 # === /DOCS_ROUTES_REGISTER_V1 ===
 
+# === BROWSER_ROUTES_REGISTER_V1 ===
+try:
+    from .browser_routes import register_browser_routes
+
+    register_browser_routes(app)
+except Exception as _e:
+    app.logger.warning(f"Browser routes not registered: {_e}")
+# === /BROWSER_ROUTES_REGISTER_V1 ===
+
 
 @app.route("/screensaver")
 def screensaver():
@@ -8206,10 +8215,6 @@ function maskDeepLinkedKeyForLimited() {
 def explorer_alias():
     return redirect("/home#explorer")
 
-
-@app.route("/onboard", methods=["GET"])
-def onboard_alias():
-    return redirect("/home#onboard")
 
 
 @app.route("/oneword", methods=["GET"])
