@@ -114,8 +114,13 @@ def _handle_socket_disconnect(*args, **kwargs):
         emit("online:list", _build_online_list(ONLINE_USERS, ONLINE_META, ONLINE_USER_META), broadcast=True)
 
 
+def sids_for_pubkey(pk: str):
+    """Get all socket IDs for a given pubkey."""
+    return [sid for sid, who in ACTIVE_SOCKETS.items() if who == pk]
+
+
 def register_socket_handlers(socketio):
-    from app.app import CALL_ROOMS, MAX_ROOM_SIZE, cleanup_old_rooms, logger, sids_for_pubkey, truncate_key
+    from app.app import CALL_ROOMS, MAX_ROOM_SIZE, cleanup_old_rooms, logger, truncate_key
 
     @socketio.on("rtc:offer")
     def rtc_offer(data):
