@@ -1632,13 +1632,7 @@ def handle_message(msg_text):
         logger.error(f"Error handling message: {e}", exc_info=True)
 
 
-@socketio.on("chat:send")
-def handle_chat_send(data):
-    """
-    New handler for our front-end.
-
-    Client sends: socket.emit('chat:send', { text: 'hello' })
-    """
+def _handle_chat_send(data):
     try:
         # data can be dict or string; normalize to text
         if isinstance(data, dict):
@@ -1652,6 +1646,16 @@ def handle_chat_send(data):
         _broadcast_chat_message(text)
     except Exception as e:
         logger.error(f"Error handling chat:send: {e}", exc_info=True)
+
+
+@socketio.on("chat:send")
+def handle_chat_send(data):
+    """
+    New handler for our front-end.
+
+    Client sends: socket.emit('chat:send', { text: 'hello' })
+    """
+    _handle_chat_send(data)
 
 
 app.config["SESSION_PERMANENT"] = True
@@ -2066,6 +2070,10 @@ def check_auth():
 
 @socketio.on("connect")
 def on_connect(auth=None):
+    return _handle_socket_connect(auth=auth)
+
+
+def _handle_socket_connect(auth=None):
     pubkey = session.get("logged_in_pubkey", "")
     level = session.get("access_level")
     if not pubkey:
@@ -2103,6 +2111,10 @@ def on_connect(auth=None):
 
 @socketio.on("disconnect")
 def on_disconnect(*args, **kwargs):
+    _handle_socket_disconnect(*args, **kwargs)
+
+
+def _handle_socket_disconnect(*args, **kwargs):
     sid = request.sid
     pubkey = ACTIVE_SOCKETS.pop(sid, None)
     if not pubkey:
