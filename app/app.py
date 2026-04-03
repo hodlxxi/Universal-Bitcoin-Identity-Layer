@@ -109,6 +109,7 @@ from app.pof_routes import pof_bp, pof_api_bp
 from app.dev_routes import dev_bp
 from app.blueprints.agent import agent_bp
 from app.browser_routes import get_browser_route_handler, register_browser_routes
+from app.socket_state import ACTIVE_SOCKETS, CHAT_HISTORY, ONLINE_META, ONLINE_USER_META, ONLINE_USERS
 
 # from app.playground_routes import playground_bp   # <-- ADD THIS
 from flask import make_response
@@ -308,8 +309,6 @@ def _as_bool(v, default=False):
 
 
 LNURL_SESSIONS = {}
-
-ONLINE_META: Dict[str, str] = {}
 
 # Improved secret key handling
 FLASK_SECRET_KEY = CFG.get("FLASK_SECRET_KEY")
@@ -554,11 +553,6 @@ def _pop_auth_code_pkce(code: str):
 
 
 EXPIRY_SECONDS = 45
-ACTIVE_SOCKETS: Dict[str, str] = {}
-ONLINE_USER_META = {}  # pubkey -> {'role': <role>, 'label': <label>}
-
-ONLINE_USERS: Set[str] = set()
-CHAT_HISTORY: List[Dict[str, any]] = []
 
 # ============================================================================
 # GROUP VIDEO CALLS (up to 4 participants)
