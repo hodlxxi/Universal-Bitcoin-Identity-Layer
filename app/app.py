@@ -109,6 +109,12 @@ from app.pof_routes import pof_bp, pof_api_bp
 from app.dev_routes import dev_bp
 from app.blueprints.agent import agent_bp
 from app.browser_routes import get_browser_route_handler, register_browser_routes
+from app.socket_handlers import (
+    _broadcast_chat_message,
+    _handle_chat_send,
+    _handle_socket_connect,
+    _handle_socket_disconnect,
+)
 
 # from app.playground_routes import playground_bp   # <-- ADD THIS
 from flask import make_response
@@ -1607,22 +1613,6 @@ def rtc_invite(data):
         emit("rtc:invite", {"room_id": room_id, "from": from_pubkey, "from_name": from_pubkey[-8:]}, room=sid)
 
 
-def _broadcast_chat_message(text: str):
-    """Shared logic to append to history and broadcast to all clients."""
-    pk = session.get("logged_in_pubkey")
-    if not pk:
-        logger.warning("Message received from unauthenticated user")
-        return
-
-    m = {"pubkey": pk, "text": str(text), "ts": time.time()}
-    CHAT_HISTORY.append(m)
-    purge_old_messages()
-
-    # Old clients listen to "message", new UI listens to both
-    socketio.emit("message", m)
-    socketio.emit("chat:message", m)
-
-
 @socketio.on("message")
 def handle_message(msg_text):
     """Legacy handler for default Socket.IO 'message' event."""
@@ -1634,24 +1624,8 @@ def handle_message(msg_text):
 
 @socketio.on("chat:send")
 def handle_chat_send(data):
-    """
-    New handler for our front-end.
-
-    Client sends: socket.emit('chat:send', { text: 'hello' })
-    """
-    try:
-        # data can be dict or string; normalize to text
-        if isinstance(data, dict):
-            text = (data.get("text") or "").strip()
-        else:
-            text = str(data or "").strip()
-
-        if not text:
-            return
-
-        _broadcast_chat_message(text)
-    except Exception as e:
-        logger.error(f"Error handling chat:send: {e}", exc_info=True)
+    """Thin decorator wrapper for chat send logic."""
+    _handle_chat_send(data)
 
 
 app.config["SESSION_PERMANENT"] = True
@@ -2066,65 +2040,12 @@ def check_auth():
 
 @socketio.on("connect")
 def on_connect(auth=None):
-    pubkey = session.get("logged_in_pubkey", "")
-    level = session.get("access_level")
-    if not pubkey:
-        return False
-    role = classify_presence(pubkey, level)
-
-    ACTIVE_SOCKETS[request.sid] = pubkey
-    ONLINE_USERS.add(pubkey)
-    ONLINE_META[pubkey] = role
-
-    # Use emit() not socketio.emit()
-    # PRESENCE_LABEL_BROADCAST_V2: attach label to presence join payload (PIN guests)
-    label = None
-    try:
-        if session.get("login_method") == "pin_guest":
-            label = session.get("guest_label")
-    except Exception:
-        label = None
-    try:
-        ONLINE_USER_META[pubkey] = {"role": role, "label": label}
-    except Exception:
-        pass
-    emit("user:joined", {"pubkey": pubkey, "role": role, "label": label}, broadcast=True)
-    online_list = [{"pubkey": pk, "role": ONLINE_META.get(pk, "limited")} for pk in ONLINE_USERS]
-    # PRESENCE_LABEL_BROADCAST_V2: ensure online:list items include label when available
-    try:
-        for it in online_list:
-            if isinstance(it, dict) and "pubkey" in it and "label" not in it:
-                meta = ONLINE_USER_META.get(it["pubkey"], {})
-                it["label"] = meta.get("label")
-    except Exception:
-        pass
-    emit("online:list", online_list, broadcast=True)
+    return _handle_socket_connect(auth=auth)
 
 
 @socketio.on("disconnect")
 def on_disconnect(*args, **kwargs):
-    sid = request.sid
-    pubkey = ACTIVE_SOCKETS.pop(sid, None)
-    if not pubkey:
-        return
-
-    if pubkey not in ACTIVE_SOCKETS.values():
-        ONLINE_USERS.discard(pubkey)
-        ONLINE_META.pop(pubkey, None)
-
-        # Use emit() not socketio.emit()
-        emit("user:left", {"pubkey": pubkey}, broadcast=True)
-
-        online_list = [{"pubkey": pk, "role": ONLINE_META.get(pk, "limited")} for pk in ONLINE_USERS]
-        # PRESENCE_LABEL_BROADCAST_V2: ensure online:list items include label when available
-        try:
-            for it in online_list:
-                if isinstance(it, dict) and "pubkey" in it and "label" not in it:
-                    meta = ONLINE_USER_META.get(it["pubkey"], {})
-                    it["label"] = meta.get("label")
-        except Exception:
-            pass
-        emit("online:list", online_list, broadcast=True)
+    return _handle_socket_disconnect(*args, **kwargs)
 
 
 def purge_old_messages():
