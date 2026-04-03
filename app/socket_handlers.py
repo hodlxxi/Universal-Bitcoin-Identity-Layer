@@ -10,6 +10,8 @@ import time
 from flask import request, session
 from flask_socketio import emit
 
+from app.socket_state import ACTIVE_SOCKETS, CHAT_HISTORY, ONLINE_META, ONLINE_USER_META, ONLINE_USERS
+
 
 # TEMP runtime imports from app.app
 # NOTE: these imports stay inside functions to avoid import-time circulars while
@@ -18,7 +20,7 @@ from flask_socketio import emit
 
 def _broadcast_chat_message(text: str):
     """Shared logic to append to history and broadcast to all clients."""
-    from app.app import CHAT_HISTORY, logger, purge_old_messages, socketio
+    from app.app import logger, purge_old_messages, socketio
 
     pk = session.get("logged_in_pubkey")
     if not pk:
@@ -71,7 +73,7 @@ def _build_online_list(online_users, online_meta, online_user_meta):
 
 
 def _handle_socket_connect(auth=None):
-    from app.app import ACTIVE_SOCKETS, ONLINE_META, ONLINE_USERS, ONLINE_USER_META, classify_presence
+    from app.app import classify_presence
 
     pubkey = session.get("logged_in_pubkey", "")
     level = session.get("access_level")
@@ -100,8 +102,6 @@ def _handle_socket_connect(auth=None):
 
 
 def _handle_socket_disconnect(*args, **kwargs):
-    from app.app import ACTIVE_SOCKETS, ONLINE_META, ONLINE_USERS, ONLINE_USER_META
-
     sid = request.sid
     pubkey = ACTIVE_SOCKETS.pop(sid, None)
     if not pubkey:
