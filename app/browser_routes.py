@@ -66,44 +66,44 @@ def register_browser_routes(
       <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
       <meta name="theme-color" content="#00ff88"/>
       <title>HODLXXI — Login</title>
-    
+
       <style>
         :root{
           --bg: #000;
           --fg: rgba(235,255,245,.92);
           --muted: rgba(235,255,245,.70);
-    
+
           --accent: rgba(0,255,136,.95);
           --warn: rgba(255,42,42,.90);
           --blue: rgba(59,130,246,.95);
           --violet: rgba(139,92,246,.95);
           --orange: rgba(249,115,22,.95);
-    
+
           --glass: rgba(8,12,10,.22);
           --glass2: rgba(0,0,0,.20);
           --stroke: rgba(255,255,255,.08);
-    
+
           --radius: 16px;
           --pad: 14px;
           --mono: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
           --sans: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
         }
-    
+
         *{ box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color: transparent; }
         html,body{ height:100%; background:var(--bg); color:var(--fg); overflow-x:hidden; }
         body{ font-family: var(--sans); }
-    
+
         /* Matrix canvas */
         #matrix-bg{ position:fixed; inset:0; width:100vw; height:100vh; display:block; z-index:0; pointer-events:none; }
         body > *:not(#matrix-bg){ position:relative; z-index:1; }
-    
+
         /* Content */
         .wrap{
           max-width: 980px;
           margin: 0 auto;
           padding: 84px 14px 22px;
         }
-    
+
         /* Minimal header */
         .topline{
           display:flex;
@@ -127,7 +127,7 @@ def register_browser_routes(
           color: rgba(235,255,245,.62);
           user-select:none;
         }
-    
+
         /* Panel (glass card) */
         .panel{
           border-radius: var(--radius);
@@ -158,14 +158,14 @@ def register_browser_routes(
           user-select:none;
         }
         .panel-bd{ padding: var(--pad); }
-    
+
         .manifesto-text{font-family:var(--mono);font-size:12px;line-height:1.55;color:rgba(235,255,245,.78)}
         .manifesto-text b{color:var(--accent)}
         .manifesto-text p{margin:.35rem 0}
         .home-link{color:var(--accent);text-decoration:none}
         .home-link:hover,.home-link:focus{text-decoration:underline;outline:none;text-shadow:0 0 14px rgba(0,255,136,.45)}
-    
-    
+
+
         .hintline{
           font-family: var(--mono);
           font-size: 11px;
@@ -173,7 +173,7 @@ def register_browser_routes(
           line-height: 1.35;
         }
         .hintline b{ color: var(--accent); }
-    
+
         /* Tabs + actions */
         .tabs{
           display:flex; gap:6px; flex-wrap:wrap; align-items:center;
@@ -194,7 +194,7 @@ def register_browser_routes(
           border-color: rgba(0,255,136,.35);
           box-shadow: 0 0 0 1px rgba(0,255,136,.12) inset;
         }
-    
+
         .pill-actions{
           display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; align-items:center;
           margin-left:auto;
@@ -215,11 +215,11 @@ def register_browser_routes(
           gap:8px;
         }
         .pill:active{ transform: translateY(1px); background: rgba(0,0,0,.28); }
-    
+
         .pill.ln{ border-color: rgba(249,115,22,.35); box-shadow: 0 0 0 1px rgba(249,115,22,.10) inset; }
         .pill.nostr{ border-color: rgba(139,92,246,.35); box-shadow: 0 0 0 1px rgba(139,92,246,.10) inset; }
         .pill.primary{ border-color: rgba(0,255,136,.35); box-shadow: 0 0 0 1px rgba(0,255,136,.12) inset; }
-    
+
         /* Forms */
         label{
           display:block;
@@ -243,15 +243,15 @@ def register_browser_routes(
           appearance:none;
         }
         textarea{ min-height: 120px; resize: vertical; font-family: var(--mono); font-size: 12px; }
-    
+
         input:focus, textarea:focus{
           border-color: rgba(0,255,136,.35);
           box-shadow: 0 0 0 1px rgba(0,255,136,.12) inset;
         }
-    
+
         .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:flex-start; }
         .col{ flex: 1 1 260px; min-width: 0; }
-    
+
         .btnrow{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top: 10px; }
         .btn{
           flex: 1 1 180px;
@@ -277,7 +277,7 @@ def register_browser_routes(
           border-color: rgba(255,42,42,.35);
           box-shadow: 0 0 0 1px rgba(255,42,42,.10) inset;
         }
-    
+
         .status{
           font-family: var(--mono);
           font-size: 11px;
@@ -285,7 +285,7 @@ def register_browser_routes(
           padding: 10px 0 0;
           min-height: 18px;
         }
-    
+
         /* Challenge card */
         .card{
           border-radius: 14px;
@@ -305,9 +305,9 @@ def register_browser_routes(
           user-select: none;
           text-align: center;
         }
-    
+
         .hidden{ display:none !important; }
-    
+
         /* QR modal (glass, not white) */
         .body-locked{ height: 100dvh; overflow:hidden; }
         #qrModal{
@@ -370,13 +370,13 @@ def register_browser_routes(
           font-size: 11px;
           color: rgba(235,255,245,.72);
         }
-    
+
         @media (prefers-reduced-motion: reduce){
           #matrix-bg{ display:none !important; }
           *{ transition:none !important; animation:none !important; }
         }
-    
-    
+
+
     /* LOGIN_MANIFESTO_SINGLE_V1_CSS */
     .manifesto-details{ position:relative; }
     .manifesto-summary{
@@ -402,7 +402,7 @@ def register_browser_routes(
       transform: translateY(-1px);
       transition: transform .18s ease;
     }
-    
+
     /* closed: show ~3 lines */
     .manifesto-preview{
       max-height: 4.9em;
@@ -418,7 +418,7 @@ def register_browser_routes(
       background: linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,.55));
       pointer-events:none;
     }
-    
+
     /* open: reveal full */
     .manifesto-full{ display:none; }
     .manifesto-details[open] .manifesto-full{ display:block; margin-top: 10px; }
@@ -429,16 +429,16 @@ def register_browser_routes(
       content:" (collapse)";
       color: rgba(235,255,245,.55);
     }
-    
+
     </style>
       <link rel="stylesheet" href="/static/ui_core.css?v=1"/></head>
-    
+
     <body>
       <canvas id="matrix-bg" aria-hidden="true"></canvas>
-    
+
       <!-- Optional login sound -->
       <audio id="login-sound" src="/static/sounds/message.mp3" preload="auto" playsinline></audio>
-    
+
       <div class="wrap">
         <!-- LOGIN_MANIFESTO_SINGLE_V1: single manifesto panel -->
         <div class="manifesto panel">
@@ -452,19 +452,19 @@ def register_browser_routes(
                 <span class="manifesto-summary-label">Read more</span>
                 <span class="manifesto-summary-icon" aria-hidden="true">▾</span>
               </summary>
-    
+
               <div class="manifesto-preview manifesto-text">
                 <p><b>HODLXXI</b> is a Bitcoin-native Auth0: sign-in with keys, not accounts.</p>
                 <p>OAuth2/OIDC for apps, LNURL-Auth for wallets, Nostr for social identity, and Proof-of-Funds for trust gating.</p>
               </div>
-    
+
               <div class="manifesto-full manifesto-text">
                 <p><b>Keys replace accounts.</b> You authenticate by proving control of a key — not by handing over email + password.</p>
                 <p><b>Developers get standards:</b> OAuth2/OIDC for Web2/Web3 apps, sessions, scopes, and redirects.</p>
                 <p><b>Users get native flows:</b> Bitcoin signatures, LNURL-Auth QR, Nostr extensions, and optional Proof-of-Funds signals.</p>
                 <p><b>Presence is a signal</b> (who is online / ready to coordinate), not a harvested social graph.</p>
                 <p><b>Covenant descriptors</b> extend identity into time: reciprocal commitments with observable rules.</p>
-    
+
                 <p style="margin-top:.6rem;opacity:.92">
                   <a class="home-link" href="/new-index">← Home</a>
                 </p>
@@ -472,28 +472,28 @@ def register_browser_routes(
             </details>
           </div>
         </div>
-    
-    
-        
-    
+
+
+
+
         <div class="topline">
           <div>
             <div class="brand">HODLXXI // LOGIN</div>
           </div>
           <div class="sub" id="miniStatus">status: ready</div>
         </div>
-    
+
         <section class="panel">
           <div class="panel-hd">
             <div class="panel-title">Authenticate</div>
-    
+
     <div class="tabs" role="tablist" aria-label="Login methods">
       <button id="tabGuest" class="tab is-active" onclick="showTab('guest')" type="button">Guest</button>
       <button id="tabLegacy" class="tab" onclick="showTab('legacy')" type="button">Legacy</button>
       <button id="tabApi" class="tab" onclick="showTab('api')" type="button">API</button>
       <button id="tabSpecial" class="tab" onclick="showTab('special')" type="button">Special</button>
     </div>
-    
+
             <div class="pill-actions">
               <button class="pill nostr" type="button" onclick="loginWithNostr()" id="nostrBtn">🟣 Nostr</button>
               <button class="pill ln" type="button" onclick="loginWithLightning()" id="lnBtn">⚡ Lightning</button>
@@ -502,22 +502,22 @@ def register_browser_routes(
               <a class="pill" href="/docs2" style="text-decoration:none;">📚 Docs</a>
             </div>
             <!-- LOGIN_MANIFESTO_DETAILS_V2: Variant C -->
-            
-    
+
+
           </div>
-    
+
           <div class="panel-bd">
             <div class="hintline">
               Start with <b>Guest</b> or authenticate using <b>Lightning</b>, <b>Nostr</b>, or <b>Legacy</b>.
               Use <b>Lightning</b> for LNURL-Auth QR. Use <b>Nostr</b> via extension.
             </div>
-    
+
             <!-- Legacy panel -->
              <div id="panelLegacy" class="hidden">
               <div class="card">
                 <div class="challenge" id="legacyChallenge" title="Tap to copy">{{ challenge }}</div>
               </div>
-    
+
               <div class="row">
                 <div class="col">
                   <label for="legacyPubkey">Public key (hex)</label>
@@ -528,15 +528,15 @@ def register_browser_routes(
                   <textarea id="legacySignature" rows="4" placeholder="paste signature"></textarea>
                 </div>
               </div>
-    
+
               <div class="btnrow">
                 <button class="btn" type="button" onclick="copyText('legacyChallenge')">Copy challenge</button>
                 <button class="btn primary" type="button" onclick="legacyVerify()">Verify &amp; Login</button>
               </div>
-    
+
               <div id="legacyStatus" class="status"></div>
             </div>
-    
+
             <!-- API panel -->
             <div id="panelApi" class="hidden">
               <div class="row">
@@ -549,12 +549,12 @@ def register_browser_routes(
                   <textarea id="apiChallenge" rows="3" readonly></textarea>
                 </div>
               </div>
-    
+
               <div class="btnrow">
                 <button class="btn primary" type="button" onclick="getChallenge()">Get challenge</button>
                 <button class="btn" type="button" onclick="copyText('apiChallenge')">Copy</button>
               </div>
-    
+
               <div class="row">
                 <div class="col">
                   <label for="apiSignature">Signature (base64)</label>
@@ -565,14 +565,14 @@ def register_browser_routes(
                   <input id="apiCid" readonly />
                 </div>
               </div>
-    
+
               <div class="btnrow">
                 <button class="btn primary" type="button" onclick="apiVerify()">Verify &amp; Login</button>
               </div>
-    
+
               <div id="apiStatus" class="status"></div>
             </div>
-    
+
             <!-- Special panel -->
             <div id="panelSpecial" class="hidden">
               <label for="specialSignature">Special signature</label>
@@ -587,7 +587,7 @@ def register_browser_routes(
               </div>
               <div id="specialStatus" class="status"></div>
             </div>
-    
+
             <!-- Guest panel -->
             <div id="panelGuest">
               <label for="guestPin">Guest / PIN (blank = random)</label>
@@ -599,7 +599,7 @@ def register_browser_routes(
             </div>
           </div>
         </section>
-    
+
         <!-- Optional stats panel (only shows if you later inject values with Jinja) -->
         <section class="panel hidden" id="nodePanel">
           <div class="panel-hd">
@@ -611,26 +611,26 @@ def register_browser_routes(
           </div>
         </section>
       </div>
-    
+
     <!-- QR modal -->
     <div id="qrModal" aria-hidden="true">
       <div class="qr-content">
         <div class="qr-title">Scan with wallet</div>
-    
-    
-    
+
+
+
     <style>
     /* LOGIN_QR_UI_V6: final QR modal layout (iPad landscape + phone) */
-    
+
     /* Background never steals taps */
     #matrix-bg, #matrix-canvas, canvas#matrix-bg, canvas#matrix-canvas { pointer-events:none !important; z-index:0 !important; }
-    
+
     /* Buttons always tappable */
     #lnBtn, #nostrBtn, button, .pill { position:relative; z-index:50; pointer-events:auto; touch-action:manipulation; -webkit-tap-highlight-color:rgba(0,0,0,0); }
-    
+
     /* Modal on top */
     #qrModal{ position:fixed !important; inset:0 !important; z-index:999999 !important; overflow:auto !important; -webkit-overflow-scrolling:touch; padding:max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
-    
+
     /* Card (your #qrCard wrapper) */
     #qrCard, #qrCard.qr-card{
       width:min(92vw, 520px);
@@ -643,7 +643,7 @@ def register_browser_routes(
       background:rgba(0,0,0,0.55);
       box-shadow:0 0 18px rgba(0,255,0,0.12);
     }
-    
+
     /* QR + text */
     #qrcode{ display:flex; justify-content:center; padding:8px 0 4px; }
     #lnurlText{
@@ -658,7 +658,7 @@ def register_browser_routes(
       background:rgba(0,0,0,0.35);
     }
     #countdown{ display:block; margin-top:8px; font-size:13px; opacity:.9; }
-    
+
     /* LANDSCAPE: use max-height so it works on ALL iPads (including Pro) */
     @media (orientation: landscape) and (max-height: 900px){
       #qrCard, #qrCard.qr-card{
@@ -673,42 +673,42 @@ def register_browser_routes(
       #countdown{ grid-column:2; }
       #qrcode img, #qrcode canvas{ width:240px !important; height:240px !important; }
     }
-    
+
     /* Very short landscape (phones): shrink QR */
     @media (orientation: landscape) and (max-height: 700px){
       #qrcode img, #qrcode canvas{ width:200px !important; height:200px !important; }
     }
     </style>
-    
+
     <div id="qrCard" class="qr-card"> <!-- QR_MODAL_WRAPPER_V3 -->
         <div id="qrcode"></div>
-    
+
         <a id="openInWallet" href="#" rel="noopener">Open in wallet</a>
-    
+
         <!-- Mobile fallback: big tap target -->
         <button class="btn primary" id="openWalletBtn" type="button" style="margin-top:10px; width:100%;">
           ⚡ Open Lightning Wallet
         </button>
-    
+
         <div id="lnurlText"></div>
         <div id="countdown"></div>
-    
+
     </div> <!-- /QR_MODAL_WRAPPER_V3 -->
-    
+
                     <button class="btn" id="copyLnurlBtn" type="button" style="margin-top:8px; width:100%;">📋 Copy LNURL</button>
-    
+
     <div class="btnrow" style="margin-top:10px;">
           <button class="btn warn" type="button" onclick="closeQR()">✕ Close</button>
         </div>
       </div>
     </div>
-    
+
       <script src="/static/js/qrcode.min.js"></script>
       <script src="/static/js/ios_tapfix.js"></script>
     <script src="/static/js/tapfix_v2.js"></script>
     <script src="/static/js/tap_probe.js"></script>
-    
-    
+
+
       <script>
         // Helper to respect ?next= parameter for post-login redirects
         function getRedirectUrl() {
@@ -716,7 +716,7 @@ def register_browser_routes(
           const next = params.get("next");
           return next || "/home";
         }
-    
+
         function showTab(which) {
           const panels = {
             legacy: ["tabLegacy", "panelLegacy"],
@@ -731,14 +731,14 @@ def register_browser_routes(
             if (panel) panel.classList.toggle("hidden", k !== which);
           });
         }
-    
+
         function setStatus(id, msg) {
           const el = document.getElementById(id);
           if (el) el.textContent = msg || "";
           const mini = document.getElementById("miniStatus");
           if (mini) mini.textContent = "status: " + (msg ? msg.toLowerCase() : "ready");
         }
-    
+
         function copyText(id) {
           const el = document.getElementById(id);
           const txt =
@@ -747,7 +747,7 @@ def register_browser_routes(
               : el.textContent.trim();
           navigator.clipboard.writeText(txt).catch(()=>{});
         }
-    
+
         // Tap-to-copy challenge
         (function(){
           const legacyEl = document.getElementById("legacyChallenge");
@@ -761,14 +761,14 @@ def register_browser_routes(
             }).catch(()=>{});
           });
         })();
-    
+
         // Mirror legacy challenge into Special tab
         (function(){
           const src = document.getElementById("legacyChallenge");
           const dst = document.getElementById("specialChallenge");
           if (src && dst) dst.value = (src.textContent || "").trim();
         })();
-    
+
         // --- Legacy verify ---
         async function legacyVerify() {
           const pubkey = document.getElementById("legacyPubkey").value.trim();
@@ -786,7 +786,7 @@ def register_browser_routes(
               sessionStorage.setItem("playLoginSound", "1");
               // SOUND_IMMEDIATE_V1
               try{ window.HODLXXI_PLAY_SOUND('/static/sounds/message.mp3', 0.9); }catch(e){}
-    
+
               window.location.href = getRedirectUrl();
             } else {
               setStatus("legacyStatus", d.error || "Failed");
@@ -795,7 +795,7 @@ def register_browser_routes(
             setStatus("legacyStatus", "Network error");
           }
         }
-    
+
         // --- API challenge/verify ---
         async function getChallenge() {
           const pubkey = document.getElementById("apiPubkey").value.trim();
@@ -815,7 +815,7 @@ def register_browser_routes(
             setStatus("apiStatus", e.message || "Error");
           }
         }
-    
+
         async function apiVerify() {
           const pubkey = document.getElementById("apiPubkey").value.trim();
           const signature = document.getElementById("apiSignature").value.trim();
@@ -832,7 +832,7 @@ def register_browser_routes(
               sessionStorage.setItem("playLoginSound", "1");
               // SOUND_IMMEDIATE_V1
               try{ window.HODLXXI_PLAY_SOUND('/static/sounds/message.mp3', 0.9); }catch(e){}
-    
+
               window.location.href = getRedirectUrl();
             } else {
               setStatus("apiStatus", d.error || "Failed");
@@ -841,7 +841,7 @@ def register_browser_routes(
             setStatus("apiStatus", "Network error");
           }
         }
-    
+
         // --- Guest login ---
         async function guestLogin() {
           const pin = (document.getElementById("guestPin")?.value || "").trim();
@@ -861,7 +861,7 @@ def register_browser_routes(
             alert("Guest login error");
           }
         }
-    
+
         // --- Special login ---
         async function specialLogin() {
           const sig = (document.getElementById("specialSignature")?.value || "").trim();
@@ -877,7 +877,7 @@ def register_browser_routes(
               sessionStorage.setItem("playLoginSound", "1");
               // SOUND_IMMEDIATE_V1
               try{ window.HODLXXI_PLAY_SOUND('/static/sounds/message.mp3', 0.9); }catch(e){}
-    
+
               window.location.href = getRedirectUrl();
             } else {
               setStatus("specialStatus", d.error || "Failed");
@@ -887,7 +887,7 @@ def register_browser_routes(
           }
         }
       </script>
-    
+
       <!-- LNURL auth + Nostr -->
       <script>
         function urlToLnurl(url) {
@@ -933,20 +933,20 @@ def register_browser_routes(
           for (const d of combined) out += CHARSET[d];
           return out.toUpperCase();
         }
-    
+
         function renderQR(el, text) {
           el.innerHTML = "";
           new QRCode(el, { text, width: 256, height: 256, colorDark: "#000", colorLight: "#fff" });
         }
-    
-    
+
+
         // --- Mobile-friendly wallet open + copy fallbacks ---
         function openLightningWallet(lnurl) {
           const walletUrl = "lightning:" + lnurl;
-    
+
           // 1) direct navigation (best when allowed)
           try {window.location.href = walletUrl;} catch(e) {}
-    
+
           // 2) fallback: temp <a> click (some browsers prefer this)
           setTimeout(() => {
             try {const a = document.createElement("a");
@@ -957,18 +957,18 @@ def register_browser_routes(
               a.click();
               a.remove();} catch(e) {}
           }, 50);
-    
+
           // 3) fallback: new tab (some Android cases)
           setTimeout(() => {
             try {window.location.href = walletUrl;} catch(e) {}
           }, 120);
         }
-    
+
         (function bindLnurlFallbackButtons(){
           const openBtn = document.getElementById("openWalletBtn");
           const copyBtn = document.getElementById("copyLnurlBtn");
           const lnurlBox = document.getElementById("lnurlText");
-    
+
           if (openBtn && !openBtn.dataset.bound) {
             openBtn.dataset.bound = "1";
             openBtn.addEventListener("click", () => {
@@ -977,7 +977,7 @@ def register_browser_routes(
               openLightningWallet(lnurl);
             }, { passive: true });
           }
-    
+
           if (copyBtn && !copyBtn.dataset.bound) {
             copyBtn.dataset.bound = "1";
             copyBtn.addEventListener("click", async () => {
@@ -993,7 +993,7 @@ def register_browser_routes(
           }
         })();
         let poll=null, expire=null;
-    
+
         function startPolling(sid) {
           clearInterval(poll);
           poll = setInterval(async () => {
@@ -1007,7 +1007,7 @@ def register_browser_routes(
             }
           }, 2000);
         }
-    
+
         function startCountdown(s) {
           clearInterval(expire);
           let r = s;
@@ -1022,26 +1022,26 @@ def register_browser_routes(
             }
           }, 1000);
         }
-    
+
         function closeQR() {
           const modal = document.getElementById("qrModal");
           if (modal) modal.style.display = "none";
           document.body.classList.remove("body-locked");
         }
-    
+
         async function loginWithLightning() {
           const modal     = document.getElementById("qrModal");
           const qrBox     = document.getElementById("qrcode");
           const lnurlBox  = document.getElementById("lnurlText");
           const countdown = document.getElementById("countdown");
-    
+
           try {
             if (qrBox) qrBox.innerHTML = "";
             if (lnurlBox) lnurlBox.textContent = "Requesting Lightning login…";
             if (countdown) countdown.textContent = "";
             if (modal) modal.style.display = "flex";
             document.body.classList.add("body-locked");
-    
+
             const res = await fetch("/api/lnurl-auth/create", { method: "POST", headers: { "Accept": "application/json" }, credentials: "same-origin" });
     if (!res.ok) {
               const txt = await res.text().catch(()=> "");
@@ -1050,7 +1050,7 @@ def register_browser_routes(
               closeQR();
               return;
             }
-    
+
             let j;
             try {j = await res.json();} catch (e) {
               console.error("LNURL-auth JSON parse error:", e);
@@ -1058,30 +1058,30 @@ def register_browser_routes(
               closeQR();
               return;
             }
-    
+
             if (!j || !j.callback_url) {
               console.error("LNURL-auth missing callback_url:", j);
               alert("Lightning login error: missing callback_url");
               closeQR();
               return;
             }
-    
+
             const lnurl = urlToLnurl(j.callback_url);
-    
-            
-            
+
+
+
     // bind mobile fallback buttons (must be a user gesture)
-    
+
               try {await navigator.clipboard.writeText(lnurl);} catch(e) {}
     // Set the link + mobile fallback button
-    
+
         // REMOVED: orphaned e.preventDefault()
-    
-    
-            
+
+
+
             // --- Canonical LNURL UI wiring (single source of truth) ---
             const walletUrl = "lightning:" + lnurl;
-    
+
             // "Open in wallet" link (works on desktop and some mobile browsers)
             const openInWalletEl = document.getElementById("openInWallet");
             if (openInWalletEl) {
@@ -1092,7 +1092,7 @@ def register_browser_routes(
                 window.location.href = walletUrl;
               };
             }
-    
+
             // Mobile-friendly explicit button (user gesture)
             const openBtn = document.getElementById("openWalletBtn");
             if (openBtn) {
@@ -1110,7 +1110,7 @@ def register_browser_routes(
                 }, 50);
               };
             }
-    
+
             // Copy LNURL button (works even if wallet open is blocked)
             const copyBtn = document.getElementById("copyLnurlBtn");
             if (copyBtn) {
@@ -1124,7 +1124,7 @@ def register_browser_routes(
             }
     if (qrBox && typeof QRCode !== "undefined") renderQR(qrBox, lnurl);
             if (lnurlBox) lnurlBox.textContent = lnurl;
-    
+
             const openEl = document.getElementById("openInWallet");
             if (openEl) {
       openEl.href = "lightning:" + lnurl;
@@ -1134,8 +1134,8 @@ def register_browser_routes(
         window.location.href = "lightning:" + lnurl;
       };
     }
-    
-    
+
+
             startPolling(j.session_id);
             startCountdown(j.expires_in || 300);
           } catch (e) {
@@ -1144,7 +1144,7 @@ def register_browser_routes(
             closeQR();
           }
         }
-    
+
         async function loginWithNostr() {
           if (!window.nostr) {
             alert("No Nostr extension found");
@@ -1173,18 +1173,18 @@ def register_browser_routes(
           if (j2.verified) window.location.href = getRedirectUrl();
           else alert(j2.error || "Verification failed");
         }
-    
+
         // --- Bind pill buttons (mobile-safe) ---
         (function bindLoginPills(){
           function setMini(msg){
             const mini = document.getElementById("miniStatus");
             if (mini) mini.textContent = "status: " + msg;
           }
-    
+
           function bindOne(id, fnName){
             const el = document.getElementById(id);
             if (!el) return;
-    
+
             const fire = async (e) => {
               try {
                 if (e && e.preventDefault) e.preventDefault();
@@ -1205,21 +1205,21 @@ def register_browser_routes(
                 alert(fnName + " failed: " + (err && err.message ? err.message : "unknown"));
               }
             };
-    
+
             // iOS: touchstart is often more reliable than click
             el.addEventListener("touchstart", fire, { passive: false });
             el.addEventListener("click", fire, { passive: false });
           }
-    
+
           // Make sure the global functions are reachable via window
           try {if (typeof loginWithLightning === "function") window.loginWithLightning = loginWithLightning;} catch(e) {}
           try {if (typeof loginWithNostr === "function") window.loginWithNostr = loginWithNostr;} catch(e) {}
-    
+
           setMini("ready");
         })();
-    
-      
-      
+
+
+
     </script>
       <script>
         // --- Top-level pill wiring (runs on page load) ---
@@ -1227,7 +1227,7 @@ def register_browser_routes(
           function bind(id, fnName){
             const el = document.getElementById(id);
             if (!el) return;
-    
+
             el.addEventListener("click", async (e) => {
               try {
                 e.preventDefault();
@@ -1245,7 +1245,7 @@ def register_browser_routes(
               }
             }, { passive: false });
           }
-    
+
           if (document.readyState === "loading") {
             document.addEventListener("DOMContentLoaded", () => {
               bind("lnBtn", "loginWithLightning");
@@ -1258,7 +1258,7 @@ def register_browser_routes(
         })();
       </script>
     </script>
-    
+
       <!-- Matrix Animation (warp) -->
       <script>
         (function() {
@@ -1267,7 +1267,7 @@ def register_browser_routes(
           const ctx = canvas.getContext('2d');
           const CHARS = ['0','1'];
           let width = 0, height = 0, particles = [], raf = null;
-    
+
           function resize() {
             const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
             const cssW = window.innerWidth, cssH = window.innerHeight;
@@ -1278,7 +1278,7 @@ def register_browser_routes(
             ctx.setTransform(1,0,0,1,0,0);
             ctx.scale(dpr, dpr);
             width = cssW; height = cssH;
-    
+
             particles = [];
             for (let i = 0; i < 400; i++) {
               particles.push({
@@ -1290,12 +1290,12 @@ def register_browser_routes(
             ctx.fillStyle = 'rgba(0,0,0,1)';
             ctx.fillRect(0, 0, width, height);
           }
-    
+
           function draw() {
             ctx.fillStyle = 'rgba(0,0,0,0.25)';
             ctx.fillRect(0, 0, width, height);
             ctx.fillStyle = '#00ff88';
-    
+
             for (const p of particles) {
               const scale = 200 / p.z;
               const x2 = width / 2 + p.x * scale;
@@ -1312,12 +1312,12 @@ def register_browser_routes(
             }
             raf = requestAnimationFrame(draw);
           }
-    
+
           function onVis() {
             if (document.hidden) { if (raf) cancelAnimationFrame(raf), raf = null; }
             else { if (!raf) raf = requestAnimationFrame(draw); }
           }
-    
+
           window.addEventListener('resize', resize);
           document.addEventListener('visibilitychange', onVis);
           resize();
@@ -1326,7 +1326,7 @@ def register_browser_routes(
       </script>
     </body>
     </html>
-    
+
     """
 
         return render_template_string(
@@ -1757,7 +1757,7 @@ def register_browser_routes(
         @media (min-width: 600px){
           .call-grid{ grid-template-columns: repeat(2, 1fr); }
         }
-        
+
     /* VIDEO_PIN_MODE_V1: click a remote tile to pin it (full mode) */
     #remoteVideosContainer{ display: contents; } /* remote tiles become grid items */
     .video-tile{ cursor: pointer; }
@@ -1921,7 +1921,7 @@ def register_browser_routes(
       }
     }
 
-      
+
     /* LOGIN_MODAL_MOBILE_CSS: make LN modal readable on phones */
     #lnurlText{
       display:block;
@@ -3120,7 +3120,7 @@ def register_browser_routes(
         })();
 
 
-        
+
         // PRESENCE_ROLE_FROM_SCRATCH_V1: map roles -> apply role-* classes + keep updated
         window.__presenceRoles = window.__presenceRoles || {};
 
