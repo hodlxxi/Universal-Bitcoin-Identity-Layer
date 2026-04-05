@@ -29,19 +29,21 @@ def register_browser_routes(
         challenge_str = generate_challenge()
         session["challenge"] = challenge_str
         session["challenge_timestamp"] = time.time()
-    
+
         # Optional node stats (safe if node unreachable)
         from datetime import datetime, timedelta, timezone
-    
+
         try:
             rpc = get_rpc_connection()
             wallet_balance = rpc.getbalance()
             block_height = rpc.getblockcount()
             remaining = 1777777 - block_height
-    
+
             uptime_sec = rpc.uptime()
-            startup_time = (datetime.now(timezone.utc) - timedelta(seconds=uptime_sec)).strftime("%Y-%m-%d %H:%M:%S UTC")
-    
+            startup_time = (datetime.now(timezone.utc) - timedelta(seconds=uptime_sec)).strftime(
+                "%Y-%m-%d %H:%M:%S UTC"
+            )
+
             mp_info = rpc.getmempoolinfo()
             mempool_txs = mp_info.get("size", 0)
             mempool_usage = mp_info.get("usage", 0)
@@ -52,7 +54,7 @@ def register_browser_routes(
             startup_time = None
             mempool_txs = None
             mempool_usage = None
-    
+
         # Login page with dual Matrix backgrounds (toggle embedded inside panel)
         html = """
     <!doctype html>
@@ -1326,7 +1328,7 @@ def register_browser_routes(
     </html>
     
     """
-    
+
         return render_template_string(
             html,
             challenge=challenge_str,
@@ -1337,9 +1339,8 @@ def register_browser_routes(
             mempool_txs=mempool_txs,
             mempool_usage=mempool_usage,
         )
+
     _BROWSER_ROUTE_HANDLERS["login"] = login
-    
-    
 
     @app.route("/app", endpoint="chat")
     def chat():
@@ -3672,14 +3673,15 @@ def register_browser_routes(
             force_relay=force_relay,
             access_level=session.get("access_level", "limited"),
         )
+
     _BROWSER_ROUTE_HANDLERS["chat"] = chat
 
     @app.route("/logout")
     def logout():
         session.clear()
         return redirect(url_for("login"))
+
     _BROWSER_ROUTE_HANDLERS["logout"] = logout
-    
 
     @app.route("/", methods=["GET"])
     def root_redirect():
@@ -3688,13 +3690,13 @@ def register_browser_routes(
         - everyone else   -> agent-first homepage
         """
         from flask import session, redirect, url_for, render_template
-    
+
         try:
             if session.get("logged_in_pubkey"):
                 return redirect(url_for("ui.legacy_home_route"))
         except Exception:
             pass
-    
+
         return render_template(
             "home_agent.html",
             agent_name="HODLXXI / UBID",
@@ -3723,9 +3725,8 @@ def register_browser_routes(
                 "Bitcoin-native identity orientation",
             ],
         )
+
     _BROWSER_ROUTE_HANDLERS["root_redirect"] = root_redirect
-    
-    
 
     @app.route("/playground", methods=["GET"])
     def playground():
@@ -3733,5 +3734,5 @@ def register_browser_routes(
         from flask import render_template
 
         return render_template("playground.html")
+
     _BROWSER_ROUTE_HANDLERS["playground"] = playground
-    

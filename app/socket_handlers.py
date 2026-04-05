@@ -9,7 +9,6 @@ from flask_socketio import emit
 
 from app.socket_state import ACTIVE_SOCKETS, CHAT_HISTORY, ONLINE_META, ONLINE_USER_META, ONLINE_USERS
 
-
 # TEMP runtime imports from app.app
 # NOTE: these imports stay inside functions to avoid import-time circulars while
 # app.app remains the runtime owner of socketio instance/decorators/state.
