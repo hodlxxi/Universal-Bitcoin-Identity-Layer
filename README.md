@@ -84,6 +84,13 @@ See [`TESTING.md`](TESTING.md) for pytest, mypy, and linting guidance.
 
 ---
 
+## 📘 Repository Knowledge Layer
+
+This repository includes a local synthesis wiki at [`hodlxxi-wiki/wiki/index.md`](hodlxxi-wiki/wiki/index.md).  
+It supports project intelligence and runtime-truth tracking, while canonical truth remains in source code, tests, and captured deployment/runtime evidence.
+
+---
+
 ## ⚙️ Configuration Reference
 
 `app/config.py` documents every supported environment variable. Highlights include:
