@@ -47,6 +47,7 @@ from hashlib import sha256
 from io import BytesIO
 from logging.handlers import RotatingFileHandler
 from typing import Dict, List, Optional, Set, Tuple
+from urllib.parse import urlsplit
 import base58
 import qrcode
 import requests
@@ -445,6 +446,22 @@ REGISTRY = CollectorRegistry()
 oauth_tokens_issued = Counter("oauth_tokens_issued_total", "Total tokens issued", registry=REGISTRY)
 
 
+def _redact_url_secret(raw_url: str) -> str:
+    """Mask credentials embedded in URLs before logging."""
+    try:
+        parsed = urlsplit(raw_url or "")
+    except Exception:
+        return "<invalid-url>"
+    if not parsed.scheme:
+        return "<redacted>"
+    if parsed.username is None and parsed.password is None:
+        return raw_url
+    host = parsed.hostname or ""
+    if parsed.port:
+        host = f"{host}:{parsed.port}"
+    return f"{parsed.scheme}://***:***@{host}{parsed.path or ''}"
+
+
 class SafeRedis:
     """Wrapper for Redis that gracefully handles connection failures"""
 
@@ -502,7 +519,7 @@ except Exception:
 # Redis client for playground (instance, not module)
 
 try:
-    logger.info(f"Creating playground_redis with URL: {REDIS_URL[:50]}...")
+    logger.info("Creating playground_redis with URL: %s", _redact_url_secret(REDIS_URL))
     _redis_raw2 = redis_client.Redis.from_url(REDIS_URL, decode_responses=True)
     _redis_raw2.ping()
     playground_redis = SafeRedis(_redis_raw2)
@@ -1281,6 +1298,8 @@ def turn_credentials():
     if not ok:
         return jsonify({"error": "Rate limited", "retry_after": retry}), 429
     username = str(int(time.time()) + TURN_TTL)
+    # NOTE: TURN REST auth credential derivation remains HMAC-SHA1 for coturn compatibility.
+    # Do not switch this hash algorithm without coordinating TURN server auth configuration.
     digest = hmac.new(TURN_SECRET.encode("utf-8"), username.encode("utf-8"), hashlib.sha1).digest()
     password = base64.b64encode(digest).decode("utf-8")
     return (
@@ -6027,7 +6046,8 @@ def require_scope(required_scope: str):
             try:
                 payload = decode_jwt(token_str, audience=AUDIENCE, issuer=ISSUER)
             except jwt.InvalidTokenError as e:
-                return jsonify({"error": "invalid_token", "detail": str(e)}), 401
+                logger.warning("JWT decode failed in require_scope: %s", e)
+                return jsonify({"error": "invalid_token", "detail": "Token validation failed"}), 401
 
             token_scopes = set((payload.get("scope") or "").split())
             if required_scope not in token_scopes:
@@ -6088,7 +6108,8 @@ def require_scope(required_scope: str):
             try:
                 payload = decode_jwt(token_str, audience=AUDIENCE, issuer=ISSUER)
             except jwt.InvalidTokenError as e:
-                return jsonify({"error": "invalid_token", "detail": str(e)}), 401
+                logger.warning("JWT decode failed in require_scope (compat): %s", e)
+                return jsonify({"error": "invalid_token", "detail": "Token validation failed"}), 401
 
             # Check scope
             token_scopes = set((payload.get("scope") or "").split())
@@ -6725,9 +6746,8 @@ def oauth_register():
         )
 
     except Exception as e:
-        logger.error(f"OAuth registration failed: {e}")
-        return jsonify({"error": "Registration failed", "details": str(e)}), 500
-        return jsonify({"error": "registration_failed", "detail": str(e)}), 400
+        logger.exception("OAuth registration failed: %s", e)
+        return jsonify({"error": "Registration failed", "details": "Internal server error"}), 500
 
 
 @app.route("/oauth/authorize", methods=["GET"])

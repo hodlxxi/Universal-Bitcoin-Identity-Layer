@@ -94,7 +94,7 @@ def readiness():
         return jsonify({"status": "ready"}), 200
     except Exception as e:
         logger.warning(f"Readiness check failed: {e}")
-        return jsonify({"status": "not_ready", "error": str(e)}), 503
+        return jsonify({"status": "not_ready", "error": "Internal server error"}), 503
 
 
 @admin_bp.route("/metrics", methods=["GET"])
@@ -194,6 +194,8 @@ def turn_credentials():
 
         # Generate time-limited credentials
         username = str(int(time() + 86400))  # Valid for 24 hours
+        # NOTE: TURN REST auth credential derivation remains HMAC-SHA1 for coturn compatibility.
+        # Do not switch this hash algorithm without coordinating TURN server auth configuration.
         password = base64.b64encode(hmac.new(turn_secret.encode(), username.encode(), hashlib.sha1).digest()).decode()
 
         return (
@@ -212,4 +214,4 @@ def turn_credentials():
 
     except Exception as e:
         logger.error(f"TURN credentials failed: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
