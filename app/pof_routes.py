@@ -8,6 +8,7 @@ import secrets
 import time
 from datetime import datetime, timedelta
 from functools import wraps
+from urllib.parse import urlsplit
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, session, url_for
 
@@ -19,6 +20,19 @@ from app.models import ProofOfFunds, User
 pof_bp = Blueprint("pof", __name__, url_prefix="/pof")
 
 pof_api_bp = Blueprint("pof_api", __name__, url_prefix="/api/pof")
+
+
+def _safe_local_redirect_target(target: str, fallback: str = "/pof") -> str:
+    """Allow only local relative-path redirect targets."""
+    target = (target or "").strip()
+    if not target:
+        return fallback
+    parsed = urlsplit(target)
+    if parsed.scheme or parsed.netloc:
+        return fallback
+    if not target.startswith("/") or target.startswith("//"):
+        return fallback
+    return target
 
 
 @pof_api_bp.route("/stats")
@@ -66,7 +80,7 @@ def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if ("user_id" not in session) and (not session.get("logged_in_pubkey")):
-            return redirect(url_for("login", next=request.url))
+            return redirect(url_for("login", next=_safe_local_redirect_target(request.full_path)))
         return f(*args, **kwargs)
 
     return decorated_function
