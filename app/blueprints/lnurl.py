@@ -87,9 +87,9 @@ def create_challenge():
             }
         )
 
-    except Exception as e:
-        logger.error(f"LNURL challenge creation failed: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.error("LNURL challenge creation failed", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @lnurl_bp.route("/callback/<session_id>", methods=["GET"])
@@ -148,9 +148,9 @@ def lnurl_callback(session_id: str):
 
         return jsonify({"status": "OK"})
 
-    except Exception as e:
-        logger.error(f"LNURL callback failed: {e}", exc_info=True)
-        return jsonify({"status": "ERROR", "reason": str(e)}), 500
+    except Exception:
+        logger.error("LNURL callback failed", exc_info=True)
+        return jsonify({"status": "ERROR", "reason": "Internal server error"}), 500
 
 
 @lnurl_bp.route("/check/<session_id>", methods=["GET"])
@@ -178,9 +178,9 @@ def check_verification(session_id: str):
             }
         )
 
-    except Exception as e:
-        logger.error(f"Verification check failed: {e}")
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.error("Verification check failed", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @lnurl_bp.route("/params", methods=["GET"])
@@ -212,6 +212,6 @@ def lnurl_params():
 
         return jsonify({"tag": "login", "k1": challenge_data["challenge"], "callback": callback_url})
 
-    except Exception as e:
-        logger.error(f"LNURL params failed: {e}")
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.error("LNURL params failed", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500

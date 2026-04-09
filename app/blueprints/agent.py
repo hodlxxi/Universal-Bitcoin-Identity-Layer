@@ -1,6 +1,7 @@
 """Minimal Agent UBID routes: capabilities, jobs, attestations, and discovery."""
 
 import hashlib
+import logging
 import os
 import time
 import uuid
@@ -25,6 +26,8 @@ from app.services.trust_surface import (
     load_covenant,
     trust_page_context,
 )
+
+logger = logging.getLogger(__name__)
 
 agent_bp = Blueprint("agent", __name__)
 
@@ -713,12 +716,13 @@ def create_job_request():
 
     try:
         invoice, invoice_lookup_id = create_invoice(sats, memo, get_agent_pubkey_hex())
-    except Exception as e:
+    except Exception:
+        logger.error("Agent invoice creation failed", exc_info=True)
         return (
             jsonify(
                 {
                     "error": "invoice_create_failed",
-                    "message": str(e),
+                    "message": "Internal server error",
                 }
             ),
             502,

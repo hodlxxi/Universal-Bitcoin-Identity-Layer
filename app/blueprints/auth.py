@@ -108,9 +108,9 @@ def verify_signature():
                     "auth.verify_failed", reason="invalid_signature", pubkey=pubkey_hex, ip=request.remote_addr
                 )
                 return jsonify({"verified": False, "error": "Invalid signature"}), 403
-        except Exception as e:
-            logger.error(f"Signature verification error: {e}")
-            return jsonify({"verified": False, "error": str(e)}), 500
+        except Exception:
+            logger.error("Signature verification error", exc_info=True)
+            return jsonify({"verified": False, "error": "Internal server error"}), 500
 
     # Case 2: No pubkey, try SPECIAL_USERS
     else:

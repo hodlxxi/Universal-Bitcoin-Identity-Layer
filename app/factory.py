@@ -227,7 +227,7 @@ def register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(400)
     def bad_request(e):
-        return jsonify({"error": "bad_request", "message": str(e)}), 400
+        return jsonify({"error": "bad_request"}), 400
 
     @app.errorhandler(401)
     def unauthorized(e):
@@ -243,7 +243,7 @@ def register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(429)
     def rate_limit_exceeded(e):
-        return jsonify({"error": "rate_limit_exceeded", "message": str(e)}), 429
+        return jsonify({"error": "rate_limit_exceeded"}), 429
 
     @app.errorhandler(500)
     def internal_error(e):

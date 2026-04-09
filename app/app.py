@@ -47,6 +47,7 @@ from hashlib import sha256
 from io import BytesIO
 from logging.handlers import RotatingFileHandler
 from typing import Dict, List, Optional, Set, Tuple
+from urllib.parse import urlsplit
 import base58
 import qrcode
 import requests
@@ -445,6 +446,22 @@ REGISTRY = CollectorRegistry()
 oauth_tokens_issued = Counter("oauth_tokens_issued_total", "Total tokens issued", registry=REGISTRY)
 
 
+def _redact_url_secret(raw_url: str) -> str:
+    """Mask credentials embedded in URLs before logging."""
+    try:
+        parsed = urlsplit(raw_url or "")
+    except Exception:
+        return "<invalid-url>"
+    if not parsed.scheme:
+        return "<redacted>"
+    if parsed.username is None and parsed.password is None:
+        return raw_url
+    host = parsed.hostname or ""
+    if parsed.port:
+        host = f"{host}:{parsed.port}"
+    return f"{parsed.scheme}://***:***@{host}{parsed.path or ''}"
+
+
 class SafeRedis:
     """Wrapper for Redis that gracefully handles connection failures"""
 
@@ -502,7 +519,7 @@ except Exception:
 # Redis client for playground (instance, not module)
 
 try:
-    logger.info(f"Creating playground_redis with URL: {REDIS_URL[:50]}...")
+    logger.info("Creating playground_redis with URL: %s", _redact_url_secret(REDIS_URL))
     _redis_raw2 = redis_client.Redis.from_url(REDIS_URL, decode_responses=True)
     _redis_raw2.ping()
     playground_redis = SafeRedis(_redis_raw2)
@@ -742,21 +759,26 @@ def api_public_status():
                 headers = bci.get("headers")
                 ibd = bci.get("initialblockdownload")
                 vprog = bci.get("verificationprogress")
-            except Exception as e:
-                err = str(e)
+            except Exception:
+                logger.error("Failed to fetch blockchain info for public status", exc_info=True)
+                err = "Internal server error"
 
             try:
                 mp = rpc.getmempoolinfo()
                 mp_size = mp.get("size")
                 mp_bytes = mp.get("bytes")
-            except Exception as e:
-                if not err: err = str(e)
+            except Exception:
+                logger.error("Failed to fetch mempool info for public status", exc_info=True)
+                if not err:
+                    err = "Internal server error"
 
             try:
                 ni = rpc.getnetworkinfo()
                 peers = ni.get("connections")
-            except Exception as e:
-                if not err: err = str(e)
+            except Exception:
+                logger.error("Failed to fetch network info for public status", exc_info=True)
+                if not err:
+                    err = "Internal server error"
 
             btc = {
                 "chain": chain,
@@ -770,8 +792,9 @@ def api_public_status():
                 "error": err,
             }
             api_public_status._btc_cache = {"ts": time.time(), "data": btc}
-    except Exception as e:
-        btc = {"error": str(e)}
+    except Exception:
+        logger.error("Failed to build Bitcoin status payload", exc_info=True)
+        btc = {"error": "Internal server error"}
 
     # LND state only (public-safe)
     lnd = {}
@@ -904,8 +927,9 @@ def api_lnd_status():
                 "remote_sum": remote_sum,
             },
         }
-    except Exception as e:
-        data = {"ok": False, "active": False, "error": f"{e.__class__.__name__}: {str(e)[:260]}"}
+    except Exception:
+        logger.error("Failed to build LND status payload", exc_info=True)
+        data = {"ok": False, "active": False, "error": "Internal server error"}
 
     api_lnd_status._cache = {"ts": time.time(), "data": data}
     return jsonify(data), 200
@@ -1003,15 +1027,15 @@ def health():
             rpc = get_rpc_connection()
             rpc.getblockchaininfo()
             health_status["rpc"] = "connected"
-        except Exception as e:  # pragma: no cover - network dependent
+        except Exception:  # pragma: no cover - network dependent
             health_status["rpc"] = "error"
-            health_status["rpc_error"] = str(e)
-            logger.warning(f"RPC health check failed: {e}")
+            health_status["rpc_error"] = "Internal server error"
+            logger.warning("RPC health check failed", exc_info=True)
 
         return jsonify(health_status), 200
-    except Exception as e:  # pragma: no cover - defensive
-        logger.error(f"Health check failed: {e}", exc_info=True)
-        return jsonify({"status": "unhealthy", "error": str(e)}), 500
+    except Exception:  # pragma: no cover - defensive
+        logger.error("Health check failed", exc_info=True)
+        return jsonify({"status": "unhealthy", "error": "Internal server error"}), 500
 
 
 # --- Dev dashboard hard block (must run before any login redirect gates) ---
@@ -1184,8 +1208,9 @@ select
             row = cur.fetchone() or {}
             # cast Decimals/ints cleanly if needed
             return {k: int(row[k]) if row.get(k) is not None else 0 for k in row.keys()}
-    except Exception as e:
-        return {"db_error": str(e)}
+    except Exception:
+        logger.error("Database metrics query failed", exc_info=True)
+        return {"db_error": "Internal server error"}
     finally:
         try:
             if conn:
@@ -1215,9 +1240,9 @@ def metrics():
             "db": _db_metrics_counts_cached(),
         }
         return jsonify({"metrics": metrics_data}), 200
-    except Exception as e:
-        logger.error(f"Metrics endpoint failed: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.error("Metrics endpoint failed", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 # ============================================================================
@@ -1281,6 +1306,8 @@ def turn_credentials():
     if not ok:
         return jsonify({"error": "Rate limited", "retry_after": retry}), 429
     username = str(int(time.time()) + TURN_TTL)
+    # NOTE: TURN REST auth credential derivation remains HMAC-SHA1 for coturn compatibility.
+    # Do not switch this hash algorithm without coordinating TURN server auth configuration.
     digest = hmac.new(TURN_SECRET.encode("utf-8"), username.encode("utf-8"), hashlib.sha1).digest()
     password = base64.b64encode(digest).decode("utf-8")
     return (
@@ -1848,8 +1875,9 @@ def verify_signature():
                 matched_pubkey = pubkey_hex
             else:
                 return jsonify({"verified": False, "error": "Invalid signature"}), 403
-        except Exception as e:
-            return jsonify({"verified": False, "error": str(e)}), 500
+        except Exception:
+            logger.error("Signature verification failed", exc_info=True)
+            return jsonify({"verified": False, "error": "Internal server error"}), 500
     else:
         # No pubkey: try SPECIAL_USERS
         for candidate in SPECIAL_USERS:
@@ -4415,9 +4443,9 @@ def verify_pubkey_and_list():
             "outgoing_usd": f"{out_usd_val:.2f}",
         }), 200
 
-    except Exception as e:
-        logger.error("Error in verify_pubkey_and_list: %s", str(e), exc_info=True)
-        return jsonify({"valid": False, "error": str(e)}), 500
+    except Exception:
+        logger.error("Error in verify_pubkey_and_list", exc_info=True)
+        return jsonify({"valid": False, "error": "Internal server error"}), 500
 
 
 @app.route("/decode_raw_script", methods=["POST"])
@@ -4488,8 +4516,9 @@ def decode_raw_script():
                 "warning": warning_message,
             }
         )
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.error("decode_raw_script failed", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/import_descriptor", methods=["POST"])
@@ -4548,8 +4577,9 @@ def import_descriptor():
                 "note": "Descriptor was not raw(), so address import skipped.",
             }
         )
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.error("import_descriptor failed", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/set_labels_from_zpub", methods=["POST"])
@@ -4678,8 +4708,9 @@ def set_labels_from_zpub():
             200,
         )
 
-    except Exception as e:
-        return jsonify(error=str(e)), 500
+    except Exception:
+        logger.error("set_labels_from_zpub failed", exc_info=True)
+        return jsonify(error="Internal server error"), 500
 
 
 def slip132_to_bip32_pub(extkey: str):
@@ -4740,8 +4771,9 @@ def rpc_dispatch(cmd):
     try:
         result = allowed[cmd]()
         return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.error("btc_rpc failed", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/export_descriptors", methods=["GET"])
@@ -4809,8 +4841,9 @@ def convert_wif():
 
         return jsonify({"ok": True, "wif": wif, "qr": f"data:image/png;base64,{b64}"})
 
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception:
+        logger.error("make_wif_qr failed", exc_info=True)
+        return jsonify({"ok": False, "error": "Internal server error"}), 400
 
 
 PUBLIC_API_PREFIXES = ("/api/lnurl-auth/",)  # includes /callback/<sid> and /check/<sid>
@@ -6027,7 +6060,8 @@ def require_scope(required_scope: str):
             try:
                 payload = decode_jwt(token_str, audience=AUDIENCE, issuer=ISSUER)
             except jwt.InvalidTokenError as e:
-                return jsonify({"error": "invalid_token", "detail": str(e)}), 401
+                logger.warning("JWT decode failed in require_scope: %s", e)
+                return jsonify({"error": "invalid_token", "detail": "Token validation failed"}), 401
 
             token_scopes = set((payload.get("scope") or "").split())
             if required_scope not in token_scopes:
@@ -6088,7 +6122,8 @@ def require_scope(required_scope: str):
             try:
                 payload = decode_jwt(token_str, audience=AUDIENCE, issuer=ISSUER)
             except jwt.InvalidTokenError as e:
-                return jsonify({"error": "invalid_token", "detail": str(e)}), 401
+                logger.warning("JWT decode failed in require_scope (compat): %s", e)
+                return jsonify({"error": "invalid_token", "detail": "Token validation failed"}), 401
 
             # Check scope
             token_scopes = set((payload.get("scope") or "").split())
@@ -6725,9 +6760,8 @@ def oauth_register():
         )
 
     except Exception as e:
-        logger.error(f"OAuth registration failed: {e}")
-        return jsonify({"error": "Registration failed", "details": str(e)}), 500
-        return jsonify({"error": "registration_failed", "detail": str(e)}), 400
+        logger.exception("OAuth registration failed: %s", e)
+        return jsonify({"error": "Registration failed", "details": "Internal server error"}), 500
 
 
 @app.route("/oauth/authorize", methods=["GET"])
@@ -8578,5 +8612,6 @@ def api_hide_manifesto():
             return jsonify({"ok": False, "error": "not_logged_in"}), 401
         session["manifesto_hidden"] = True
         return jsonify({"ok": True})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+    except Exception:
+        logger.error("hide_manifesto failed", exc_info=True)
+        return jsonify({"ok": False, "error": "Internal server error"}), 500

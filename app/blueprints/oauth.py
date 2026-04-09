@@ -9,6 +9,7 @@ import secrets
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import urlsplit
 
 from cryptography.hazmat.primitives import serialization
 from flask import Blueprint, current_app, jsonify, redirect, request, session
@@ -70,6 +71,19 @@ audit_logger = get_audit_logger()
 oauth_bp = Blueprint("oauth", __name__)
 
 OAUTH_RATE_LIMIT = "30 per minute"
+
+
+def _safe_local_redirect_target(target: str, fallback: str = "/login") -> str:
+    """Allow only local relative-path redirects."""
+    target = (target or "").strip()
+    if not target:
+        return fallback
+    parsed = urlsplit(target)
+    if parsed.scheme or parsed.netloc:
+        return fallback
+    if not target.startswith("/") or target.startswith("//"):
+        return fallback
+    return target
 
 
 # Register endpoint rate limit:
@@ -154,7 +168,7 @@ def register_client():
 
     except Exception as e:
         logger.error(f"Client registration failed: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @oauth_bp.route("/authorize", methods=["GET"])
@@ -228,7 +242,8 @@ def authorize():
         user_pubkey = session.get("logged_in_pubkey")
         if not user_pubkey:
             # Redirect to login with return URL
-            return redirect(f"/login?return_to={request.url}")
+            login_return = _safe_local_redirect_target(request.full_path, fallback="/oauth/authorize")
+            return redirect(f"/login?return_to={login_return}")
 
         # Generate authorization code
         auth_code = secrets.token_urlsafe(32)
@@ -261,7 +276,7 @@ def authorize():
 
     except Exception as e:
         logger.error(f"Authorization failed: {e}", exc_info=True)
-        return jsonify({"error": "server_error", "error_description": str(e)}), 500
+        return jsonify({"error": "server_error", "error_description": "Internal server error"}), 500
 
 
 @oauth_bp.route("/token", methods=["POST"])

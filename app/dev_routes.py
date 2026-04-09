@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from typing import Dict, List
+from urllib.parse import urlsplit
 
 from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
 from flask import abort
@@ -15,6 +16,20 @@ from app.database import session_scope
 logger = logging.getLogger(__name__)
 
 dev_bp = Blueprint("dev", __name__, url_prefix="/dev")
+
+
+def _safe_local_redirect_target(target: str, fallback: str = "/dev") -> str:
+    """Allow only local relative paths for redirect targets."""
+    target = (target or "").strip()
+    if not target:
+        return fallback
+    parsed = urlsplit(target)
+    if parsed.scheme or parsed.netloc:
+        return fallback
+    if not target.startswith("/") or target.startswith("//"):
+        return fallback
+    return target
+
 
 # Plan Configuration
 PLANS = {
@@ -52,7 +67,7 @@ def require_login(f):
     def decorated_function(*args, **kwargs):
         user_pubkey = session.get("logged_in_pubkey")
         if not user_pubkey:
-            return redirect(url_for("auth.login", next=request.url))
+            return redirect(url_for("auth.login", next=_safe_local_redirect_target(request.full_path)))
 
         if str(user_pubkey).startswith("guest-"):
             return jsonify({"error": "Guests cannot access developer billing. Please login with a real key."}), 403
@@ -346,7 +361,7 @@ def create_invoice_route():
         )
     except Exception as e:
         logger.error(f"Invoice creation error: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @dev_bp.route("/billing/check-invoice", methods=["POST"])
@@ -458,4 +473,4 @@ def check_invoice_route():
 
     except Exception as e:
         logger.error(f"Invoice check error: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500

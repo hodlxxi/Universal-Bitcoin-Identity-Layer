@@ -44,10 +44,10 @@ def health():
         try:
             rpc = get_rpc_connection()
             rpc.getblockchaininfo()
-        except Exception as e:
+        except Exception:
             rpc_ok = False
-            rpc_error = str(e)
-            logger.warning("Bitcoin RPC health check failed: %s", e)
+            rpc_error = "Internal server error"
+            logger.warning("Bitcoin RPC health check failed", exc_info=True)
 
     # In tests, force "healthy" because suite expects it even without RPC configured
     status = "healthy" if current_app.config.get("TESTING") else ("healthy" if rpc_ok else "unhealthy")
@@ -94,7 +94,7 @@ def readiness():
         return jsonify({"status": "ready"}), 200
     except Exception as e:
         logger.warning(f"Readiness check failed: {e}")
-        return jsonify({"status": "not_ready", "error": str(e)}), 503
+        return jsonify({"status": "not_ready", "error": "Internal server error"}), 503
 
 
 @admin_bp.route("/metrics", methods=["GET"])
@@ -129,10 +129,10 @@ def metrics():
                     "headers": info.get("headers"),
                 }
             )
-    except Exception as e:
+    except Exception:
         bitcoin["rpc_ok"] = False
-        bitcoin["error"] = str(e)
-        logger.warning(f"Bitcoin metrics unavailable: {e}")
+        bitcoin["error"] = "Internal server error"
+        logger.warning("Bitcoin metrics unavailable", exc_info=True)
 
     payload = {
         "timestamp": _time.time(),
@@ -194,6 +194,8 @@ def turn_credentials():
 
         # Generate time-limited credentials
         username = str(int(time() + 86400))  # Valid for 24 hours
+        # NOTE: TURN REST auth credential derivation remains HMAC-SHA1 for coturn compatibility.
+        # Do not switch this hash algorithm without coordinating TURN server auth configuration.
         password = base64.b64encode(hmac.new(turn_secret.encode(), username.encode(), hashlib.sha1).digest()).decode()
 
         return (
@@ -212,4 +214,4 @@ def turn_credentials():
 
     except Exception as e:
         logger.error(f"TURN credentials failed: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
