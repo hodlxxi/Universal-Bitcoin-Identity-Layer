@@ -44,10 +44,10 @@ def health():
         try:
             rpc = get_rpc_connection()
             rpc.getblockchaininfo()
-        except Exception as e:
+        except Exception:
             rpc_ok = False
-            rpc_error = str(e)
-            logger.warning("Bitcoin RPC health check failed: %s", e)
+            rpc_error = "backend_unavailable"
+            logger.warning("Bitcoin RPC health check failed", exc_info=True)
 
     # In tests, force "healthy" because suite expects it even without RPC configured
     status = "healthy" if current_app.config.get("TESTING") else ("healthy" if rpc_ok else "unhealthy")
@@ -129,10 +129,10 @@ def metrics():
                     "headers": info.get("headers"),
                 }
             )
-    except Exception as e:
+    except Exception:
         bitcoin["rpc_ok"] = False
-        bitcoin["error"] = str(e)
-        logger.warning(f"Bitcoin metrics unavailable: {e}")
+        bitcoin["error"] = "backend_unavailable"
+        logger.warning("Bitcoin metrics unavailable", exc_info=True)
 
     payload = {
         "timestamp": _time.time(),

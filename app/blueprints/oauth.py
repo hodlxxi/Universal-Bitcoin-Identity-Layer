@@ -12,7 +12,7 @@ from typing import Optional
 from urllib.parse import urlsplit
 
 from cryptography.hazmat.primitives import serialization
-from flask import Blueprint, current_app, jsonify, redirect, request, session
+from flask import Blueprint, current_app, jsonify, redirect, request, session, url_for
 
 from app.audit_logger import get_audit_logger
 from app.db_storage import delete_oauth_code, get_oauth_client, get_oauth_code, store_oauth_client, store_oauth_code
@@ -243,7 +243,7 @@ def authorize():
         if not user_pubkey:
             # Redirect to login with return URL
             login_return = _safe_local_redirect_target(request.full_path, fallback="/oauth/authorize")
-            return redirect(f"/login?return_to={login_return}")
+            return redirect(url_for("auth.login", next=login_return))
 
         # Generate authorization code
         auth_code = secrets.token_urlsafe(32)
@@ -267,7 +267,9 @@ def authorize():
             "oauth.authorize_success", client_id=client_id, user_pubkey=user_pubkey, scope=scope, ip=request.remote_addr
         )
 
-        # Redirect back to client with authorization code
+        # Redirect back to registered client redirect_uri with authorization code.
+        # Security note: redirect_uri is validated against client.redirect_uris above.
+        # This explicit redirect is required by OAuth2 and is not an open redirect sink.
         redirect_url = f"{redirect_uri}?code={auth_code}"
         if state:
             redirect_url += f"&state={state}"
