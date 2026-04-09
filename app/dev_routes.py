@@ -30,6 +30,7 @@ def _safe_local_redirect_target(target: str, fallback: str = "/dev") -> str:
         return fallback
     return target
 
+
 # Plan Configuration
 PLANS = {
     "free": {
