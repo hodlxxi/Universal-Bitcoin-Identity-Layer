@@ -787,8 +787,9 @@ def api_public_status():
                 "error": err,
             }
             api_public_status._btc_cache = {"ts": time.time(), "data": btc}
-    except Exception as e:
-        btc = {"error": str(e)}
+    except Exception:
+        logger.error("api_public_status btc aggregation failed", exc_info=True)
+        btc = {"error": "Internal server error"}
 
     # LND state only (public-safe)
     lnd = {}
@@ -1028,7 +1029,7 @@ def health():
         return jsonify(health_status), 200
     except Exception as e:  # pragma: no cover - defensive
         logger.error(f"Health check failed: {e}", exc_info=True)
-        return jsonify({"status": "unhealthy", "error": str(e)}), 500
+        return jsonify({"status": "unhealthy", "error": "Internal server error"}), 500
 
 
 # --- Dev dashboard hard block (must run before any login redirect gates) ---
@@ -1234,7 +1235,7 @@ def metrics():
         return jsonify({"metrics": metrics_data}), 200
     except Exception as e:
         logger.error(f"Metrics endpoint failed: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 # ============================================================================
@@ -1867,8 +1868,9 @@ def verify_signature():
                 matched_pubkey = pubkey_hex
             else:
                 return jsonify({"verified": False, "error": "Invalid signature"}), 403
-        except Exception as e:
-            return jsonify({"verified": False, "error": str(e)}), 500
+        except Exception:
+            logger.error("Signature verification error", exc_info=True)
+            return jsonify({"verified": False, "error": "Internal server error"}), 500
     else:
         # No pubkey: try SPECIAL_USERS
         for candidate in SPECIAL_USERS:
@@ -4436,7 +4438,7 @@ def verify_pubkey_and_list():
 
     except Exception as e:
         logger.error("Error in verify_pubkey_and_list: %s", str(e), exc_info=True)
-        return jsonify({"valid": False, "error": str(e)}), 500
+        return jsonify({"valid": False, "error": "Internal server error"}), 500
 
 
 @app.route("/decode_raw_script", methods=["POST"])
@@ -4507,8 +4509,9 @@ def decode_raw_script():
                 "warning": warning_message,
             }
         )
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.error("decode_raw_script failed", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/import_descriptor", methods=["POST"])
@@ -4567,8 +4570,9 @@ def import_descriptor():
                 "note": "Descriptor was not raw(), so address import skipped.",
             }
         )
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.error("import_descriptor failed", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/set_labels_from_zpub", methods=["POST"])
@@ -4697,8 +4701,9 @@ def set_labels_from_zpub():
             200,
         )
 
-    except Exception as e:
-        return jsonify(error=str(e)), 500
+    except Exception:
+        logger.error("set_labels_from_zpub failed", exc_info=True)
+        return jsonify(error="Internal server error"), 500
 
 
 def slip132_to_bip32_pub(extkey: str):
@@ -4759,8 +4764,9 @@ def rpc_dispatch(cmd):
     try:
         result = allowed[cmd]()
         return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.error("rpc_dispatch failed for %s", cmd, exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/export_descriptors", methods=["GET"])
@@ -4828,8 +4834,9 @@ def convert_wif():
 
         return jsonify({"ok": True, "wif": wif, "qr": f"data:image/png;base64,{b64}"})
 
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception:
+        logger.error("convert_nsec_to_wif failed", exc_info=True)
+        return jsonify({"ok": False, "error": "Internal server error"}), 400
 
 
 PUBLIC_API_PREFIXES = ("/api/lnurl-auth/",)  # includes /callback/<sid> and /check/<sid>
@@ -8598,5 +8605,6 @@ def api_hide_manifesto():
             return jsonify({"ok": False, "error": "not_logged_in"}), 401
         session["manifesto_hidden"] = True
         return jsonify({"ok": True})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+    except Exception:
+        logger.error("api_hide_manifesto failed", exc_info=True)
+        return jsonify({"ok": False, "error": "Internal server error"}), 500
