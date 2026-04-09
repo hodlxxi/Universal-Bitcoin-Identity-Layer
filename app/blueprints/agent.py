@@ -1,6 +1,7 @@
 """Minimal Agent UBID routes: capabilities, jobs, attestations, and discovery."""
 
 import hashlib
+import logging
 import os
 import time
 import uuid
@@ -25,6 +26,8 @@ from app.services.trust_surface import (
     load_covenant,
     trust_page_context,
 )
+
+logger = logging.getLogger(__name__)
 
 agent_bp = Blueprint("agent", __name__)
 
