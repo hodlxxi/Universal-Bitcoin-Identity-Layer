@@ -713,12 +713,13 @@ def create_job_request():
 
     try:
         invoice, invoice_lookup_id = create_invoice(sats, memo, get_agent_pubkey_hex())
-    except Exception as e:
+    except Exception:
+        logger.error("Agent invoice creation failed", exc_info=True)
         return (
             jsonify(
                 {
                     "error": "invoice_create_failed",
-                    "message": str(e),
+                    "message": "Internal server error",
                 }
             ),
             502,
