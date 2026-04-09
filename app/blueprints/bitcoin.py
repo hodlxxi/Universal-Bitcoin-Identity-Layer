@@ -84,9 +84,9 @@ def rpc_command(cmd: str):
 
     except AttributeError:
         return jsonify({"error": f"Unknown command: {cmd}"}), 400
-    except Exception as e:
-        logger.error(f"RPC command {cmd} failed: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.error("RPC command failed", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @bitcoin_bp.route("/verify", methods=["POST"])
@@ -141,9 +141,9 @@ def verify_proof_of_funds():
 
         return jsonify({"verified": True, "amount_btc": str(verified_amount), "challenge_verified": True})
 
-    except Exception as e:
-        logger.error(f"Proof of funds verification failed: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.error("Proof of funds verification failed", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @bitcoin_bp.route("/decode_raw_script", methods=["POST"])
@@ -169,9 +169,9 @@ def decode_raw_script():
         decoded = rpc.decodescript(script)
         return jsonify(decoded)
 
-    except Exception as e:
-        logger.error(f"Script decoding failed: {e}")
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.error("Script decoding failed", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @bitcoin_bp.route("/descriptors", methods=["GET"])
@@ -208,9 +208,9 @@ def list_descriptors():
 
         return jsonify(descriptors)
 
-    except Exception as e:
-        logger.error(f"List descriptors failed: {e}")
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.error("List descriptors failed", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @bitcoin_bp.route("/challenge", methods=["POST"])

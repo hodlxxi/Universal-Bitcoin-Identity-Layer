@@ -197,9 +197,9 @@ def check_database_health() -> dict:
             session.execute("SELECT 1")
 
         return {"status": "healthy", "database": "postgresql", "connected": True}
-    except Exception as e:
-        logger.error(f"Database health check failed: {e}")
-        return {"status": "unhealthy", "database": "postgresql", "connected": False, "error": str(e)}
+    except Exception:
+        logger.error("Database health check failed", exc_info=True)
+        return {"status": "unhealthy", "database": "postgresql", "connected": False, "error": "Internal server error"}
 
 
 # ============================================================================
@@ -306,9 +306,9 @@ def check_redis_health() -> dict:
             "connected_clients": info.get("connected_clients"),
             "used_memory_human": info.get("used_memory_human"),
         }
-    except Exception as e:
-        logger.error(f"Redis health check failed: {e}")
-        return {"status": "unhealthy", "cache": "redis", "connected": False, "error": str(e)}
+    except Exception:
+        logger.error("Redis health check failed", exc_info=True)
+        return {"status": "unhealthy", "cache": "redis", "connected": False, "error": "Internal server error"}
 
 
 # ============================================================================
