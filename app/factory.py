@@ -11,13 +11,15 @@ Implements the Flask application factory pattern with:
 import logging
 from typing import Optional
 
-from flask import Flask, jsonify
+from flask import Flask, g, jsonify, request
 from flask_socketio import SocketIO
+from werkzeug.exceptions import HTTPException
 
 from app.audit_logger import init_audit_logger
 from app.config import AppConfig, get_config
 from app.database import close_all, init_all
 from app.jwks import ensure_rsa_keypair
+from app.request_context import get_or_create_request_id
 from app.security import init_security
 
 logger = logging.getLogger(__name__)
@@ -247,14 +249,39 @@ def register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(500)
     def internal_error(e):
-        logger.error(f"Internal server error: {e}", exc_info=True)
-        return jsonify({"error": "internal_error", "message": "An unexpected error occurred"}), 500
+        request_id = getattr(g, "request_id", None)
+        logger.error(
+            "internal_server_error request_id=%s path=%s method=%s",
+            request_id,
+            request.path,
+            request.method,
+            exc_info=True,
+        )
+        payload = {"error": "internal_error", "message": "An unexpected error occurred"}
+        if request_id:
+            payload["request_id"] = request_id
+        return jsonify(payload), 500
+
+    @app.errorhandler(Exception)
+    def unhandled_exception(e):
+        if isinstance(e, HTTPException):
+            return e
+        request_id = getattr(g, "request_id", None)
+        logger.error(
+            "unhandled_exception request_id=%s path=%s method=%s",
+            request_id,
+            request.path,
+            request.method,
+            exc_info=True,
+        )
+        payload = {"error": "internal_error", "message": "An unexpected error occurred"}
+        if request_id:
+            payload["request_id"] = request_id
+        return jsonify(payload), 500
 
 
 def register_request_handlers(app: Flask) -> None:
     """Register before/after request handlers."""
-
-    from flask import request
 
     OAUTH_PATH_PREFIXES = ("/oauth/", "/oauthx/")
     OAUTH_PUBLIC_PATHS = (
@@ -269,6 +296,7 @@ def register_request_handlers(app: Flask) -> None:
     @app.before_request
     def mark_oauth_public_paths():
         """Mark OAuth public paths to bypass authentication checks."""
+        get_or_create_request_id()
         p = request.path or "/"
         if any(p.startswith(pref) for pref in OAUTH_PATH_PREFIXES) or p in OAUTH_PUBLIC_PATHS:
             setattr(request, "_oauth_public", True)
@@ -282,6 +310,7 @@ def register_request_handlers(app: Flask) -> None:
         cfg = app.config.get("APP_CONFIG", {})
         if cfg.get("FORCE_HTTPS") and request.is_secure:
             response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+        response.headers["X-Request-ID"] = getattr(g, "request_id", "") or response.headers.get("X-Request-ID", "")
 
         return response
 
