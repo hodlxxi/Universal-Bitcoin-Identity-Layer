@@ -21,6 +21,7 @@ from app.database import close_all, init_all
 from app.jwks import ensure_rsa_keypair
 from app.request_context import get_or_create_request_id
 from app.security import init_security
+from app.structured_logging import log_event
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +251,7 @@ def register_error_handlers(app: Flask) -> None:
     @app.errorhandler(500)
     def internal_error(e):
         request_id = getattr(g, "request_id", None)
+        log_event(logger, "http.internal_error", outcome="error", status=500)
         logger.error(
             "internal_server_error request_id=%s path=%s method=%s",
             request_id,
@@ -267,6 +269,7 @@ def register_error_handlers(app: Flask) -> None:
         if isinstance(e, HTTPException):
             return e
         request_id = getattr(g, "request_id", None)
+        log_event(logger, "http.unhandled_exception", outcome="error", status=500)
         logger.error(
             "unhandled_exception request_id=%s path=%s method=%s",
             request_id,
@@ -297,6 +300,7 @@ def register_request_handlers(app: Flask) -> None:
     def mark_oauth_public_paths():
         """Mark OAuth public paths to bypass authentication checks."""
         get_or_create_request_id()
+        log_event(logger, "http.request_received", outcome="started")
         p = request.path or "/"
         if any(p.startswith(pref) for pref in OAUTH_PATH_PREFIXES) or p in OAUTH_PUBLIC_PATHS:
             setattr(request, "_oauth_public", True)
@@ -311,6 +315,7 @@ def register_request_handlers(app: Flask) -> None:
         if cfg.get("FORCE_HTTPS") and request.is_secure:
             response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
         response.headers["X-Request-ID"] = getattr(g, "request_id", "") or response.headers.get("X-Request-ID", "")
+        log_event(logger, "http.response_sent", outcome="completed", status=response.status_code)
 
         return response
 
