@@ -701,7 +701,13 @@ def create_job_request():
             .first()
         )
         if existing_job and existing_job.status in {"invoice_pending", "done"}:
-            log_event(logger, "agent.request_deduplicated", job_id=existing_job.id, invoice_id=existing_job.payment_hash, outcome=existing_job.status)
+            log_event(
+                logger,
+                "agent.request_deduplicated",
+                job_id=existing_job.id,
+                invoice_id=existing_job.payment_hash,
+                outcome=existing_job.status,
+            )
             existing_event = (
                 session.query(AgentEvent)
                 .filter_by(job_id=existing_job.id)
@@ -756,8 +762,16 @@ def create_job_request():
         session.flush()
         job_id = job.id
 
-    log_event(logger, "agent.execution_started", job_id=job_id, invoice_id=_payment_hash(invoice_lookup_id), outcome="invoice_pending")
-    audit_logger.log_event("agent.job_created", job_id=job_id, invoice_id=_payment_hash(invoice_lookup_id), status="invoice_pending")
+    log_event(
+        logger,
+        "agent.execution_started",
+        job_id=job_id,
+        invoice_id=_payment_hash(invoice_lookup_id),
+        outcome="invoice_pending",
+    )
+    audit_logger.log_event(
+        "agent.job_created", job_id=job_id, invoice_id=_payment_hash(invoice_lookup_id), status="invoice_pending"
+    )
 
     return (
         jsonify(
@@ -851,7 +865,13 @@ def get_job(job_id: str):
         # If no receipt yet, but invoice is paid -> mint receipt exactly once
         if not existing_event:
             paid = check_invoice_paid(job.payment_lookup_id)
-            log_event(logger, "agent.payment_checked", job_id=job.id, invoice_id=job.payment_hash, outcome="paid" if paid else "pending")
+            log_event(
+                logger,
+                "agent.payment_checked",
+                job_id=job.id,
+                invoice_id=job.payment_hash,
+                outcome="paid" if paid else "pending",
+            )
         else:
             paid = False
 
@@ -877,7 +897,9 @@ def get_job(job_id: str):
             # Persist job outcome (but do NOT store receipt in result_json)
             job.status = "done"
             session.flush()
-            log_event(logger, "agent.execution_completed", job_id=job.id, invoice_id=job.payment_hash, outcome=job.status)
+            log_event(
+                logger, "agent.execution_completed", job_id=job.id, invoice_id=job.payment_hash, outcome=job.status
+            )
             audit_logger.log_event("agent.job_completed", job_id=job.id, invoice_id=job.payment_hash, status=job.status)
 
             existing_event = (

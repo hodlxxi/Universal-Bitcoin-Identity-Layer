@@ -79,11 +79,24 @@ def _check_invoice_paid_lnd_rest(invoice_id: str) -> bool:
         raise LightningPaymentError("Missing LND_REST_URL for LND REST backend.")
     resp = requests.get(f"{base_url}/v1/invoice/{invoice_id}", headers=_lnd_headers(), timeout=15)
     if resp.status_code >= 300:
-        log_event(logger, "ln.invoice_lookup_failed", backend="lnd_rest", invoice_id=invoice_id, outcome="http_error", status=resp.status_code)
+        log_event(
+            logger,
+            "ln.invoice_lookup_failed",
+            backend="lnd_rest",
+            invoice_id=invoice_id,
+            outcome="http_error",
+            status=resp.status_code,
+        )
         raise LightningPaymentError(f"LND invoice lookup failed: {resp.status_code}")
 
     settled = bool(resp.json().get("settled"))
-    log_event(logger, "ln.invoice_lookup_checked", backend="lnd_rest", invoice_id=invoice_id, outcome="paid" if settled else "unpaid")
+    log_event(
+        logger,
+        "ln.invoice_lookup_checked",
+        backend="lnd_rest",
+        invoice_id=invoice_id,
+        outcome="paid" if settled else "unpaid",
+    )
     return settled
 
 
@@ -132,7 +145,9 @@ def _run_lncli(args: list[str], timeout: int = 20) -> dict:
         raise LightningPaymentError(f"lncli timed out after {timeout}s: {' '.join(cmd)}") from e
 
     if p.returncode != 0:
-        log_event(logger, "ln.lnd_status_fetch_failed", backend="lnd_cli", outcome="command_failed", status=p.returncode)
+        log_event(
+            logger, "ln.lnd_status_fetch_failed", backend="lnd_cli", outcome="command_failed", status=p.returncode
+        )
         err = (p.stderr or p.stdout or "").strip()
         raise LightningPaymentError(f"lncli failed (rc={p.returncode}): {err}")
 
@@ -163,7 +178,13 @@ def _check_invoice_paid_lnd_cli(invoice_id: str) -> bool:
     # invoice_id should be the payment hash (hex) i.e. r_hash
     j = _run_lncli(["lookupinvoice", invoice_id], timeout=20)
     settled = bool(j.get("settled"))
-    log_event(logger, "ln.invoice_lookup_checked", backend="lnd_cli", invoice_id=invoice_id, outcome="paid" if settled else "unpaid")
+    log_event(
+        logger,
+        "ln.invoice_lookup_checked",
+        backend="lnd_cli",
+        invoice_id=invoice_id,
+        outcome="paid" if settled else "unpaid",
+    )
     return settled
 
 
@@ -187,7 +208,9 @@ def create_invoice(amount_sats: int, memo: str, user_pubkey: str, expiry_seconds
             invoice_id = secrets.token_bytes(32).hex()  # 64-hex like LND r_hash
             payment_request = f"lnbc{amount_sats}n1p{secrets.token_urlsafe(80)}"
 
-        log_event(logger, "ln.invoice_create", backend=backend, invoice_id=invoice_id, outcome="success", sats=amount_sats)
+        log_event(
+            logger, "ln.invoice_create", backend=backend, invoice_id=invoice_id, outcome="success", sats=amount_sats
+        )
         return payment_request, invoice_id
 
     except Exception as e:
@@ -203,16 +226,22 @@ def check_invoice_paid(invoice_id: str) -> bool:
 
     if backend == "lnd_rest":
         paid = _check_invoice_paid_lnd_rest(invoice_id)
-        log_event(logger, "ln.payment_decision", backend=backend, invoice_id=invoice_id, outcome="paid" if paid else "pending")
+        log_event(
+            logger, "ln.payment_decision", backend=backend, invoice_id=invoice_id, outcome="paid" if paid else "pending"
+        )
         return paid
     if backend == "lnd_cli":
         paid = _check_invoice_paid_lnd_cli(invoice_id)
-        log_event(logger, "ln.payment_decision", backend=backend, invoice_id=invoice_id, outcome="paid" if paid else "pending")
+        log_event(
+            logger, "ln.payment_decision", backend=backend, invoice_id=invoice_id, outcome="paid" if paid else "pending"
+        )
         return paid
 
     # stub/testing
     paid = os.getenv("TEST_INVOICE_PAID", "false").lower() == "true"
-    log_event(logger, "ln.payment_decision", backend=backend, invoice_id=invoice_id, outcome="paid" if paid else "pending")
+    log_event(
+        logger, "ln.payment_decision", backend=backend, invoice_id=invoice_id, outcome="paid" if paid else "pending"
+    )
     return paid
 
 
