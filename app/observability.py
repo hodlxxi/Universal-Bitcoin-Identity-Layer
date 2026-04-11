@@ -26,7 +26,7 @@ def log_event(
 ) -> None:
     """
     Emit a structured log record for observability.
-    
+
     Args:
         event: Event name (e.g., 'agent_request_received', 'invoice_created')
         request_id: Request correlation ID (from X-Request-ID or g.request_id)
@@ -39,10 +39,10 @@ def log_event(
         outcome: 'success', 'failure', 'error', etc.
         status: HTTP status code or operation-specific status
         details: Additional context dict (safe, no secrets)
-    
+
     Returns:
         None (logs only)
-    
+
     Safety:
         - Never logs secrets, macaroons, auth headers, full payment requests
         - Details dict should be filtered by caller
@@ -51,7 +51,7 @@ def log_event(
     record = {
         "event": event,
     }
-    
+
     # Add correlation fields
     if request_id:
         record["request_id"] = request_id
@@ -59,7 +59,7 @@ def log_event(
         record["path"] = path
     if method:
         record["method"] = method
-    
+
     # Add job/invoice/actor identifiers
     if job_id:
         record["job_id"] = job_id
@@ -69,17 +69,17 @@ def log_event(
         record["user_pubkey_tail"] = user_pubkey_tail
     if actor_type:
         record["actor_type"] = actor_type
-    
+
     # Add outcome/status
     if outcome:
         record["outcome"] = outcome
     if status is not None:
         record["status"] = status
-    
+
     # Add safe details
     if details:
         record["details"] = details
-    
+
     # Emit as JSON-line format for structured parsing
     # Also emit as traditional log line with key=value pairs for human inspection
     log_line = " ".join(f"{k}={json.dumps(v) if isinstance(v, dict) else v}" for k, v in record.items())
