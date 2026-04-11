@@ -11,10 +11,13 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, render_template, request
 
+from app.audit_logger import get_audit_logger
+
 from app.agent_signer import canonical_json_bytes, get_agent_pubkey_hex, sign_message, verify_message
 from app.database import session_scope
 from app.models import AgentEvent, AgentJob
 from app.payments.ln import check_invoice_paid, create_invoice
+from app.structured_logging import log_event
 from app.services.trust_surface import (
     DEFAULT_AGENT_ID,
     DEFAULT_COVENANT_ID,
@@ -28,6 +31,7 @@ from app.services.trust_surface import (
 )
 
 logger = logging.getLogger(__name__)
+audit_logger = get_audit_logger()
 
 agent_bp = Blueprint("agent", __name__)
 
@@ -635,6 +639,7 @@ def post_agent_message():
 
     spec = _job_spec(job_type)
     if not spec:
+        log_event(logger, "agent.request_rejected", outcome="unsupported_job_type")
         return jsonify({"error": "unsupported_job_type"}), 400
 
     result_payload = _job_result(
@@ -660,7 +665,10 @@ def post_agent_message():
 
 @agent_bp.post("/agent/request")
 def create_job_request():
+    log_event(logger, "agent.request_received", outcome="started")
+
     if not _check_ip_rate_limit():
+        log_event(logger, "agent.request_rejected", outcome="ip_rate_limited")
         return jsonify({"error": "ip_rate_limited"}), 429
 
     data = request.get_json(silent=True) or {}
@@ -668,6 +676,7 @@ def create_job_request():
     payload = data.get("payload") or {}
 
     if len(str(payload)) > 10000:
+        log_event(logger, "agent.request_rejected", outcome="payload_too_large")
         return jsonify({"error": "payload_too_large"}), 400
 
     spec = _job_spec(job_type)
@@ -678,6 +687,7 @@ def create_job_request():
         since = datetime.now(timezone.utc) - timedelta(days=1)
         jobs_last_day = session.query(AgentJob).filter(AgentJob.created_at >= since).count()
         if jobs_last_day >= MAX_JOBS_PER_DAY:
+            log_event(logger, "agent.request_rejected", outcome="daily_rate_limited")
             return jsonify({"error": "rate_limited", "message": "daily job limit reached"}), 429
 
     request_payload = {"job_type": job_type, "payload": payload}
@@ -691,6 +701,7 @@ def create_job_request():
             .first()
         )
         if existing_job and existing_job.status in {"invoice_pending", "done"}:
+            log_event(logger, "agent.request_deduplicated", job_id=existing_job.id, invoice_id=existing_job.payment_hash, outcome=existing_job.status)
             existing_event = (
                 session.query(AgentEvent)
                 .filter_by(job_id=existing_job.id)
@@ -716,7 +727,9 @@ def create_job_request():
 
     try:
         invoice, invoice_lookup_id = create_invoice(sats, memo, get_agent_pubkey_hex())
+        log_event(logger, "agent.invoice_created", invoice_id=_payment_hash(invoice_lookup_id), outcome="created")
     except Exception:
+        log_event(logger, "agent.invoice_create_failed", outcome="failure")
         logger.error("Agent invoice creation failed", exc_info=True)
         return (
             jsonify(
@@ -742,6 +755,9 @@ def create_job_request():
         session.add(job)
         session.flush()
         job_id = job.id
+
+    log_event(logger, "agent.execution_started", job_id=job_id, invoice_id=_payment_hash(invoice_lookup_id), outcome="invoice_pending")
+    audit_logger.log_event("agent.job_created", job_id=job_id, invoice_id=_payment_hash(invoice_lookup_id), status="invoice_pending")
 
     return (
         jsonify(
@@ -789,16 +805,19 @@ def dev_mark_paid(job_id: str):
     with session_scope() as session:
         job = session.query(AgentJob).filter_by(id=job_id).first()
         if not job:
+            log_event(logger, "agent.job_lookup", job_id=job_id, outcome="not_found")
             return jsonify({"error": "not_found"}), 404
 
         # If already has an event, return current status/receipt
         event = session.query(AgentEvent).filter_by(job_id=job_id).first()
         if event:
+            log_event(logger, "agent.receipt_returned", job_id=job.id, outcome=job.status)
             return jsonify({"job_id": job.id, "status": job.status, "receipt": event.event_json})
 
         # Issue receipt now
         last_event = session.query(AgentEvent).order_by(AgentEvent.created_at.desc()).first()
         prev_event_hash = last_event.event_hash if last_event else None
+        log_event(logger, "agent.payment_confirmed", job_id=job.id, invoice_id=job.payment_hash, outcome="paid")
         receipt = _build_receipt(job, prev_event_hash)
         event_hash = hashlib.sha256(canonical_json_bytes(receipt)).hexdigest()
         session.add(
@@ -810,6 +829,9 @@ def dev_mark_paid(job_id: str):
                 signature=receipt["signature"],
             )
         )
+        log_event(logger, "agent.execution_completed", job_id=job.id, invoice_id=job.payment_hash, outcome=job.status)
+        log_event(logger, "agent.receipt_returned", job_id=job.id, outcome=job.status)
+        audit_logger.log_event("agent.job_completed", job_id=job.id, invoice_id=job.payment_hash, status=job.status)
         return jsonify({"job_id": job.id, "status": job.status, "receipt": receipt})
 
 
@@ -818,6 +840,7 @@ def get_job(job_id: str):
     with session_scope() as session:
         job = session.query(AgentJob).filter_by(id=job_id).first()
         if not job:
+            log_event(logger, "agent.job_lookup", job_id=job_id, outcome="not_found")
             return jsonify({"error": "not_found"}), 404
 
         # Most recent event for THIS job (if any)
@@ -826,11 +849,18 @@ def get_job(job_id: str):
         )
 
         # If no receipt yet, but invoice is paid -> mint receipt exactly once
-        if not existing_event and check_invoice_paid(job.payment_lookup_id):
+        if not existing_event:
+            paid = check_invoice_paid(job.payment_lookup_id)
+            log_event(logger, "agent.payment_checked", job_id=job.id, invoice_id=job.payment_hash, outcome="paid" if paid else "pending")
+        else:
+            paid = False
+
+        if not existing_event and paid:
             # Chain head = latest event across all jobs
             last_event = session.query(AgentEvent).order_by(AgentEvent.created_at.desc()).first()
             chain_head = last_event.event_hash if last_event else None
 
+            log_event(logger, "agent.execution_started", job_id=job.id, invoice_id=job.payment_hash, outcome="running")
             receipt = _build_receipt(job, chain_head)
             event_hash = hashlib.sha256(canonical_json_bytes(receipt)).hexdigest()
 
@@ -847,11 +877,14 @@ def get_job(job_id: str):
             # Persist job outcome (but do NOT store receipt in result_json)
             job.status = "done"
             session.flush()
+            log_event(logger, "agent.execution_completed", job_id=job.id, invoice_id=job.payment_hash, outcome=job.status)
+            audit_logger.log_event("agent.job_completed", job_id=job.id, invoice_id=job.payment_hash, status=job.status)
 
             existing_event = (
                 session.query(AgentEvent).filter_by(job_id=job.id).order_by(AgentEvent.created_at.desc()).first()
             )
 
+        log_event(logger, "agent.receipt_returned", job_id=job.id, invoice_id=job.payment_hash, outcome=job.status)
         return jsonify(
             {
                 "job_id": job.id,

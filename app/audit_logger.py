@@ -9,6 +9,8 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from flask import g, has_request_context, request
+
 _logger = logging.getLogger("audit")
 
 # Backwards-compatible alias: some code/tests expect `audit_logger` at module scope
@@ -114,7 +116,11 @@ if not _has:
 
     def _log_event(event, **fields):
         try:
-            audit_logger.info("event=%s fields=%s", event, fields)
+            if has_request_context():
+                fields.setdefault("request_id", getattr(g, "request_id", None))
+                fields.setdefault("path", request.path)
+                fields.setdefault("method", request.method)
+            audit_logger.info("event=%s fields=%s", event, {k: v for k, v in fields.items() if v is not None})
         except Exception:
             pass
 
