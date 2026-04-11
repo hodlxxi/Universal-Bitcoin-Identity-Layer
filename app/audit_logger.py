@@ -120,7 +120,33 @@ if not _has:
                 fields.setdefault("request_id", getattr(g, "request_id", None))
                 fields.setdefault("path", request.path)
                 fields.setdefault("method", request.method)
-            audit_logger.info("event=%s fields=%s", event, {k: v for k, v in fields.items() if v is not None})
+
+            blocked_keys = {
+                "secret",
+                "token",
+                "authorization",
+                "auth",
+                "signature",
+                "challenge",
+                "payment_request",
+                "macaroon",
+                "password",
+                "headers",
+            }
+
+            safe_fields = {}
+            for k, v in fields.items():
+                if v is None:
+                    continue
+                key = str(k).lower()
+                if key in blocked_keys:
+                    continue
+                if isinstance(v, str) and len(v) > 120:
+                    safe_fields[k] = "[redacted]"
+                else:
+                    safe_fields[k] = v
+
+            audit_logger.info("event=%s fields=%s", event, safe_fields)
         except Exception:
             pass
 
