@@ -24,4 +24,3 @@ def get_or_create_request_id() -> str:
         rid = uuid.uuid4().hex
     g.request_id = rid
     return rid
-

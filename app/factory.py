@@ -250,7 +250,13 @@ def register_error_handlers(app: Flask) -> None:
     @app.errorhandler(500)
     def internal_error(e):
         request_id = getattr(g, "request_id", None)
-        logger.error("internal_server_error request_id=%s path=%s method=%s", request_id, request.path, request.method, exc_info=True)
+        logger.error(
+            "internal_server_error request_id=%s path=%s method=%s",
+            request_id,
+            request.path,
+            request.method,
+            exc_info=True,
+        )
         payload = {"error": "internal_error", "message": "An unexpected error occurred"}
         if request_id:
             payload["request_id"] = request_id
@@ -261,7 +267,13 @@ def register_error_handlers(app: Flask) -> None:
         if isinstance(e, HTTPException):
             return e
         request_id = getattr(g, "request_id", None)
-        logger.error("unhandled_exception request_id=%s path=%s method=%s", request_id, request.path, request.method, exc_info=True)
+        logger.error(
+            "unhandled_exception request_id=%s path=%s method=%s",
+            request_id,
+            request.path,
+            request.method,
+            exc_info=True,
+        )
         payload = {"error": "internal_error", "message": "An unexpected error occurred"}
         if request_id:
             payload["request_id"] = request_id
