@@ -69,6 +69,7 @@ from flask import (
     flash,
 )
 from flask_socketio import SocketIO, emit
+from werkzeug.exceptions import HTTPException
 
 # === Added for production hardening ===
 import jwt
@@ -112,6 +113,7 @@ from app.blueprints.agent import agent_bp
 from app.browser_routes import get_browser_route_handler, register_browser_routes
 from app.socket_handlers import register_socket_handlers
 from app.socket_state import ACTIVE_SOCKETS, CHAT_HISTORY, ONLINE_META, ONLINE_USER_META, ONLINE_USERS
+from app.request_context import get_or_create_request_id
 
 # from app.playground_routes import playground_bp   # <-- ADD THIS
 from flask import make_response
@@ -624,6 +626,11 @@ app.register_blueprint(agent_invoice_bp)
 # VISIT_LOG_V1: per-request identity log (no query strings, no secrets)
 from flask import request
 
+@app.before_request
+def _assign_request_id():
+    get_or_create_request_id()
+
+
 @app.after_request
 def _hodl_visit_log(resp):
     try:
@@ -647,12 +654,34 @@ def _hodl_visit_log(resp):
         tail = (str(pub)[-8:] if pub else "")
 
         app.logger.info(
-            "VISIT ip=%s kind=%s lvl=%s lm=%s pub_tail=%s %s %s -> %s",
-            ip, kind, lvl, lm, tail, request.method, path, resp.status_code
+            "VISIT request_id=%s ip=%s kind=%s lvl=%s lm=%s pub_tail=%s %s %s -> %s",
+            getattr(g, "request_id", None), ip, kind, lvl, lm, tail, request.method, path, resp.status_code
         )
     except Exception:
         pass
+    try:
+        resp.headers["X-Request-ID"] = getattr(g, "request_id", "") or resp.headers.get("X-Request-ID", "")
+    except Exception:
+        pass
     return resp
+
+
+@app.errorhandler(Exception)
+def _handle_unexpected_exception(exc):
+    if isinstance(exc, HTTPException):
+        return exc
+    request_id = getattr(g, "request_id", None)
+    app.logger.error(
+        "unhandled_exception request_id=%s path=%s method=%s",
+        request_id,
+        getattr(request, "path", None),
+        getattr(request, "method", None),
+        exc_info=True,
+    )
+    payload = {"error": "internal_error", "message": "An unexpected error occurred"}
+    if request_id:
+        payload["request_id"] = request_id
+    return jsonify(payload), 500
 
 # Cookie domain: allow sessions to work across apex + www
 _cookie_domain = os.getenv("SESSION_COOKIE_DOMAIN")
