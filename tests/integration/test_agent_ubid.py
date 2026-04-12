@@ -194,6 +194,12 @@ def test_job_receipt_after_marked_paid(client, monkeypatch):
     assert body["status"] == "done"
 
     receipt = body["receipt"]
+    assert receipt["event_type"] == "job_receipt"
+    assert receipt["job_type"] == "ping"
+    assert receipt["version"] == "1.0"
+    assert "payment_hash" in receipt
+    assert "result_hash" in receipt
+    assert "prev_event_hash" in receipt
     assert (
         receipt["request_hash"]
         == hashlib.sha256(canonical_json_bytes({"job_type": "ping", "payload": {"message": "hello"}})).hexdigest()
@@ -216,6 +222,11 @@ def test_attestations_returns_receipts(client, monkeypatch):
     body = res.get_json()
     assert len(body["items"]) >= 1
     assert body["items"][0]["event_type"] == "job_receipt"
+    assert body["items"][0]["job_type"] == "ping"
+    assert body["items"][0]["version"] == "1.0"
+    assert "event_hash" in body["items"][0]
+    assert body["limit"] == 20
+    assert body["offset"] == 0
 
 
 def test_request_verify_signature_job_supported(client, monkeypatch):
@@ -352,9 +363,12 @@ def test_verify_endpoint_returns_valid_true_for_existing_receipt(client, monkeyp
 
     body = res.get_json()
     assert body["job_id"] == req["job_id"]
+    assert body["status"] == "verified"
     assert body["valid"] is True
     assert "agent_pubkey" in body
     assert "event_hash" in body
+    assert "attestation" in body
+    assert body["attestation"]["job_type"] == "verify_signature"
     assert "receipt" in body
 
 
@@ -363,6 +377,7 @@ def test_verify_endpoint_returns_404_for_missing_job(client):
     assert res.status_code == 404
     body = res.get_json()
     assert body["error"] == "not_found"
+    assert body["verification"] == "unavailable"
 
 
 def test_capabilities_advertise_verify_endpoint(client):
@@ -452,9 +467,14 @@ def test_reputation_endpoint_returns_basic_agent_stats(client, monkeypatch):
     assert "agent_pubkey" in body
     assert "total_jobs" in body
     assert "completed_jobs" in body
+    assert "evidenced_completed_jobs" in body
+    assert "counts_by_job_type" in body
+    assert "latest_event_timestamp" in body
     assert "job_types" in body
     assert "attestations_count" in body
     assert body["completed_jobs"] >= 1
+    assert body["evidenced_completed_jobs"] >= 1
+    assert body["counts_by_job_type"]["verify_signature"] >= 1
 
 
 def test_capabilities_advertise_reputation_endpoint(client):
