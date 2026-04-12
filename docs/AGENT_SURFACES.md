@@ -26,7 +26,7 @@ This document describes the machine-readable discovery surface for HODLXXI Agent
 
 Clients that want strict validation should fetch the schema from the URI advertised in the capabilities payload itself.
 
-Current high-signal paid jobs include `ping`, `verify_signature`, `covenant_decode`, and `covenant_visualize` (script/descriptor explain + diagram output).
+Current high-signal paid jobs include `ping`, `verify_signature`, `covenant_decode`, and `covenant_visualize` (script/descriptor explain + diagram output with conservative `confidence`, `pattern_match`, and `simplified_visualization` fields).
 
 ## Skills
 

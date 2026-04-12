@@ -222,6 +222,14 @@ At least one of `descriptor`, `script_asm`, or `script_hex` must be supplied.
   "job_type": "covenant_visualize",
   "ok": true,
   "summary": "string",
+  "confidence": 0.72,
+  "pattern_match": {
+    "family": "hodlxxi_covenant|generic_script",
+    "variant": "generic_conditional_timelock|cooperative_plus_delayed_exit|nested_cltv_ladder|hodlxxi_two_party_ladder|unclassified",
+    "signals": ["string"],
+    "note": "Pattern match is heuristic and based on opcode structure only."
+  },
+  "simplified_visualization": false,
   "human_explanation": {
     "summary": "string",
     "cooperative_path": "string",
@@ -233,7 +241,10 @@ At least one of `descriptor`, `script_asm`, or `script_hex` must be supplied.
   "machine_explanation": {
     "type": "string",
     "observed": "object",
-    "inferred": "object"
+    "inferred": "object",
+    "heuristic": {"notes": ["string"]},
+    "pattern_match": "object",
+    "confidence_inputs": "object"
   },
   "mermaid": "flowchart TD ...",
   "timeline": [],
