@@ -10,6 +10,8 @@ from typing import Tuple
 
 import requests
 
+from app.structured_logging import log_event
+
 logger = logging.getLogger(__name__)
 
 
@@ -52,7 +54,8 @@ def _create_invoice_lnd_rest(amount_sats: int, memo: str, expiry_seconds: int) -
     payload = {"value": int(amount_sats), "memo": memo, "expiry": int(expiry_seconds)}
     resp = requests.post(f"{base_url}/v1/invoices", json=payload, headers=_lnd_headers(), timeout=15)
     if resp.status_code >= 300:
-        raise LightningPaymentError(f"LND invoice create failed: {resp.status_code} {resp.text}")
+        log_event(logger, "ln.invoice_create_failed", backend="lnd_rest", outcome="http_error", status=resp.status_code)
+        raise LightningPaymentError(f"LND invoice create failed: {resp.status_code}")
 
     data = resp.json()
     payment_request = data.get("payment_request")
@@ -63,7 +66,10 @@ def _create_invoice_lnd_rest(amount_sats: int, memo: str, expiry_seconds: int) -
         invoice_id = base64.b64decode(data["r_hash"]).hex()
 
     if not payment_request or not invoice_id:
+        log_event(logger, "ln.invoice_create_failed", backend="lnd_rest", outcome="missing_fields")
         raise LightningPaymentError("LND invoice response missing payment_request or r_hash.")
+
+    log_event(logger, "ln.invoice_created", backend="lnd_rest", invoice_id=invoice_id, outcome="created")
     return payment_request, invoice_id
 
 
@@ -73,8 +79,25 @@ def _check_invoice_paid_lnd_rest(invoice_id: str) -> bool:
         raise LightningPaymentError("Missing LND_REST_URL for LND REST backend.")
     resp = requests.get(f"{base_url}/v1/invoice/{invoice_id}", headers=_lnd_headers(), timeout=15)
     if resp.status_code >= 300:
-        raise LightningPaymentError(f"LND invoice lookup failed: {resp.status_code} {resp.text}")
-    return bool(resp.json().get("settled"))
+        log_event(
+            logger,
+            "ln.invoice_lookup_failed",
+            backend="lnd_rest",
+            invoice_id=invoice_id,
+            outcome="http_error",
+            status=resp.status_code,
+        )
+        raise LightningPaymentError(f"LND invoice lookup failed: {resp.status_code}")
+
+    settled = bool(resp.json().get("settled"))
+    log_event(
+        logger,
+        "ln.invoice_lookup_checked",
+        backend="lnd_rest",
+        invoice_id=invoice_id,
+        outcome="paid" if settled else "unpaid",
+    )
+    return settled
 
 
 # -----------------------
@@ -118,9 +141,13 @@ def _run_lncli(args: list[str], timeout: int = 20) -> dict:
             check=False,
         )
     except subprocess.TimeoutExpired as e:
+        log_event(logger, "ln.lnd_status_fetch_failed", backend="lnd_cli", outcome="timeout")
         raise LightningPaymentError(f"lncli timed out after {timeout}s: {' '.join(cmd)}") from e
 
     if p.returncode != 0:
+        log_event(
+            logger, "ln.lnd_status_fetch_failed", backend="lnd_cli", outcome="command_failed", status=p.returncode
+        )
         err = (p.stderr or p.stdout or "").strip()
         raise LightningPaymentError(f"lncli failed (rc={p.returncode}): {err}")
 
@@ -140,14 +167,25 @@ def _create_invoice_lnd_cli(amount_sats: int, memo: str, expiry_seconds: int) ->
     invoice_id = j.get("r_hash")
     payment_request = j.get("payment_request")
     if not invoice_id or not payment_request:
+        log_event(logger, "ln.invoice_create_failed", backend="lnd_cli", outcome="missing_fields")
         raise LightningPaymentError("lncli addinvoice missing r_hash or payment_request.")
+
+    log_event(logger, "ln.invoice_created", backend="lnd_cli", invoice_id=invoice_id, outcome="created")
     return payment_request, invoice_id
 
 
 def _check_invoice_paid_lnd_cli(invoice_id: str) -> bool:
     # invoice_id should be the payment hash (hex) i.e. r_hash
     j = _run_lncli(["lookupinvoice", invoice_id], timeout=20)
-    return bool(j.get("settled"))
+    settled = bool(j.get("settled"))
+    log_event(
+        logger,
+        "ln.invoice_lookup_checked",
+        backend="lnd_cli",
+        invoice_id=invoice_id,
+        outcome="paid" if settled else "unpaid",
+    )
+    return settled
 
 
 # -----------------------
@@ -170,12 +208,15 @@ def create_invoice(amount_sats: int, memo: str, user_pubkey: str, expiry_seconds
             invoice_id = secrets.token_bytes(32).hex()  # 64-hex like LND r_hash
             payment_request = f"lnbc{amount_sats}n1p{secrets.token_urlsafe(80)}"
 
-        logger.info("Created Lightning invoice %s for %s sats (backend=%s)", invoice_id, amount_sats, backend)
+        log_event(
+            logger, "ln.invoice_create", backend=backend, invoice_id=invoice_id, outcome="success", sats=amount_sats
+        )
         return payment_request, invoice_id
 
     except Exception as e:
+        log_event(logger, "ln.invoice_create", backend=(os.getenv("LN_BACKEND") or "stub").lower(), outcome="failure")
         logger.error("Failed to create Lightning invoice: %s", e, exc_info=True)
-        raise LightningPaymentError(f"Could not create invoice: {e}") from e
+        raise LightningPaymentError("Could not create invoice") from e
 
 
 def check_invoice_paid(invoice_id: str) -> bool:
@@ -184,12 +225,24 @@ def check_invoice_paid(invoice_id: str) -> bool:
     backend = (os.getenv("LN_BACKEND") or "stub").lower()
 
     if backend == "lnd_rest":
-        return _check_invoice_paid_lnd_rest(invoice_id)
+        paid = _check_invoice_paid_lnd_rest(invoice_id)
+        log_event(
+            logger, "ln.payment_decision", backend=backend, invoice_id=invoice_id, outcome="paid" if paid else "pending"
+        )
+        return paid
     if backend == "lnd_cli":
-        return _check_invoice_paid_lnd_cli(invoice_id)
+        paid = _check_invoice_paid_lnd_cli(invoice_id)
+        log_event(
+            logger, "ln.payment_decision", backend=backend, invoice_id=invoice_id, outcome="paid" if paid else "pending"
+        )
+        return paid
 
     # stub/testing
-    return os.getenv("TEST_INVOICE_PAID", "false").lower() == "true"
+    paid = os.getenv("TEST_INVOICE_PAID", "false").lower() == "true"
+    log_event(
+        logger, "ln.payment_decision", backend=backend, invoice_id=invoice_id, outcome="paid" if paid else "pending"
+    )
+    return paid
 
 
 logger.info("Lightning payment module loaded (LN_BACKEND decides backend)")

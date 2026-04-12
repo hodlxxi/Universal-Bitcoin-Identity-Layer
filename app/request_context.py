@@ -24,3 +24,8 @@ def get_or_create_request_id() -> str:
         rid = uuid.uuid4().hex
     g.request_id = rid
     return rid
+
+
+def current_request_id() -> str | None:
+    """Return the active request id when request context exists."""
+    return getattr(g, "request_id", None)
