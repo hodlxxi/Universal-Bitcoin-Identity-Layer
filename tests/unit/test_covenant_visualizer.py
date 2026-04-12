@@ -4,7 +4,9 @@ from app.services.covenant_visualizer import CovenantInputError, visualize_coven
 def test_visualize_covenant_parses_if_else_cltv_asm_and_builds_timeline():
     result = visualize_covenant(
         {
-            "script_asm": "OP_IF 02" + "11" * 32 + " OP_CHECKSIG OP_ELSE 500000 OP_CHECKLOCKTIMEVERIFY OP_DROP 03"
+            "script_asm": "OP_IF 02"
+            + "11" * 32
+            + " OP_CHECKSIG OP_ELSE 500000 OP_CHECKLOCKTIMEVERIFY OP_DROP 03"
             + "22" * 32
             + " OP_CHECKSIG OP_ENDIF",
             "network": "bitcoin",
