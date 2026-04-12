@@ -948,7 +948,9 @@ def attestations():
     with session_scope() as session:
         events = session.query(AgentEvent).order_by(AgentEvent.created_at.desc()).offset(offset).limit(limit).all()
         job_ids = {event.job_id for event in events}
-        jobs = {job.id: job for job in session.query(AgentJob).filter(AgentJob.id.in_(job_ids)).all()} if job_ids else {}
+        jobs = (
+            {job.id: job for job in session.query(AgentJob).filter(AgentJob.id.in_(job_ids)).all()} if job_ids else {}
+        )
         items = [_event_attestation(event, jobs.get(event.job_id)) for event in events]
     return jsonify({"items": items, "count": len(items), "limit": limit, "offset": offset})
 
