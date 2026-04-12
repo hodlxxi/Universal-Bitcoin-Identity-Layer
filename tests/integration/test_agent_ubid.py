@@ -424,6 +424,58 @@ def test_capabilities_advertise_covenant_decode_job_type(client):
     assert spec["output_schema"]["has_cltv"] == "boolean"
 
 
+def test_capabilities_advertise_covenant_visualize_job_type(client):
+    res = client.get("/agent/capabilities")
+    assert res.status_code == 200
+    body = res.get_json()
+
+    assert "covenant_visualize" in body["job_types"]
+    spec = body["job_types"]["covenant_visualize"]
+    assert spec["price_sats"] == 21
+    assert "script_hex" in spec["input_schema"]
+    assert "mermaid" in spec["output_schema"]
+
+
+def test_covenant_visualize_job_receipt_contains_visualization_result(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.blueprints.agent.create_invoice",
+        lambda amount_sats, memo, user_pubkey, expiry_seconds=3600: ("ln-invoice", "lookup-id-covenant-viz"),
+    )
+    monkeypatch.setattr("app.blueprints.agent.check_invoice_paid", lambda invoice_id: True)
+
+    req = client.post(
+        "/agent/request",
+        json={
+            "job_type": "covenant_visualize",
+            "input": {
+                "script_asm": "OP_IF 021111111111111111111111111111111111111111111111111111111111111111 "
+                "OP_CHECKSIG OP_ELSE 500000 OP_CHECKLOCKTIMEVERIFY OP_DROP "
+                "031111111111111111111111111111111111111111111111111111111111111111 OP_CHECKSIG OP_ENDIF"
+            },
+        },
+    ).get_json()
+
+    res = client.get(f"/agent/jobs/{req['job_id']}")
+    assert res.status_code == 200
+
+    with session_scope() as session:
+        job = session.query(AgentJob).filter_by(id=req["job_id"]).one()
+        assert job.result_json["job_type"] == "covenant_visualize"
+        assert job.result_json["source_type"] == "script_asm"
+        assert job.result_json["mermaid"].startswith("flowchart TD")
+        assert "timeline" in job.result_json
+
+
+def test_covenant_visualize_rejects_missing_supported_input(client):
+    res = client.post(
+        "/agent/request",
+        json={"job_type": "covenant_visualize", "input": {"network": "bitcoin"}},
+    )
+    assert res.status_code == 400
+    body = res.get_json()
+    assert body["error"] == "invalid_input"
+
+
 def test_reputation_endpoint_returns_basic_agent_stats(client, monkeypatch):
     monkeypatch.setattr(
         "app.blueprints.agent.create_invoice",
