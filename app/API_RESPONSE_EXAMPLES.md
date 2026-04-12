@@ -96,3 +96,37 @@ These examples are representative of current runtime patterns. They are examples
 ## Error-format reality check
 
 Current runtime uses multiple response patterns. Integrators should parse per-endpoint contracts rather than assuming one universal envelope.
+
+## Agent covenant visualization
+
+### `POST /agent/request` (`job_type=covenant_visualize`) created
+
+```json
+{
+  "job_id": "a7cb9c5c-xxxx-xxxx-xxxx-7f6f8c8f1f24",
+  "invoice": "lnbc...",
+  "payment_hash": "abcd...",
+  "status": "invoice_pending"
+}
+```
+
+### `GET /agent/jobs/<job_id>` done (result excerpt)
+
+```json
+{
+  "job_id": "a7cb9c5c-xxxx-xxxx-xxxx-7f6f8c8f1f24",
+  "status": "done",
+  "result": {
+    "job_type": "covenant_visualize",
+    "ok": true,
+    "source_type": "script_asm",
+    "summary": "Based on the provided script material...",
+    "mermaid": "flowchart TD\n+  start -->|OP_IF| cooperative\n+  start -->|OP_ELSE| alternative",
+    "timeline": [
+      {"order": 0, "event": "script_evaluated"},
+      {"order": 1, "event": "timelock_gate", "value": 500000, "classification": "block_height"}
+    ],
+    "warnings": ["policy intent cannot be proven from script alone"]
+  }
+}
+```

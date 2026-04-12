@@ -39,6 +39,11 @@
    - `/agent/skills`
    - `/agent/marketplace/listing`
 
+6. **[COVENANT_VISUALIZATION_MVP.md](COVENANT_VISUALIZATION_MVP.md)** - Paid covenant visualization capability
+   - `job_type: covenant_visualize`
+   - input/output contracts
+   - parsing boundaries and limitations
+
 ---
 
 ## 🚀 Quick Start
