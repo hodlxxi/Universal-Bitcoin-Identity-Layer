@@ -41,6 +41,7 @@ ATTESTATION_SATS = 1
 MAX_JOBS_PER_DAY = 100
 CAPABILITIES_SCHEMA_VERSION = "1.0"
 MARKETPLACE_LISTING_VERSION = "1.0"
+RECEIPT_VERSION = "1.0"
 SKILLS_ROOT = Path(__file__).resolve().parents[2] / "skills" / "public"
 SKILLS_REPO_RAW_BASE = "https://raw.githubusercontent.com/hodlxxi/Universal-Bitcoin-Identity-Layer/main/skills/public"
 
@@ -843,15 +844,35 @@ def _build_receipt(job: AgentJob, prev_event_hash: str | None) -> dict:
     receipt = {
         "event_type": "job_receipt",
         "job_id": job.id,
+        "job_type": job.job_type,
         "request_hash": job.request_hash,
         "payment_hash": job.payment_hash,
         "result_hash": job.result_hash,
         "timestamp": _iso_now(),
         "agent_pubkey": get_agent_pubkey_hex(),
         "prev_event_hash": prev_event_hash,
+        "version": RECEIPT_VERSION,
     }
     receipt["signature"] = sign_message(canonical_json_bytes(receipt))
     return receipt
+
+
+def _event_attestation(event: AgentEvent, job: AgentJob | None) -> dict:
+    raw = event.event_json or {}
+    return {
+        "version": raw.get("version", RECEIPT_VERSION),
+        "event_type": raw.get("event_type", "job_receipt"),
+        "job_id": raw.get("job_id", event.job_id),
+        "job_type": raw.get("job_type") or (job.job_type if job else None),
+        "request_hash": raw.get("request_hash") or (job.request_hash if job else None),
+        "payment_hash": raw.get("payment_hash") or (job.payment_hash if job else None),
+        "result_hash": raw.get("result_hash") or (job.result_hash if job else None),
+        "timestamp": raw.get("timestamp") or event.created_at.isoformat(),
+        "agent_pubkey": raw.get("agent_pubkey", get_agent_pubkey_hex()),
+        "prev_event_hash": raw.get("prev_event_hash", event.prev_event_hash),
+        "signature": raw.get("signature", event.signature),
+        "event_hash": event.event_hash,
+    }
 
 
 @agent_bp.post("/agent/jobs/<job_id>/dev/mark_paid")
@@ -972,34 +993,41 @@ def attestations():
 
     with session_scope() as session:
         events = session.query(AgentEvent).order_by(AgentEvent.created_at.desc()).offset(offset).limit(limit).all()
-        items = [event.event_json for event in events]
-    return jsonify({"items": items, "count": len(items)})
+        job_ids = {event.job_id for event in events}
+        jobs = {job.id: job for job in session.query(AgentJob).filter(AgentJob.id.in_(job_ids)).all()} if job_ids else {}
+        items = [_event_attestation(event, jobs.get(event.job_id)) for event in events]
+    return jsonify({"items": items, "count": len(items), "limit": limit, "offset": offset})
 
 
 @agent_bp.get("/agent/verify/<job_id>")
 def verify_job_receipt(job_id: str):
     with session_scope() as session:
+        job = session.query(AgentJob).filter_by(id=job_id).first()
         event = session.query(AgentEvent).filter_by(job_id=job_id).order_by(AgentEvent.created_at.desc()).first()
         if not event:
-            return jsonify({"error": "not_found"}), 404
+            return jsonify({"error": "not_found", "job_id": job_id, "verification": "unavailable"}), 404
 
         receipt = event.event_json
         payload = dict(receipt)
         signature = payload.pop("signature", None)
 
         if not signature:
-            return jsonify({"error": "missing_signature"}), 500
+            return jsonify({"error": "unavailable", "job_id": job_id, "reason": "missing_signature"}), 503
 
         agent_pubkey = payload.get("agent_pubkey", "")
         valid = verify_message(canonical_json_bytes(payload), signature, agent_pubkey)
         event_hash = hashlib.sha256(canonical_json_bytes(receipt)).hexdigest()
+        attestation = _event_attestation(event, job)
+        verification_status = "verified" if valid else "invalid_signature"
 
         return jsonify(
             {
                 "job_id": job_id,
+                "status": verification_status,
                 "valid": valid,
                 "agent_pubkey": agent_pubkey,
                 "event_hash": event_hash,
+                "attestation": attestation,
                 "receipt": receipt,
             }
         )
@@ -1036,6 +1064,7 @@ def chain_health():
                 "count": len(events),
                 "latest_event_hash": latest.event_hash,
                 "latest_prev_event_hash": latest.prev_event_hash,
+                "latest_event_timestamp": latest.created_at.isoformat(),
                 "chain_ok": chain_ok,
             }
         )
@@ -1052,10 +1081,13 @@ def marketplace_listing():
 
         total_jobs = len(jobs)
         completed_jobs = sum(1 for j in jobs if j.status == "done")
+        completed_job_ids = {event.job_id for event in events}
+        counts_by_job_type: dict[str, int] = {}
+        for job in jobs:
+            if job.id in completed_job_ids:
+                counts_by_job_type[job.job_type] = counts_by_job_type.get(job.job_type, 0) + 1
 
-        job_types_count = {}
-        for j in jobs:
-            job_types_count[j.job_type] = job_types_count.get(j.job_type, 0) + 1
+        latest_event_timestamp = events[-1].created_at.isoformat() if events else None
 
         chain_ok = True
         prev_hash = None
@@ -1093,12 +1125,15 @@ def marketplace_listing():
                 "reputation": {
                     "total_jobs": total_jobs,
                     "completed_jobs": completed_jobs,
-                    "job_types": job_types_count,
+                    "evidenced_completed_jobs": len(completed_job_ids),
+                    "counts_by_job_type": counts_by_job_type,
                     "attestations_count": len(events),
+                    "latest_event_timestamp": latest_event_timestamp,
                 },
                 "chain_health": {
                     "chain_ok": chain_ok,
                     "latest_event_hash": latest_event_hash,
+                    "latest_event_timestamp": latest_event_timestamp,
                     "count": len(events),
                 },
             }
@@ -1109,22 +1144,29 @@ def marketplace_listing():
 def reputation():
     with session_scope() as session:
         jobs = session.query(AgentJob).all()
-        events = session.query(AgentEvent).all()
+        events = session.query(AgentEvent).order_by(AgentEvent.created_at.asc()).all()
 
         total_jobs = len(jobs)
         completed_jobs = sum(1 for j in jobs if j.status == "done")
+        evidenced_job_ids = {event.job_id for event in events}
 
-        job_types = {}
+        counts_by_job_type: dict[str, int] = {}
         for j in jobs:
-            job_types[j.job_type] = job_types.get(j.job_type, 0) + 1
+            if j.id in evidenced_job_ids:
+                counts_by_job_type[j.job_type] = counts_by_job_type.get(j.job_type, 0) + 1
+
+        latest_event_timestamp = events[-1].created_at.isoformat() if events else None
 
         return jsonify(
             {
                 "agent_pubkey": get_agent_pubkey_hex(),
                 "total_jobs": total_jobs,
                 "completed_jobs": completed_jobs,
-                "job_types": job_types,
+                "evidenced_completed_jobs": len(evidenced_job_ids),
+                "counts_by_job_type": counts_by_job_type,
+                "job_types": counts_by_job_type,
                 "attestations_count": len(events),
+                "latest_event_timestamp": latest_event_timestamp,
             }
         )
 
