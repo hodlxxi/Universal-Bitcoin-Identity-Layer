@@ -87,7 +87,7 @@ The client submits a job to:
 The request should specify:
 
 - `job_type`
-- `payload` matching the input schema for that job
+- `payload` matching the input schema for that job (`input` is also accepted as an alias)
 
 The server responds with a job record. If payment is required, the job may enter an invoice-pending state until settlement is detected.
 
@@ -193,6 +193,53 @@ Purpose: decode covenant-related script hex and report whether CLTV logic is pre
   "has_cltv": true,
   "job_type": "covenant_decode",
   "ok": true
+}
+~~
+
+**Price:** 21 sats
+
+---
+
+### `covenant_visualize`
+
+Purpose: explain and visualize covenant/script/descriptor structure with clear separation between observed script evidence and heuristic interpretation.
+
+**Input**
+~~json
+{
+  "descriptor": "string (optional)",
+  "script_asm": "string (optional)",
+  "script_hex": "hex (optional)",
+  "network": "bitcoin"
+}
+~~
+
+At least one of `descriptor`, `script_asm`, or `script_hex` must be supplied.
+
+**Output**
+~~json
+{
+  "job_type": "covenant_visualize",
+  "ok": true,
+  "summary": "string",
+  "human_explanation": {
+    "summary": "string",
+    "cooperative_path": "string",
+    "unilateral_exit_paths": "string",
+    "timelock_interpretation": "string",
+    "key_roles": "string",
+    "risks_ambiguities": ["string"]
+  },
+  "machine_explanation": {
+    "type": "string",
+    "observed": "object",
+    "inferred": "object"
+  },
+  "mermaid": "flowchart TD ...",
+  "timeline": [],
+  "graph": {"nodes": [], "edges": []},
+  "warnings": [],
+  "source_type": "descriptor|script_asm|script_hex"
 }
 ~~
 

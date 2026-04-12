@@ -18,6 +18,7 @@ from app.database import session_scope
 from app.models import AgentEvent, AgentJob
 from app.payments.ln import check_invoice_paid, create_invoice
 from app.structured_logging import log_event
+from app.services.covenant_visualizer import CovenantInputError, visualize_covenant
 from app.services.trust_surface import (
     DEFAULT_AGENT_ID,
     DEFAULT_COVENANT_ID,
@@ -431,6 +432,28 @@ JOB_REGISTRY = {
         "input_schema": {"script_hex": "hex"},
         "output_schema": {"ok": "boolean", "job_type": "string", "decoded": "string", "has_cltv": "boolean"},
     },
+    "covenant_visualize": {
+        "price_sats": PING_SATS,
+        "memo": "Explain and visualize covenant/script/descriptor flows",
+        "input_schema": {
+            "descriptor": "string (optional)",
+            "script_asm": "string (optional)",
+            "script_hex": "hex (optional)",
+            "network": "string (optional, default=bitcoin)",
+        },
+        "output_schema": {
+            "ok": "boolean",
+            "job_type": "string",
+            "summary": "string",
+            "machine_explanation": "object",
+            "human_explanation": "object",
+            "mermaid": "string",
+            "timeline": "array",
+            "graph": "object",
+            "warnings": "array",
+            "source_type": "string",
+        },
+    },
 }
 
 
@@ -460,11 +483,29 @@ def _job_result(job: AgentJob, payload: dict) -> dict:
             "has_cltv": "b1" in script_hex.lower(),
         }
 
+    if job.job_type == "covenant_visualize":
+        visualized = visualize_covenant(payload)
+        return {
+            "ok": True,
+            "job_type": job.job_type,
+            **visualized,
+        }
+
     return {
         "ok": True,
         "job_type": job.job_type,
         "echo": payload,
     }
+
+
+def _request_payload_from_data(data: dict) -> dict:
+    payload = data.get("payload")
+    if isinstance(payload, dict):
+        return payload
+    input_payload = data.get("input")
+    if isinstance(input_payload, dict):
+        return input_payload
+    return {}
 
 
 @agent_bp.get("/agent/capabilities")
@@ -674,7 +715,7 @@ def create_job_request():
 
     data = request.get_json(silent=True) or {}
     job_type = data.get("job_type")
-    payload = data.get("payload") or {}
+    payload = _request_payload_from_data(data)
 
     if len(str(payload)) > 10000:
         log_event(logger, "agent.request_rejected", outcome="payload_too_large")
@@ -683,6 +724,11 @@ def create_job_request():
     spec = _job_spec(job_type)
     if not spec:
         return jsonify({"error": "unsupported_job_type"}), 400
+    if job_type == "covenant_visualize":
+        try:
+            visualize_covenant(payload)
+        except CovenantInputError as exc:
+            return jsonify({"error": "invalid_input", "message": str(exc)}), 400
 
     with session_scope() as session:
         since = datetime.now(timezone.utc) - timedelta(days=1)
