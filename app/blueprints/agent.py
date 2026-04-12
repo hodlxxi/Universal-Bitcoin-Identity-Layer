@@ -978,6 +978,7 @@ def get_job(job_id: str):
             {
                 "job_id": job.id,
                 "status": job.status,
+                "result": job.result_json,
                 "receipt": existing_event.event_json if existing_event else None,
             }
         )
