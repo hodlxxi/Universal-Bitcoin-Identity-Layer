@@ -37,22 +37,30 @@ class CovenantInputError(ValueError):
 def visualize_covenant(input_dict: dict[str, Any]) -> dict[str, Any]:
     normalized, notes = _normalize_input(input_dict)
     parse_result = _parse_source(normalized)
+    pattern = _pattern_match(parse_result)
+    simplified_visualization, simplification_reasons = _is_simplified_visualization(parse_result, normalized)
+    notes.extend(simplification_reasons)
 
-    machine = _machine_explanation(normalized, parse_result, notes)
+    machine = _machine_explanation(normalized, parse_result, notes, pattern)
     human = _human_explanation(machine)
     graph = _branch_graph(machine)
     timeline = _timeline(machine)
     mermaid = _mermaid(graph)
+    confidence, confidence_inputs = _confidence_score(machine, parse_result, simplified_visualization, pattern)
+    machine["confidence_inputs"] = confidence_inputs
 
     result = {
         "summary": human["summary"],
+        "confidence": confidence,
+        "pattern_match": pattern,
+        "simplified_visualization": simplified_visualization,
         "human_explanation": human,
         "machine_explanation": machine,
         "mermaid": mermaid,
         "timeline": timeline,
         "graph": graph,
         "spend_paths": machine.get("spend_paths", []),
-        "warnings": _warnings(machine, parse_result, notes),
+        "warnings": _warnings(machine, parse_result, notes, simplified_visualization),
         "source_type": normalized["source_type"],
         "source": normalized,
     }
@@ -163,7 +171,9 @@ def _decode_script_hex_to_tokens(script_hex: str) -> tuple[list[str], list[str]]
     return tokens, warnings
 
 
-def _machine_explanation(normalized: dict[str, Any], parse_result: dict[str, Any], notes: list[str]) -> dict[str, Any]:
+def _machine_explanation(
+    normalized: dict[str, Any], parse_result: dict[str, Any], notes: list[str], pattern_match: dict[str, Any]
+) -> dict[str, Any]:
     tokens = parse_result.get("tokens", [])
     observed_ops = [t for t in tokens if t.startswith("OP_")]
     keys = [t for t in tokens if KEY_RE.match(t)]
@@ -231,11 +241,10 @@ def _machine_explanation(normalized: dict[str, Any], parse_result: dict[str, Any
             "spend_paths": spend_paths,
             "role_hints": _role_hints(keys),
         },
-        "heuristic_notes": notes,
-        "spend_paths": spend_paths,
-        "branches": branches,
-        "timelocks": timelocks,
-        "keys": keys,
+        "heuristic": {
+            "notes": notes,
+        },
+        "pattern_match": pattern_match,
     }
 
 
@@ -347,7 +356,7 @@ def _branch_graph(machine: dict[str, Any]) -> dict[str, Any]:
         nodes.append({"id": "single", "label": "SinglePath"})
         edges.append({"from": "start", "to": "single", "label": "linear"})
 
-    for idx, tl in enumerate(machine.get("timelocks", []), start=1):
+    for idx, tl in enumerate(machine.get("observed", {}).get("timelocks", []), start=1):
         node_id = f"timelock_{idx}"
         nodes.append({"id": node_id, "label": f"Timelock {tl.get('value', tl.get('raw'))}"})
         attach_to = "alternative" if machine["observed"]["branches_present"] else "single"
@@ -358,7 +367,7 @@ def _branch_graph(machine: dict[str, Any]) -> dict[str, Any]:
 
 def _timeline(machine: dict[str, Any]) -> list[dict[str, Any]]:
     points = [{"order": 0, "event": "script_evaluated", "detail": "input parsed"}]
-    for idx, tl in enumerate(machine.get("timelocks", []), start=1):
+    for idx, tl in enumerate(machine.get("observed", {}).get("timelocks", []), start=1):
         points.append(
             {
                 "order": idx,
@@ -399,7 +408,9 @@ def _graphviz_dot(graph: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _warnings(machine: dict[str, Any], parse_result: dict[str, Any], notes: list[str]) -> list[str]:
+def _warnings(
+    machine: dict[str, Any], parse_result: dict[str, Any], notes: list[str], simplified_visualization: bool
+) -> list[str]:
     warnings = list(parse_result.get("warnings", []))
     warnings.extend(notes)
 
@@ -409,6 +420,130 @@ def _warnings(machine: dict[str, Any], parse_result: dict[str, Any], notes: list
         warnings.append("x-only key-like tokens detected; prefix/compression ambiguity remains")
     if not machine["observed"].get("timelocks"):
         warnings.append("no explicit CLTV operand detected; timeline is minimal")
+    if simplified_visualization:
+        warnings.append("nested branch logic detected; visualization is simplified")
+    if any("unsupported opcode" in w for w in parse_result.get("warnings", [])):
+        warnings.append("unsupported opcode(s) detected; graph is approximate")
+    if machine.get("source_type") == "descriptor" and parse_result.get("raw_script_hex") is None:
+        warnings.append("descriptor parsing is partial; only raw(...) is fully interpreted")
 
     warnings.append("policy intent cannot be proven from script alone")
-    return warnings
+    return list(dict.fromkeys(warnings))
+
+
+def _pattern_match(parse_result: dict[str, Any]) -> dict[str, Any]:
+    tokens = parse_result.get("tokens", [])
+    if_count = tokens.count("OP_IF")
+    else_count = tokens.count("OP_ELSE")
+    endif_count = tokens.count("OP_ENDIF")
+    cltv_count = tokens.count("OP_CHECKLOCKTIMEVERIFY")
+    key_count = sum(1 for t in tokens if KEY_RE.match(t))
+    unique_key_count = len({t for t in tokens if KEY_RE.match(t)})
+    checksig_count = tokens.count("OP_CHECKSIG")
+
+    signals: list[str] = []
+    if if_count:
+        signals.append("OP_IF")
+    if else_count:
+        signals.append("OP_ELSE")
+    if cltv_count:
+        signals.append("OP_CHECKLOCKTIMEVERIFY")
+    if key_count:
+        signals.append(f"{key_count} compressed key{'s' if key_count != 1 else ''}")
+    if checksig_count:
+        signals.append(f"{checksig_count} OP_CHECKSIG")
+
+    family = "generic_script"
+    variant = "unclassified"
+
+    if if_count >= 1 and else_count >= 1 and cltv_count >= 1:
+        family = "hodlxxi_covenant"
+        variant = "generic_conditional_timelock"
+    if if_count == 1 and else_count == 1 and cltv_count >= 1 and key_count >= 2:
+        variant = "cooperative_plus_delayed_exit"
+    if if_count >= 2 and else_count >= 2 and cltv_count >= 2:
+        variant = "nested_cltv_ladder"
+    if if_count >= 2 and else_count >= 2 and cltv_count >= 2 and unique_key_count == 2 and checksig_count >= 2:
+        variant = "hodlxxi_two_party_ladder"
+
+    return {
+        "family": family,
+        "variant": variant,
+        "signals": signals,
+        "note": "Pattern match is heuristic and based on opcode structure only.",
+    }
+
+
+def _is_simplified_visualization(parse_result: dict[str, Any], normalized: dict[str, Any]) -> tuple[bool, list[str]]:
+    tokens = parse_result.get("tokens", [])
+    if_count = tokens.count("OP_IF")
+    else_count = tokens.count("OP_ELSE")
+    endif_count = tokens.count("OP_ENDIF")
+    reasons: list[str] = []
+
+    has_unsupported = any("unsupported opcode" in warning for warning in parse_result.get("warnings", []))
+    if has_unsupported:
+        reasons.append("unsupported opcode(s) detected; graph is approximate")
+    if if_count > 1:
+        reasons.append("nested branch logic detected; visualization is simplified")
+    if if_count != else_count or if_count != endif_count:
+        reasons.append("imbalanced branch markers detected; visualization is simplified")
+    if normalized.get("source_type") == "descriptor" and parse_result.get("raw_script_hex") is None:
+        reasons.append("descriptor parsing is partial; only raw(...) is fully interpreted")
+
+    return bool(reasons), reasons
+
+
+def _confidence_score(
+    machine: dict[str, Any],
+    parse_result: dict[str, Any],
+    simplified_visualization: bool,
+    pattern_match: dict[str, Any],
+) -> tuple[float, dict[str, Any]]:
+    observed = machine.get("observed", {})
+    tokens = parse_result.get("tokens", [])
+    if_count = tokens.count("OP_IF")
+    else_count = tokens.count("OP_ELSE")
+    endif_count = tokens.count("OP_ENDIF")
+    has_balanced_branches = if_count == else_count == endif_count
+    unsupported_opcode_count = sum(1 for warning in parse_result.get("warnings", []) if "unsupported opcode" in warning)
+    descriptor_partial = machine.get("source_type") == "descriptor" and parse_result.get("raw_script_hex") is None
+
+    score = 0.35
+    if observed.get("branches_present") and has_balanced_branches:
+        score += 0.2
+    if observed.get("keys"):
+        score += 0.15
+    if observed.get("timelocks"):
+        score += 0.15
+    if pattern_match.get("variant") in {
+        "cooperative_plus_delayed_exit",
+        "nested_cltv_ladder",
+        "hodlxxi_two_party_ladder",
+    }:
+        score += 0.1
+    elif pattern_match.get("variant") == "generic_conditional_timelock":
+        score += 0.05
+
+    score -= min(0.2, unsupported_opcode_count * 0.05)
+    if observed.get("xonly_keys"):
+        score -= 0.1
+    if simplified_visualization:
+        score -= 0.1
+    if descriptor_partial:
+        score -= 0.1
+    if (if_count or else_count or endif_count) and not has_balanced_branches:
+        score -= 0.1
+
+    score = max(0.0, min(1.0, round(score, 2)))
+    confidence_inputs = {
+        "balanced_control_flow": has_balanced_branches,
+        "clear_keys_detected": bool(observed.get("keys")),
+        "timelocks_parseable": bool(observed.get("timelocks")),
+        "pattern_variant": pattern_match.get("variant"),
+        "unsupported_opcode_count": unsupported_opcode_count,
+        "xonly_key_count": len(observed.get("xonly_keys") or []),
+        "simplified_visualization": simplified_visualization,
+        "descriptor_partial": descriptor_partial,
+    }
+    return score, confidence_inputs

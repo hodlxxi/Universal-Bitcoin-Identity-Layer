@@ -449,6 +449,9 @@ def test_capabilities_advertise_covenant_visualize_job_type(client):
     assert spec["price_sats"] == 21
     assert "script_hex" in spec["input_schema"]
     assert "mermaid" in spec["output_schema"]
+    assert "confidence" in spec["output_schema"]
+    assert "pattern_match" in spec["output_schema"]
+    assert "simplified_visualization" in spec["output_schema"]
 
 
 def test_covenant_visualize_job_receipt_contains_visualization_result(client, monkeypatch):
@@ -479,6 +482,10 @@ def test_covenant_visualize_job_receipt_contains_visualization_result(client, mo
         assert job.result_json["source_type"] == "script_asm"
         assert job.result_json["mermaid"].startswith("flowchart TD")
         assert "timeline" in job.result_json
+        assert "receipt" in res.get_json()
+        assert "confidence" in job.result_json
+        assert "pattern_match" in job.result_json
+        assert "simplified_visualization" in job.result_json
 
 
 def test_covenant_visualize_rejects_missing_supported_input(client):

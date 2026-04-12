@@ -121,12 +121,27 @@ Current runtime uses multiple response patterns. Integrators should parse per-en
     "ok": true,
     "source_type": "script_asm",
     "summary": "Based on the provided script material...",
+    "confidence": 0.72,
+    "pattern_match": {
+      "family": "hodlxxi_covenant",
+      "variant": "cooperative_plus_delayed_exit",
+      "signals": ["OP_IF", "OP_ELSE", "OP_CHECKLOCKTIMEVERIFY", "2 compressed keys"],
+      "note": "Pattern match is heuristic and based on opcode structure only."
+    },
+    "simplified_visualization": false,
     "mermaid": "flowchart TD\n+  start -->|OP_IF| cooperative\n+  start -->|OP_ELSE| alternative",
     "timeline": [
       {"order": 0, "event": "script_evaluated"},
       {"order": 1, "event": "timelock_gate", "value": 500000, "classification": "block_height"}
     ],
-    "warnings": ["policy intent cannot be proven from script alone"]
+    "warnings": ["policy intent cannot be proven from script alone"],
+    "machine_explanation": {
+      "observed": {},
+      "inferred": {},
+      "heuristic": {"notes": []},
+      "pattern_match": {},
+      "confidence_inputs": {}
+    }
   }
 }
 ```
