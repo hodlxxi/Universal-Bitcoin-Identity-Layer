@@ -9,9 +9,10 @@ import re
 import time
 from typing import Optional
 
-from flask import Blueprint, jsonify, redirect, render_template_string, request, session, url_for
+from flask import Blueprint, jsonify, request, session
 
 from app.audit_logger import get_audit_logger
+from app.browser_routes import perform_browser_logout, render_browser_login
 from app.security import limiter
 from app.utils import (
     derive_legacy_address_from_pubkey,
@@ -38,8 +39,7 @@ LOGIN_RATE_LIMIT = "20 per minute"
 @auth_bp.route("/logout")
 def logout():
     """Log out current user and redirect to login page."""
-    session.clear()
-    return redirect(url_for("login"))
+    return perform_browser_logout(audit_logger=audit_logger, remote_addr=request.remote_addr)
 
 
 @auth_bp.route("/verify_signature", methods=["POST"])
@@ -199,36 +199,7 @@ def guest_login():
 @auth_bp.route("/login")
 def login():
     """Render browser login page and seed challenge for signature auth."""
-    challenge_str = generate_challenge()
-    session["challenge"] = challenge_str
-    session["challenge_timestamp"] = time.time()
-
-    try:
-        rpc = get_rpc_connection()
-        wallet_balance = rpc.getbalance()
-        block_height = rpc.getblockcount()
-        remaining = 1777777 - block_height
-    except Exception:
-        wallet_balance = None
-        block_height = None
-        remaining = None
-
-    return render_template_string(
-        """
-<!doctype html>
-<html lang="en">
-  <head><meta charset="utf-8"><title>HODLXXI — Login</title></head>
-  <body>
-    <h1>HODLXXI Login</h1>
-    <p id="challenge">{{ challenge }}</p>
-    <p id="wallet">{{ wallet_balance if wallet_balance is not none else 'n/a' }}</p>
-    <p id="height">{{ block_height if block_height is not none else 'n/a' }}</p>
-    <p id="remaining">{{ remaining if remaining is not none else 'n/a' }}</p>
-  </body>
-</html>
-        """,
-        challenge=challenge_str,
-        wallet_balance=wallet_balance,
-        block_height=block_height,
-        remaining=remaining,
+    return render_browser_login(
+        generate_challenge=generate_challenge,
+        get_rpc_connection=get_rpc_connection,
     )

@@ -47,9 +47,12 @@ def test_auth_blueprint_implements_login_logout_directly(app):
     assert app.view_functions["logout"] is logout_view
 
 
-def test_login_sets_signature_challenge_session(client):
+def test_login_sets_signature_challenge_session_and_renders_legacy_ui(client):
     response = client.get("/login")
     assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert '<canvas id="matrix-bg"' in body
+    assert "HODLXXI — Login" in body
 
     with client.session_transaction() as sess:
         assert sess.get("challenge")
