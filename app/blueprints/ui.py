@@ -6,7 +6,9 @@ Serves frontend HTML pages and handles user interface routes.
 
 import logging
 
-from flask import Blueprint, current_app, redirect, render_template, render_template_string, session, url_for
+from flask import Blueprint, redirect, render_template, render_template_string, session, url_for
+from app.browser_routes import call_browser_route_handler, render_browser_playground
+from app.browser_shell_routes import render_browser_home_page
 
 logger = logging.getLogger(__name__)
 
@@ -64,16 +66,12 @@ def screensaver():
 
 @ui_bp.route("/app")
 def legacy_chat_route():
-    from app.app import _call_browser_route_alias
-
-    return _call_browser_route_alias("chat")
+    return call_browser_route_handler("chat", default_handler=lambda: ("", 200))
 
 
 @ui_bp.route("/home", methods=["GET"], endpoint="home")
 def legacy_home_route():
-    from app.app import home_page as legacy_home_page
-
-    return legacy_home_page()
+    return render_browser_home_page(logger=logger)
 
 
 @ui_bp.route("/account", methods=["GET"])
@@ -143,9 +141,7 @@ def dashboard():
 
 @ui_bp.route("/playground")
 def playground():
-    from app.app import playground as legacy_playground
-
-    return legacy_playground()
+    return render_browser_playground()
 
 
 @ui_bp.route("/explorer", methods=["GET"])
