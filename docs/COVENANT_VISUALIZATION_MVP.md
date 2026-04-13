@@ -44,6 +44,7 @@ At least one of `descriptor`, `script_asm`, or `script_hex` is required.
   "job_type": "covenant_visualize",
   "summary": "...",
   "confidence": 0.72,
+  "trust_score": 0.68,
   "pattern_match": {
     "family": "hodlxxi_covenant",
     "variant": "cooperative_plus_delayed_exit",
@@ -62,6 +63,10 @@ At least one of `descriptor`, `script_asm`, or `script_hex` is required.
       "balanced_control_flow": true,
       "clear_keys_detected": true,
       "timelocks_parseable": true
+    },
+    "trust_factors": {
+      "positive": ["balanced control flow", "clear timelock structure"],
+      "negative": ["policy intent cannot be proven from script alone"]
     }
   },
   "mermaid": "flowchart TD\n  start -->|OP_IF| cooperative",
@@ -81,6 +86,8 @@ The service is intentionally conservative:
 - **Inferred:** branch and spend-path structure inferred from control-flow markers.
 - **Heuristic/explanatory:** role labels and economic interpretation notes.
 - **Interpreter confidence:** bounded score (`0.0`-`1.0`) about parsing/interpretation quality, not cryptographic certainty.
+- **Trust score:** bounded score (`0.0`-`1.0`) about structural reliability/interpretability of the covenant pattern.
+- **Trust factors:** deterministic positive/negative evidence list for explainable trust-score derivation.
 
 The service does **not** claim complete Miniscript support and does not claim legal/economic covenant certainty from script evidence alone.
 

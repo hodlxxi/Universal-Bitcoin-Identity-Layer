@@ -446,6 +446,7 @@ JOB_REGISTRY = {
             "job_type": "string",
             "summary": "string",
             "confidence": "number (0.0-1.0 interpreter confidence; not cryptographic certainty)",
+            "trust_score": "number (0.0-1.0 structural reliability / interpretability score)",
             "pattern_match": "object (heuristic family/variant/signals)",
             "simplified_visualization": "boolean",
             "machine_explanation": "object",
@@ -1162,6 +1163,35 @@ def reputation():
                 counts_by_job_type[j.job_type] = counts_by_job_type.get(j.job_type, 0) + 1
 
         latest_event_timestamp = events[-1].created_at.isoformat() if events else None
+        trust_scores: list[float] = []
+        confidences: list[float] = []
+        pattern_distribution: dict[str, int] = {}
+        for job in sorted(jobs, key=lambda item: item.created_at.timestamp() if item.created_at else 0.0):
+            if job.status != "done" or not isinstance(job.result_json, dict):
+                continue
+            trust_score = job.result_json.get("trust_score")
+            confidence = job.result_json.get("confidence")
+            pattern_match = job.result_json.get("pattern_match")
+
+            if isinstance(trust_score, (int, float)):
+                trust_scores.append(float(trust_score))
+            if isinstance(confidence, (int, float)):
+                confidences.append(float(confidence))
+            if isinstance(pattern_match, dict):
+                variant = pattern_match.get("variant")
+                if isinstance(variant, str) and variant:
+                    pattern_distribution[variant] = pattern_distribution.get(variant, 0) + 1
+
+        average_trust_score = round(sum(trust_scores) / len(trust_scores), 4) if trust_scores else None
+        average_confidence = round(sum(confidences) / len(confidences), 4) if confidences else None
+
+        trust_trend = None
+        trust_window = trust_scores[-10:]
+        if trust_window:
+            trust_trend = {
+                "window_size": len(trust_window),
+                "rolling_average_trust_score": round(sum(trust_window) / len(trust_window), 4),
+            }
 
         return jsonify(
             {
@@ -1173,6 +1203,10 @@ def reputation():
                 "job_types": counts_by_job_type,
                 "attestations_count": len(events),
                 "latest_event_timestamp": latest_event_timestamp,
+                "average_trust_score": average_trust_score,
+                "average_confidence": average_confidence,
+                "pattern_distribution": pattern_distribution,
+                "trust_trend": trust_trend,
             }
         )
 

@@ -223,6 +223,7 @@ At least one of `descriptor`, `script_asm`, or `script_hex` must be supplied.
   "ok": true,
   "summary": "string",
   "confidence": 0.72,
+  "trust_score": 0.68,
   "pattern_match": {
     "family": "hodlxxi_covenant|generic_script",
     "variant": "generic_conditional_timelock|cooperative_plus_delayed_exit|nested_cltv_ladder|hodlxxi_two_party_ladder|unclassified",
@@ -244,7 +245,11 @@ At least one of `descriptor`, `script_asm`, or `script_hex` must be supplied.
     "inferred": "object",
     "heuristic": {"notes": ["string"]},
     "pattern_match": "object",
-    "confidence_inputs": "object"
+    "confidence_inputs": "object",
+    "trust_factors": {
+      "positive": ["string"],
+      "negative": ["string"]
+    }
   },
   "mermaid": "flowchart TD ...",
   "timeline": [],
@@ -257,6 +262,13 @@ At least one of `descriptor`, `script_asm`, or `script_hex` must be supplied.
 **Price:** 21 sats
 
 ---
+
+#### Confidence vs Trust Score
+
+- `confidence`: parsing and interpretation quality score (`0.0`-`1.0`).
+- `trust_score`: structural reliability/interpretability score (`0.0`-`1.0`).
+- Both are deterministic and conservative heuristic outputs.
+- `trust_factors` explains which positive/negative observations influenced trust scoring.
 
 ## Attestation Model
 
@@ -286,6 +298,10 @@ The presence of `prev_event_hash` allows independent observers to detect continu
 - completed jobs
 - attestation count
 - per-job-type usage
+- average confidence (when available)
+- average trust score (when available)
+- pattern distribution by recognized `pattern_match.variant`
+- trust trend (rolling average over recent trust-scored completed jobs)
 
 This gives counterparties a quick summary of actual usage and completion history without requiring them to replay every attestation.
 
