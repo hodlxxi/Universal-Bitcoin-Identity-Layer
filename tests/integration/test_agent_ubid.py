@@ -541,7 +541,10 @@ def test_reputation_endpoint_returns_basic_agent_stats(client, monkeypatch):
 def test_reputation_endpoint_returns_trust_aggregates_when_available(client, monkeypatch):
     monkeypatch.setattr(
         "app.blueprints.agent.create_invoice",
-        lambda amount_sats, memo, user_pubkey, expiry_seconds=3600: ("ln-invoice", f"lookup-id-reputation-{amount_sats}"),
+        lambda amount_sats, memo, user_pubkey, expiry_seconds=3600: (
+            "ln-invoice",
+            f"lookup-id-reputation-{amount_sats}",
+        ),
     )
     monkeypatch.setattr("app.blueprints.agent.check_invoice_paid", lambda invoice_id: True)
 
