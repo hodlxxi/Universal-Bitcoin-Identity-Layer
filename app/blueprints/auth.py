@@ -9,9 +9,10 @@ import re
 import time
 from typing import Optional
 
-from flask import Blueprint, current_app, jsonify, redirect, request, session, url_for
+from flask import Blueprint, jsonify, request, session
 
 from app.audit_logger import get_audit_logger
+from app.browser_routes import perform_browser_logout, render_browser_login
 from app.security import limiter
 from app.utils import (
     derive_legacy_address_from_pubkey,
@@ -37,10 +38,8 @@ LOGIN_RATE_LIMIT = "20 per minute"
 
 @auth_bp.route("/logout")
 def logout():
-    """Compatibility wrapper: keep auth blueprint ownership, delegate runtime behavior."""
-    from app.app import logout as legacy_logout
-
-    return legacy_logout()
+    """Log out current user and redirect to login page."""
+    return perform_browser_logout(audit_logger=audit_logger, remote_addr=request.remote_addr)
 
 
 @auth_bp.route("/verify_signature", methods=["POST"])
@@ -199,7 +198,8 @@ def guest_login():
 
 @auth_bp.route("/login")
 def login():
-    """Compatibility wrapper: keep auth blueprint ownership, delegate runtime behavior."""
-    from app.app import login as legacy_login
-
-    return legacy_login()
+    """Render browser login page and seed challenge for signature auth."""
+    return render_browser_login(
+        generate_challenge=generate_challenge,
+        get_rpc_connection=get_rpc_connection,
+    )

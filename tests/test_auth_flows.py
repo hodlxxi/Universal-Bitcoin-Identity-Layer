@@ -251,6 +251,15 @@ class TestSessionManagement:
         with client.session_transaction() as sess:
             assert "logged_in_pubkey" not in sess
 
+    def test_logout_emits_audit_event(self, client):
+        """Test that logout records the auth.logout audit event."""
+        with patch("app.blueprints.auth.audit_logger.log_event") as mock_log_event:
+            response = client.get("/logout")
+
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith("/login")
+        mock_log_event.assert_called_once_with("auth.logout", ip="127.0.0.1")
+
     def test_session_persistence_after_login(self, client, mock_rpc):
         """Test that session persists after successful login."""
         test_pubkey = "02" + "a" * 64

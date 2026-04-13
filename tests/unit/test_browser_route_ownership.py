@@ -34,6 +34,30 @@ def test_legacy_endpoint_names_still_resolve(app):
         assert url_for("app") == "/app"
 
 
+
+def test_auth_blueprint_implements_login_logout_directly(app):
+    login_view = app.view_functions["auth.login"]
+    logout_view = app.view_functions["auth.logout"]
+
+    assert login_view.__module__ == "app.blueprints.auth"
+    assert logout_view.__module__ == "app.blueprints.auth"
+
+    # Bare endpoint aliases still point to the auth blueprint implementations.
+    assert app.view_functions["login"] is login_view
+    assert app.view_functions["logout"] is logout_view
+
+
+def test_login_sets_signature_challenge_session_and_renders_legacy_ui(client):
+    response = client.get("/login")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert '<canvas id="matrix-bg"' in body
+    assert "HODLXXI — Login" in body
+
+    with client.session_transaction() as sess:
+        assert sess.get("challenge")
+        assert sess.get("challenge_timestamp")
+
 def test_browser_route_runtime_compatibility(client):
     response = client.get("/")
     assert response.status_code == 200
