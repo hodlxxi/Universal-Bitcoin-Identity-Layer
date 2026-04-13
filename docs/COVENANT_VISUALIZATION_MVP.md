@@ -43,11 +43,26 @@ At least one of `descriptor`, `script_asm`, or `script_hex` is required.
   "ok": true,
   "job_type": "covenant_visualize",
   "summary": "...",
+  "confidence": 0.72,
+  "pattern_match": {
+    "family": "hodlxxi_covenant",
+    "variant": "cooperative_plus_delayed_exit",
+    "signals": ["OP_IF", "OP_ELSE", "OP_CHECKLOCKTIMEVERIFY", "2 compressed keys"],
+    "note": "Pattern match is heuristic and based on opcode structure only."
+  },
+  "simplified_visualization": false,
   "human_explanation": {"summary": "..."},
   "machine_explanation": {
     "type": "conditional_multisig_timelock",
     "observed": {"ops": [], "keys": [], "timelocks": []},
-    "inferred": {"branches": [], "spend_paths": []}
+    "inferred": {"branches": [], "spend_paths": []},
+    "heuristic": {"notes": []},
+    "pattern_match": {"family": "hodlxxi_covenant", "variant": "cooperative_plus_delayed_exit"},
+    "confidence_inputs": {
+      "balanced_control_flow": true,
+      "clear_keys_detected": true,
+      "timelocks_parseable": true
+    }
   },
   "mermaid": "flowchart TD\n  start -->|OP_IF| cooperative",
   "timeline": [],
@@ -65,6 +80,7 @@ The service is intentionally conservative:
 - **Observed:** tokens/opcodes/keys/timelocks that are directly parsed from provided input.
 - **Inferred:** branch and spend-path structure inferred from control-flow markers.
 - **Heuristic/explanatory:** role labels and economic interpretation notes.
+- **Interpreter confidence:** bounded score (`0.0`-`1.0`) about parsing/interpretation quality, not cryptographic certainty.
 
 The service does **not** claim complete Miniscript support and does not claim legal/economic covenant certainty from script evidence alone.
 
@@ -74,3 +90,4 @@ The service does **not** claim complete Miniscript support and does not claim le
 - Script hex decoding is partial by design and reports unsupported opcodes.
 - Role assignment (`Key 1`, `Key 2`) is heuristic.
 - Timelock classification (`block_height` vs `timestamp`) is a standard threshold heuristic and may still require context.
+- Visualization may be simplified when nested/imbalanced branching or unsupported opcodes are present.
