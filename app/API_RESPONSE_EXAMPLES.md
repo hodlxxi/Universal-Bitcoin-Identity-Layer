@@ -122,6 +122,7 @@ Current runtime uses multiple response patterns. Integrators should parse per-en
     "source_type": "script_asm",
     "summary": "Based on the provided script material...",
     "confidence": 0.72,
+    "trust_score": 0.68,
     "pattern_match": {
       "family": "hodlxxi_covenant",
       "variant": "cooperative_plus_delayed_exit",
@@ -140,8 +141,32 @@ Current runtime uses multiple response patterns. Integrators should parse per-en
       "inferred": {},
       "heuristic": {"notes": []},
       "pattern_match": {},
-      "confidence_inputs": {}
+      "confidence_inputs": {},
+      "trust_factors": {
+        "positive": ["balanced control flow", "clear timelock structure"],
+        "negative": ["policy intent cannot be proven from script alone"]
+      }
     }
+  }
+}
+```
+
+### `GET /agent/reputation` trust-aware snapshot
+
+```json
+{
+  "agent_pubkey": "0201...",
+  "total_jobs": 8,
+  "completed_jobs": 6,
+  "average_confidence": 0.71,
+  "average_trust_score": 0.66,
+  "pattern_distribution": {
+    "cooperative_plus_delayed_exit": 3,
+    "generic_conditional_timelock": 2
+  },
+  "trust_trend": {
+    "window_size": 6,
+    "rolling_average_trust_score": 0.66
   }
 }
 ```

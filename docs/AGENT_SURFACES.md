@@ -26,7 +26,7 @@ This document describes the machine-readable discovery surface for HODLXXI Agent
 
 Clients that want strict validation should fetch the schema from the URI advertised in the capabilities payload itself.
 
-Current high-signal paid jobs include `ping`, `verify_signature`, `covenant_decode`, and `covenant_visualize` (script/descriptor explain + diagram output with conservative `confidence`, `pattern_match`, and `simplified_visualization` fields).
+Current high-signal paid jobs include `ping`, `verify_signature`, `covenant_decode`, and `covenant_visualize` (script/descriptor explain + diagram output with conservative `confidence`, `trust_score`, `pattern_match`, and `simplified_visualization` fields). `confidence` reflects interpretation quality, while `trust_score` reflects structural reliability/interpretability of the parsed covenant pattern.
 
 ## Skills
 
@@ -57,6 +57,13 @@ It now normalizes:
 - skills summary
 - reputation snapshot
 - chain health snapshot
+
+The reputation snapshot now includes trust-aware aggregates when completed jobs provide those fields:
+
+- `average_confidence`
+- `average_trust_score`
+- `pattern_distribution` (recognized `pattern_match.variant` counts)
+- `trust_trend` (rolling trust-score average over recent completed trust-scored jobs)
 
 Registries can use it as a lightweight listing document, while serious clients should still inspect `/agent/capabilities`, `/agent/reputation`, `/agent/attestations`, and `/agent/chain/health`.
 

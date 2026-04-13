@@ -18,8 +18,10 @@ def test_visualize_covenant_parses_if_else_cltv_asm_and_builds_timeline():
     assert result["machine_explanation"]["observed"]["timelocks"][0]["value"] == 500000
     assert result["timeline"][1]["classification"] == "block_height"
     assert 0.0 <= result["confidence"] <= 1.0
+    assert 0.0 <= result["trust_score"] <= 1.0
     assert result["pattern_match"]["variant"] == "cooperative_plus_delayed_exit"
     assert result["simplified_visualization"] is False
+    assert "trust_factors" in result["machine_explanation"]
 
 
 def test_visualize_covenant_produces_mermaid_and_graph_data():
@@ -79,7 +81,39 @@ def test_visualize_covenant_handles_malformed_hex_conservatively():
 
     assert result["pattern_match"]["variant"] == "unclassified"
     assert result["confidence"] <= 0.5
+    assert result["trust_score"] <= 0.3
     assert "script_hex is not valid even-length hex" in result["warnings"]
+
+
+def test_visualize_covenant_trust_score_decreases_with_unsupported_opcode_warning():
+    clean = visualize_covenant(
+        {
+            "script_asm": "OP_IF 02"
+            + "11" * 32
+            + " OP_CHECKSIG OP_ELSE 500000 OP_CHECKLOCKTIMEVERIFY OP_DROP 03"
+            + "22" * 32
+            + " OP_CHECKSIG OP_ENDIF",
+        }
+    )
+    noisy = visualize_covenant({"script_hex": "63ff68"})
+
+    assert noisy["trust_score"] < clean["trust_score"]
+
+
+def test_visualize_covenant_clean_cooperative_pattern_has_higher_trust_score():
+    clean = visualize_covenant(
+        {
+            "script_asm": "OP_IF 02"
+            + "aa" * 32
+            + " OP_CHECKSIG OP_ELSE 700000 OP_CHECKLOCKTIMEVERIFY OP_DROP 03"
+            + "bb" * 32
+            + " OP_CHECKSIG OP_ENDIF",
+        }
+    )
+    ambiguous = visualize_covenant({"descriptor": "wsh(or_b(pk(key1),after(500000)))"})
+
+    assert clean["pattern_match"]["variant"] == "cooperative_plus_delayed_exit"
+    assert clean["trust_score"] > ambiguous["trust_score"]
 
 
 def test_visualize_covenant_rejects_empty_supported_inputs():
