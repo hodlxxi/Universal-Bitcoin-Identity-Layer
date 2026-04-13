@@ -2,11 +2,7 @@ from flask import url_for
 
 
 def _endpoints_for_path(app, path, method="GET"):
-    return {
-        rule.endpoint
-        for rule in app.url_map.iter_rules()
-        if rule.rule == path and method in rule.methods
-    }
+    return {rule.endpoint for rule in app.url_map.iter_rules() if rule.rule == path and method in rule.methods}
 
 
 def test_browser_routes_are_owned_by_blueprints(app):
