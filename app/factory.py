@@ -189,36 +189,18 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(billing_agent_bp)
     app.register_blueprint(agent_bp)
 
-    # Legacy human frontend overrides:
-    # keep factory runtime, but route /login and /playground to the old app.py handlers
-    try:
-
-        def _legacy_login_proxy(**kwargs):
-            from app.app import login
-
-            return login(**kwargs)
-
-        if "auth.login" in app.view_functions:
-            app.view_functions["auth.login"] = _legacy_login_proxy
-    except Exception as e:
-        logger.warning(f"Legacy login override failed: {e}")
-
-    try:
-
-        def _legacy_playground_proxy(**kwargs):
-            from app.app import playground
-
-            return playground(**kwargs)
-
-        if "ui.playground" in app.view_functions:
-            app.view_functions["ui.playground"] = _legacy_playground_proxy
-    except Exception as e:
-        logger.warning(f"Legacy playground override failed: {e}")
-
-    # Legacy endpoint aliases for old inline templates that still call url_for("home")
+    # Legacy endpoint aliases for old templates/helpers that still call bare endpoint names
     try:
         if "ui.home" in app.view_functions and "home" not in app.view_functions:
             app.add_url_rule("/home", endpoint="home", view_func=app.view_functions["ui.home"])
+        if "auth.login" in app.view_functions and "login" not in app.view_functions:
+            app.add_url_rule("/login", endpoint="login", view_func=app.view_functions["auth.login"])
+        if "auth.logout" in app.view_functions and "logout" not in app.view_functions:
+            app.add_url_rule("/logout", endpoint="logout", view_func=app.view_functions["auth.logout"])
+        if "ui.playground" in app.view_functions and "playground" not in app.view_functions:
+            app.add_url_rule("/playground", endpoint="playground", view_func=app.view_functions["ui.playground"])
+        if "ui.legacy_chat_route" in app.view_functions and "app" not in app.view_functions:
+            app.add_url_rule("/app", endpoint="app", view_func=app.view_functions["ui.legacy_chat_route"])
     except Exception as e:
         logger.warning(f"Legacy endpoint alias registration failed: {e}")
 
