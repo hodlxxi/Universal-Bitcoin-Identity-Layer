@@ -8,6 +8,19 @@ def get_browser_route_handler(name):
     return _BROWSER_ROUTE_HANDLERS.get(name)
 
 
+def call_browser_route_handler(name, *, default_handler=None):
+    handler = get_browser_route_handler(name)
+    if handler is not None:
+        return handler()
+    if default_handler is not None:
+        return default_handler()
+    raise RuntimeError(f"Browser route handler '{name}' is not registered")
+
+
+def render_browser_playground(*, render_template_func=render_template):
+    return render_template_func("playground.html")
+
+
 def render_browser_login(*, generate_challenge, get_rpc_connection, render_template_string_func=render_template_string):
     # Session challenge for legacy /verify_signature flow
     challenge_str = generate_challenge()

@@ -1,4 +1,5 @@
 from flask import url_for
+import inspect
 
 
 def _endpoints_for_path(app, path, method="GET"):
@@ -97,3 +98,15 @@ def test_browser_route_runtime_compatibility(client):
 
     response = client.get("/app")
     assert response.status_code == 200
+
+
+def test_ui_core_browser_shell_routes_do_not_delegate_to_app_app():
+    from app.blueprints import ui as ui_module
+
+    home_source = inspect.getsource(ui_module.legacy_home_route)
+    app_source = inspect.getsource(ui_module.legacy_chat_route)
+    playground_source = inspect.getsource(ui_module.playground)
+
+    assert "from app.app import" not in home_source
+    assert "from app.app import" not in app_source
+    assert "from app.app import" not in playground_source
