@@ -64,9 +64,9 @@ def screensaver():
 
 @ui_bp.route("/app")
 def legacy_chat_route():
-    from app.app import chat as legacy_chat
+    from app.app import _call_browser_route_alias
 
-    return legacy_chat()
+    return _call_browser_route_alias("chat")
 
 
 @ui_bp.route("/home", methods=["GET"], endpoint="home")
@@ -143,68 +143,34 @@ def dashboard():
 
 @ui_bp.route("/playground")
 def playground():
-    """
-    API testing playground.
+    from app.app import playground as legacy_playground
 
-    Returns:
-        HTML API playground
-    """
-    html = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>API Playground</title>
-    <style>
-        body { margin: 0; padding: 2rem; font-family: system-ui; background: #0b0f10; color: #e6f1ef; }
-        .endpoint { background: #11171a; border: 1px solid #00ff88; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; }
-        h1 { color: #00ff88; }
-        button { background: #00ff88; color: #0b0f10; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; }
-        button:hover { opacity: 0.8; }
-        pre { background: #000; padding: 1rem; border-radius: 6px; overflow-x: auto; }
-    </style>
-</head>
-<body>
-    <h1>API Playground</h1>
+    return legacy_playground()
 
-    <div class="endpoint">
-        <h3>Health Check</h3>
-        <button onclick="fetchEndpoint('/health', 'health-result')">GET /health</button>
-        <pre id="health-result">Click to fetch</pre>
-    </div>
 
-    <div class="endpoint">
-        <h3>Metrics</h3>
-        <button onclick="fetchEndpoint('/metrics', 'metrics-result')">GET /metrics</button>
-        <pre id="metrics-result">Click to fetch</pre>
-    </div>
+@ui_bp.route("/explorer", methods=["GET"])
+def legacy_explorer_route():
+    from app.app import explorer_alias as legacy_explorer
 
-    <div class="endpoint">
-        <h3>OIDC Discovery</h3>
-        <button onclick="fetchEndpoint('/.well-known/openid-configuration', 'oidc-result')">GET /.well-known/openid-configuration</button>
-        <pre id="oidc-result">Click to fetch</pre>
-    </div>
+    return legacy_explorer()
 
-    <div class="endpoint">
-        <h3>JWKS</h3>
-        <button onclick="fetchEndpoint('/oauth/jwks.json', 'jwks-result')">GET /oauth/jwks.json</button>
-        <pre id="jwks-result">Click to fetch</pre>
-    </div>
 
-    <script>
-        async function fetchEndpoint(url, resultId) {
-            const resultEl = document.getElementById(resultId);
-            resultEl.textContent = 'Loading...';
-            try {
-                const response = await fetch(url);
-                const data = await response.json();
-                resultEl.textContent = JSON.stringify(data, null, 2);
-            } catch (error) {
-                resultEl.textContent = 'Error: ' + error.message;
-            }
-        }
-    </script>
-</body>
-</html>
-    """
-    return render_template_string(html)
+@ui_bp.route("/onboard", methods=["GET"])
+def legacy_onboard_route():
+    from app.app import onboard_alias as legacy_onboard
+
+    return legacy_onboard()
+
+
+@ui_bp.route("/oneword", methods=["GET"])
+def legacy_oneword_route():
+    from app.app import oneword_alias as legacy_oneword
+
+    return legacy_oneword()
+
+
+@ui_bp.route("/upgrade", methods=["GET", "POST"])
+def legacy_upgrade_route():
+    from app.app import upgrade as legacy_upgrade
+
+    return legacy_upgrade()

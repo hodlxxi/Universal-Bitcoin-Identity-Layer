@@ -37,18 +37,10 @@ LOGIN_RATE_LIMIT = "20 per minute"
 
 @auth_bp.route("/logout")
 def logout():
-    """
-    Clear user session and redirect to login.
+    """Compatibility wrapper: keep auth blueprint ownership, delegate runtime behavior."""
+    from app.app import logout as legacy_logout
 
-    Returns:
-        Redirect to login page
-    """
-    pubkey = session.get("logged_in_pubkey")
-    if pubkey:
-        audit_logger.log_event("auth.logout", pubkey=pubkey, ip=request.remote_addr)
-
-    session.clear()
-    return redirect(url_for("auth.login"))
+    return legacy_logout()
 
 
 @auth_bp.route("/verify_signature", methods=["POST"])
@@ -207,62 +199,7 @@ def guest_login():
 
 @auth_bp.route("/login")
 def login():
-    """Login page with authentication options."""
-    from flask import render_template_string
+    """Compatibility wrapper: keep auth blueprint ownership, delegate runtime behavior."""
+    from app.app import login as legacy_login
 
-    html = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Login - HODLXXI</title>
-    <style>
-        body {
-            font-family: -apple-system, system-ui, sans-serif;
-            background: #0b0f10;
-            color: #e6f1ef;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            margin: 0;
-        }
-        .container {
-            max-width: 400px;
-            padding: 40px;
-            background: #11171a;
-            border-radius: 12px;
-            border: 1px solid #00ff88;
-        }
-        h1 { color: #00ff88; margin-top: 0; }
-        .btn {
-            display: block;
-            width: 100%;
-            padding: 12px;
-            margin: 10px 0;
-            background: #00ff88;
-            color: #0b0f10;
-            border: none;
-            border-radius: 6px;
-            font-size: 16px;
-            cursor: pointer;
-            text-decoration: none;
-            text-align: center;
-        }
-        .btn:hover { background: #00dd77; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>⚡ Login to HODLXXI</h1>
-        <p>Choose your authentication method:</p>
-        <a href="/" class="btn">← Back to Home</a>
-        <button class="btn" onclick="alert('OAuth login requires client_id and redirect_uri parameters. Use the OAuth flow from your application.')">OAuth Login</button>
-        <p style="font-size: 14px; color: #888; margin-top: 20px;">
-            For developers: See <a href="/.well-known/openid-configuration" style="color: #00ff88;">OpenID Configuration</a>
-        </p>
-    </div>
-</body>
-</html>
-    """
-    return render_template_string(html)
+    return legacy_login()
