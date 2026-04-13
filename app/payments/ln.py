@@ -161,7 +161,7 @@ def _run_lncli(args: list[str], timeout: int = 20) -> dict:
 def _create_invoice_lnd_cli(amount_sats: int, memo: str, expiry_seconds: int) -> Tuple[str, str]:
     j = _run_lncli(
         ["addinvoice", f"--amt={int(amount_sats)}", f"--memo={memo}", f"--expiry={int(expiry_seconds)}"],
-        timeout=30,
+        timeout=90,
     )
     # lncli returns r_hash (hex) + payment_request
     invoice_id = j.get("r_hash")
