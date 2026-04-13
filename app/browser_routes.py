@@ -24,9 +24,7 @@ def render_browser_login(*, generate_challenge, get_rpc_connection, render_templ
         remaining = 1777777 - block_height
 
         uptime_sec = rpc.uptime()
-        startup_time = (datetime.now(timezone.utc) - timedelta(seconds=uptime_sec)).strftime(
-            "%Y-%m-%d %H:%M:%S UTC"
-        )
+        startup_time = (datetime.now(timezone.utc) - timedelta(seconds=uptime_sec)).strftime("%Y-%m-%d %H:%M:%S UTC")
 
         mp_info = rpc.getmempoolinfo()
         mempool_txs = mp_info.get("size", 0)

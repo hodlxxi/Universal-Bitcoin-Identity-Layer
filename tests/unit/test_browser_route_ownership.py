@@ -34,7 +34,6 @@ def test_legacy_endpoint_names_still_resolve(app):
         assert url_for("app") == "/app"
 
 
-
 def test_auth_blueprint_implements_login_logout_directly(app):
     login_view = app.view_functions["auth.login"]
     logout_view = app.view_functions["auth.logout"]
@@ -57,6 +56,7 @@ def test_login_sets_signature_challenge_session_and_renders_legacy_ui(client):
     with client.session_transaction() as sess:
         assert sess.get("challenge")
         assert sess.get("challenge_timestamp")
+
 
 def test_browser_route_runtime_compatibility(client):
     response = client.get("/")
