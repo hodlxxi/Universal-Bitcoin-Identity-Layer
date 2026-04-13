@@ -47,11 +47,20 @@ def visualize_covenant(input_dict: dict[str, Any]) -> dict[str, Any]:
     timeline = _timeline(machine)
     mermaid = _mermaid(graph)
     confidence, confidence_inputs = _confidence_score(machine, parse_result, simplified_visualization, pattern)
+    trust_score, trust_factors = _trust_score(
+        machine=machine,
+        parse_result=parse_result,
+        confidence=confidence,
+        pattern_match=pattern,
+        simplified_visualization=simplified_visualization,
+    )
     machine["confidence_inputs"] = confidence_inputs
+    machine["trust_factors"] = trust_factors
 
     result = {
         "summary": human["summary"],
         "confidence": confidence,
+        "trust_score": trust_score,
         "pattern_match": pattern,
         "simplified_visualization": simplified_visualization,
         "human_explanation": human,
@@ -547,3 +556,78 @@ def _confidence_score(
         "descriptor_partial": descriptor_partial,
     }
     return score, confidence_inputs
+
+
+def _trust_score(
+    machine: dict[str, Any],
+    parse_result: dict[str, Any],
+    confidence: float,
+    pattern_match: dict[str, Any],
+    simplified_visualization: bool,
+) -> tuple[float, dict[str, list[str]]]:
+    observed = machine.get("observed", {})
+    tokens = parse_result.get("tokens", [])
+    if_count = tokens.count("OP_IF")
+    else_count = tokens.count("OP_ELSE")
+    endif_count = tokens.count("OP_ENDIF")
+    balanced_branches = if_count == else_count == endif_count and (if_count > 0 or else_count > 0 or endif_count > 0)
+    has_timelock = bool(observed.get("timelocks"))
+    has_keys = bool(observed.get("keys"))
+    unsupported_opcode_count = sum(1 for warning in parse_result.get("warnings", []) if "unsupported opcode" in warning)
+    descriptor_partial = machine.get("source_type") == "descriptor" and parse_result.get("raw_script_hex") is None
+    xonly_ambiguity = bool(observed.get("xonly_keys"))
+    unclassified_pattern = pattern_match.get("variant") == "unclassified"
+    imbalanced_branches = (if_count or else_count or endif_count) and not (if_count == else_count == endif_count)
+
+    positive: list[str] = []
+    negative: list[str] = []
+
+    score = 0.4
+    if balanced_branches:
+        score += 0.15
+        positive.append("balanced control flow")
+    if has_keys:
+        score += 0.1
+        positive.append("compressed keys detected clearly")
+    if has_timelock:
+        score += 0.12
+        positive.append("clear timelock structure")
+    if not unclassified_pattern:
+        score += 0.08
+        positive.append("recognized covenant pattern variant")
+    if unsupported_opcode_count == 0:
+        score += 0.05
+        positive.append("no unsupported opcodes detected")
+    if not xonly_ambiguity:
+        score += 0.03
+        positive.append("no x-only key ambiguity")
+    if not descriptor_partial:
+        score += 0.03
+        positive.append("no partial descriptor parsing")
+
+    if unsupported_opcode_count:
+        score -= min(0.24, 0.08 * unsupported_opcode_count)
+        negative.append("unsupported opcode(s) present")
+    if any("script_hex is not valid even-length hex" in warning for warning in parse_result.get("warnings", [])):
+        score -= 0.2
+        negative.append("malformed hex input")
+    if xonly_ambiguity:
+        score -= 0.12
+        negative.append("x-only key ambiguity")
+    if simplified_visualization:
+        score -= 0.08
+        negative.append("simplified visualization indicates approximation")
+    if descriptor_partial:
+        score -= 0.1
+        negative.append("partial descriptor parsing")
+    if unclassified_pattern:
+        score -= 0.08
+        negative.append("unclassified pattern")
+    if imbalanced_branches:
+        score -= 0.12
+        negative.append("imbalanced branches")
+
+    score -= max(0.0, (0.6 - confidence) * 0.1)
+    score = max(0.0, min(1.0, round(score, 2)))
+    negative.append("policy intent cannot be proven from script alone")
+    return score, {"positive": list(dict.fromkeys(positive)), "negative": list(dict.fromkeys(negative))}

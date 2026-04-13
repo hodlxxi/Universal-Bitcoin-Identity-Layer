@@ -450,6 +450,7 @@ def test_capabilities_advertise_covenant_visualize_job_type(client):
     assert "script_hex" in spec["input_schema"]
     assert "mermaid" in spec["output_schema"]
     assert "confidence" in spec["output_schema"]
+    assert "trust_score" in spec["output_schema"]
     assert "pattern_match" in spec["output_schema"]
     assert "simplified_visualization" in spec["output_schema"]
 
@@ -484,6 +485,7 @@ def test_covenant_visualize_job_receipt_contains_visualization_result(client, mo
         assert "timeline" in job.result_json
         assert "receipt" in res.get_json()
         assert "confidence" in job.result_json
+        assert "trust_score" in job.result_json
         assert "pattern_match" in job.result_json
         assert "simplified_visualization" in job.result_json
 
@@ -534,6 +536,42 @@ def test_reputation_endpoint_returns_basic_agent_stats(client, monkeypatch):
     assert body["completed_jobs"] >= 1
     assert body["evidenced_completed_jobs"] >= 1
     assert body["counts_by_job_type"]["verify_signature"] >= 1
+
+
+def test_reputation_endpoint_returns_trust_aggregates_when_available(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.blueprints.agent.create_invoice",
+        lambda amount_sats, memo, user_pubkey, expiry_seconds=3600: (
+            "ln-invoice",
+            f"lookup-id-reputation-{amount_sats}",
+        ),
+    )
+    monkeypatch.setattr("app.blueprints.agent.check_invoice_paid", lambda invoice_id: True)
+
+    req = client.post(
+        "/agent/request",
+        json={
+            "job_type": "covenant_visualize",
+            "input": {
+                "script_asm": "OP_IF 02"
+                + "11" * 32
+                + " OP_CHECKSIG OP_ELSE 500000 OP_CHECKLOCKTIMEVERIFY OP_DROP 03"
+                + "22" * 32
+                + " OP_CHECKSIG OP_ENDIF"
+            },
+        },
+    ).get_json()
+    client.get(f"/agent/jobs/{req['job_id']}")
+
+    res = client.get("/agent/reputation")
+    assert res.status_code == 200
+    body = res.get_json()
+    assert isinstance(body["average_trust_score"], float)
+    assert isinstance(body["average_confidence"], float)
+    assert "pattern_distribution" in body
+    assert body["pattern_distribution"]["cooperative_plus_delayed_exit"] >= 1
+    assert "trust_trend" in body
+    assert body["trust_trend"]["window_size"] >= 1
 
 
 def test_capabilities_advertise_reputation_endpoint(client):
