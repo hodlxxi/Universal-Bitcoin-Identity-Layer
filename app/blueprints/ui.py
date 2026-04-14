@@ -66,7 +66,7 @@ def screensaver():
 
 @ui_bp.route("/app")
 def legacy_chat_route():
-    return call_browser_route_handler("chat", default_handler=lambda: ("", 200))
+    return call_browser_route_handler("chat", default_handler=lambda: ("chat handler missing", 500))
 
 
 @ui_bp.route("/home", methods=["GET"], endpoint="home")
