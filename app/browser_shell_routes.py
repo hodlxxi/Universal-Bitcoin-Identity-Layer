@@ -438,7 +438,7 @@ textarea{
                         math, guided by ethics, designed for generations. Let’s make covenants great again!!!
                     </a>
                 </p>
-            
+
       <!-- HIDE_MANIFESTO_V1: session-scoped hide button -->
       <div style="margin-top:12px; display:flex; justify-content:flex-end;">
         <button id="hideManifestoBtn" type="button"
@@ -946,7 +946,7 @@ textarea{
                 });
         }
 
-        
+
         window.handlePubKeyClickRef = async function(ref) {
             try {
                 const r = await fetch(`/api/pubkey/resolve?ref=${encodeURIComponent(ref)}`, { credentials: "same-origin" });
@@ -1497,7 +1497,7 @@ if (sessionStorage.getItem('playLoginSound') === '1') {
       `Ratio: <strong>${ratio}</strong>`;
   }
 
-  
+
   // FIX_TOTALS_BAR_V2_INIT: make bar visible immediately + expose helpers for debugging
 
   // AUTO_TOTALS_FROM_SESSION_V1: on /home load, fetch session pubkey and pull totals automatically
