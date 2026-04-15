@@ -1,5 +1,6 @@
 from flask import url_for
 import inspect
+import sys
 
 
 def _endpoints_for_path(app, path, method="GET"):
@@ -106,7 +107,27 @@ def test_ui_core_browser_shell_routes_do_not_delegate_to_app_app():
     home_source = inspect.getsource(ui_module.legacy_home_route)
     app_source = inspect.getsource(ui_module.legacy_chat_route)
     playground_source = inspect.getsource(ui_module.playground)
+    account_source = inspect.getsource(ui_module.legacy_account_route)
+    explorer_source = inspect.getsource(ui_module.legacy_explorer_route)
+    onboard_source = inspect.getsource(ui_module.legacy_onboard_route)
+    oneword_source = inspect.getsource(ui_module.legacy_oneword_route)
+    upgrade_source = inspect.getsource(ui_module.legacy_upgrade_route)
 
     assert "from app.app import" not in home_source
     assert "from app.app import" not in app_source
     assert "from app.app import" not in playground_source
+    assert "from app.app import" not in account_source
+    assert "from app.app import" not in explorer_source
+    assert "from app.app import" not in onboard_source
+    assert "from app.app import" not in oneword_source
+    assert "from app.app import" not in upgrade_source
+
+
+def test_factory_boot_registers_browser_runtime_handlers_without_importing_app_app(app):
+    from app.browser_routes import get_browser_route_handler
+
+    assert get_browser_route_handler("chat") is not None
+    assert get_browser_route_handler("login") is not None
+    assert get_browser_route_handler("logout") is not None
+    assert get_browser_route_handler("playground") is not None
+    assert "app.app" not in sys.modules
