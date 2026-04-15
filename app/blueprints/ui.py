@@ -8,7 +8,14 @@ import logging
 
 from flask import Blueprint, redirect, render_template, render_template_string, session, url_for
 from app.browser_routes import call_browser_route_handler, render_browser_playground
-from app.browser_shell_routes import render_browser_home_page
+from app.browser_shell_routes import (
+    render_browser_account_page,
+    render_browser_explorer_alias,
+    render_browser_home_page,
+    render_browser_oneword_alias,
+    render_browser_onboard_alias,
+    render_browser_upgrade_page,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,9 +83,7 @@ def legacy_home_route():
 
 @ui_bp.route("/account", methods=["GET"])
 def legacy_account_route():
-    from app.app import account as legacy_account
-
-    return legacy_account()
+    return render_browser_account_page()
 
 
 @ui_bp.route("/dashboard")
@@ -146,27 +151,19 @@ def playground():
 
 @ui_bp.route("/explorer", methods=["GET"])
 def legacy_explorer_route():
-    from app.app import explorer_alias as legacy_explorer
-
-    return legacy_explorer()
+    return render_browser_explorer_alias()
 
 
 @ui_bp.route("/onboard", methods=["GET"])
 def legacy_onboard_route():
-    from app.app import onboard_alias as legacy_onboard
-
-    return legacy_onboard()
+    return render_browser_onboard_alias()
 
 
 @ui_bp.route("/oneword", methods=["GET"])
 def legacy_oneword_route():
-    from app.app import oneword_alias as legacy_oneword
-
-    return legacy_oneword()
+    return render_browser_oneword_alias()
 
 
 @ui_bp.route("/upgrade", methods=["GET", "POST"])
 def legacy_upgrade_route():
-    from app.app import upgrade as legacy_upgrade
-
-    return legacy_upgrade()
+    return render_browser_upgrade_page()

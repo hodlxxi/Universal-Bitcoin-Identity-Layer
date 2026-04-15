@@ -1,4 +1,4 @@
-from flask import request, render_template_string, session
+from flask import redirect, render_template, request, render_template_string, session
 
 
 def render_browser_home_page(*, logger=None):
@@ -1790,3 +1790,63 @@ function maskDeepLinkedKeyForLimited() {
 
     return render_template_string(html, access_level=access_level, initial_pubkey=initial_pubkey)
 
+
+def render_browser_account_page():
+    from jinja2 import TemplateNotFound
+    from werkzeug.routing import BuildError
+
+    if not session.get("logged_in_pubkey"):
+        return redirect(f"/login?next={request.path}")
+
+    try:
+        pk = session.get("logged_in_pubkey") or ""
+        short_pk = (pk[:12] + "…") if isinstance(pk, str) and len(pk) > 12 else pk
+        return render_template(
+            "account.html",
+            pubkey=pk,
+            short_pk=short_pk,
+            access_level=session.get("access_level", "limited"),
+            guest_label=session.get("guest_label"),
+        )
+    except (TemplateNotFound, BuildError) as e:
+        pub = session.get("logged_in_pubkey", "")
+        lvl = session.get("access_level", "")
+        return (
+            "<!doctype html><html><head><meta charset='utf-8'><title>Account</title></head>"
+            "<body style='font-family:system-ui;padding:24px'>"
+            "<h1>Account</h1>"
+            f"<p><b>pubkey</b>: {pub}</p>"
+            f"<p><b>access</b>: {lvl}</p>"
+            f"<p style='color:#b00'><b>Template/endpoint issue</b>: {e}</p>"
+            "<p>/account route restored. Fix account.html url_for() endpoint names.</p>"
+            "</body></html>"
+        )
+
+
+def render_browser_explorer_alias():
+    return redirect("/home#explorer")
+
+
+def render_browser_onboard_alias():
+    return redirect("/home#onboard")
+
+
+def render_browser_oneword_alias():
+    # legacy / typo route - keep backwards compatibility
+    return redirect("/home")
+
+
+def render_browser_upgrade_page():
+    if not session.get("logged_in_pubkey"):
+        return redirect(f"/login?next={request.path}")
+
+    pk = session.get("logged_in_pubkey") or ""
+    short_pk = (pk[:12] + "…") if isinstance(pk, str) and len(pk) > 12 else pk
+
+    return render_template(
+        "upgrade.html",
+        pubkey=pk,
+        short_pk=short_pk,
+        access_level=session.get("access_level", "limited"),
+        guest_label=session.get("guest_label"),
+    )
