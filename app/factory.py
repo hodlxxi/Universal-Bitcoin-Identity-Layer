@@ -9,9 +9,11 @@ Implements the Flask application factory pattern with:
 """
 
 import logging
+import os
+import time
 from typing import Optional
 
-from flask import Flask, g, jsonify, request
+from flask import Flask, g, jsonify, redirect, render_template_string, request
 from flask_socketio import SocketIO
 from werkzeug.exceptions import HTTPException
 
@@ -22,8 +24,24 @@ from app.jwks import ensure_rsa_keypair
 from app.request_context import get_or_create_request_id
 from app.security import init_security
 from app.structured_logging import log_event
+from app.browser_routes import register_browser_route_handlers
+from app.socket_state import CHAT_HISTORY, ONLINE_USERS
+from app.utils import generate_challenge, get_rpc_connection
 
 logger = logging.getLogger(__name__)
+
+EXPIRY_SECONDS = int(os.getenv("CHAT_EXPIRY_SECONDS", "45"))
+
+
+def purge_old_messages() -> None:
+    """Keep only messages newer than EXPIRY_SECONDS."""
+    now = time.time()
+
+    def is_fresh(msg):
+        ts = msg.get("ts") if isinstance(msg, dict) else None
+        return ts is not None and (now - ts) <= EXPIRY_SECONDS
+
+    CHAT_HISTORY[:] = [msg for msg in CHAT_HISTORY if is_fresh(msg)]
 
 
 def create_app(config_override: Optional[AppConfig] = None) -> Flask:
@@ -119,6 +137,7 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
         pass
 
     register_blueprints(app)
+    register_runtime_handlers()
 
     # Register error handlers
     register_error_handlers(app)
@@ -207,6 +226,21 @@ def register_blueprints(app: Flask) -> None:
     logger.info("✅ All blueprints registered")
 
 
+def register_runtime_handlers() -> None:
+    """Initialize browser runtime handlers without registering Flask routes."""
+    register_browser_route_handlers(
+        generate_challenge=generate_challenge,
+        get_rpc_connection=get_rpc_connection,
+        logger=logger,
+        render_template_string_func=render_template_string,
+        special_names={},
+        force_relay=False,
+        chat_history=CHAT_HISTORY,
+        online_users=ONLINE_USERS,
+        purge_old_messages=purge_old_messages,
+    )
+
+
 def register_error_handlers(app: Flask) -> None:
     """Register global error handlers."""
 
@@ -277,6 +311,14 @@ def register_request_handlers(app: Flask) -> None:
         "/oauthx/docs",
         "/.well-known/openid-configuration",
     )
+
+    @app.before_request
+    def normalize_browser_alias_typos():
+        """Canonicalize common legacy browser URL typos."""
+        if request.path == "/accaunt":
+            return redirect("/account", code=301)
+        if request.path == "/accaunts":
+            return redirect("/accounts", code=301)
 
     @app.before_request
     def mark_oauth_public_paths():

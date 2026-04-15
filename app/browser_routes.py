@@ -4,6 +4,17 @@ from flask import redirect, render_template, render_template_string, session, ur
 _BROWSER_ROUTE_HANDLERS = {}
 
 
+class _NoopRouteRegistrar:
+    """Route decorator shim used to build browser handlers without binding routes."""
+
+    @staticmethod
+    def route(*_args, **_kwargs):
+        def decorator(func):
+            return func
+
+        return decorator
+
+
 def get_browser_route_handler(name):
     return _BROWSER_ROUTE_HANDLERS.get(name)
 
@@ -3764,3 +3775,35 @@ def register_browser_routes(
         return render_template("playground.html")
 
     _BROWSER_ROUTE_HANDLERS["playground"] = playground
+
+
+def register_browser_route_handlers(
+    *,
+    generate_challenge,
+    get_rpc_connection,
+    logger,
+    render_template_string_func,
+    special_names,
+    force_relay,
+    chat_history,
+    online_users,
+    purge_old_messages,
+):
+    """
+    Register browser route handlers only (no Flask route registration).
+
+    This keeps browser helper ownership explicit for factory-first runtime boot
+    while avoiding import-time route side effects.
+    """
+    register_browser_routes(
+        _NoopRouteRegistrar(),
+        generate_challenge=generate_challenge,
+        get_rpc_connection=get_rpc_connection,
+        logger=logger,
+        render_template_string_func=render_template_string_func,
+        special_names=special_names,
+        force_relay=force_relay,
+        chat_history=chat_history,
+        online_users=online_users,
+        purge_old_messages=purge_old_messages,
+    )

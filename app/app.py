@@ -114,6 +114,13 @@ from app.browser_routes import get_browser_route_handler, register_browser_route
 from app.socket_handlers import register_socket_handlers
 from app.socket_state import ACTIVE_SOCKETS, CHAT_HISTORY, ONLINE_META, ONLINE_USER_META, ONLINE_USERS
 from app.request_context import get_or_create_request_id
+from app.browser_compat import (
+    redirect_explorer,
+    redirect_oneword,
+    redirect_onboard,
+    render_account_page,
+    render_upgrade_page,
+)
 
 # from app.playground_routes import playground_bp   # <-- ADD THIS
 from flask import make_response
@@ -2468,18 +2475,17 @@ def home_page():
 # If any UI link navigates by path, keep it working.
 @app.route("/explorer", methods=["GET"])
 def explorer_alias():
-    return redirect("/home#explorer")
+    return redirect_explorer()
 
 
 @app.route("/onboard", methods=["GET"])
 def onboard_alias():
-    return redirect("/home#onboard")
+    return redirect_onboard()
 
 
 @app.route("/oneword", methods=["GET"])
 def oneword_alias():
-    # legacy / typo route - keep backwards compatibility
-    return redirect("/home")
+    return redirect_oneword()
 
 
 
@@ -6564,21 +6570,7 @@ def api_pof_verify_psbt():
 # Render the real Upgrade UI (upgrade.html). Keeps endpoint name 'upgrade'.
 @app.route("/upgrade", methods=["GET", "POST"])
 def upgrade():
-    from flask import session, request, redirect, render_template
-
-    if not session.get("logged_in_pubkey"):
-        return redirect(f"/login?next={request.path}")
-
-    pk = session.get("logged_in_pubkey") or ""
-    short_pk = (pk[:12] + "…") if isinstance(pk, str) and len(pk) > 12 else pk
-
-    return render_template(
-        "upgrade.html",
-        pubkey=pk,
-        short_pk=short_pk,
-        access_level=session.get("access_level", "limited"),
-        guest_label=session.get("guest_label"),
-    )
+    return render_upgrade_page()
 
 
 # HODLXXI_ACCOUNT_RESTORE_V3
@@ -6602,37 +6594,7 @@ def _fix_accaunt_typo_before_auth_v3():
 # RESTORE_ACCOUNT_ROUTE_V3
 @app.route("/account", methods=["GET"])
 def account():
-    from flask import session, request, redirect, render_template
-    from jinja2 import TemplateNotFound
-    from werkzeug.routing import BuildError
-
-    if not session.get("logged_in_pubkey"):
-        return redirect(f"/login?next={request.path}")
-
-    # Render but never allow template endpoint mistakes to crash production
-    try:
-        pk = session.get("logged_in_pubkey") or ""
-        short_pk = (pk[:12] + "…") if isinstance(pk, str) and len(pk) > 12 else pk
-        return render_template(
-            "account.html",
-            pubkey=pk,
-            short_pk=short_pk,
-            access_level=session.get("access_level", "limited"),
-            guest_label=session.get("guest_label"),
-        )
-    except (TemplateNotFound, BuildError) as e:
-        pub = session.get("logged_in_pubkey", "")
-        lvl = session.get("access_level", "")
-        return (
-            "<!doctype html><html><head><meta charset='utf-8'><title>Account</title></head>"
-            "<body style='font-family:system-ui;padding:24px'>"
-            "<h1>Account</h1>"
-            f"<p><b>pubkey</b>: {pub}</p>"
-            f"<p><b>access</b>: {lvl}</p>"
-            f"<p style='color:#b00'><b>Template/endpoint issue</b>: {e}</p>"
-            "<p>/account route restored. Fix account.html url_for() endpoint names.</p>"
-            "</body></html>"
-        )
+    return render_account_page()
 
 
 # === Compat routes (restore legacy UI + billing API paths) ===
