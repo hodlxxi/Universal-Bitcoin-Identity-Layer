@@ -1789,4 +1789,3 @@ function maskDeepLinkedKeyForLimited() {
         logger.debug("home → access_level=%s", access_level)
 
     return render_template_string(html, access_level=access_level, initial_pubkey=initial_pubkey)
-
