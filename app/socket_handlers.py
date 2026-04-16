@@ -7,16 +7,26 @@ import time
 from flask import request, session
 from flask_socketio import emit
 
+from app.realtime_runtime import (
+    CALL_ROOMS,
+    MAX_ROOM_SIZE,
+    classify_presence,
+    cleanup_old_rooms,
+    get_socketio,
+    logger,
+    purge_old_messages,
+    set_socketio,
+    truncate_key,
+)
 from app.socket_state import ACTIVE_SOCKETS, CHAT_HISTORY, ONLINE_META, ONLINE_USER_META, ONLINE_USERS
-
-# TEMP runtime imports from app.app
-# NOTE: these imports stay inside functions to avoid import-time circulars while
-# app.app remains the runtime owner of socketio instance/decorators/state.
 
 
 def _broadcast_chat_message(text: str):
     """Shared logic to append to history and broadcast to all clients."""
-    from app.app import logger, purge_old_messages, socketio
+    socketio = get_socketio()
+    if socketio is None:
+        logger.warning("SocketIO runtime is not initialized")
+        return
 
     pk = session.get("logged_in_pubkey")
     if not pk:
@@ -38,8 +48,6 @@ def _handle_chat_send(data):
 
     Client sends: socket.emit('chat:send', { text: 'hello' })
     """
-    from app.app import logger
-
     try:
         # data can be dict or string; normalize to text
         if isinstance(data, dict):
@@ -69,8 +77,6 @@ def _build_online_list(online_users, online_meta, online_user_meta):
 
 
 def _handle_socket_connect(auth=None):
-    from app.app import classify_presence
-
     pubkey = session.get("logged_in_pubkey", "")
     level = session.get("access_level")
     if not pubkey:
@@ -119,7 +125,7 @@ def sids_for_pubkey(pk: str):
 
 
 def register_socket_handlers(socketio):
-    from app.app import CALL_ROOMS, MAX_ROOM_SIZE, cleanup_old_rooms, logger, truncate_key
+    set_socketio(socketio)
 
     @socketio.on("rtc:offer")
     def rtc_offer(data):
