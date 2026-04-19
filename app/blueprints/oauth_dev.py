@@ -12,7 +12,6 @@ from app.config import get_config
 from app.database import session_scope
 from app.models import OAuthClient
 
-
 oauth_dev_bp = Blueprint("oauth_dev", __name__)
 
 
