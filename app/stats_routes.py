@@ -1,25 +1,29 @@
 import random
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from flask import Blueprint, jsonify, render_template
+from sqlalchemy import text
+
+from app.database import get_session
 
 stats_bp = Blueprint("stats", __name__, url_prefix="/stats")
 
 
-def get_network_stats():
-    """Get current network statistics"""
-    from app.app import db
+def _scalar(sql: str, params=None):
+    session = get_session()
+    try:
+        return session.execute(text(sql), params or {}).scalar()
+    finally:
+        session.close()
 
+
+def get_network_stats():
+    """Get current network statistics."""
     try:
         # Real data from database
-        user_count = db.session.execute("SELECT COUNT(*) FROM users").scalar() or 0
-        pof_count = db.session.execute("SELECT COUNT(*) FROM proof_of_funds WHERE status='verified'").scalar() or 0
-        total_btc = (
-            db.session.execute(
-                "SELECT COALESCE(SUM(total_btc), 0) FROM proof_of_funds WHERE status='verified'"
-            ).scalar()
-            or 0
-        )
+        user_count = _scalar("SELECT COUNT(*) FROM users") or 0
+        pof_count = _scalar("SELECT COUNT(*) FROM proof_of_funds WHERE status='verified'") or 0
+        total_btc = _scalar("SELECT COALESCE(SUM(total_btc), 0) FROM proof_of_funds WHERE status='verified'") or 0
 
         # If we have no real data yet, use impressive demo data
         if user_count == 0:
@@ -70,43 +74,35 @@ def get_network_stats():
 
 
 def calculate_whale_tiers():
-    """Calculate real whale tier distribution from PoF data"""
-    from app.app import db
-
+    """Calculate real whale tier distribution from PoF data."""
     tiers = {
-        "shrimp": db.session.execute(
-            "SELECT COUNT(*) FROM proof_of_funds WHERE status='verified' AND total_btc < 0.1"
-        ).scalar()
-        or 0,
-        "crab": db.session.execute(
+        "shrimp": _scalar("SELECT COUNT(*) FROM proof_of_funds WHERE status='verified' AND total_btc < 0.1") or 0,
+        "crab": _scalar(
             "SELECT COUNT(*) FROM proof_of_funds WHERE status='verified' AND total_btc >= 0.1 AND total_btc < 1"
-        ).scalar()
+        )
         or 0,
-        "dolphin": db.session.execute(
+        "dolphin": _scalar(
             "SELECT COUNT(*) FROM proof_of_funds WHERE status='verified' AND total_btc >= 1 AND total_btc < 10"
-        ).scalar()
+        )
         or 0,
-        "whale": db.session.execute(
+        "whale": _scalar(
             "SELECT COUNT(*) FROM proof_of_funds WHERE status='verified' AND total_btc >= 10 AND total_btc < 100"
-        ).scalar()
+        )
         or 0,
-        "megalodon": db.session.execute(
-            "SELECT COUNT(*) FROM proof_of_funds WHERE status='verified' AND total_btc >= 100"
-        ).scalar()
-        or 0,
+        "megalodon": _scalar("SELECT COUNT(*) FROM proof_of_funds WHERE status='verified' AND total_btc >= 100") or 0,
     }
     return tiers
 
 
 @stats_bp.route("/")
 def stats_page():
-    """Main stats dashboard page"""
+    """Main stats dashboard page."""
     stats = get_network_stats()
     return render_template("stats/dashboard.html", stats=stats)
 
 
 @stats_bp.route("/api")
 def stats_api():
-    """JSON API for stats (for embedding/widgets)"""
+    """JSON API for stats (for embedding/widgets)."""
     stats = get_network_stats()
     return jsonify(stats)

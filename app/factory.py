@@ -25,6 +25,7 @@ from app.request_context import get_or_create_request_id
 from app.security import init_security
 from app.structured_logging import log_event
 from app.browser_routes import register_browser_route_handlers
+from app.socket_handlers import register_socket_handlers
 from app.socket_state import CHAT_HISTORY, ONLINE_USERS
 from app.utils import generate_challenge, get_rpc_connection
 
@@ -144,6 +145,9 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
 
     # Register before/after request handlers
     register_request_handlers(app)
+
+    socketio = create_socketio(app)
+    register_socket_handlers(socketio)
 
     logger.info("🚀 Application factory completed successfully")
     return app
