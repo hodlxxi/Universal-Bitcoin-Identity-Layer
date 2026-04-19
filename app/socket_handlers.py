@@ -363,6 +363,19 @@ def register_socket_handlers(socketio):
         for sid in sids_for_pubkey(to_pubkey):
             emit("rtc:invite", {"room_id": room_id, "from": from_pubkey, "from_name": from_pubkey[-8:]}, room=sid)
 
+    @socketio.on("rtc:call_invite")
+    def rtc_call_invite(data):
+        """Alias for rtc:invite used by newer browser flows."""
+        from flask_socketio import emit
+
+        to_pubkey = data.get("to")
+        room_id = data.get("room_id")
+        from_pubkey = session.get("logged_in_pubkey")
+        if not to_pubkey or not room_id or not from_pubkey:
+            return
+        for sid in sids_for_pubkey(to_pubkey):
+            emit("rtc:call_invite", {"room_id": room_id, "from": from_pubkey, "from_name": from_pubkey[-8:]}, room=sid)
+
     @socketio.on("message")
     def handle_message(msg_text):
         """Legacy handler for default Socket.IO 'message' event."""
