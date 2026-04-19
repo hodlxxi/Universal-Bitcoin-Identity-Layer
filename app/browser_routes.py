@@ -3350,6 +3350,8 @@ def register_browser_routes(
         const GroupCallManager = (() => {
           let localStream = null;
           let peerConnections = {};
+          let pendingIceCandidates = {};
+          let remoteStreams = {};
           let currentRoomId = null;
           let iceServersCache = null;
           let isMuted = false;
@@ -3495,7 +3497,17 @@ def register_browser_routes(
               }
             };
 
-            pc.ontrack = (e) => addRemoteTile(remotePk, e.streams[0]);
+            pc.ontrack = (e) => {
+              let stream = (e.streams && e.streams[0]) ? e.streams[0] : null;
+              if (!stream){
+                remoteStreams[remotePk] = remoteStreams[remotePk] || new MediaStream();
+                stream = remoteStreams[remotePk];
+              }
+              if (e.track && stream && !stream.getTracks().some(t => t.id === e.track.id)){
+                stream.addTrack(e.track);
+              }
+              addRemoteTile(remotePk, stream);
+            };
 
             pc.oniceconnectionstatechange = () => {
               if (["disconnected","failed","closed"].includes(pc.iceConnectionState)){
@@ -3506,12 +3518,22 @@ def register_browser_routes(
             localStream?.getTracks().forEach(track => pc.addTrack(track, localStream));
 
             peerConnections[remotePk] = pc;
+            // Flush ICE that arrived before the remote description/PC existed.
+            const queued = pendingIceCandidates[remotePk] || [];
+            if (queued.length){
+              for (const c of queued){
+                try{ await pc.addIceCandidate(new RTCIceCandidate(c)); }catch{}
+              }
+              delete pendingIceCandidates[remotePk];
+            }
             return pc;
           }
 
           function closePC(remotePk){
             const pc = peerConnections[remotePk];
             if (pc){ try{ pc.close(); }catch{} delete peerConnections[remotePk]; }
+            delete pendingIceCandidates[remotePk];
+            delete remoteStreams[remotePk];
             removeRemoteTile(remotePk);
           }
 
@@ -3536,6 +3558,8 @@ def register_browser_routes(
 
             Object.keys(peerConnections).forEach(closePC);
             peerConnections = {};
+            pendingIceCandidates = {};
+            remoteStreams = {};
 
             if (localStream){
               localStream.getTracks().forEach(t => t.stop());
@@ -3574,6 +3598,7 @@ def register_browser_routes(
 
           async function handleSignal(data){
             if (!data || !data.from || !currentRoomId) return;
+            if (data.room_id && data.room_id !== currentRoomId) return;
             const remotePk = data.from;
             if (remotePk === myPubkey) return;
 
@@ -3590,8 +3615,28 @@ def register_browser_routes(
                 if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.payload));
               } else if (data.type === "ice"){
                 const pc = peerConnections[remotePk];
-                if (pc && data.payload) await pc.addIceCandidate(new RTCIceCandidate(data.payload));
+                if (data.payload){
+                  if (pc){
+                    await pc.addIceCandidate(new RTCIceCandidate(data.payload));
+                  } else {
+                    pendingIceCandidates[remotePk] = pendingIceCandidates[remotePk] || [];
+                    pendingIceCandidates[remotePk].push(data.payload);
+                  }
+                }
               }
+            } catch {}
+          }
+
+          async function handlePeerJoined(data){
+            if (!data?.pubkey || !currentRoomId) return;
+            if (data.room_id && data.room_id !== currentRoomId) return;
+            const remotePk = data.pubkey;
+            if (remotePk === myPubkey || peerConnections[remotePk]) return;
+            try{
+              const pc = await createPC(remotePk);
+              const offer = await pc.createOffer();
+              await pc.setLocalDescription(offer);
+              socket.emit("rtc:signal", { room_id: currentRoomId, to: remotePk, type: "offer", payload: offer });
             } catch {}
           }
 
@@ -3623,6 +3668,7 @@ def register_browser_routes(
 
             socket.on("rtc:room_peers", handleRoomPeers);
             socket.on("rtc:signal", handleSignal);
+            socket.on("rtc:peer_joined", handlePeerJoined);
 
             socket.on("rtc:peer_left", (d) => { if (d?.pubkey) closePC(d.pubkey); });
 
