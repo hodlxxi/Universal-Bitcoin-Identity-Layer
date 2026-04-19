@@ -1,7 +1,10 @@
-from flask import request, render_template_string, session
+from flask import redirect, request, render_template_string, session
 
 
 def render_browser_home_page(*, logger=None):
+    if not session.get("logged_in_pubkey"):
+        return redirect(f"/login?next={request.path}")
+
     access_level = session.get("access_level", "limited")
     initial_pubkey = request.args.get("pubkey", "")
 
