@@ -6,7 +6,7 @@ Serves frontend HTML pages and handles user interface routes.
 
 import logging
 
-from flask import Blueprint, redirect, render_template, render_template_string, session, url_for
+from flask import Blueprint, redirect, render_template, render_template_string, request, session, url_for
 from app.browser_routes import call_browser_route_handler, render_browser_playground
 from app.browser_compat import (
     redirect_explorer,
@@ -73,6 +73,9 @@ def screensaver():
 
 @ui_bp.route("/app")
 def legacy_chat_route():
+    if not session.get("logged_in_pubkey"):
+        return redirect(f"/login?next={request.path}")
+
     return call_browser_route_handler("chat", default_handler=lambda: ("chat handler missing", 500))
 
 

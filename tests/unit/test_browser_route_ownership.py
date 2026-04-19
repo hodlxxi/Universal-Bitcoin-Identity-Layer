@@ -64,22 +64,43 @@ def test_browser_route_runtime_compatibility(client):
     response = client.get("/")
     assert response.status_code == 200
 
-    response = client.get("/home")
-    assert response.status_code == 200
+    response = client.get("/home", follow_redirects=False)
+    assert response.status_code in (302, 303)
+    assert "/login?next=/home" in response.headers["Location"]
+
+    response = client.get("/app", follow_redirects=False)
+    assert response.status_code in (302, 303)
+    assert "/login?next=/app" in response.headers["Location"]
+
+    response = client.get("/account", follow_redirects=False)
+    assert response.status_code in (302, 303)
+    assert "/login?next=/account" in response.headers["Location"]
+
+    response = client.get("/upgrade", follow_redirects=False)
+    assert response.status_code in (302, 303)
+    assert "/login?next=/upgrade" in response.headers["Location"]
 
     response = client.get("/login")
     assert response.status_code == 200
+
+    with client.session_transaction() as sess:
+        sess["logged_in_pubkey"] = "test-pubkey"
 
     response = client.get("/logout", follow_redirects=False)
     assert response.status_code in (302, 303)
     assert response.headers["Location"].endswith("/login")
 
+    with client.session_transaction() as sess:
+        sess["logged_in_pubkey"] = "test-pubkey"
+
     response = client.get("/playground")
     assert response.status_code == 200
 
+    response = client.get("/home")
+    assert response.status_code == 200
+
     response = client.get("/account", follow_redirects=False)
-    assert response.status_code in (302, 303)
-    assert "/login?next=/account" in response.headers["Location"]
+    assert response.status_code == 200
 
     response = client.get("/explorer", follow_redirects=False)
     assert response.status_code in (302, 303)
@@ -94,8 +115,10 @@ def test_browser_route_runtime_compatibility(client):
     assert response.headers["Location"].endswith("/home")
 
     response = client.get("/upgrade", follow_redirects=False)
-    assert response.status_code in (302, 303)
-    assert "/login?next=/upgrade" in response.headers["Location"]
+    assert response.status_code == 200
+
+    with client.session_transaction() as sess:
+        sess["logged_in_pubkey"] = "test-pubkey"
 
     response = client.get("/app")
     assert response.status_code == 200
