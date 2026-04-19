@@ -185,6 +185,11 @@ def register_blueprints(app: Flask) -> None:
 
     app.register_blueprint(oauth_bp, url_prefix="/oauth")
 
+    # OAuth developer-facing surface (status/docs/client listing)
+    from app.blueprints.oauth_dev import oauth_dev_bp
+
+    app.register_blueprint(oauth_dev_bp)
+
     # Admin/operations blueprint (health, metrics, TURN)
     from app.blueprints.admin import admin_bp
 
