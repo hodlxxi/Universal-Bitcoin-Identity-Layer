@@ -59,6 +59,43 @@ def registered_client(client):
     return json.loads(response.data)
 
 
+class TestOAuthDeveloperSurface:
+    """Test restored OAuth developer-facing endpoints."""
+
+    def test_oauthx_status_available(self, client):
+        response = client.get("/oauthx/status")
+        assert response.status_code == 200
+
+        data = json.loads(response.data)
+        assert data["status"] == "available"
+        assert "issuer" in data
+        assert data["endpoints"]["register"] == "/oauth/register"
+        assert data["endpoints"]["authorize"] == "/oauth/authorize"
+        assert data["endpoints"]["token"] == "/oauth/token"
+
+    def test_oauthx_docs_available(self, client):
+        response = client.get("/oauthx/docs")
+        assert response.status_code == 200
+        assert b"OAuth2 / OIDC Developer Docs" in response.data
+        assert b"/oauth/register" in response.data
+        assert b"/oauth/authorize" in response.data
+        assert b"/oauth/token" in response.data
+
+    def test_oauth_clients_route_restored(self, client):
+        response = client.get("/oauth/clients")
+
+        # Conservative access model: endpoint exists but requires login
+        assert response.status_code == 401
+        data = json.loads(response.data)
+        assert data["error"] == "not_logged_in"
+
+    def test_factory_registers_oauth_dev_blueprint_routes(self, app):
+        routes = {rule.rule for rule in app.url_map.iter_rules()}
+        assert "/oauthx/status" in routes
+        assert "/oauthx/docs" in routes
+        assert "/oauth/clients" in routes
+
+
 class TestOIDCDiscovery:
     """Test OpenID Connect discovery endpoint."""
 
