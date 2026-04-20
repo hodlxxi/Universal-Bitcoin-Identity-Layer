@@ -338,12 +338,17 @@ def register_socket_handlers(socketio):
             outbound = {
                 "room_id": room_id,
                 "from": pubkey,
+                "to": target_pubkey,
                 "type": signal_type,
                 "payload": payload,
             }
 
-            for sid in sids_for_pubkey(target_pubkey):
-                emit("rtc:signal", outbound, room=sid)
+            emit(
+                "rtc:signal",
+                outbound,
+                room=room_id,
+                include_self=False,
+            )
 
         except Exception as e:
             logger.error(f"Error in rtc_signal: {e}", exc_info=True)

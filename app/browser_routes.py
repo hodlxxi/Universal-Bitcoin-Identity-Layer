@@ -3538,6 +3538,10 @@ def register_browser_routes(
           }
 
           async function joinRoom(roomId){
+  if (window.__rtcJoiningRoom === roomId) return;
+  if (window.__rtcCurrentRoom === roomId) return;
+  window.__rtcJoiningRoom = roomId;
+
             if (!myPubkey){ updateStatus("Please log in to join a call"); return; }
             if (currentRoomId) await leaveRoom();
 
@@ -3547,6 +3551,8 @@ def register_browser_routes(
               setUI(true);
               updateStatus("Joining room…");
               socket.emit("rtc:join_room", { room_id: roomId });
+  window.__rtcCurrentRoom = roomId;
+  window.__rtcJoiningRoom = null;
             } catch (e){
               updateStatus("Camera/mic denied");
               await leaveRoom();
@@ -3674,7 +3680,7 @@ def register_browser_routes(
 
             // accept invites from either event name (backward compatibility)
             socket.on("rtc:invite", (d) => { if (d?.room_id) joinRoom(d.room_id); });
-            socket.on("rtc:call_invite", (d) => { if (d?.room_id) joinRoom(d.room_id); });
+            // removed duplicate call_invite handler
 
             socket.on("rtc:error", (d) => updateStatus(d?.error || "RTC error"));
           }
@@ -3692,7 +3698,7 @@ def register_browser_routes(
 
           // invite the other side (supports either handler server-side)
           socket.emit("rtc:invite", { to: targetPubkey, room_id: roomId, from_name: shortKey(myPubkey) });
-          socket.emit("rtc:call_invite", { to: targetPubkey, room_id: roomId, from_name: shortKey(myPubkey) });
+          // removed duplicate call_invite emit
         }
 
         // group call picker (max 3 others)
@@ -3737,7 +3743,7 @@ def register_browser_routes(
 
             selected.forEach(pk => {
               socket.emit("rtc:invite", { to: pk, room_id: roomId, from_name: shortKey(myPubkey) });
-              socket.emit("rtc:call_invite", { to: pk, room_id: roomId, from_name: shortKey(myPubkey) });
+              // removed duplicate call_invite emit
             });
 
             popup.remove();
