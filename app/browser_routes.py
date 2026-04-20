@@ -3400,10 +3400,32 @@ def register_browser_routes(
 
           async function getIceServers() {
             if (iceServersCache) return iceServersCache;
+
             try {
               const resp = await fetch("/turn_credentials");
-              iceServersCache = resp.ok ? await resp.json() : [];
-            } catch { iceServersCache = []; }
+              const data = resp.ok ? await resp.json() : null;
+
+              let normalized = [];
+
+              if (Array.isArray(data)) {
+                normalized = data;
+              } else if (data && Array.isArray(data.iceServers)) {
+                normalized = data.iceServers;
+              } else if (data && Array.isArray(data.servers)) {
+                normalized = data.servers;
+              } else if (data && data.urls) {
+                normalized = [data];
+              }
+
+              iceServersCache = normalized.length
+                ? normalized
+                : [{ urls: "stun:stun.l.google.com:19302" }];
+            } catch (e) {
+              console.error("❌ getIceServers failed", e);
+              iceServersCache = [{ urls: "stun:stun.l.google.com:19302" }];
+            }
+
+            console.log("🧊 ICE servers normalized:", iceServersCache);
             return iceServersCache;
           }
 
@@ -3575,6 +3597,8 @@ def register_browser_routes(
 
             if (remoteWrap) remoteWrap.innerHTML = "";
             currentRoomId = null;
+            window.__rtcCurrentRoom = null;
+            window.__rtcJoiningRoom = null;
             isMuted = false;
             isCameraOff = false;
             muteBtn?.classList.remove("active");
@@ -3586,6 +3610,14 @@ def register_browser_routes(
             updateStatus("Not in a call");
           }
 
+          function shouldInitiateOffer(remotePk){
+            try {
+              return String(myPubkey || "") < String(remotePk || "");
+            } catch (e) {
+              return false;
+            }
+          }
+
           async function handleRoomPeers(data){
             if (!data?.peers || !currentRoomId) return;
             updateStatus(`In room with ${data.peers.length} peer(s)`);
@@ -3593,12 +3625,15 @@ def register_browser_routes(
             for (const remotePk of data.peers){
               if (remotePk === myPubkey) continue;
               if (peerConnections[remotePk]) continue;
+              if (!shouldInitiateOffer(remotePk)) continue;
               try{
                 const pc = await createPC(remotePk);
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
                 socket.emit("rtc:signal", { room_id: currentRoomId, to: remotePk, type: "offer", payload: offer });
-              } catch {}
+              } catch (e) {
+                console.error("❌ handleRoomPeers/createOffer failed", e);
+              }
             }
           }
 
@@ -3611,6 +3646,10 @@ def register_browser_routes(
             try{
               if (data.type === "offer"){
                 let pc = peerConnections[remotePk];
+                if (pc && pc.signalingState !== "stable") {
+                  console.warn("Ignoring glare/duplicate offer in state", pc.signalingState, remotePk);
+                  return;
+                }
                 if (!pc) pc = await createPC(remotePk);
                 await pc.setRemoteDescription(new RTCSessionDescription(data.payload));
                 const answer = await pc.createAnswer();
@@ -3618,7 +3657,12 @@ def register_browser_routes(
                 socket.emit("rtc:signal", { room_id: currentRoomId, to: remotePk, type: "answer", payload: answer });
               } else if (data.type === "answer"){
                 const pc = peerConnections[remotePk];
-                if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.payload));
+                if (!pc) return;
+                if (pc.signalingState !== "have-local-offer") {
+                  console.warn("Ignoring unexpected answer in state", pc.signalingState, remotePk);
+                  return;
+                }
+                await pc.setRemoteDescription(new RTCSessionDescription(data.payload));
               } else if (data.type === "ice"){
                 const pc = peerConnections[remotePk];
                 if (data.payload){
@@ -3630,7 +3674,9 @@ def register_browser_routes(
                   }
                 }
               }
-            } catch {}
+            } catch (e) {
+              console.error("❌ handleSignal failed", e);
+            }
           }
 
           async function handlePeerJoined(data){
@@ -3638,12 +3684,15 @@ def register_browser_routes(
             if (data.room_id && data.room_id !== currentRoomId) return;
             const remotePk = data.pubkey;
             if (remotePk === myPubkey || peerConnections[remotePk]) return;
+            if (!shouldInitiateOffer(remotePk)) return;
             try{
               const pc = await createPC(remotePk);
               const offer = await pc.createOffer();
               await pc.setLocalDescription(offer);
               socket.emit("rtc:signal", { room_id: currentRoomId, to: remotePk, type: "offer", payload: offer });
-            } catch {}
+            } catch (e) {
+              console.error("❌ handlePeerJoined failed", e);
+            }
           }
 
           function toggleMute(){
@@ -3678,8 +3727,14 @@ def register_browser_routes(
 
             socket.on("rtc:peer_left", (d) => { if (d?.pubkey) closePC(d.pubkey); });
 
-            // accept invites from either event name (backward compatibility)
-            socket.on("rtc:invite", (d) => { if (d?.room_id) joinRoom(d.room_id); });
+            // accept invite only when not already in a call / join-in-progress
+            socket.on("rtc:invite", (d) => {
+              if (!d?.room_id) return;
+              if (window.__rtcJoiningRoom === d.room_id) return;
+              if (currentRoomId === d.room_id) return;
+              if (currentRoomId) return;
+              joinRoom(d.room_id);
+            });
             // removed duplicate call_invite handler
 
             socket.on("rtc:error", (d) => updateStatus(d?.error || "RTC error"));
@@ -3694,7 +3749,7 @@ def register_browser_routes(
         async function startCall(targetPubkey){
           if (!targetPubkey || !myPubkey) return;
           const roomId = "direct-" + [myPubkey, targetPubkey].sort().join("-");
-          GroupCallManager.joinRoom(roomId);
+          await GroupCallManager.joinRoom(roomId);
 
           // invite the other side (supports either handler server-side)
           socket.emit("rtc:invite", { to: targetPubkey, room_id: roomId, from_name: shortKey(myPubkey) });
@@ -3733,13 +3788,13 @@ def register_browser_routes(
           });
 
           popup.querySelector('#cancelCallBtn').onclick = () => popup.remove();
-          popup.querySelector('#startCallBtn').onclick = () => {
+          popup.querySelector('#startCallBtn').onclick = async () => {
             const selected = Array.from(popup.querySelectorAll('input[type=checkbox]:checked')).map(cb => cb.value);
             if (selected.length === 0) { alert('Select at least one'); return; }
             if (selected.length > 3) { alert('Max 3 others (4 total)'); return; }
 
             const roomId = 'room-' + Math.random().toString(36).slice(2, 9);
-            GroupCallManager.joinRoom(roomId);
+            await GroupCallManager.joinRoom(roomId);
 
             selected.forEach(pk => {
               socket.emit("rtc:invite", { to: pk, room_id: roomId, from_name: shortKey(myPubkey) });
