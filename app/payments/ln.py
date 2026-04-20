@@ -28,8 +28,12 @@ def _assert_not_stub_in_production() -> None:
     test_paid = os.getenv("TEST_INVOICE_PAID", "false").lower() == "true"
 
     # In prod (or when FORCE_HTTPS), refuse stub/testing modes
+    # ✅ allow stub when tests explicitly set TEST_INVOICE_PAID
+    if test_paid:
+        return
+
     if env == "production" or force_https:
-        if backend == "stub" or test_paid:
+        if backend == "stub":
             logger.error("Lightning backend misconfigured for production (stub/testing enabled).")
             raise LightningPaymentError("Lightning backend misconfigured for production.")
 

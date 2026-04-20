@@ -10,6 +10,7 @@ import time
 from typing import Optional
 
 from flask import Blueprint, current_app, jsonify, request
+import bech32
 
 from app.audit_logger import get_audit_logger
 from app.db_storage import get_lnurl_challenge, store_lnurl_challenge
@@ -75,15 +76,21 @@ def create_challenge():
 
         audit_logger.log_event("lnurl.challenge_created", session_id=session_id, ip=request.remote_addr)
 
+        # encode LNURL (bech32)
+        data = callback_url.encode("utf-8")
+        five_bit_r = bech32.convertbits(data, 8, 5)
+        lnurl_bech32 = bech32.bech32_encode("lnurl", five_bit_r)
+
         # Return LNURL parameters
         return jsonify(
             {
                 "session_id": session_id,
                 "challenge": challenge,
-                "lnurl": callback_url,
+                "lnurl": lnurl_bech32,
                 "qr_code": callback_url,  # placeholder for tests
                 "k1": challenge,  # k1 is the challenge in LNURL-auth
                 "tag": "login",
+                "callback_url": callback_url,
             }
         )
 
@@ -210,8 +217,18 @@ def lnurl_params():
         base_url = cfg.get("LNURL_BASE_URL", "http://localhost:5000")
         callback_url = f"{base_url}/api/lnurl-auth/callback/{session_id}"
 
-        return jsonify({"tag": "login", "k1": challenge_data["challenge"], "callback": callback_url})
+        return jsonify(
+            {"tag": "login", "callback_url": callback_url, "k1": challenge_data["challenge"], "callback": callback_url}
+        )
 
     except Exception:
         logger.error("LNURL params failed", exc_info=True)
         return jsonify({"error": "Internal server error"}), 500
+
+
+@lnurl_bp.route("/status", methods=["GET"])
+def lnurl_status_alias():
+    session_id = request.args.get("session_id")
+    if not session_id:
+        return jsonify({"error": "missing session_id"}), 400
+    return check_verification(session_id)
