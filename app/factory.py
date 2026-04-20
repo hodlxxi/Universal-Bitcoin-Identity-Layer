@@ -45,6 +45,25 @@ def purge_old_messages() -> None:
     CHAT_HISTORY[:] = [msg for msg in CHAT_HISTORY if is_fresh(msg)]
 
 
+def register_legacy_routes_bridge(app):
+    # 🔥 TEMP FIX: expose legacy routes from app.app
+    try:
+        import app.app as legacy
+
+        # copy all Flask routes from legacy.app
+        for rule in legacy.app.url_map.iter_rules():
+            endpoint = rule.endpoint
+
+            if endpoint not in app.view_functions:
+                app.view_functions[endpoint] = legacy.app.view_functions[endpoint]
+
+        print("✅ legacy routes bridged into factory app")
+
+    except Exception as e:
+        print("❌ failed to bridge legacy routes:", e)
+
+
+# 🔥 TEMP: use legacy app as base
 def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     """
     Create and configure the Flask application using the factory pattern.
@@ -62,7 +81,8 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     - Rate limiting
     - Secret management via environment variables
     """
-    app = Flask(__name__)
+    import app.app as legacy
+    app = legacy.app  # 🔥 reuse SAME Flask instance__name__)
 
     # TESTING/CI: isolate Flask-Limiter counters between tests (memory storage persists otherwise)
     try:
@@ -137,7 +157,7 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
         # Tests/minimal setups may intentionally disable the limiter
         pass
 
-    register_blueprints(app)
+    # register_blueprints(app)  # disabled: using legacy.app
     register_runtime_handlers()
 
     # Register error handlers
@@ -150,7 +170,21 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     register_socket_handlers(socketio)
 
     logger.info("🚀 Application factory completed successfully")
+
+    
+    # 🔥 TEMP: bridge legacy routes
+    try:
+        import app.app as legacy
+        for rule in legacy.app.url_map.iter_rules():
+            endpoint = rule.endpoint
+            if endpoint not in app.view_functions:
+                app.view_functions[endpoint] = legacy.app.view_functions[endpoint]
+        print("✅ legacy routes bridged")
+    except Exception as e:
+        print("❌ legacy bridge failed:", e)
+
     return app
+
 
 
 def register_blueprints(app: Flask) -> None:
@@ -232,6 +266,9 @@ def register_blueprints(app: Flask) -> None:
     except Exception as e:
         logger.warning(f"Legacy endpoint alias registration failed: {e}")
 
+    from app.blueprints.legacy_bridge import register_legacy_routes
+
+    register_legacy_routes(app)
     logger.info("✅ All blueprints registered")
 
 
