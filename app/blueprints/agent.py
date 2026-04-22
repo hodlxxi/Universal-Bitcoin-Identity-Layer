@@ -507,11 +507,16 @@ def _job_result(job: AgentJob, payload: dict) -> dict:
 def _request_payload_from_data(data: dict) -> dict:
     payload = data.get("payload")
     if isinstance(payload, dict):
-        return payload
-    input_payload = data.get("input")
-    if isinstance(input_payload, dict):
-        return input_payload
-    return {}
+        result = dict(payload)
+    else:
+        input_payload = data.get("input")
+        result = dict(input_payload) if isinstance(input_payload, dict) else {}
+
+    nonce = data.get("nonce")
+    if nonce is not None and "nonce" not in result:
+        result["nonce"] = nonce
+
+    return result
 
 
 @agent_bp.get("/agent/capabilities")
