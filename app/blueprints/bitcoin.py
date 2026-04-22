@@ -89,7 +89,7 @@ def rpc_command(cmd: str):
         return jsonify({"error": "Internal server error"}), 500
 
 
-@bitcoin_bp.route("/verify", methods=["POST"])
+@bitcoin_bp.route("/bitcoin/verify", methods=["POST"])
 @limiter.limit("10 per minute")
 def verify_proof_of_funds():
     """
