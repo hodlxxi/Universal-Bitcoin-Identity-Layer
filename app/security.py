@@ -158,7 +158,12 @@ def init_rate_limiter(app):
 
     """Initialize Flask-Limiter using the module-level limiter instance."""
     enabled = app.config.get("RATE_LIMIT_ENABLED", True)
-    storage_uri = app.config.get("RATE_LIMIT_STORAGE_URI") or os.getenv("RATELIMIT_STORAGE_URL") or os.getenv("REDIS_URL") or "memory://"
+    storage_uri = (
+        app.config.get("RATE_LIMIT_STORAGE_URI")
+        or os.getenv("RATELIMIT_STORAGE_URL")
+        or os.getenv("REDIS_URL")
+        or "memory://"
+    )
     default_limit = app.config.get("RATE_LIMIT_DEFAULT") or "100/hour"
 
     # Even when disabled, keep limiter object valid for decorators.

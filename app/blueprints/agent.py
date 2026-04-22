@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+
 """Minimal Agent UBID routes: capabilities, jobs, attestations, and discovery."""
 
 import hashlib
