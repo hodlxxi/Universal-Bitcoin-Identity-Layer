@@ -1156,7 +1156,10 @@ if (qrBox && typeof QRCode !== "undefined") renderQR(qrBox, lnurl);
         alert("No Nostr extension found");
         return;
       }
-      const pubkey = await window.nostr.getPublicKey();
+      let pubkey = await window.nostr.getPublicKey();
+      if (/^[0-9a-f]{64}$/i.test(pubkey)) {
+        pubkey = "02" + pubkey;  // TEMP normalize Nostr x-only pubkey for backend challenge route
+      }
       const r = await fetch("/api/challenge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
