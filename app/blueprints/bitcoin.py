@@ -213,7 +213,7 @@ def list_descriptors():
         return jsonify({"error": "Internal server error"}), 500
 
 
-@bitcoin_bp.route("/challenge", methods=["POST"])
+@bitcoin_bp.route("/bitcoin/challenge", methods=["POST"])
 def create_pof_challenge():
     """
     Compatibility endpoint for integration tests: POST /api/challenge
