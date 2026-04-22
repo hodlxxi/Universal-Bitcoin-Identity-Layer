@@ -1863,6 +1863,7 @@ def verify_signature():
     data = request.get_json() or {}
     print("API_VERIFY_DATA =", data, flush=True)
     print("API_VERIFY_DATA =", data, flush=True)
+    print("API_VERIFY_DATA =", data, flush=True)
     pubkey_hex = (data.get("pubkey") or "").strip()
     signature = (data.get("signature") or "").strip()
     challenge = (data.get("challenge") or "").strip()
