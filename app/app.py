@@ -3482,7 +3482,8 @@ def api_verify():
             rec = ACTIVE_CHALLENGES.get(cid)
 
         if not rec:
-            return jsonify(error="Invalid or expired challenge"), 400
+                    print("NOSTR_VERIFY_FAIL=invalid_or_expired_challenge", flush=True)
+        return jsonify(error="Invalid or expired challenge"), 400
 
         ok, error = verify_nostr_login_event(
             nostr_event,
@@ -3492,6 +3493,7 @@ def api_verify():
         )
 
         if not ok:
+            print(f"NOSTR_VERIFY_FAIL={error or "nostr verification failed"}", flush=True)
             return jsonify(error=error or "nostr verification failed"), 400
 
         session["logged_in_pubkey"] = rec["pubkey"]
@@ -3504,6 +3506,7 @@ def api_verify():
 
     rec = ACTIVE_CHALLENGES.get(cid)
     if not rec or rec["expires"] < datetime.now(timezone.utc):
+                print("NOSTR_VERIFY_FAIL=invalid_or_expired_challenge", flush=True)
         return jsonify(error="Invalid or expired challenge"), 400
     if rec["pubkey"] != pubkey:
         return jsonify(error="Pubkey mismatch"), 400
@@ -3514,7 +3517,8 @@ def api_verify():
     if method == "nostr":
         nostr_event = data.get("nostr_event")
         if not nostr_event:
-            return jsonify(error="Missing nostr_event"), 400
+                    print("NOSTR_VERIFY_FAIL=missing_nostr_event", flush=True)
+        return jsonify(error="Missing nostr_event"), 400
 
         nostr_expected_pubkey = pubkey
         if re.fullmatch(r"[0-9a-fA-F]{66}", nostr_expected_pubkey) and nostr_expected_pubkey[:2].lower() in {
@@ -3646,6 +3650,7 @@ def verify_signature_legacy():
     # Must match the session challenge injected into the Legacy tab
     sess = session.get("challenge")
     if not sess or sess != challenge:
+                print("NOSTR_VERIFY_FAIL=invalid_or_expired_challenge", flush=True)
         return jsonify(error="Invalid or expired challenge"), 400
 
     if not pubkey:
