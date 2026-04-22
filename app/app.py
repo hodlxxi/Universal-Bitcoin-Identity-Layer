@@ -3332,7 +3332,8 @@ def verify_nostr_login_event(
         print(f"NOSTR_FAIL=challenge_mismatch expected={expected_challenge} got={challenge_tag}", flush=True)
         return False, "Challenge mismatch"
 
-    url_tag = _nostr_get_tag(event, "u")
+    # support both old "u" and new "url"
+    url_tag = _nostr_get_tag(event, "u") or _nostr_get_tag(event, "url")
     if url_tag and expected_verify_url and url_tag != expected_verify_url:
         print(f"NOSTR_FAIL=url_mismatch expected={expected_verify_url} got={url_tag}", flush=True)
         return False, "Nostr event URL mismatch"
