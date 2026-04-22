@@ -3082,19 +3082,19 @@ PUBLIC_API_PATHS = (
 @app.before_request
 def _public_guard_for_lnurl():
 
-    # EXEMPT: agent invoice endpoints bypass session/login gate (protected by localhost + Bearer token)
-    from flask import request as _req
+    p = request.path or ""
 
-    p = _req.path or ""
+    # CRITICAL: allow public auth endpoints to bypass session/login gate
+    if p in PUBLIC_API_PATHS or any(p.startswith(pref) for pref in PUBLIC_API_PREFIXES):
+        return None
+
+    # EXEMPT: agent invoice endpoints bypass session/login gate (protected by localhost + Bearer token)
     if p.startswith("/api/internal/agent/invoice"):
         return None
+
     # PAYG_BILLING_AGENT_BYPASS_ALL_V1: never block billing-agent bearer endpoints with session gates
-    from flask import request as _req
-
-    if (_req.path or "").startswith("/api/billing/agent/"):
+    if p.startswith("/api/billing/agent/"):
         return None
-
-    p = request.path
     # --- allow playground + playground static assets without auth ---
     # this keeps only playground and its static dir public
     # Allow PoF public routes
