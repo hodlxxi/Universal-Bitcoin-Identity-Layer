@@ -1083,7 +1083,15 @@ def _oauth_public_allowlist():
     # Do NOT enforce login here for the rest of the site.
     from flask import request
 
-    _p = request.path or "/"
+    p = request.path or "/"
+    # --- CRITICAL: auth endpoints must bypass ALL session checks ---
+    if p in ("/api/challenge", "/api/verify") or p.startswith("/api/lnurl-auth/"):
+        return None
+
+    # PAYG_BILLING_AGENT_ALLOWLIST_V1: billing-agent endpoints are Bearer-authenticated
+    # and must never be blocked by session/login gates.
+    if p.startswith("/api/billing/agent/"):
+        return None
     if not (
         _p.startswith("/oauth/")
         or _p.startswith("/oauthx/")
@@ -1626,6 +1634,10 @@ def check_auth():
     from flask import jsonify, redirect, request, session, url_for
 
     p = request.path or "/"
+
+    # --- CRITICAL: auth endpoints must bypass ALL session checks ---
+    if p in ("/api/challenge", "/api/verify") or p.startswith("/api/lnurl-auth/"):
+        return None
 
     # PAYG_BILLING_AGENT_ALLOWLIST_V1: billing-agent endpoints are Bearer-authenticated
     # and must never be blocked by session/login gates.
