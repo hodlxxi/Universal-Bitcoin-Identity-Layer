@@ -1850,6 +1850,7 @@ def make_qr_base64(data):
 def verify_signature():
     data = request.get_json() or {}
     print("API_VERIFY_DATA =", data, flush=True)
+    print("API_VERIFY_DATA =", data, flush=True)
     pubkey_hex = (data.get("pubkey") or "").strip()
     signature = (data.get("signature") or "").strip()
     challenge = (data.get("challenge") or "").strip()
@@ -3479,10 +3480,12 @@ def api_verify():
             pubkey = spk
 
     if not cid:
+        print("API_VERIFY_FAIL=missing_challenge_id", flush=True)
         return jsonify(error="Missing required parameters"), 400
 
     rec = ACTIVE_CHALLENGES.get(cid)
     if not rec or rec["expires"] < datetime.now(timezone.utc):
+        print("API_VERIFY_FAIL=invalid_or_expired_challenge", flush=True)
         return jsonify(error="Invalid or expired challenge"), 400
     # For nostr, pubkey is validated inside nostr event
     if method != "nostr":
@@ -3490,11 +3493,13 @@ def api_verify():
             return jsonify(error="Pubkey mismatch"), 400
 
     method = rec.get("method", "api")
+    print("API_VERIFY_METHOD =", method, flush=True)
 
     # --- 🔹 Verification depending on method ---
     if method == "nostr":
         nostr_event = data.get("nostr_event")
         if not nostr_event:
+            print("API_VERIFY_FAIL=missing_nostr_event", flush=True)
             return jsonify(error="Missing nostr_event"), 400
 
         nostr_expected_pubkey = pubkey
