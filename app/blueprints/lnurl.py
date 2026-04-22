@@ -219,9 +219,11 @@ def lnurl_params():
         base_url = cfg.get("LNURL_BASE_URL", "http://localhost:5000")
         callback_url = f"{base_url}/api/lnurl-auth/callback/{session_id}"
 
-        return jsonify(
-            {"tag": "login", "callback_url": callback_url, "k1": challenge_data["challenge"], "callback": callback_url}
-        )
+        k1 = challenge_data.get("k1") or challenge_data.get("challenge")
+        if not k1:
+            return jsonify({"error": "Invalid challenge record"}), 500
+
+        return jsonify({"tag": "login", "callback_url": callback_url, "k1": k1, "callback": callback_url})
 
     except Exception:
         logger.error("LNURL params failed", exc_info=True)
