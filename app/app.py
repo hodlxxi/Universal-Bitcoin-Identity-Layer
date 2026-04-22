@@ -3530,6 +3530,12 @@ def api_verify():
             expected_verify_url=request.url_root.rstrip("/") + url_for("api_verify"),
         )
         if not ok:
+            logger.warning(
+                "NOSTR_VERIFY_FAIL error=%r pubkey=%r challenge=%r",
+                error,
+                nostr_expected_pubkey,
+                rec["challenge"],
+            )
             return jsonify(error=error or "Nostr verification failed"), 403
     elif method == "lightning":
         return jsonify(error=f"Verification method '{method}' not yet supported"), 501
