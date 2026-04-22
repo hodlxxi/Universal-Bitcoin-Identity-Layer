@@ -24,22 +24,28 @@ from app.socket_state import ACTIVE_SOCKETS, CHAT_HISTORY, ONLINE_META, ONLINE_U
 def _broadcast_chat_message(text: str):
     """Shared logic to append to history and broadcast to all clients."""
     socketio = get_socketio()
+    logger.info(f"CHAT DEBUG: broadcast start sid={getattr(request, 'sid', None)} text={text!r}")
+
     if socketio is None:
-        logger.warning("SocketIO runtime is not initialized")
+        logger.warning("CHAT DEBUG: SocketIO runtime is not initialized")
         return
 
     pk = session.get("logged_in_pubkey")
+    logger.info(f"CHAT DEBUG: session pubkey={pk!r}")
+
     if not pk:
-        logger.warning("Message received from unauthenticated user")
+        logger.warning("CHAT DEBUG: Message received from unauthenticated user")
         return
 
     m = {"pubkey": pk, "text": str(text), "ts": time.time()}
     CHAT_HISTORY.append(m)
     purge_old_messages()
+    logger.info(f"CHAT DEBUG: appended history len={len(CHAT_HISTORY)} payload={m}")
 
     # Old clients listen to "message", new UI listens to both
     socketio.emit("message", m)
     socketio.emit("chat:message", m)
+    logger.info("CHAT DEBUG: emitted message and chat:message")
 
 
 def _handle_chat_send(data):
@@ -49,13 +55,16 @@ def _handle_chat_send(data):
     Client sends: socket.emit('chat:send', { text: 'hello' })
     """
     try:
-        # data can be dict or string; normalize to text
+        logger.info(f"CHAT DEBUG: raw incoming data={data!r} sid={getattr(request, 'sid', None)}")
         if isinstance(data, dict):
             text = (data.get("text") or "").strip()
         else:
             text = str(data or "").strip()
 
+        logger.info(f"CHAT DEBUG: normalized text={text!r}")
+
         if not text:
+            logger.warning("CHAT DEBUG: empty text, ignoring")
             return
 
         _broadcast_chat_message(text)

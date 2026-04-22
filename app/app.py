@@ -770,67 +770,18 @@ def api_public_status():
         load = None
 
     # Cached bitcoind stats (public-safe)
-    btc = {}
-    try:
-        cache = getattr(api_public_status, "_btc_cache", None)
-        ttl = 10
-        if cache and (time.time() - cache.get("ts", 0)) < ttl:
-            btc = cache.get("data", {}) or {}
-        else:
-            rpc = get_rpc_connection()
-            err = None
-            chain = None
-            height = None
-            headers = None
-            ibd = None
-            vprog = None
-            peers = None
-            mp_size = None
-            mp_bytes = None
-
-            try:
-                bci = rpc.getblockchaininfo()
-                chain = bci.get("chain")
-                height = bci.get("blocks")
-                headers = bci.get("headers")
-                ibd = bci.get("initialblockdownload")
-                vprog = bci.get("verificationprogress")
-            except Exception:
-                logger.error("Failed to fetch blockchain info for public status", exc_info=True)
-                err = "Internal server error"
-
-            try:
-                mp = rpc.getmempoolinfo()
-                mp_size = mp.get("size")
-                mp_bytes = mp.get("bytes")
-            except Exception:
-                logger.error("Failed to fetch mempool info for public status", exc_info=True)
-                if not err:
-                    err = "Internal server error"
-
-            try:
-                ni = rpc.getnetworkinfo()
-                peers = ni.get("connections")
-            except Exception:
-                logger.error("Failed to fetch network info for public status", exc_info=True)
-                if not err:
-                    err = "Internal server error"
-
-            btc = {
-                "chain": chain,
-                "block_height": height,
-                "headers": headers,
-                "ibd": ibd,
-                "verificationprogress": vprog,
-                "mempool_size": mp_size,
-                "mempool_bytes": mp_bytes,
-                "peers": peers,
-                "error": err,
-            }
-            api_public_status._btc_cache = {"ts": time.time(), "data": btc}
-    except Exception:
-        logger.error("Failed to build Bitcoin status payload", exc_info=True)
-        btc = {"error": "Internal server error"}
+    # TEMP: disable Bitcoin RPC here while reverse tunnel is fragile
+    btc = {
+        "chain": None,
+        "block_height": None,
+        "headers": None,
+        "ibd": None,
+        "verificationprogress": None,
+        "mempool_size": None,
+        "mempool_bytes": None,
+        "peers": None,
+        "error": "temporarily_disabled",
+    }
 
     # LND state only (public-safe)
     lnd = {}
@@ -1583,15 +1534,7 @@ import os
 from bitcoinrpc.authproxy import AuthServiceProxy
 
 
-def get_rpc_connection():
-    rpc_user = os.getenv("RPC_USER", "hodlwatch")
-    rpc_pass = os.getenv("RPC_PASSWORD", "")  # <— use RPC_PASSWORD consistently
-    rpc_host = os.getenv("RPC_HOST", "127.0.0.1")
-    rpc_port = os.getenv("RPC_PORT", "8332")
-    rpc_wallet = os.getenv("RPC_WALLET", "")
-    url = f"http://{rpc_user}:{rpc_pass}@{rpc_host}:{rpc_port}/wallet/{rpc_wallet}"
-
-    return AuthServiceProxy(url, timeout=60)
+# removed duplicate RPC helper (use app.utils.get_rpc_connection)
 
 
 # ============================================================================

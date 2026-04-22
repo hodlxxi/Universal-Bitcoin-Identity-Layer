@@ -76,7 +76,7 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
             or app.config.get("TESTING")
             or getattr(app, "testing", False)
         ):
-            app.config.setdefault("RATELIMIT_STORAGE_URI", "memory://")
+            # REMOVED: do not force memory rate limit storage
             app.config.setdefault("RATELIMIT_KEY_PREFIX", f"test-{uuid.uuid4()}")
     except Exception:
         pass

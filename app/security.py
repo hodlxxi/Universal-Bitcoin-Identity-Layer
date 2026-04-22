@@ -96,15 +96,17 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
 
     if cfg.get("RATE_LIMIT_ENABLED") is False:
         # limiter configured via init_rate_limiter()
+        storage_uri = os.getenv("RATELIMIT_STORAGE_URL") or os.getenv("REDIS_URL") or "memory://"
         logger.info("Rate limiting disabled")
     else:
         # ALWAYS use memory:// storage for reliability
         # Redis-based rate limiting can be added later if needed
         try:
+            storage_uri = os.getenv("RATELIMIT_STORAGE_URL") or os.getenv("REDIS_URL") or "memory://"
             limiter.init_app(
                 app,
                 default_limits=[limit_default],
-                storage_uri="memory://",
+                storage_uri=storage_uri,
                 strategy="fixed-window",
             )
         except TypeError:
@@ -119,7 +121,7 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
         except Exception:
             pass
 
-    logger.info(f"Rate limiter initialized with memory:// storage (limit: {limit_default})")
+    logger.info(f"Rate limiter initialized with {storage_uri} storage (limit: {limit_default})")
 
     log_level = str(cfg.get("LOG_LEVEL", "INFO")).upper()
     level = getattr(logging, log_level, logging.INFO)
@@ -156,7 +158,7 @@ def init_rate_limiter(app):
 
     """Initialize Flask-Limiter using the module-level limiter instance."""
     enabled = app.config.get("RATE_LIMIT_ENABLED", True)
-    storage_uri = app.config.get("RATE_LIMIT_STORAGE_URI") or "memory://"
+    storage_uri = app.config.get("RATE_LIMIT_STORAGE_URI") or os.getenv("RATELIMIT_STORAGE_URL") or os.getenv("REDIS_URL") or "memory://"
     default_limit = app.config.get("RATE_LIMIT_DEFAULT") or "100/hour"
 
     # Even when disabled, keep limiter object valid for decorators.
