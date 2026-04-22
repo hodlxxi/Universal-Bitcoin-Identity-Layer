@@ -3463,6 +3463,8 @@ def api_playground_pof_challenge():
 @app.route("/api/verify", methods=["POST"])
 def api_verify():
     data = request.get_json() or {}
+    nostr_event = data.get("nostr_event")
+
     cid = (data.get("challenge_id") or "").strip()
     pubkey = (data.get("pubkey") or "").strip()
     signature = (data.get("signature") or "").strip()
@@ -3471,6 +3473,31 @@ def api_verify():
         spk = (session.get("logged_in_pubkey") or "").strip()
         if spk and is_valid_pubkey(spk):
             pubkey = spk
+
+        # --- NOSTR LOGIN PATH ---
+    if nostr_event:
+        # get challenge from session store
+        rec = None
+        if cid and cid in ACTIVE_CHALLENGES:
+            rec = ACTIVE_CHALLENGES.get(cid)
+
+        if not rec:
+            return jsonify(error="Invalid or expired challenge"), 400
+
+        ok, error = verify_nostr_login_event(
+            nostr_event,
+            expected_pubkey=rec["pubkey"],
+            expected_challenge=rec["challenge"],
+            expected_verify_url=request.url_root.rstrip("/") + url_for("api_verify"),
+        )
+
+        if not ok:
+            return jsonify(error=error or "nostr verification failed"), 400
+
+        session["logged_in_pubkey"] = rec["pubkey"]
+        session["access_level"] = "full"
+
+        return jsonify(ok=True, method="nostr")
 
     if not cid:
         return jsonify(error="Missing required parameters"), 400
