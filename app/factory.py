@@ -173,6 +173,15 @@ def register_blueprints(app: Flask) -> None:
 
     app.register_blueprint(bitcoin_bp, url_prefix="/api")
 
+    # LEGACY_VERIFY_BRIDGE_V1
+    # Factory runtime uses wsgi:app=create_app(), but /api/verify still lives in app.app.
+    # Register a thin bridge so production runtime exposes the login verify endpoint.
+    if "api_verify" not in app.view_functions:
+        from app.app import api_verify as legacy_api_verify
+
+        app.add_url_rule("/api/verify", endpoint="api_verify", view_func=legacy_api_verify, methods=["POST"])
+    # /LEGACY_VERIFY_BRIDGE_V1
+
     # Demo blueprint (public test endpoints)
     from app.blueprints.demo import demo_bp
 
