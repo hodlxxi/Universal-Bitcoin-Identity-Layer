@@ -1156,31 +1156,57 @@ if (qrBox && typeof QRCode !== "undefined") renderQR(qrBox, lnurl);
         alert("No Nostr extension found");
         return;
       }
+
       let pubkey = await window.nostr.getPublicKey();
+
+      // normalize x-only pubkey to compressed form for backend challenge route
       if (/^[0-9a-f]{64}$/i.test(pubkey)) {
-        pubkey = "02" + pubkey;  // TEMP normalize Nostr x-only pubkey for backend challenge route
+        pubkey = "02" + pubkey;
       }
+
       const r = await fetch("/api/challenge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pubkey, method: "nostr" }),
       });
-      const d = await r.json();
+
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(d.error || "Challenge failed");
+        return;
+      }
+
+      const verifyUrl = window.location.origin + "/api/verify";
+
       const event = {
         kind: 22242,
-        created_at: Math.floor(Date.now()/1000),
-        tags: [["challenge", d.challenge], ["app", "HODLXXI"]],
-        content: `HODLXXI Login: ${d.challenge}`,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ["challenge", d.challenge],
+          ["url", verifyUrl]
+        ],
+        content: "",
       };
+
       const signed = await window.nostr.signEvent(event);
+
       const vr = await fetch("/api/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ challenge_id: d.challenge_id, pubkey, nostr_event: signed }),
+        body: JSON.stringify({
+          challenge_id: d.challenge_id,
+          pubkey,
+          nostr_event: signed,
+        }),
       });
-      const j2 = await vr.json();
-      if (j2.verified) window.location.href = getRedirectUrl();
-      else alert(j2.error || "Verification failed");
+
+      const j2 = await vr.json().catch(() => ({}));
+      if (vr.ok && j2.verified) {
+        window.location.href = getRedirectUrl();
+      } else {
+        console.error("Nostr verify failed:", j2);
+        alert(j2.error || "Verification failed");
+      }
     }
 
     // --- Bind pill buttons (mobile-safe) ---
