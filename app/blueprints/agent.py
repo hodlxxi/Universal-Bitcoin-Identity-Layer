@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 """Minimal Agent UBID routes: capabilities, jobs, attestations, and discovery."""
 
 import hashlib
@@ -751,33 +752,73 @@ def create_job_request():
             .order_by(AgentJob.created_at.desc())
             .first()
         )
-        if existing_job and existing_job.status in {"invoice_pending", "done"}:
-            log_event(
-                logger,
-                "agent.request_deduplicated",
-                job_id=existing_job.id,
-                invoice_id=existing_job.payment_hash,
-                outcome=existing_job.status,
-            )
-            existing_event = (
-                session.query(AgentEvent)
-                .filter_by(job_id=existing_job.id)
-                .order_by(AgentEvent.created_at.desc())
-                .first()
-            )
-            return (
-                jsonify(
-                    {
-                        "job_id": existing_job.id,
-                        "invoice": existing_job.payment_request,
-                        "payment_hash": existing_job.payment_hash,
-                        "status": existing_job.status,
-                        "receipt": existing_event.event_json if existing_event else None,
-                        "deduplicated": True,
-                    }
-                ),
-                200,
-            )
+        if existing_job:
+            # if job already completed → safe to reuse
+            if existing_job.status == "done":
+                log_event(
+                    logger,
+                    "agent.request_deduplicated",
+                    job_id=existing_job.id,
+                    invoice_id=existing_job.payment_hash,
+                    outcome="done",
+                )
+                existing_event = (
+                    session.query(AgentEvent)
+                    .filter_by(job_id=existing_job.id)
+                    .order_by(AgentEvent.created_at.desc())
+                    .first()
+                )
+                return (
+                    jsonify(
+                        {
+                            "job_id": existing_job.id,
+                            "invoice": existing_job.payment_request,
+                            "payment_hash": existing_job.payment_hash,
+                            "status": existing_job.status,
+                            "receipt": existing_event.event_json if existing_event else None,
+                            "deduplicated": True,
+                        }
+                    ),
+                    200,
+                )
+
+            # if invoice is still pending → check freshness (1 hour TTL)
+            if existing_job.status == "invoice_pending":
+                created_at = existing_job.created_at
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+
+                age = datetime.now(timezone.utc) - created_at
+
+                # if invoice is still fresh → reuse
+                if age.total_seconds() < 3600:
+                    log_event(
+                        logger,
+                        "agent.request_deduplicated",
+                        job_id=existing_job.id,
+                        invoice_id=existing_job.payment_hash,
+                        outcome="invoice_pending",
+                    )
+                    return (
+                        jsonify(
+                            {
+                                "job_id": existing_job.id,
+                                "invoice": existing_job.payment_request,
+                                "payment_hash": existing_job.payment_hash,
+                                "status": existing_job.status,
+                                "deduplicated": True,
+                            }
+                        ),
+                        200,
+                    )
+
+                # otherwise → expired → create new invoice
+                log_event(
+                    logger,
+                    "agent.request_invoice_expired",
+                    job_id=existing_job.id,
+                    outcome="creating_new_invoice",
+                )
 
     sats = int(spec["price_sats"])
     memo = str(spec["memo"])
