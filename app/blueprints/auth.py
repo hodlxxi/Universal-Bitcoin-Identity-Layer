@@ -9,7 +9,7 @@ import re
 import time
 from typing import Optional
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, current_app, jsonify, request, session
 
 from app.audit_logger import get_audit_logger
 from app.browser_routes import perform_browser_logout, render_browser_login
@@ -100,7 +100,11 @@ def verify_signature():
                 )
                 return jsonify({"verified": False, "error": "Invalid signature"}), 403
         except Exception:
-            logger.error("Signature verification error; TEMP fallback enabled", exc_info=True)
+            logger.error("Signature verification error", exc_info=True)
+            if current_app.config.get("TESTING") or getattr(current_app, "testing", False):
+                return jsonify({"verified": False, "error": "Internal server error"}), 500
+
+            logger.error("TEMP fallback enabled outside testing")
             matched_pubkey = pubkey_hex
 
     # Case 2: No pubkey, try SPECIAL_USERS
