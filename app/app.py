@@ -3484,8 +3484,10 @@ def api_verify():
     rec = ACTIVE_CHALLENGES.get(cid)
     if not rec or rec["expires"] < datetime.now(timezone.utc):
         return jsonify(error="Invalid or expired challenge"), 400
-    if rec["pubkey"] != pubkey:
-        return jsonify(error="Pubkey mismatch"), 400
+    # For nostr, pubkey is validated inside nostr event
+    if method != "nostr":
+        if rec["pubkey"] != pubkey:
+            return jsonify(error="Pubkey mismatch"), 400
 
     method = rec.get("method", "api")
 
