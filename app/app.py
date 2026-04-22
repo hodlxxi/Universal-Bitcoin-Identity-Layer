@@ -16,6 +16,7 @@ def _mask_pubkey_tail(pk: str, tail: int = 4) -> str:
         return pk[:2] + "*****" + pk[-tail:]
     return "*****" + pk[-tail:]
 
+
 def _mask_clickable_pubkeys_in_html(html: str) -> str:
     """
     Mask visible pubkey text inside clickable spans but keep onclick FULL.
@@ -33,6 +34,7 @@ def _mask_clickable_pubkeys_in_html(html: str) -> str:
         return m.group(1) + f'<span style=\\"color:red;\\">{tail}</span>' + m.group(3)
 
     return pat.sub(repl, html)
+
 
 from flask import session, request, request
 from flask import render_template_string
@@ -627,11 +629,13 @@ app = Flask(__name__)
 
 # --- Internal Agent Invoice API (Option A: agent -> localhost web app) ---
 from app.agent_invoice_api import bp as agent_invoice_bp
+
 app.register_blueprint(agent_invoice_bp)
 
 
 # VISIT_LOG_V1: per-request identity log (no query strings, no secrets)
 from flask import request
+
 
 @app.before_request
 def _assign_request_id():
@@ -651,18 +655,26 @@ def _hodl_visit_log(resp):
 
         pub = session.get("logged_in_pubkey")
         lvl = session.get("access_level")
-        lm  = session.get("login_method")
-        gl  = session.get("guest_label")
+        lm = session.get("login_method")
+        gl = session.get("guest_label")
 
         kind = "anon"
         if pub:
             pub_s = str(pub)
-            kind = "guest" if pub_s.startswith("guest-") or gl or (lm in ("guest","pin")) else "key"
-        tail = (str(pub)[-8:] if pub else "")
+            kind = "guest" if pub_s.startswith("guest-") or gl or (lm in ("guest", "pin")) else "key"
+        tail = str(pub)[-8:] if pub else ""
 
         app.logger.info(
             "VISIT request_id=%s ip=%s kind=%s lvl=%s lm=%s pub_tail=%s %s %s -> %s",
-            getattr(g, "request_id", None), ip, kind, lvl, lm, tail, request.method, path, resp.status_code
+            getattr(g, "request_id", None),
+            ip,
+            kind,
+            lvl,
+            lm,
+            tail,
+            request.method,
+            path,
+            resp.status_code,
         )
     except Exception:
         pass
@@ -689,6 +701,7 @@ def _handle_unexpected_exception(exc):
     if request_id:
         payload["request_id"] = request_id
     return jsonify(payload), 500
+
 
 # Cookie domain: allow sessions to work across apex + www
 _cookie_domain = os.getenv("SESSION_COOKIE_DOMAIN")
@@ -745,10 +758,10 @@ def api_public_status():
                 role = None
             if not role:
                 try:
-                    role = (ONLINE_META.get(pk) if "ONLINE_META" in globals() else None)
+                    role = ONLINE_META.get(pk) if "ONLINE_META" in globals() else None
                 except Exception:
                     role = None
-            role = (str(role).strip().lower() if role else "limited")
+            role = str(role).strip().lower() if role else "limited"
             if role in roles:
                 roles[role] += 1
             elif role.startswith("guest"):
@@ -793,7 +806,9 @@ def api_public_status():
         else:
             state = None
             try:
-                r = subprocess.run(["systemctl","is-active","lnd.service"], capture_output=True, text=True, timeout=0.6)
+                r = subprocess.run(
+                    ["systemctl", "is-active", "lnd.service"], capture_output=True, text=True, timeout=0.6
+                )
                 state = (r.stdout or "").strip() or (r.stderr or "").strip() or "unknown"
             except Exception as e:
                 state = f"unknown:{e.__class__.__name__}"
@@ -806,21 +821,22 @@ def api_public_status():
     height = btc.get("block_height")
     err = btc.get("error")
 
-    return jsonify({
-        "server_time_epoch": now,
-        "server_time_utc": iso,
-        "block_height": height,
-        "error": err,
+    return jsonify(
+        {
+            "server_time_epoch": now,
+            "server_time_utc": iso,
+            "block_height": height,
+            "error": err,
+            "online_users": online_users,
+            "active_sockets": active_sockets,
+            "online_roles": roles,
+            "uptime_sec": uptime_sec,
+            "load": load,
+            "btc": btc,
+            "lnd": lnd,
+        }
+    )
 
-        "online_users": online_users,
-        "active_sockets": active_sockets,
-        "online_roles": roles,
-        "uptime_sec": uptime_sec,
-        "load": load,
-
-        "btc": btc,
-        "lnd": lnd,
-    })
 
 # /PUBLIC_STATUS_EXT_V3
 
@@ -869,6 +885,7 @@ def api_lnd_status():
     rpcserver = (os.getenv("LND_RPCSERVER") or "127.0.0.1:10009").strip()
     if rpcserver:
         base.append(f"--rpcserver={rpcserver}")
+
     def run(args, timeout=8.0):
         r = subprocess.run(base + args, capture_output=True, text=True, timeout=timeout)
         if r.returncode != 0:
@@ -879,12 +896,12 @@ def api_lnd_status():
 
     try:
         info = run(["getinfo"])
-        wb   = run(["walletbalance"])
-        cb   = run(["channelbalance"])
-        ch   = run(["listchannels"], timeout=12.0)
+        wb = run(["walletbalance"])
+        cb = run(["channelbalance"])
+        ch = run(["listchannels"], timeout=12.0)
         # summarize channels (avoid huge payload)
         chans = ch.get("channels") or []
-        local_sum  = sum(int(x.get("local_balance") or 0) for x in chans)
+        local_sum = sum(int(x.get("local_balance") or 0) for x in chans)
         remote_sum = sum(int(x.get("remote_balance") or 0) for x in chans)
 
         data = {
@@ -920,6 +937,7 @@ def api_lnd_status():
 
     api_lnd_status._cache = {"ts": time.time(), "data": data}
     return jsonify(data), 200
+
 
 # /LND_STATUS_API_V1
 
@@ -1030,7 +1048,7 @@ def health():
 def _dev_dashboard_full_only():
     # PAYG_BEARER_BILLING_AGENT_BYPASS_V1: allow billing-agent endpoints to use Bearer tokens
     # Session gate must not block these; require_oauth_token will enforce auth+scope.
-    if request.path.startswith('/api/billing/agent/'):
+    if request.path.startswith("/api/billing/agent/"):
         return None
 
     # Always hide dev dashboard unless full (even if not logged in)
@@ -1048,14 +1066,16 @@ def _oauth_public_allowlist():
 
     # EXEMPT: allow agent invoice endpoints without session (protected by localhost + Bearer in blueprint)
     from flask import request as _req
+
     p = _req.path or ""
     if p.startswith("/api/internal/agent/invoice"):
         return
     # PAYG_BILLING_AGENT_BYPASS_ALL_V1: never block billing-agent bearer endpoints with session gates
     from flask import request as _req
-    if (_req.path or '').startswith('/api/billing/agent/'):
+
+    if (_req.path or "").startswith("/api/billing/agent/"):
         return None
-    if (_req.path or '').startswith('/agent/'):
+    if (_req.path or "").startswith("/agent/"):
         return None
 
     # OAUTH_ALLOWLIST_SCOPE_GUARD_V1
@@ -1145,8 +1165,7 @@ def _db_metrics_counts():
             conn = psycopg2.connect(**kwargs)
 
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                """
+            cur.execute("""
                 
 select
   -- totals
@@ -1190,8 +1209,7 @@ select
   (select count(*) from payments where created_at > now() - interval '24 hours')                            as payments_24h,
   (select count(*) from payments where paid_at is not null and paid_at > now() - interval '24 hours')       as payments_paid_24h
 
-            """
-            )
+            """)
             row = cur.fetchone() or {}
             # cast Decimals/ints cleanly if needed
             return {k: int(row[k]) if row.get(k) is not None else 0 for k in row.keys()}
@@ -1254,11 +1272,13 @@ TURN_TTL = int(os.getenv("TURN_TTL", "3600"))
 #   TURN_RL_WINDOW=60  (seconds)
 #   TURN_RL_MAX=20     (requests per window)
 TURN_RL_WINDOW = int(os.getenv("TURN_RL_WINDOW", "60"))
-TURN_RL_MAX    = int(os.getenv("TURN_RL_MAX", "20"))
+TURN_RL_MAX = int(os.getenv("TURN_RL_MAX", "20"))
 _TURN_RL = {}  # key -> [timestamps]
+
 
 def _turn_rate_limit_ok(key: str):
     import time as _t
+
     now = _t.time()
     arr = _TURN_RL.get(key, [])
     arr = [x for x in arr if (now - x) < TURN_RL_WINDOW]
@@ -1375,7 +1395,6 @@ app.permanent_session_lifetime = timedelta(days=7)
 from decimal import Decimal
 
 
-
 def extract_timelock_pubkeys_from_asm(asm: str):
     """
     Return (first_pub, second_pub) for the *timelock* OP_IF/OP_ELSE pair.
@@ -1387,6 +1406,7 @@ def extract_timelock_pubkeys_from_asm(asm: str):
     We ignore multisig header keys by preferring matches after OP_CHECKMULTISIG.
     """
     import re
+
     if not asm:
         return (None, None)
 
@@ -1401,9 +1421,9 @@ def extract_timelock_pubkeys_from_asm(asm: str):
     matches = []
     # pattern: <lock> OP_CHECKLOCKTIMEVERIFY OP_DROP <pubkey> OP_CHECKSIG
     for i in range(len(toks) - 4):
-        if toks[i+1] == "OP_CHECKLOCKTIMEVERIFY" and toks[i+2] == "OP_DROP" and toks[i+4] == "OP_CHECKSIG":
+        if toks[i + 1] == "OP_CHECKLOCKTIMEVERIFY" and toks[i + 2] == "OP_DROP" and toks[i + 4] == "OP_CHECKSIG":
             lt = toks[i]
-            pk = toks[i+3]
+            pk = toks[i + 3]
             if lt.isdigit() and re.fullmatch(r"[0-9A-Fa-f]{66,130}", pk):
                 matches.append((i, int(lt), pk))
 
@@ -1418,6 +1438,7 @@ def extract_timelock_pubkeys_from_asm(asm: str):
 
     return (None, None)
 
+
 def get_save_and_check_balances_for_pubkey(pubkey_hex: str) -> tuple[Decimal, Decimal]:
     """
     For every raw(...) descriptor in the wallet:
@@ -1431,7 +1452,6 @@ def get_save_and_check_balances_for_pubkey(pubkey_hex: str) -> tuple[Decimal, De
     in_total = Decimal(0)
     out_total = Decimal(0)
     neutral_cards: list[dict] = []
-
 
     # FIX_TIMELOCK_PUBKEYS_V4: compare user pubkey (hex or npub) to script pubkey (hex)
     def _pk_match(user_pk: str, script_hex_pk: str) -> bool:
@@ -1491,7 +1511,7 @@ def get_save_and_check_balances_for_pubkey(pubkey_hex: str) -> tuple[Decimal, De
         # Rule 2: two+ CLTV branches => earliest=IN, second=OUT
         elif len(else_branches) >= 2:
             early = else_branches[0]
-            late  = else_branches[1]
+            late = else_branches[1]
             if early.get("pubkey") and _pk_match(pubkey_hex, early["pubkey"]):
                 in_total += sum_btc
                 matched = True
@@ -1532,7 +1552,6 @@ def require_full_access():
 import os
 
 from bitcoinrpc.authproxy import AuthServiceProxy
-
 
 # removed duplicate RPC helper (use app.utils.get_rpc_connection)
 
@@ -1576,7 +1595,8 @@ def check_auth():
 
     # EXEMPT: agent invoice endpoints bypass session/login gate (protected by localhost + Bearer token)
     from flask import request as _req
-    p = (_req.path or "")
+
+    p = _req.path or ""
     if p.startswith("/api/internal/agent/invoice"):
         return None
     # PUBLIC PREVIEW ROUTES (no login required)
@@ -1607,12 +1627,11 @@ def check_auth():
 
     p = request.path or "/"
 
-
     # PAYG_BILLING_AGENT_ALLOWLIST_V1: billing-agent endpoints are Bearer-authenticated
     # and must never be blocked by session/login gates.
-    if p.startswith('/api/billing/agent/'):
+    if p.startswith("/api/billing/agent/"):
         return None
-    auth_header = request.headers.get("Authorization","")
+    auth_header = request.headers.get("Authorization", "")
     # Bearer API calls should NOT be redirected to /login. Token validation happens in the route.
     if auth_header.startswith("Bearer ") and p.startswith("/api/"):
         return None
@@ -1635,9 +1654,10 @@ def check_auth():
         or p.startswith("/static/")
         or p == "/dashboard"
         or p == "/playground"
-        or p.startswith("/p/") \
-        or p.startswith("/api/playground") or p in ("/api/pof/stats", "/api/pof/stats/") \
-        or p.startswith("/play") \
+        or p.startswith("/p/")
+        or p.startswith("/api/playground")
+        or p in ("/api/pof/stats", "/api/pof/stats/")
+        or p.startswith("/play")
         or p.startswith("/p/")
         or p.startswith("/api/playground")
         or p.startswith("/play")
@@ -1696,7 +1716,8 @@ def check_auth():
         "/agent/covenants/hodlxxi-herald-covenant-v1.json",
     }
     if (
-        (request.method in {"GET", "HEAD"} and (
+        request.method in {"GET", "HEAD"}
+        and (
             p in AGENT_PUBLIC_PATHS
             or p.startswith("/agent/verify/")
             or p.startswith("/agent/jobs/")
@@ -1707,9 +1728,8 @@ def check_auth():
             or p.startswith("/agent/binding/")
             or p.startswith("/agent/trust-summary/")
             or p.startswith("/agent/covenants/")
-        ))
-        or (request.method == "POST" and p in {"/agent/request", "/agent/message"})
-    ):
+        )
+    ) or (request.method == "POST" and p in {"/agent/request", "/agent/message"}):
         return None
 
     # 2) Public endpoints by function name (handle blueprints)
@@ -1745,8 +1765,8 @@ def check_auth():
         "oidc_alias",
         "explorer_page",
         "verify_pubkey_and_list",
-            "api_public_status",
-}
+        "api_public_status",
+    }
     if not endpoint_base:
         return None
 
@@ -1829,6 +1849,7 @@ def make_qr_base64(data):
 @app.route("/verify_signature", methods=["POST"])
 def verify_signature():
     data = request.get_json() or {}
+    print("API_VERIFY_DATA =", data, flush=True)
     pubkey_hex = (data.get("pubkey") or "").strip()
     signature = (data.get("signature") or "").strip()
     challenge = (data.get("challenge") or "").strip()
@@ -2240,6 +2261,7 @@ def extract_script_from_raw_descriptor(descriptor):
         return match.group(1)
     return None
 
+
 def is_valid_pubkey(pubkey):
     if pubkey.startswith("npub"):
         try:
@@ -2280,7 +2302,6 @@ def mask_hex_value(hex_value, num_visible=4):
     return "*****" + hex_value[-num_visible:]
 
 
-
 # --- pubkey ref (no full pubkey in HTML) ---
 def _pkref_redis():
     # Dedicated tiny redis client for pubkey refs (TTL). Uses existing env if present.
@@ -2291,6 +2312,7 @@ def _pkref_redis():
         # fallback
         return redis.Redis(host="localhost", port=6379, decode_responses=True)
 
+
 def _pkref_store(pubkey: str, ttl_sec: int = 600) -> str:
     # Store mapping ref->pubkey server-side; return short token.
     ref = secrets.token_urlsafe(9)  # ~12 chars
@@ -2298,14 +2320,16 @@ def _pkref_store(pubkey: str, ttl_sec: int = 600) -> str:
     r.setex(f"hodlxxi:pkref:{ref}", ttl_sec, pubkey)
     return ref
 
+
 def clickable_ref(pubkey: str) -> str:
     # clickable span that DOES NOT reveal pubkey in HTML
     ref = _pkref_store(pubkey)
     short = pubkey[-4:]
     return (
-        f"<span class=\"clickable-pubkey\" onclick=\"handlePubKeyClickRef('{ref}');\">"
-        f"<span style=\"color:red;\">{short}</span></span>"
+        f'<span class="clickable-pubkey" onclick="handlePubKeyClickRef(\'{ref}\');">'
+        f'<span style="color:red;">{short}</span></span>'
     )
+
 
 @app.get("/api/pubkey/resolve")
 def api_pubkey_resolve():
@@ -2320,12 +2344,14 @@ def api_pubkey_resolve():
     if not pub:
         return jsonify({"error": "Expired or unknown ref"}), 404
     return jsonify({"pubkey": pub})
+
+
 # --- end pubkey ref ---
+
 
 def clickable_trunc(pubkey):
     # Return ref-based clickable so pubkey never appears in HTML/JSON
     return clickable_ref(pubkey)
-
 
 
 def mask_raw_descriptor(text):
@@ -2431,7 +2457,6 @@ def oneword_alias():
     return redirect_oneword()
 
 
-
 @app.route("/verify_pubkey_and_list", methods=["GET"])
 def verify_pubkey_and_list():
     import re
@@ -2439,14 +2464,12 @@ def verify_pubkey_and_list():
 
     pubkey = request.args.get("pubkey")
 
-
     # FIX_INOUT_TOTALS_V1: compute incoming/outgoing totals from matched descriptors below
-    in_role_btc  = Decimal("0")
+    in_role_btc = Decimal("0")
     out_role_btc = Decimal("0")
-    in_role_usd  = Decimal("0")
+    in_role_usd = Decimal("0")
     out_role_usd = Decimal("0")
     ratio = None
-
 
     if not pubkey:
         return jsonify({"valid": False, "error": "No public key provided."}), 400
@@ -2527,8 +2550,8 @@ def verify_pubkey_and_list():
 
             # FIX_INOUT_TOTALS_V1: accumulate role totals for the queried pubkey (no pubkey leakage to JSON)
             try:
-                total_btc = (save_bal + check_bal)
-                total_usd = (total_btc * btc_price)
+                total_btc = save_bal + check_bal
+                total_usd = total_btc * btc_price
 
                 role = None
                 if isinstance(pubkey, str) and pubkey.startswith("npub"):
@@ -2551,7 +2574,6 @@ def verify_pubkey_and_list():
                     out_role_usd += total_usd
             except Exception:
                 pass
-
 
             nostr_npub = to_npub(op_if_pub) if op_if_pub else None
             truncated_npub = truncate_address(nostr_npub) if nostr_npub else None
@@ -2606,37 +2628,41 @@ def verify_pubkey_and_list():
                     # full-access only
                     "raw_script": raw_script_for_ui,
                     "onboard_link": onboard_link,
-        })
+                }
+            )
         if not matched:
             return jsonify({"valid": False, "error": "No matching descriptors found."}), 404
 
-
         # FIX_INOUT_TOTALS_V1: totals come from role totals accumulated above
-        in_total_btc  = in_role_btc
+        in_total_btc = in_role_btc
         out_total_btc = out_role_btc
         try:
             ratio = float(out_total_btc / in_total_btc) if in_total_btc and in_total_btc != 0 else None
         except Exception:
             ratio = None
 
-        in_usd_val  = float(in_role_usd)
+        in_usd_val = float(in_role_usd)
         out_usd_val = float(out_role_usd)
 
-        return jsonify({
-            "valid": True,
-            "descriptors": matched,
-            "in_total":  format(in_total_btc,  ".8f"),
-            "out_total": format(out_total_btc, ".8f"),
-            "ratio": ratio,
-
-            # explicit fields for WhoIs panels (USD + BTC)
-            "in_btc":  format(in_total_btc,  ".8f"),
-            "out_btc": format(out_total_btc, ".8f"),
-            "in_usd":  f"{in_usd_val:.2f}",
-            "out_usd": f"{out_usd_val:.2f}",
-            "incoming_usd": f"{in_usd_val:.2f}",
-            "outgoing_usd": f"{out_usd_val:.2f}",
-        }), 200
+        return (
+            jsonify(
+                {
+                    "valid": True,
+                    "descriptors": matched,
+                    "in_total": format(in_total_btc, ".8f"),
+                    "out_total": format(out_total_btc, ".8f"),
+                    "ratio": ratio,
+                    # explicit fields for WhoIs panels (USD + BTC)
+                    "in_btc": format(in_total_btc, ".8f"),
+                    "out_btc": format(out_total_btc, ".8f"),
+                    "in_usd": f"{in_usd_val:.2f}",
+                    "out_usd": f"{out_usd_val:.2f}",
+                    "incoming_usd": f"{in_usd_val:.2f}",
+                    "outgoing_usd": f"{out_usd_val:.2f}",
+                }
+            ),
+            200,
+        )
 
     except Exception:
         logger.error("Error in verify_pubkey_and_list", exc_info=True)
@@ -3057,12 +3083,14 @@ def _public_guard_for_lnurl():
 
     # EXEMPT: agent invoice endpoints bypass session/login gate (protected by localhost + Bearer token)
     from flask import request as _req
-    p = (_req.path or "")
+
+    p = _req.path or ""
     if p.startswith("/api/internal/agent/invoice"):
         return None
     # PAYG_BILLING_AGENT_BYPASS_ALL_V1: never block billing-agent bearer endpoints with session gates
     from flask import request as _req
-    if (_req.path or '').startswith('/api/billing/agent/'):
+
+    if (_req.path or "").startswith("/api/billing/agent/"):
         return None
 
     p = request.path
@@ -3133,20 +3161,21 @@ def _public_guard_for_lnurl():
 
     #  - /api/pof/stats (public stats only)
 
-    if p.startswith("/api/") and not (
-
-        p.startswith("/api/public/")
-
-        or p.startswith("/api/playground")
-
-        or p in ("/api/pof/stats", "/api/pof/stats/")
-
-    ) and not session.get("logged_in_pubkey"):
+    if (
+        p.startswith("/api/")
+        and not (
+            p.startswith("/api/public/")
+            or p.startswith("/api/playground")
+            or p in ("/api/pof/stats", "/api/pof/stats/")
+        )
+        and not session.get("logged_in_pubkey")
+    ):
 
         return jsonify({"error": "Not logged in", "ok": False}), 401
 
-
     return None
+
+
 def mint_access_token(sub: str, scope: str = "basic") -> str:
     """
     Minimal placeholder token generator — not a real JWT.
@@ -3386,7 +3415,10 @@ def api_whoami():
         active_connections=conns,
         display=display,
     )
+
+
 # /WHOAMI_V3
+
 
 @app.route("/api/challenge", methods=["POST"])
 def api_challenge():
@@ -3457,9 +3489,16 @@ def api_verify():
         if not nostr_event:
             return jsonify(error="Missing nostr_event"), 400
 
+        nostr_expected_pubkey = pubkey
+        if re.fullmatch(r"[0-9a-fA-F]{66}", nostr_expected_pubkey) and nostr_expected_pubkey[:2].lower() in {
+            "02",
+            "03",
+        }:
+            nostr_expected_pubkey = nostr_expected_pubkey[2:]
+
         ok, error = verify_nostr_login_event(
             nostr_event,
-            expected_pubkey=pubkey,
+            expected_pubkey=nostr_expected_pubkey,
             expected_challenge=rec["challenge"],
             expected_verify_url=request.url_root.rstrip("/") + url_for("api_verify"),
         )
@@ -3937,11 +3976,15 @@ class ClientManager:
                         allowed_scopes=redis_client.allowed_scopes,
                         redirect_uris=redis_client.redirect_uris,
                         payment_expiry=None,
-                        created_at=redis_client.created_at
-                        if isinstance(redis_client.created_at, datetime)
-                        else datetime.fromtimestamp(redis_client.created_at)
-                        if redis_client.created_at
-                        else datetime.utcnow(),
+                        created_at=(
+                            redis_client.created_at
+                            if isinstance(redis_client.created_at, datetime)
+                            else (
+                                datetime.fromtimestamp(redis_client.created_at)
+                                if redis_client.created_at
+                                else datetime.utcnow()
+                            )
+                        ),
                     )
         except Exception as e:
             logger.warning(f"⚠️  Redis lookup failed: {e}")
@@ -4164,7 +4207,6 @@ class OAuthServer:
                 "refresh_token_expires_at": refresh_expires_at.isoformat(),
             },
         )
-
 
         delete_oauth_code(code)
         now_ts = int(now.timestamp())
@@ -4872,9 +4914,9 @@ def new_signup_preview():
     #     if 'Content-Security-Policy-Report-Only' in resp.headers:
     #         del resp.headers['Content-Security-Policy-Report-Only']
     # Set very permissive CSP
-    resp.headers[
-        "Content-Security-Policy"
-    ] = "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline';"
+    resp.headers["Content-Security-Policy"] = (
+        "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline';"
+    )
 
     return resp
 
@@ -5418,7 +5460,7 @@ def lnurl_create():
 @app.route("/api/lnurl-auth/params", methods=["GET"])
 def lnurl_params():
     """LNURL-Auth params (LUD-04)"""
-    sid = request.args.get("sid", "").strip()
+    sid = request.args.get("session_id") or request.args.get("sid")
     rec = get_lnurl_challenge(sid)
 
     if not rec:
@@ -5485,6 +5527,7 @@ def lnurl_check(session_id):
 # ============================================================================
 # ROUTES: PROTECTED DEMO API
 # ============================================================================
+
 
 @app.route("/api/demo/protected", methods=["GET"])
 @require_oauth_token("read_limited")
@@ -5878,12 +5921,14 @@ def _run_cleanup_once():
 
     # EXEMPT: agent invoice endpoints bypass session/login gate (protected by localhost + Bearer token)
     from flask import request as _req
-    p = (_req.path or "")
+
+    p = _req.path or ""
     if p.startswith("/api/internal/agent/invoice"):
         return None
     # PAYG_BILLING_AGENT_BYPASS_ALL_V1: never block billing-agent bearer endpoints with session gates
     from flask import request as _req
-    if (_req.path or '').startswith('/api/billing/agent/'):
+
+    if (_req.path or "").startswith("/api/billing/agent/"):
         return None
 
     if _cleanup_once.get("done"):
@@ -5958,16 +6003,14 @@ def list_clients():
         with psycopg.connect(dsn) as conn:
             with conn.cursor() as cur:
                 if is_full:
-                    cur.execute(
-                        """
+                    cur.execute("""
                         select client_id, client_name, redirect_uris, grant_types, response_types,
                                scope, token_endpoint_auth_method, created_at, metadata, is_active,
                                owner_pubkey, plan
                         from oauth_clients
                         order by created_at desc
                         limit 200
-                    """
-                    )
+                    """)
                 else:
                     cur.execute(
                         """
@@ -6181,7 +6224,6 @@ def oauth_client_rotate_secret(client_id):
     return resp, 200
 
 
-
 # API_DEBUG_SESSION_ALIAS_V1
 
 register_browser_routes(
@@ -6219,6 +6261,7 @@ def root_redirect():
 
 def playground():
     return _call_browser_route_alias("playground")
+
 
 @app.route("/api/debug/session", methods=["GET"])
 def api_debug_session_alias():
@@ -6523,7 +6566,8 @@ def upgrade():
 def _fix_accaunt_typo_before_auth_v3():
     # PAYG_BILLING_AGENT_BYPASS_ALL_V1: never block billing-agent bearer endpoints with session gates
     from flask import request as _req
-    if (_req.path or '').startswith('/api/billing/agent/'):
+
+    if (_req.path or "").startswith("/api/billing/agent/"):
         return None
 
     from flask import request, redirect
@@ -6614,8 +6658,6 @@ def playground_slash_alias():
     return redirect("/playground", code=308)
 
 
-
-
 # === HODLXXI_APP_SOUND_INJECT_V3b: inject sound + socket hook into GET /app (ignore self-echo) ===
 @app.after_request
 def _hodlxxi_app_sound_inject_v3b(resp):
@@ -6633,49 +6675,50 @@ def _hodlxxi_app_sound_inject_v3b(resp):
             return resp
 
         import json
+
         my = str(session.get("logged_in_pubkey", "") or "")
         my_js = json.dumps(my)  # safe JS string literal (includes quotes)
 
         inject = (
             "<script src='/static/js/sound.js'></script>"
             "<script>(function(){"
-              "var MY_PUBKEY=" + my_js + ";"
-              "var SOUND_URL='/static/sounds/message.mp3';var ENTER_KEY='hodlxxi_enter_ding_done';try{if(!sessionStorage.getItem(ENTER_KEY)){sessionStorage.setItem(ENTER_KEY,'1');setTimeout(function(){try{ if(window.HODLXXI_PLAY_SOUND) window.HODLXXI_PLAY_SOUND(SOUND_URL,0.9); }catch(e){}},80);}}catch(e){}"
-              "var NOISE=/typing|presence|pong|ping|joined|left|online|user:|connect|disconnect/i;"
-              "var MATCH=/chat|message|msg|dm/i;"
-              "var last=0;"
-              "function dbg(){try{return localStorage.getItem('soundDebug')==='1';}catch(e){return false;}}"
-              "function ding(){var now=Date.now(); if(now-last<250) return; last=now;"
-                "try{ if(window.HODLXXI_PLAY_SOUND) window.HODLXXI_PLAY_SOUND(SOUND_URL,0.9); }catch(e){}"
-              "}"
-              "function install(){"
-                "try{"
-                  "if(!window.io||!window.io.Socket||!window.io.Socket.prototype) return false;"
-                  "var P=window.io.Socket.prototype;"
-                  "if(P.__hodlxxi_sound_v3b) return true;"
-                  "P.__hodlxxi_sound_v3b=true;"
-                  "var orig=P.onevent;"
-                  "P.onevent=function(packet){"
-                    "try{"
-                      "var d=packet&&packet.data; var ev=d&&d[0]; var payload=d&&d[1];"
-                      "if(typeof ev==='string'){"
-                        "if(dbg()) console.log('[sock]',ev,d);"
-                        "if(MATCH.test(ev) && !NOISE.test(ev)){"
-                          "if(payload && typeof payload==='object' && payload.pubkey && MY_PUBKEY && payload.pubkey===MY_PUBKEY){"
-                            "return orig.call(this,packet);"
-                          "}"
-                          "ding();"
-                        "}"
-                      "}"
-                    "}catch(e){}"
-                    "return orig.call(this,packet);"
-                  "};"
-                  "return true;"
-                "}catch(e){ return false; }"
-              "}"
-              "if(!install()){var tries=0; var t=setInterval(function(){"
-                "tries++; if(install()||tries>40) clearInterval(t);"
-              "},250);}"
+            "var MY_PUBKEY=" + my_js + ";"
+            "var SOUND_URL='/static/sounds/message.mp3';var ENTER_KEY='hodlxxi_enter_ding_done';try{if(!sessionStorage.getItem(ENTER_KEY)){sessionStorage.setItem(ENTER_KEY,'1');setTimeout(function(){try{ if(window.HODLXXI_PLAY_SOUND) window.HODLXXI_PLAY_SOUND(SOUND_URL,0.9); }catch(e){}},80);}}catch(e){}"
+            "var NOISE=/typing|presence|pong|ping|joined|left|online|user:|connect|disconnect/i;"
+            "var MATCH=/chat|message|msg|dm/i;"
+            "var last=0;"
+            "function dbg(){try{return localStorage.getItem('soundDebug')==='1';}catch(e){return false;}}"
+            "function ding(){var now=Date.now(); if(now-last<250) return; last=now;"
+            "try{ if(window.HODLXXI_PLAY_SOUND) window.HODLXXI_PLAY_SOUND(SOUND_URL,0.9); }catch(e){}"
+            "}"
+            "function install(){"
+            "try{"
+            "if(!window.io||!window.io.Socket||!window.io.Socket.prototype) return false;"
+            "var P=window.io.Socket.prototype;"
+            "if(P.__hodlxxi_sound_v3b) return true;"
+            "P.__hodlxxi_sound_v3b=true;"
+            "var orig=P.onevent;"
+            "P.onevent=function(packet){"
+            "try{"
+            "var d=packet&&packet.data; var ev=d&&d[0]; var payload=d&&d[1];"
+            "if(typeof ev==='string'){"
+            "if(dbg()) console.log('[sock]',ev,d);"
+            "if(MATCH.test(ev) && !NOISE.test(ev)){"
+            "if(payload && typeof payload==='object' && payload.pubkey && MY_PUBKEY && payload.pubkey===MY_PUBKEY){"
+            "return orig.call(this,packet);"
+            "}"
+            "ding();"
+            "}"
+            "}"
+            "}catch(e){}"
+            "return orig.call(this,packet);"
+            "};"
+            "return true;"
+            "}catch(e){ return false; }"
+            "}"
+            "if(!install()){var tries=0; var t=setInterval(function(){"
+            "tries++; if(install()||tries>40) clearInterval(t);"
+            "},250);}"
             "})();</script>"
             "<!-- HODLXXI_APP_SOUND_INJECT_V3b -->"
         )
@@ -6690,7 +6733,10 @@ def _hodlxxi_app_sound_inject_v3b(resp):
     except Exception:
         pass
     return resp
+
+
 # === /HODLXXI_APP_SOUND_INJECT_V3b ===
+
 
 # === HODLXXI_LOGIN_SOUND_UNLOCK_V1: unlock audio on /login?next=/app so /app enter ding can play ===
 @app.after_request
@@ -6717,26 +6763,26 @@ def _hodlxxi_login_sound_unlock_v1(resp):
         inject = (
             "<script src='/static/js/sound.js'></script>"
             "<script>(function(){"
-              "var SOUND_URL='/static/sounds/message.mp3';"
-              "var done=false;"
-              "function unlock(){"
-                "if(done) return; done=true;"
-                "try{"
-                  "var AC=window.AudioContext||window.webkitAudioContext;"
-                  "if(AC){ var ctx=new AC(); ctx.resume().catch(function(){}); }"
-                "}catch(e){}"
-                "try{"
-                  ""
-                  "sessionStorage.removeItem('hodlxxi_enter_ding_done');"
-                "}catch(e){}"
-                "try{"
-                  ""
-                  "if(window.HODLXXI_PLAY_SOUND) window.HODLXXI_PLAY_SOUND(SOUND_URL, 0.0);"
-                "}catch(e){}"
-              "}"
-              "['pointerdown','touchstart','click','keydown'].forEach(function(ev){"
-                "window.addEventListener(ev, unlock, {passive:true, once:true});"
-              "});"
+            "var SOUND_URL='/static/sounds/message.mp3';"
+            "var done=false;"
+            "function unlock(){"
+            "if(done) return; done=true;"
+            "try{"
+            "var AC=window.AudioContext||window.webkitAudioContext;"
+            "if(AC){ var ctx=new AC(); ctx.resume().catch(function(){}); }"
+            "}catch(e){}"
+            "try{"
+            ""
+            "sessionStorage.removeItem('hodlxxi_enter_ding_done');"
+            "}catch(e){}"
+            "try{"
+            ""
+            "if(window.HODLXXI_PLAY_SOUND) window.HODLXXI_PLAY_SOUND(SOUND_URL, 0.0);"
+            "}catch(e){}"
+            "}"
+            "['pointerdown','touchstart','click','keydown'].forEach(function(ev){"
+            "window.addEventListener(ev, unlock, {passive:true, once:true});"
+            "});"
             "})();</script>"
             "<!-- HODLXXI_LOGIN_SOUND_UNLOCK_V1 -->"
         )
@@ -6751,6 +6797,8 @@ def _hodlxxi_login_sound_unlock_v1(resp):
     except Exception:
         pass
     return resp
+
+
 # === /HODLXXI_LOGIN_SOUND_UNLOCK_V1 ===
 
 
