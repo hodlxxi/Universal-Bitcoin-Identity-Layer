@@ -3499,13 +3499,14 @@ def api_verify():
     if not rec or rec["expires"] < datetime.now(timezone.utc):
         print("API_VERIFY_FAIL=invalid_or_expired_challenge", flush=True)
         return jsonify(error="Invalid or expired challenge"), 400
+
+    method = rec.get("method", "api")
+    print("API_VERIFY_METHOD =", method, flush=True)
+
     # For nostr, pubkey is validated inside nostr event
     if method != "nostr":
         if rec["pubkey"] != pubkey:
             return jsonify(error="Pubkey mismatch"), 400
-
-    method = rec.get("method", "api")
-    print("API_VERIFY_METHOD =", method, flush=True)
 
     # --- 🔹 Verification depending on method ---
     if method == "nostr":
@@ -3514,7 +3515,7 @@ def api_verify():
             print("API_VERIFY_FAIL=missing_nostr_event", flush=True)
             return jsonify(error="Missing nostr_event"), 400
 
-        nostr_expected_pubkey = pubkey
+        nostr_expected_pubkey = rec["pubkey"]
         if re.fullmatch(r"[0-9a-fA-F]{66}", nostr_expected_pubkey) and nostr_expected_pubkey[:2].lower() in {
             "02",
             "03",
