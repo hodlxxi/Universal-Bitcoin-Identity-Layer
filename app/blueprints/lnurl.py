@@ -55,8 +55,9 @@ def create_challenge():
         cfg = current_app.config.get("APP_CONFIG", {})
         base_url = cfg.get("LNURL_BASE_URL", "http://localhost:5000")
 
-        # Create LNURL callback URL
+        # Create LNURL callback URL and params URL
         callback_url = f"{base_url}/api/lnurl-auth/callback/{session_id}"
+        params_url = f"{base_url}/api/lnurl-auth/params?session_id={session_id}"
 
         # Store challenge in database with TTL
         challenge_data = {
@@ -76,8 +77,8 @@ def create_challenge():
 
         audit_logger.log_event("lnurl.challenge_created", session_id=session_id, ip=request.remote_addr)
 
-        # encode LNURL (bech32)
-        data = callback_url.encode("utf-8")
+        # encode LNURL params endpoint (bech32)
+        data = params_url.encode("utf-8")
         five_bit_r = bech32.convertbits(data, 8, 5)
         lnurl_bech32 = bech32.bech32_encode("lnurl", five_bit_r)
 
@@ -91,6 +92,7 @@ def create_challenge():
                 "k1": challenge,  # k1 is the challenge in LNURL-auth
                 "tag": "login",
                 "callback_url": callback_url,
+                "params_url": params_url,
             }
         )
 
