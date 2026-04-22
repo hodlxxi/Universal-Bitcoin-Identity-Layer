@@ -1072,7 +1072,7 @@ if (!res.ok) {
           return;
         }
 
-        const lnurl = urlToLnurl(j.callback_url);
+        const lnurl = j.lnurl
 
 
 
