@@ -3284,8 +3284,10 @@ def verify_nostr_login_event(
     if not re.fullmatch(r"[0-9a-f]{64}", event_id):
         return False, "Invalid nostr event id"
     if not re.fullmatch(r"[0-9a-f]{128}", event_sig):
+        print("NOSTR_FAIL=invalid_signature", flush=True)
         return False, "Invalid nostr signature"
     if event_pubkey != expected_pubkey:
+        print(f"NOSTR_FAIL=pubkey_mismatch expected={expected_pubkey} got={event_pubkey}", flush=True)
         return False, "Pubkey mismatch"
 
     try:
@@ -3313,10 +3315,12 @@ def verify_nostr_login_event(
 
     challenge_tag = _nostr_get_tag(event, "challenge")
     if not challenge_tag or challenge_tag != expected_challenge:
+        print(f"NOSTR_FAIL=challenge_mismatch expected={expected_challenge} got={challenge_tag}", flush=True)
         return False, "Challenge mismatch"
 
     url_tag = _nostr_get_tag(event, "u")
     if url_tag and expected_verify_url and url_tag != expected_verify_url:
+        print(f"NOSTR_FAIL=url_mismatch expected={expected_verify_url} got={url_tag}", flush=True)
         return False, "Nostr event URL mismatch"
 
     normalized_event = dict(event)
@@ -3328,6 +3332,7 @@ def verify_nostr_login_event(
 
     recomputed_id = _nostr_event_id(normalized_event)
     if recomputed_id != event_id:
+        print("NOSTR_FAIL=event_id_mismatch", flush=True)
         return False, "Nostr event id mismatch"
 
     try:
@@ -3342,6 +3347,7 @@ def verify_nostr_login_event(
         return False, "Nostr signature verification unavailable"
 
     if not verified:
+        print("NOSTR_FAIL=invalid_signature", flush=True)
         return False, "Invalid nostr signature"
 
     return True, None
