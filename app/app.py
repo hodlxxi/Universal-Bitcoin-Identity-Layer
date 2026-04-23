@@ -1861,8 +1861,7 @@ def make_qr_base64(data):
 @app.route("/verify_signature", methods=["POST"])
 def verify_signature():
     data = request.get_json() or {}
-    logger.warning("API_VERIFY_DATA=%r", data)
-    print("API_VERIFY_DATA =", data, flush=True)
+        print("API_VERIFY_DATA =", data, flush=True)
     print("API_VERIFY_DATA =", data, flush=True)
     pubkey_hex = (data.get("pubkey") or "").strip()
     signature = (data.get("signature") or "").strip()
@@ -3494,17 +3493,14 @@ def api_verify():
             pubkey = spk
 
     if not cid:
-        logger.warning("API_VERIFY_FAIL=missing_challenge_id")
-        return jsonify(error="Missing required parameters"), 400
+                return jsonify(error="Missing required parameters"), 400
 
     rec = ACTIVE_CHALLENGES.get(cid)
     if not rec or rec["expires"] < datetime.now(timezone.utc):
-        logger.warning("API_VERIFY_FAIL=invalid_or_expired_challenge cid=%r", cid)
-        return jsonify(error="Invalid or expired challenge"), 400
+                return jsonify(error="Invalid or expired challenge"), 400
 
     method = rec.get("method", "api")
-    logger.warning("API_VERIFY_METHOD=%s cid=%r", method, cid)
-
+    
     # For nostr, pubkey is validated inside nostr event
     if method != "nostr":
         if rec["pubkey"] != pubkey:
@@ -3514,8 +3510,7 @@ def api_verify():
     if method == "nostr":
         nostr_event = data.get("nostr_event")
         if not nostr_event:
-            logger.warning("API_VERIFY_FAIL=missing_nostr_event cid=%r data=%r", cid, data)
-            return jsonify(error="Missing nostr_event"), 400
+                        return jsonify(error="Missing nostr_event"), 400
 
         nostr_expected_pubkey = rec["pubkey"]
         if re.fullmatch(r"[0-9a-fA-F]{66}", nostr_expected_pubkey) and nostr_expected_pubkey[:2].lower() in {
@@ -3524,15 +3519,13 @@ def api_verify():
         }:
             nostr_expected_pubkey = nostr_expected_pubkey[2:]
 
-        logger.warning("NOSTR_STEP=before_verify_nostr_login_event cid=%r", cid)
-        ok, error = verify_nostr_login_event(
+                ok, error = verify_nostr_login_event(
             nostr_event,
             expected_pubkey=nostr_expected_pubkey,
             expected_challenge=rec["challenge"],
             expected_verify_url=request.url_root.rstrip("/") + url_for("api_verify"),
         )
-        logger.warning("NOSTR_STEP=after_verify_nostr_login_event cid=%r ok=%r error=%r", cid, ok, error)
-        if not ok:
+                if not ok:
             logger.warning(
                 "NOSTR_VERIFY_FAIL error=%r pubkey=%r challenge=%r",
                 error,
@@ -3541,14 +3534,11 @@ def api_verify():
             )
             return jsonify(error=error or "Nostr verification failed"), 403
 
-        logger.warning("NOSTR_STEP=before_session_set cid=%r", cid)
-        session["logged_in_pubkey"] = rec["pubkey"]
+                session["logged_in_pubkey"] = rec["pubkey"]
         session["access_level"] = "full"
         session["login_method"] = "nostr"
-        logger.warning("NOSTR_STEP=before_pop cid=%r", cid)
-        ACTIVE_CHALLENGES.pop(cid, None)
-        logger.warning("NOSTR_STEP=before_success_return cid=%r", cid)
-        return jsonify(ok=True, verified=True, method="nostr")
+                ACTIVE_CHALLENGES.pop(cid, None)
+                return jsonify(ok=True, verified=True, method="nostr")
     elif method == "lightning":
         return jsonify(error=f"Verification method '{method}' not yet supported"), 501
     else:
