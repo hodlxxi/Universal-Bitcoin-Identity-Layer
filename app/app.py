@@ -3524,12 +3524,14 @@ def api_verify():
         }:
             nostr_expected_pubkey = nostr_expected_pubkey[2:]
 
+        logger.warning("NOSTR_STEP=before_verify_nostr_login_event cid=%r", cid)
         ok, error = verify_nostr_login_event(
             nostr_event,
             expected_pubkey=nostr_expected_pubkey,
             expected_challenge=rec["challenge"],
             expected_verify_url=request.url_root.rstrip("/") + url_for("api_verify"),
         )
+        logger.warning("NOSTR_STEP=after_verify_nostr_login_event cid=%r ok=%r error=%r", cid, ok, error)
         if not ok:
             logger.warning(
                 "NOSTR_VERIFY_FAIL error=%r pubkey=%r challenge=%r",
@@ -3538,6 +3540,15 @@ def api_verify():
                 rec["challenge"],
             )
             return jsonify(error=error or "Nostr verification failed"), 403
+
+        logger.warning("NOSTR_STEP=before_session_set cid=%r", cid)
+        session["logged_in_pubkey"] = rec["pubkey"]
+        session["access_level"] = "full"
+        session["login_method"] = "nostr"
+        logger.warning("NOSTR_STEP=before_pop cid=%r", cid)
+        ACTIVE_CHALLENGES.pop(cid, None)
+        logger.warning("NOSTR_STEP=before_success_return cid=%r", cid)
+        return jsonify(ok=True, verified=True, method="nostr")
     elif method == "lightning":
         return jsonify(error=f"Verification method '{method}' not yet supported"), 501
     else:
