@@ -3494,16 +3494,13 @@ def api_verify():
             pubkey = spk
 
     if not cid:
-        logger.warning("API_VERIFY_FAIL=missing_challenge_id")
         return jsonify(error="Missing required parameters"), 400
 
     rec = ACTIVE_CHALLENGES.get(cid)
     if not rec or rec["expires"] < datetime.now(timezone.utc):
-        logger.warning("API_VERIFY_FAIL=invalid_or_expired_challenge cid=%r", cid)
         return jsonify(error="Invalid or expired challenge"), 400
 
     method = rec.get("method", "api")
-    logger.warning("API_VERIFY_METHOD=%s cid=%r", method, cid)
 
     # For nostr, pubkey is validated inside nostr event
     if method != "nostr":
@@ -3514,7 +3511,6 @@ def api_verify():
     if method == "nostr":
         nostr_event = data.get("nostr_event")
         if not nostr_event:
-            logger.warning("API_VERIFY_FAIL=missing_nostr_event cid=%r data=%r", cid, data)
             return jsonify(error="Missing nostr_event"), 400
 
         nostr_expected_pubkey = rec["pubkey"]
@@ -3533,12 +3529,6 @@ def api_verify():
         )
         logger.warning("NOSTR_STEP=after_verify_nostr_login_event cid=%r ok=%r error=%r", cid, ok, error)
         if not ok:
-            logger.warning(
-                "NOSTR_VERIFY_FAIL error=%r pubkey=%r challenge=%r",
-                error,
-                nostr_expected_pubkey,
-                rec["challenge"],
-            )
             return jsonify(error=error or "Nostr verification failed"), 403
 
         logger.warning("NOSTR_STEP=before_session_set cid=%r", cid)
