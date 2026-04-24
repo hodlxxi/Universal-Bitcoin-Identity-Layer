@@ -8,6 +8,46 @@ def _get_legacy():
 
 
 def register_legacy_routes(app):
+
+    # === BROWSER RPC (session-based) ===
+    @app.route("/rpc/<cmd>", methods=["GET"])
+    def browser_rpc(cmd):
+        from flask import session, jsonify, request
+        from app.utils import get_rpc_connection
+
+        if not session.get("logged_in_pubkey"):
+            return jsonify(error="unauthorized"), 401
+
+        if session.get("access_level") != "full":
+            return jsonify(error="forbidden"), 403
+
+        rpc = get_rpc_connection()
+        allowed = {
+            "getwalletinfo": lambda: rpc.getwalletinfo(),
+            "listdescriptors": lambda: rpc.listdescriptors(),
+            "getreceivedbylabel": lambda: rpc.getreceivedbylabel(request.args.get("p", "")),
+            "listtransactions": lambda: rpc.listtransactions(),
+            "listunspent": lambda: rpc.listunspent(),
+            "listreceivedbylabel": lambda: rpc.listreceivedbylabel(),
+            "listreceivedbyaddress": lambda: rpc.listreceivedbyaddress(),
+            "listaddressgroupings": lambda: rpc.listaddressgroupings(),
+            "listlabels": lambda: rpc.listlabels(),
+            "getbalance": lambda: rpc.getbalance(),
+            "getblockcount": lambda: rpc.getblockcount(),
+            "rescanblockchain": lambda: rpc.rescanblockchain(),
+        }
+
+        if cmd not in allowed:
+            return jsonify({"error": f"Unsupported RPC method `{cmd}`"}), 400
+
+        try:
+            return jsonify(allowed[cmd]())
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).error("browser_rpc failed", exc_info=True)
+            return jsonify({"error": "Internal server error"}), 500
+
     """
     Safe bridge: re-bind a handful of legacy handlers that still exist in app.app
     so factory-first runtime can serve the old endpoints again.

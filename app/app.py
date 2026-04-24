@@ -783,7 +783,8 @@ def api_public_status():
         load = None
 
     # Cached bitcoind stats (public-safe)
-    # TEMP: disable Bitcoin RPC here while reverse tunnel is fragile
+
+    # PUBLIC SAFE: lightweight block height fetch
     btc = {
         "chain": None,
         "block_height": None,
@@ -793,8 +794,15 @@ def api_public_status():
         "mempool_size": None,
         "mempool_bytes": None,
         "peers": None,
-        "error": "temporarily_disabled",
+        "error": None,
     }
+
+    try:
+        rpc = get_rpc_connection()
+        height = rpc.getblockcount()
+        btc["block_height"] = int(height)
+    except Exception as e:
+        btc["error"] = f"rpc_error:{e.__class__.__name__}"
 
     # LND state only (public-safe)
     lnd = {}

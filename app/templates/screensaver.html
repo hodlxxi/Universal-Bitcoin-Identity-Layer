@@ -813,5 +813,50 @@ if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 40){
           raf = requestAnimationFrame(draw);
       })();
   </script>
+
+
+
+
+
+
+<!-- === HODLXXI_BLOCK_HEIGHT_INLINE_PATCH === -->
+<script>
+(function () {
+  function findBlockHeightNode() {
+    const els = Array.from(document.querySelectorAll('body *'));
+    for (const el of els) {
+      const txt = (el.textContent || '').trim();
+      if (/^Block Height:/i.test(txt) || /^block height:/i.test(txt)) {
+        return el;
+      }
+    }
+    return null;
+  }
+
+  async function updateBlockHeightInline() {
+    try {
+      const r = await fetch('/rpc/getblockcount', { credentials: 'same-origin' });
+      if (!r.ok) return;
+      const h = (await r.text()).trim();
+
+      const node = findBlockHeightNode();
+      if (!node) return;
+
+      node.textContent = 'Block Height: ' + h;
+    } catch (e) {
+      console.warn('inline block height update failed', e);
+    }
+  }
+
+  setInterval(updateBlockHeightInline, 5000);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', updateBlockHeightInline);
+  } else {
+    updateBlockHeightInline();
+  }
+})();
+</script>
+<!-- === /HODLXXI_BLOCK_HEIGHT_INLINE_PATCH === -->
+
 </body>
 </html>

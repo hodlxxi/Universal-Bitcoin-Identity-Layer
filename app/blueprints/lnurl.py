@@ -73,7 +73,8 @@ def create_challenge():
             ).isoformat(),
         }
 
-        store_lnurl_challenge(session_id, challenge_data, ttl=300)  # 5 minute TTL
+        store_lnurl_challenge(session_id, challenge_data, ttl=300)
+        # 5 minute TTL
 
         audit_logger.log_event("lnurl.challenge_created", session_id=session_id, ip=request.remote_addr)
 
@@ -88,7 +89,7 @@ def create_challenge():
                 "session_id": session_id,
                 "challenge": challenge,
                 "lnurl": lnurl_bech32,
-                "qr_code": callback_url,  # placeholder for tests
+                "qr_code": lnurl_bech32,  # placeholder for tests
                 "k1": challenge,  # k1 is the challenge in LNURL-auth
                 "tag": "login",
                 "callback_url": callback_url,
@@ -133,7 +134,9 @@ def lnurl_callback(session_id: str):
             return jsonify({"status": "ERROR", "reason": "Invalid or expired session"}), 404
 
         # Verify challenge matches
-        if challenge_data["challenge"] != k1:
+        stored_challenge = challenge_data.get("challenge") or challenge_data.get("k1")
+
+        if not stored_challenge or stored_challenge != k1:
             audit_logger.log_event(
                 "lnurl.verify_failed", session_id=session_id, reason="challenge_mismatch", ip=request.remote_addr
             )
@@ -151,7 +154,13 @@ def lnurl_callback(session_id: str):
         challenge_data["pubkey"] = key
         challenge_data["verified_at"] = time.time()
 
-        store_lnurl_challenge(session_id, challenge_data, ttl=300)
+        try:
+            from app.db_storage import update_lnurl_challenge
+
+            update_lnurl_challenge(session_id, key)
+        except Exception as e:
+            logger.error("LNURL update failed: %s", e, exc_info=True)
+            return jsonify({"status": "ERROR", "reason": "Failed to update challenge"}), 500
 
         audit_logger.log_event("lnurl.verify_success", session_id=session_id, pubkey=key, ip=request.remote_addr)
 
@@ -182,8 +191,8 @@ def check_verification(session_id: str):
 
         return jsonify(
             {
-                "verified": challenge_data.get("verified", False),
-                "pubkey": challenge_data.get("pubkey") if challenge_data.get("verified") else None,
+                "verified": challenge_data.get("is_verified", False),
+                "pubkey": challenge_data.get("pubkey") if challenge_data.get("is_verified") else None,
             }
         )
 

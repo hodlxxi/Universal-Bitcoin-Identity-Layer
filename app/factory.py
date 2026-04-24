@@ -63,28 +63,7 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     - Secret management via environment variables
     """
 
-    app = Flask(__name__
-    # --- LEGACY ROUTES RESTORE (temporary bridge) ---
-    try:
-        from app.app import import_descriptor, set_labels_from_zpub
-
-        app.add_url_rule(
-            "/import_descriptor",
-            endpoint="import_descriptor_legacy",
-            view_func=import_descriptor,
-            methods=["POST"],
-        )
-
-        app.add_url_rule(
-            "/set_labels_from_zpub",
-            endpoint="set_labels_from_zpub_legacy",
-            view_func=set_labels_from_zpub,
-            methods=["POST"],
-        )
-
-    except Exception as e:
-        print("⚠️ legacy route injection failed:", e)
-)
+    app = Flask(__name__)
 
     # TESTING/CI: isolate Flask-Limiter counters between tests (memory storage persists otherwise)
     try:

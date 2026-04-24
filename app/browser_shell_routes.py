@@ -757,10 +757,23 @@ textarea{
             }
             const out = document.getElementById('rpcResponse');
             if (out) out.textContent = '⏳ sending…';
-            fetch(url)
-                .then(r => r.json())
-                .then(json => {
-                    if (out) out.textContent = JSON.stringify(json, null, 2);
+            fetch(url, {
+                credentials: 'same-origin'
+            })
+                .then(async r => {
+                    const text = await r.text();
+                    try {
+                        return { status: r.status, data: JSON.parse(text) };
+                    } catch {
+                        return { status: r.status, data: text };
+                    }
+                })
+                .then(({status, data}) => {
+                    if (status !== 200) {
+                        if (out) out.textContent = 'Error (' + status + '): ' + JSON.stringify(data, null, 2);
+                        return;
+                    }
+                    if (out) out.textContent = JSON.stringify(data, null, 2);
                 })
                 .catch(e => {
                     if (out) out.textContent = 'Error: ' + e;
@@ -1017,22 +1030,28 @@ window.handlePubKeyClick = function(pubKey) {
             if (baked[1] && k2) displayScript = displayScript.split(baked[1]).join(`<span style="color:var(--neon-green);">${k2}</span>`);
             document.getElementById('updatedScript').innerHTML = displayScript;
 
-            fetch('/decode_raw_script', {
+            fetch('/api/decode_raw_script', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                credentials: 'same-origin',
                 body: JSON.stringify({
-                    raw_script: rawScript,
-                    label_hint: (document.getElementById('labelInput')?.value || '').trim() || null
+                    script: rawScript
                 })
             })
             .then(async (r) => {
                 const ct = r.headers.get('content-type') || '';
                 const text = await r.text();
-                return ct.includes('application/json') ? JSON.parse(text) : { error: text || `${r.status} ${r.statusText}` };
+                try {
+                    return ct.includes('application/json')
+                        ? JSON.parse(text)
+                        : { error: text || `${r.status} ${r.statusText}` };
+                } catch (e) {
+                    return { error: text || e.message || 'Invalid JSON response' };
+                }
             })
             .then(d => {
                 const out = document.getElementById('decodedWitness');
-                out.textContent = d.error ? `Error: ${d.error}` : JSON.stringify(d.decoded, null, 2);
+                out.textContent = d.error ? `Error: ${d.error}` : JSON.stringify(d, null, 2);
 
                 // ----- NEW: show branch metadata (dual-ELSE visibility) -----
                 let meta = document.getElementById('scriptMeta');
