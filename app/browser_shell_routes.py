@@ -757,10 +757,23 @@ textarea{
             }
             const out = document.getElementById('rpcResponse');
             if (out) out.textContent = '⏳ sending…';
-            fetch(url)
-                .then(r => r.json())
-                .then(json => {
-                    if (out) out.textContent = JSON.stringify(json, null, 2);
+            fetch(url, {
+                credentials: 'same-origin'
+            })
+                .then(async r => {
+                    const text = await r.text();
+                    try {
+                        return { status: r.status, data: JSON.parse(text) };
+                    } catch {
+                        return { status: r.status, data: text };
+                    }
+                })
+                .then(({status, data}) => {
+                    if (status !== 200) {
+                        if (out) out.textContent = 'Error (' + status + '): ' + JSON.stringify(data, null, 2);
+                        return;
+                    }
+                    if (out) out.textContent = JSON.stringify(data, null, 2);
                 })
                 .catch(e => {
                     if (out) out.textContent = 'Error: ' + e;
@@ -1017,22 +1030,28 @@ window.handlePubKeyClick = function(pubKey) {
             if (baked[1] && k2) displayScript = displayScript.split(baked[1]).join(`<span style="color:var(--neon-green);">${k2}</span>`);
             document.getElementById('updatedScript').innerHTML = displayScript;
 
-            fetch('/decode_raw_script', {
+            fetch('/api/decode_raw_script', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                credentials: 'same-origin',
                 body: JSON.stringify({
-                    raw_script: rawScript,
-                    label_hint: (document.getElementById('labelInput')?.value || '').trim() || null
+                    script: rawScript
                 })
             })
             .then(async (r) => {
                 const ct = r.headers.get('content-type') || '';
                 const text = await r.text();
-                return ct.includes('application/json') ? JSON.parse(text) : { error: text || `${r.status} ${r.statusText}` };
+                try {
+                    return ct.includes('application/json')
+                        ? JSON.parse(text)
+                        : { error: text || `${r.status} ${r.statusText}` };
+                } catch (e) {
+                    return { error: text || e.message || 'Invalid JSON response' };
+                }
             })
             .then(d => {
                 const out = document.getElementById('decodedWitness');
-                out.textContent = d.error ? `Error: ${d.error}` : JSON.stringify(d.decoded, null, 2);
+                out.textContent = d.error ? `Error: ${d.error}` : JSON.stringify(d, null, 2);
 
                 // ----- NEW: show branch metadata (dual-ELSE visibility) -----
                 let meta = document.getElementById('scriptMeta');
@@ -1143,41 +1162,66 @@ window.handlePubKeyClick = function(pubKey) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ descriptor: input })
             })
-            .then(r => r.json())
-            .then(async data => {
-                const out = document.getElementById("importResult");
-                if (data.script_hex) window.lastScriptHex = data.script_hex;
-                if (out) out.innerHTML = "Imported ✔️<br><small>script_hex: " + (data.script_hex || "n/a") + "</small>";
+            .then(async (r) => {
+                const ct = r.headers.get('content-type') || '';
+                const text = await r.text();
+                let data;
+                try {
+                    data = ct.includes('application/json') ? JSON.parse(text) : { error: text };
+                } catch (e) {
+                    data = { error: text || e.message };
+                }
 
-                if (data.raw_hex) {
-                    const res = await fetch('/decode_raw_script', {
+                const out = document.getElementById("importResult");
+
+                if (!r.ok || data.error || data.success === false) {
+                    if (out) out.innerHTML = "Error: " + (data.error || "Import failed");
+                    return;
+                }
+
+                if (data.script_hex) window.lastScriptHex = data.script_hex;
+                if (out) {
+                    out.innerHTML =
+                        "Imported ✔️<br><small>script_hex: " + (data.script_hex || "n/a") + "</small>" +
+                        (data.address ? "<br><small>address: " + data.address + "</small>" : "");
+                }
+
+                const scriptToDecode = data.script_hex || window.lastScriptHex;
+                if (scriptToDecode) {
+                    const res = await fetch('/api/decode_raw_script', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                        body: JSON.stringify({ raw_script: data.raw_hex })
-                    }).then(r => r.json()).catch(()=>null);
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ script: scriptToDecode })
+                    }).then(async (r) => {
+                        const ct = r.headers.get('content-type') || '';
+                        const text = await r.text();
+                        try {
+                            return ct.includes('application/json') ? JSON.parse(text) : { error: text };
+                        } catch (e) {
+                            return { error: text || e.message };
+                        }
+                    }).catch((e) => ({ error: String(e) }));
 
-                    if (res && res.qr) {
-                        const qrContainer = document.getElementById('qr-codes');
-                        const label = (t,b64) => (b64
-                            ? `<figure><img src="data:image/png;base64,${b64}"><figcaption>${t}</figcaption></figure>`
-                            : ""
-                        );
-                        qrContainer.innerHTML =
-                            label('Receiver Pubkey', res.qr.pubkey_if) +
-                            label('Giver Pubkey',    res.qr.pubkey_else) +
-                            label('Raw Script (hex)',res.qr.raw_script_hex) +
-                            label('HODL Address',    res.qr.segwit_address) +
-                            (res.qr.first_unused_addr
-                                ? label('First Unused Address', res.qr.first_unused_addr)
-                                : `<div style="text-align:center;color:var(--accent)">
-                                     <strong style="color:var(--red)">Warning:</strong> ${res.warning||'No unused address yet.'}
-                                   </div>`);
+                    const qrContainer = document.getElementById('qr-codes');
+                    if (qrContainer) {
+                        if (res && !res.error) {
+                            qrContainer.innerHTML =
+                                "<pre style='white-space:pre-wrap'>" +
+                                JSON.stringify(res, null, 2) +
+                                "</pre>";
+                        } else {
+                            qrContainer.innerHTML =
+                                "<div style='color:var(--red)'>Decode error: " +
+                                ((res && res.error) || "unknown") +
+                                "</div>";
+                        }
                     }
                 }
             })
             .catch(err => {
                 const out = document.getElementById("importResult");
-                if (out) out.innerHTML = "Error: " + err;
+                if (out) out.innerHTML = "Error: " + (err?.message || err);
             });
         }
 

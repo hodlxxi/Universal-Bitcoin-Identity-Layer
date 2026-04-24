@@ -783,7 +783,8 @@ def api_public_status():
         load = None
 
     # Cached bitcoind stats (public-safe)
-    # TEMP: disable Bitcoin RPC here while reverse tunnel is fragile
+
+    # PUBLIC SAFE: lightweight block height fetch
     btc = {
         "chain": None,
         "block_height": None,
@@ -793,8 +794,15 @@ def api_public_status():
         "mempool_size": None,
         "mempool_bytes": None,
         "peers": None,
-        "error": "temporarily_disabled",
+        "error": None,
     }
+
+    try:
+        rpc = get_rpc_connection()
+        height = rpc.getblockcount()
+        btc["block_height"] = int(height)
+    except Exception as e:
+        btc["error"] = f"rpc_error:{e.__class__.__name__}"
 
     # LND state only (public-safe)
     lnd = {}
@@ -3484,6 +3492,15 @@ def api_playground_pof_challenge():
 @app.route("/api/verify", methods=["POST"])
 def api_verify():
     data = request.get_json() or {}
+
+    # Transitional compatibility:
+    # /api/verify historically also served PSBT Proof-of-Funds verification.
+    # Keep that flow working while login/Nostr verification owns /api/verify.
+    if data.get("psbt") is not None:
+        from app.blueprints.bitcoin import verify_proof_of_funds
+
+        return verify_proof_of_funds()
+
     cid = (data.get("challenge_id") or "").strip()
     pubkey = (data.get("pubkey") or "").strip()
     signature = (data.get("signature") or "").strip()
@@ -3538,7 +3555,7 @@ def api_verify():
         logger.warning("NOSTR_STEP=before_pop cid=%r", cid)
         ACTIVE_CHALLENGES.pop(cid, None)
         logger.warning("NOSTR_STEP=before_success_return cid=%r", cid)
-        return jsonify(ok=True, verified=True, method="nostr")
+        return jsonify(ok=True, verified=True, method="nostr", pubkey=rec["pubkey"], access_level="full")
     elif method == "lightning":
         return jsonify(error=f"Verification method '{method}' not yet supported"), 501
     else:
