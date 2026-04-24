@@ -89,8 +89,6 @@ def rpc_command(cmd: str):
         return jsonify({"error": "Internal server error"}), 500
 
 
-
-
 # LEGACY alias
 @bitcoin_bp.route("/rpc/<cmd>", methods=["GET"])
 def rpc_command_legacy(cmd):
@@ -180,8 +178,6 @@ def decode_raw_script():
     except Exception:
         logger.error("Script decoding failed", exc_info=True)
         return jsonify({"error": "Internal server error"}), 500
-
-
 
 
 # LEGACY alias
