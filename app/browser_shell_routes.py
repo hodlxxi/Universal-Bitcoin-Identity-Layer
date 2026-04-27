@@ -1051,7 +1051,31 @@ window.handlePubKeyClick = function(pubKey) {
             })
             .then(d => {
                 const out = document.getElementById('decodedWitness');
-                out.textContent = d.error ? `Error: ${d.error}` : JSON.stringify(d, null, 2);
+                if (d.error) {
+                    out.textContent = `Error: ${d.error}`;
+                } else {
+                    const decoded = d.decoded || {};
+                    const segwit = decoded.segwit || {};
+                    const summary = [];
+
+                    if (decoded.asm) summary.push(`ASM: ${decoded.asm}`);
+                    if (d.npub_if) summary.push(`Receiver npub: ${d.npub_if}`);
+                    if (d.npub_else) summary.push(`Giver npub: ${d.npub_else}`);
+                    if (segwit.address) summary.push(`HODL address: ${segwit.address}`);
+                    if (d.first_unused_addr_text) summary.push(`First unused address: ${d.first_unused_addr_text}`);
+                    if (d.script_hex) summary.push(`Script hex: ${d.script_hex}`);
+
+                    if (d.else_early_lock || d.else_early_pub) {
+                        summary.push(`Early exit: lock=${d.else_early_lock || 'n/a'} pub=${d.else_early_pub || 'n/a'}`);
+                    }
+                    if (d.else_late_lock || d.else_late_pub) {
+                        summary.push(`Late exit: lock=${d.else_late_lock || 'n/a'} pub=${d.else_late_pub || 'n/a'}`);
+                    }
+
+                    if (d.warning) summary.push(`Warning: ${d.warning}`);
+
+                    out.textContent = summary.length ? summary.join("\n") : "Decoded OK";
+                }
 
                 // ----- NEW: show branch metadata (dual-ELSE visibility) -----
                 let meta = document.getElementById('scriptMeta');
