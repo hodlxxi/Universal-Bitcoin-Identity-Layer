@@ -214,7 +214,12 @@ def decode_raw_script():
             if not first_unused_addr:
                 warning_message = "Set Checking Labels"
 
-        return jsonify(
+        # Preserve the original /api/decode_raw_script API contract by keeping
+        # Bitcoin Core decodescript fields such as "asm", "type", "p2sh", and
+        # "segwit" at the top level. Add the legacy browser QR/metadata fields
+        # alongside them for the Converter & Decoder panel.
+        response = dict(decoded) if isinstance(decoded, dict) else {}
+        response.update(
             {
                 "decoded": decoded,
                 "op_if": op_if,
@@ -239,6 +244,7 @@ def decode_raw_script():
                 "warning": warning_message,
             }
         )
+        return jsonify(response)
 
     except Exception:
         logger.error("decode_raw_script failed", exc_info=True)
