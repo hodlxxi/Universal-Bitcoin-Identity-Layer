@@ -236,6 +236,11 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(billing_agent_bp)
     app.register_blueprint(agent_bp)
 
+    # Public documentation routes
+    from app.docs_routes import register_docs_routes
+
+    register_docs_routes(app)
+
     # Legacy endpoint aliases for old templates/helpers that still call bare endpoint names
     try:
         if "ui.home" in app.view_functions and "home" not in app.view_functions:

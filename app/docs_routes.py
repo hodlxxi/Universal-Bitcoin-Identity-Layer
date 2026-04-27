@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 
 import markdown
-from flask import abort, render_template
+from flask import render_template, abort, render_template
 
 STATIC_DOCS_DIR = Path(__file__).resolve().parent / "static" / "docs" / "docs"
 
@@ -14,6 +14,11 @@ DOC_ALIASES = {
 
 
 def register_docs_routes(app):
+    @app.route("/docs")
+    @app.route("/docs/")
+    def docs_index():
+        return render_template("docs_index.html")
+
     @app.route("/docs/<slug>")
     def docs_slug(slug: str):
         if not re.fullmatch(r"[a-zA-Z0-9_-]+", slug or ""):

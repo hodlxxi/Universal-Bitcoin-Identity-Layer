@@ -66,6 +66,11 @@ def index():
     )
 
 
+@ui_bp.route("/oidc")
+def oidc_landing():
+    return render_template("keyauth.html")
+
+
 @ui_bp.route("/screensaver")
 def screensaver():
     return render_template("screensaver.html")
