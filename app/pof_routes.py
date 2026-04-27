@@ -80,7 +80,7 @@ def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if ("user_id" not in session) and (not session.get("logged_in_pubkey")):
-            return redirect(url_for("login", next=_safe_local_redirect_target(request.full_path)))
+            return redirect(url_for("auth.login", next=_safe_local_redirect_target(request.full_path)))
         return f(*args, **kwargs)
 
     return decorated_function

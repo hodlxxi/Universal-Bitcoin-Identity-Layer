@@ -416,7 +416,7 @@ textarea{
         <!-- Header & manifesto -->
         <div class="header">
             <h1 class="app-title">
-                <a class="home-link" href="{{ url_for('home') }}">HODLXXI</a>
+                <a class="home-link" href="{{ url_for('ui.home') }}">HODLXXI</a>
             </h1>
 
             {% if not session.get('manifesto_hidden') %}
