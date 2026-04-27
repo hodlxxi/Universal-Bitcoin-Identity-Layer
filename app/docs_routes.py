@@ -14,6 +14,11 @@ DOC_ALIASES = {
 
 
 def register_docs_routes(app):
+    @app.route("/docs")
+    @app.route("/docs/")
+    def docs_index():
+        return render_template("docs_index.html")
+
     @app.route("/docs/<slug>")
     def docs_slug(slug: str):
         if not re.fullmatch(r"[a-zA-Z0-9_-]+", slug or ""):
