@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 
 import markdown
-from flask import render_template, abort, render_template
+from flask import abort, render_template
 
 STATIC_DOCS_DIR = Path(__file__).resolve().parent / "static" / "docs" / "docs"
 
