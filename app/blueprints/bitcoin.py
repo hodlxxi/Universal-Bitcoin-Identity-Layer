@@ -6,6 +6,7 @@ Handles Bitcoin Core RPC operations and wallet management.
 
 import logging
 import os
+import re
 import time
 import uuid
 from decimal import Decimal
@@ -150,27 +151,97 @@ def verify_proof_of_funds():
 @limiter.limit(RPC_RATE_LIMIT)
 def decode_raw_script():
     """
-    Decode raw Bitcoin script.
+    Decode raw Bitcoin script and return the legacy browser QR pack.
 
-    Expected JSON body:
+    Accepts both:
         - script: Hex-encoded Bitcoin script
-
-    Returns:
-        JSON with decoded script
+        - raw_script: legacy field name used by the browser shell
     """
-    data = request.get_json()
-    script = data.get("script")
+    data = request.get_json(silent=True) or {}
+    raw_script = (data.get("raw_script") or data.get("script") or "").strip()
 
-    if not script:
-        return jsonify({"error": "Missing script parameter"}), 400
+    if not raw_script:
+        return jsonify({"error": "No raw script provided."}), 400
+
+    raw_script = re.sub(r"[^0-9A-Fa-f]", "", raw_script)
+    if not raw_script:
+        return jsonify({"error": "Script must contain hex characters only."}), 400
 
     try:
+        # Transitional compatibility:
+        # Keep the old QR/label-aware decode semantics while this route lives in
+        # the bitcoin blueprint. These helpers still live in app.app until the
+        # next monolith-retirement phase extracts them into a shared module.
+        from app.app import (
+            else_early_late,
+            extract_else_branches,
+            extract_pubkey_from_op_else,
+            extract_pubkey_from_op_if,
+            find_first_unused_labeled_address,
+            generate_qr_code,
+            to_npub,
+        )
+
         rpc = get_rpc_connection()
-        decoded = rpc.decodescript(script)
-        return jsonify(decoded)
+        decoded = rpc.decodescript(raw_script)
+        info = rpc.getdescriptorinfo(f"raw({raw_script})")
+        full_desc = info["descriptor"]
+
+        asm = decoded.get("asm", "")
+        op_if = extract_pubkey_from_op_if(asm)
+        op_else = extract_pubkey_from_op_else(asm)
+        else_branches = extract_else_branches(asm)
+        early, late = else_early_late(asm)
+
+        # Prefer the late ELSE branch pubkey when present. Some legacy
+        # extract_pubkey_from_op_else() patterns can pick the early/IF key
+        # in CLTV ladder scripts, which makes npub_if and npub_else appear
+        # identical even when the script contains two distinct pubkeys.
+        effective_else_pub = (late.get("pubkey") if late else None) or op_else
+
+        npub_if = to_npub(op_if) if op_if else None
+        npub_else = to_npub(effective_else_pub) if effective_else_pub else None
+
+        seg = decoded.get("segwit") or {}
+        seg_addr = seg.get("address")
+        script_hex = seg.get("hex")
+
+        first_unused_addr = None
+        warning_message = None
+
+        if script_hex:
+            first_unused_addr = find_first_unused_labeled_address(rpc, script_hex, max_scan=20)
+            if not first_unused_addr:
+                warning_message = "Set Checking Labels"
+
+        return jsonify(
+            {
+                "decoded": decoded,
+                "op_if": op_if,
+                "op_else": effective_else_pub,
+                "npub_if": npub_if,
+                "npub_else": npub_else,
+                "op_else_branches": else_branches,
+                "else_early_pub": (early.get("pubkey") if early else None),
+                "else_early_lock": (early.get("lock") if early else None),
+                "else_late_pub": (late.get("pubkey") if late else None),
+                "else_late_lock": (late.get("lock") if late else None),
+                "qr": {
+                    "full_descriptor": generate_qr_code(full_desc) if full_desc else None,
+                    "segwit_address": generate_qr_code(seg_addr) if seg_addr else None,
+                    "pubkey_if": generate_qr_code(npub_if) if npub_if else None,
+                    "pubkey_else": generate_qr_code(npub_else) if npub_else else None,
+                    "first_unused_addr": generate_qr_code(first_unused_addr) if first_unused_addr else None,
+                    "raw_script_hex": generate_qr_code(raw_script) if raw_script else None,
+                },
+                "first_unused_addr_text": first_unused_addr,
+                "script_hex": script_hex,
+                "warning": warning_message,
+            }
+        )
 
     except Exception:
-        logger.error("Script decoding failed", exc_info=True)
+        logger.error("decode_raw_script failed", exc_info=True)
         return jsonify({"error": "Internal server error"}), 500
 
 
