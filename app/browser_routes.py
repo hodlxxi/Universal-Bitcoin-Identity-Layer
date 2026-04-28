@@ -2924,8 +2924,20 @@ def register_browser_routes(
 
         function renderMessage(msg) {
           if (!messagesEl || !msg) return;
+
+          const clientId = String(msg.client_id || msg.clientId || '').trim();
+          if (clientId) {
+            const existing = Array.from(messagesEl.querySelectorAll('.message')).find((li) => li.dataset.clientId === clientId);
+            if (existing) {
+              existing.classList.remove('pending');
+              requestAnimationFrame(() => { scrollMessagesToBottom(); });
+              return;
+            }
+          }
+
           const li = document.createElement('li');
           li.className = 'message';
+          if (msg.pending) li.classList.add('pending');
 
           const fromPk = msg.pubkey || msg.sender_pubkey || '';
           if (fromPk && myPubkey && fromPk === myPubkey) li.classList.add('me');
@@ -2943,6 +2955,7 @@ def register_browser_routes(
           const timeStr = new Date(rawTs * 1000).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
 
           li.dataset.ts = String(rawTs);
+          if (clientId) li.dataset.clientId = clientId;
           li.innerHTML = `
             <div class="message-meta">
               <div class="message-sender">${shortSender.replace(/</g,'&lt;')}</div>
@@ -3053,6 +3066,7 @@ def register_browser_routes(
         });
 
         socket.on('chat:message', renderMessage);
+        socket.on('message', renderMessage);
 
         // APP_PRESENCE_ONLINE_CACHE_V1: cache latest payload so we can re-render once guest_label arrives
 
@@ -3366,7 +3380,17 @@ def register_browser_routes(
         function sendMessage() {
           const text = (inputEl?.value || '').trim();
           if (!text) return;
-          socket.emit('chat:send', { text });
+
+          const clientId = 'chat_' + Date.now() + '_' + Math.random().toString(16).slice(2);
+          renderMessage({
+            pubkey: myPubkey || window.__myPubkey || '',
+            text,
+            ts: Date.now() / 1000,
+            client_id: clientId,
+            pending: true
+          });
+
+          socket.emit('chat:send', { text, client_id: clientId });
           inputEl.value = '';
           inputEl.focus();
         }
