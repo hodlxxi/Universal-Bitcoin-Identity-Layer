@@ -21,10 +21,11 @@ from app.realtime_runtime import (
 from app.socket_state import ACTIVE_SOCKETS, CHAT_HISTORY, ONLINE_META, ONLINE_USER_META, ONLINE_USERS
 
 
-def _broadcast_chat_message(text: str):
+def _broadcast_chat_message(text: str, client_id: str | None = None):
     """Shared logic to append to history and broadcast to all clients."""
     socketio = get_socketio()
-    logger.info(f"CHAT DEBUG: broadcast start sid={getattr(request, 'sid', None)} text={text!r}")
+    sid = getattr(request, "sid", None)
+    logger.info(f"CHAT DEBUG: broadcast start sid={sid} text={text!r} client_id={client_id!r}")
 
     if socketio is None:
         logger.warning("CHAT DEBUG: SocketIO runtime is not initialized")
@@ -38,13 +39,24 @@ def _broadcast_chat_message(text: str):
         return
 
     m = {"pubkey": pk, "text": str(text), "ts": time.time()}
+    if client_id:
+        m["client_id"] = str(client_id)
     CHAT_HISTORY.append(m)
     purge_old_messages()
     logger.info(f"CHAT DEBUG: appended history len={len(CHAT_HISTORY)} payload={m}")
 
-    # Old clients listen to "message", new UI listens to both
-    socketio.emit("message", m)
-    socketio.emit("chat:message", m)
+    # Old clients listen to "message"; current UI listens to "chat:message".
+    # Explicitly echo to the sender sid, then broadcast to everyone else.
+    # This avoids the "message saved but not visible until refresh" failure mode.
+    if sid:
+        socketio.emit("message", m, room=sid)
+        socketio.emit("chat:message", m, room=sid)
+        socketio.emit("message", m, skip_sid=sid)
+        socketio.emit("chat:message", m, skip_sid=sid)
+    else:
+        socketio.emit("message", m)
+        socketio.emit("chat:message", m)
+
     logger.info("CHAT DEBUG: emitted message and chat:message")
 
 
@@ -56,8 +68,10 @@ def _handle_chat_send(data):
     """
     try:
         logger.info(f"CHAT DEBUG: raw incoming data={data!r} sid={getattr(request, 'sid', None)}")
+        client_id = None
         if isinstance(data, dict):
             text = (data.get("text") or "").strip()
+            client_id = data.get("client_id") or data.get("clientId")
         else:
             text = str(data or "").strip()
 
@@ -67,7 +81,7 @@ def _handle_chat_send(data):
             logger.warning("CHAT DEBUG: empty text, ignoring")
             return
 
-        _broadcast_chat_message(text)
+        _broadcast_chat_message(text, client_id=client_id)
     except Exception as e:
         logger.error(f"Error handling chat:send: {e}", exc_info=True)
 
