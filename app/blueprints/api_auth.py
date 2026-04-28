@@ -20,7 +20,7 @@ def api_challenge():
     Transitional extraction: this blueprint owns the route, while shared auth
     helpers/state still live in app.app until the next monolith-retirement step.
     """
-    from app.app import ACTIVE_CHALLENGES, is_valid_pubkey
+    from app.auth_api_core import ACTIVE_CHALLENGES, is_valid_pubkey
 
     data = request.get_json() or {}
     user_input = (data.get("pubkey") or "").strip()
@@ -67,17 +67,19 @@ def api_verify():
     - session finalization through _finish_login()
     """
     import app.app as legacy_auth
+    from app.auth_api_core import (
+        ACTIVE_CHALLENGES,
+        is_valid_pubkey,
+        mint_access_token,
+        verify_nostr_login_event,
+    )
 
-    ACTIVE_CHALLENGES = legacy_auth.ACTIVE_CHALLENGES
     REFRESH_STORE = getattr(legacy_auth, "REFRESH_STORE", None)
     _finish_login = legacy_auth._finish_login
     derive_legacy_address_from_pubkey = legacy_auth.derive_legacy_address_from_pubkey
     get_rpc_connection = legacy_auth.get_rpc_connection
     get_save_and_check_balances_for_pubkey = legacy_auth.get_save_and_check_balances_for_pubkey
-    is_valid_pubkey = legacy_auth.is_valid_pubkey
     logger = legacy_auth.logger
-    mint_access_token = legacy_auth.mint_access_token
-    verify_nostr_login_event = legacy_auth.verify_nostr_login_event
 
     data = request.get_json() or {}
 
