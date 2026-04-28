@@ -158,3 +158,15 @@ def test_factory_boot_registers_browser_runtime_handlers_without_importing_app_a
     # this branch still imports app.app for legacy API bridges while browser
     # route ownership is being stabilized before full monolith retirement.
     # Full removal is covered by the next monolith-retirement phase.
+
+
+def test_api_challenge_verify_are_owned_by_api_auth_blueprint(app):
+    endpoints = {
+        rule.rule: rule.endpoint for rule in app.url_map.iter_rules() if rule.rule in {"/api/challenge", "/api/verify"}
+    }
+
+    assert endpoints["/api/challenge"] == "api_auth.api_challenge"
+    assert endpoints["/api/verify"] == "api_auth.api_verify"
+
+    assert app.view_functions["api_auth.api_challenge"].__module__ == "app.blueprints.api_auth"
+    assert app.view_functions["api_auth.api_verify"].__module__ == "app.blueprints.api_auth"
