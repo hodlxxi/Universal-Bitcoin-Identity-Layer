@@ -1383,7 +1383,7 @@ def perform_browser_logout(*, audit_logger=None, remote_addr=None):
         except Exception:
             pass
     session.clear()
-    return redirect(url_for("login"))
+    return redirect(url_for("auth.login"))
 
 
 def register_browser_routes(
@@ -2649,7 +2649,7 @@ def register_browser_routes(
         })();
 
         function goHome(hash) {
-          const base = "{{ url_for('home') }}";
+          const base = "{{ url_for('ui.home') }}";
           window.location.href = hash ? base + hash : base;
         }
 

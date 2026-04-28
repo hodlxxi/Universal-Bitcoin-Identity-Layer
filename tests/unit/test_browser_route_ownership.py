@@ -27,13 +27,13 @@ def test_browser_routes_are_owned_by_blueprints(app):
         assert endpoint in endpoints, f"{path} endpoints were {sorted(endpoints)}"
 
 
-def test_legacy_endpoint_names_still_resolve(app):
+def test_blueprint_endpoint_names_resolve(app):
     with app.test_request_context():
-        assert url_for("home") == "/home"
-        assert url_for("login") == "/login"
-        assert url_for("logout") == "/logout"
-        assert url_for("playground") == "/playground"
-        assert url_for("app") == "/app"
+        assert url_for("ui.home") == "/home"
+        assert url_for("auth.login") == "/login"
+        assert url_for("auth.logout") == "/logout"
+        assert url_for("ui.playground") == "/playground"
+        assert url_for("ui.legacy_chat_route") == "/app"
 
 
 def test_auth_blueprint_implements_login_logout_directly(app):
@@ -43,9 +43,10 @@ def test_auth_blueprint_implements_login_logout_directly(app):
     assert login_view.__module__ == "app.blueprints.auth"
     assert logout_view.__module__ == "app.blueprints.auth"
 
-    # Bare endpoint aliases still point to the auth blueprint implementations.
-    assert app.view_functions["login"] is login_view
-    assert app.view_functions["logout"] is logout_view
+    assert app.view_functions["auth.login"] is login_view
+    assert app.view_functions["auth.logout"] is logout_view
+    assert "login" not in app.view_functions
+    assert "logout" not in app.view_functions
 
 
 def test_login_sets_signature_challenge_session_and_renders_legacy_ui(client):

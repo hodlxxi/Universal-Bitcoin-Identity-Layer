@@ -241,21 +241,6 @@ def register_blueprints(app: Flask) -> None:
 
     register_docs_routes(app)
 
-    # Legacy endpoint aliases for old templates/helpers that still call bare endpoint names
-    try:
-        if "ui.home" in app.view_functions and "home" not in app.view_functions:
-            app.add_url_rule("/home", endpoint="home", view_func=app.view_functions["ui.home"])
-        if "auth.login" in app.view_functions and "login" not in app.view_functions:
-            app.add_url_rule("/login", endpoint="login", view_func=app.view_functions["auth.login"])
-        if "auth.logout" in app.view_functions and "logout" not in app.view_functions:
-            app.add_url_rule("/logout", endpoint="logout", view_func=app.view_functions["auth.logout"])
-        if "ui.playground" in app.view_functions and "playground" not in app.view_functions:
-            app.add_url_rule("/playground", endpoint="playground", view_func=app.view_functions["ui.playground"])
-        if "ui.legacy_chat_route" in app.view_functions and "app" not in app.view_functions:
-            app.add_url_rule("/app", endpoint="app", view_func=app.view_functions["ui.legacy_chat_route"])
-    except Exception as e:
-        logger.warning(f"Legacy endpoint alias registration failed: {e}")
-
     from app.blueprints.legacy_bridge import register_legacy_routes
 
     register_legacy_routes(app)
