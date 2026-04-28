@@ -31,7 +31,7 @@ def index():
     """
     try:
         if session.get("logged_in_pubkey"):
-            return redirect(url_for("home"))
+            return redirect(url_for("ui.home"))
     except Exception:
         pass
 
