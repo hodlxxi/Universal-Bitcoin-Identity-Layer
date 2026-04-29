@@ -25,14 +25,14 @@ def _broadcast_chat_message(text: str, client_id: str | None = None):
     """Shared logic to append to history and broadcast to all clients."""
     socketio = get_socketio()
     sid = getattr(request, "sid", None)
-    logger.info(f"CHAT DEBUG: broadcast start sid={sid} text={text!r} client_id={client_id!r}")
+    logger.debug(f"CHAT DEBUG: broadcast start sid={sid} text={text!r} client_id={client_id!r}")
 
     if socketio is None:
         logger.warning("CHAT DEBUG: SocketIO runtime is not initialized")
         return
 
     pk = session.get("logged_in_pubkey")
-    logger.info(f"CHAT DEBUG: session pubkey={pk!r}")
+    logger.debug(f"CHAT DEBUG: session pubkey={pk!r}")
 
     if not pk:
         logger.warning("CHAT DEBUG: Message received from unauthenticated user")
@@ -43,7 +43,7 @@ def _broadcast_chat_message(text: str, client_id: str | None = None):
         m["client_id"] = str(client_id)
     CHAT_HISTORY.append(m)
     purge_old_messages()
-    logger.info(f"CHAT DEBUG: appended history len={len(CHAT_HISTORY)} payload={m}")
+    logger.debug(f"CHAT DEBUG: appended history len={len(CHAT_HISTORY)} payload={m}")
 
     # Old clients listen to "message"; current UI listens to "chat:message".
     # Explicitly echo to the sender sid, then broadcast to everyone else.
@@ -57,7 +57,7 @@ def _broadcast_chat_message(text: str, client_id: str | None = None):
         socketio.emit("message", m)
         socketio.emit("chat:message", m)
 
-    logger.info("CHAT DEBUG: emitted message and chat:message")
+    logger.debug("CHAT DEBUG: emitted message and chat:message")
 
 
 def _handle_chat_send(data):
@@ -67,7 +67,7 @@ def _handle_chat_send(data):
     Client sends: socket.emit('chat:send', { text: 'hello' })
     """
     try:
-        logger.info(f"CHAT DEBUG: raw incoming data={data!r} sid={getattr(request, 'sid', None)}")
+        logger.debug(f"CHAT DEBUG: raw incoming data={data!r} sid={getattr(request, 'sid', None)}")
         client_id = None
         if isinstance(data, dict):
             text = (data.get("text") or "").strip()
@@ -75,7 +75,7 @@ def _handle_chat_send(data):
         else:
             text = str(data or "").strip()
 
-        logger.info(f"CHAT DEBUG: normalized text={text!r}")
+        logger.debug(f"CHAT DEBUG: normalized text={text!r}")
 
         if not text:
             logger.warning("CHAT DEBUG: empty text, ignoring")

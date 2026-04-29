@@ -170,3 +170,10 @@ def test_api_challenge_verify_are_owned_by_api_auth_blueprint(app):
 
     assert app.view_functions["api_auth.api_challenge"].__module__ == "app.blueprints.api_auth"
     assert app.view_functions["api_auth.api_verify"].__module__ == "app.blueprints.api_auth"
+
+
+def test_debug_session_endpoint_is_factory_owned(app):
+    endpoints = {rule.rule: rule.endpoint for rule in app.url_map.iter_rules() if rule.rule == "/api/debug/session"}
+
+    assert endpoints["/api/debug/session"] == "debug_session.api_debug_session"
+    assert app.view_functions["debug_session.api_debug_session"].__module__ == "app.blueprints.debug_session"

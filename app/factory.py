@@ -166,9 +166,11 @@ def register_blueprints(app: Flask) -> None:
     # Authentication blueprint (login, logout, signature verification)
     from app.blueprints.auth import auth_bp
     from app.blueprints.api_auth import api_auth_bp
+    from app.blueprints.debug_session import debug_session_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(api_auth_bp)
+    app.register_blueprint(debug_session_bp)
 
     # Bitcoin operations blueprint (RPC, descriptors, wallets)
     from app.blueprints.bitcoin import bitcoin_bp
