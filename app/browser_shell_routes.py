@@ -1653,11 +1653,25 @@ if (sessionStorage.getItem('playLoginSound') === '1') {
 
     async function refresh(){
       try{
+        // PERF_HOTFIX_2026_04_30:
+        // Do not run the expensive covenant descriptor lookup automatically on normal /home load.
+        // Only refresh totals when Explorer is actually open, or when manually invoked from console.
+        const explorerOpen = String(location.hash || "").indexOf("#explorer") === 0;
+        const manualAllow = window.__HODLXXI_AUTO_TOTALS_ALLOW === 1;
+        if (!explorerOpen && !manualAllow) return;
+
+        if (window.__HODLXXI_AUTO_TOTALS_INFLIGHT) return;
+        const now = Date.now();
+        if (window.__HODLXXI_AUTO_TOTALS_LAST_TS && (now - window.__HODLXXI_AUTO_TOTALS_LAST_TS) < 30000) return;
+
+        window.__HODLXXI_AUTO_TOTALS_INFLIGHT = 1;
+        window.__HODLXXI_AUTO_TOTALS_LAST_TS = now;
+
         const sess = await _fetchJson("/api/debug/session");
         const pk = sess.pubkey || sess.logged_in_pubkey || sess.pof_pubkey;
         if(!pk) return;
 
-        // Pull totals using existing endpoint (also feeds totals-bar fetch hook)
+        // Pull totals using existing endpoint only when Explorer needs it.
         const j = await _fetchJson("/verify_pubkey_and_list?pubkey="+encodeURIComponent(pk));
         const t = _pickTotals(j) || j || {};
 
@@ -1665,13 +1679,21 @@ if (sessionStorage.getItem('playLoginSound') === '1') {
         _updateWhoIsPanels(t);
       }catch(e){
         console.warn("[HODLXXI] AUTO_TOTALS_FROM_SESSION_V1 refresh failed", e);
+      }finally{
+        window.__HODLXXI_AUTO_TOTALS_INFLIGHT = 0;
       }
     }
 
-    setTimeout(refresh, 120);
-    document.addEventListener("visibilitychange", function(){
-      if(!document.hidden) setTimeout(refresh, 80);
-    });
+    // PERF_HOTFIX_2026_04_30_HARD:
+    // Do not auto-run /verify_pubkey_and_list on page load or tab visibility changes.
+    // Manual Explorer searches still call verifyAndListContracts(...).
+    // Developers can still manually run:
+    //   window.__HODLXXI_AUTO_TOTALS_ALLOW = 1;
+    //   window.__HODLXXI_refreshTotalsFromSession();
+    // setTimeout(refresh, 120);
+    // document.addEventListener("visibilitychange", function(){
+    //   if(!document.hidden) setTimeout(refresh, 80);
+    // });
 
     window.__HODLXXI_refreshTotalsFromSession = refresh; // debug hook
   })();
