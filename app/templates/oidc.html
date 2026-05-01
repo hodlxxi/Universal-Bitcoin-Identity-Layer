@@ -31,7 +31,17 @@
             pointer-events: none;
             opacity: 0.3;
         }
-        main, header, footer { position: relative; z-index: 1; }
+
+        @media (prefers-reduced-motion: reduce) {
+            .matrix-canvas {
+                display: none !important;
+            }
+        }
+
+        body > *:not(.matrix-canvas) {
+            position: relative;
+            z-index: 1;
+        }
         .container { max-width: 980px; margin: 0 auto; padding: 24px; }
         header { padding: 48px 0 24px; }
         .title {
@@ -61,7 +71,7 @@
     </style>
 </head>
 <body>
-    <canvas class="matrix-canvas" id="matrix-canvas"></canvas>
+    <canvas class="matrix-canvas" id="matrix-bg"></canvas>
 
     <main class="container">
         <header>
@@ -125,40 +135,73 @@
     </footer>
 
     <script>
-        (() => {
-            const canvas = document.getElementById('matrix-canvas');
+        // Matrix background (warp effect with 0s and 1s)
+        (function() {
+            const canvas = document.getElementById('matrix-bg');
             if (!canvas) return;
             const ctx = canvas.getContext('2d');
-            const chars = '01ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-            const size = 14;
-            let cols = 0;
-            let drops = [];
+            const CHARS = ['0','1'];
+            const isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+            let width = 0, height = 0, particles = [], raf = null;
 
             function resize() {
-                canvas.width = window.innerWidth;
-                canvas.height = window.innerHeight;
-                cols = Math.floor(canvas.width / size);
-                drops = Array.from({ length: cols }, () => Math.floor(Math.random() * -120));
+                const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+                const cssW = window.innerWidth, cssH = window.innerHeight;
+                canvas.width = Math.floor(cssW * dpr);
+                canvas.height = Math.floor(cssH * dpr);
+                canvas.style.width = cssW + 'px';
+                canvas.style.height = cssH + 'px';
+                ctx.setTransform(1,0,0,1,0,0);
+                ctx.scale(dpr, dpr);
+                width = cssW;
+                height = cssH;
+                particles = [];
+                const count = isMobile ? 120 : 300;
+                for (let i = 0; i < count; i++) {
+                    particles.push({
+                        x: (Math.random() - 0.5) * width,
+                        y: (Math.random() - 0.5) * height,
+                        z: Math.random() * 800 + 100
+                    });
+                }
+                ctx.fillStyle = 'rgba(11, 15, 16, 1)';
+                ctx.fillRect(0, 0, width, height);
             }
 
             function draw() {
-                ctx.fillStyle = 'rgba(11, 15, 16, 0.08)';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'rgba(11, 15, 16, 0.3)';
+                ctx.fillRect(0, 0, width, height);
                 ctx.fillStyle = '#00ff88';
-                ctx.font = `${size}px monospace`;
-                for (let i = 0; i < drops.length; i++) {
-                    const char = chars[Math.floor(Math.random() * chars.length)];
-                    const x = i * size;
-                    const y = drops[i] * size;
-                    ctx.fillText(char, x, y);
-                    if (y > canvas.height && Math.random() > 0.975) drops[i] = 0;
-                    drops[i] += 1;
+                const speed = isMobile ? 2 : 4;
+                for (const p of particles) {
+                    const scale = 200 / p.z;
+                    const x2 = width / 2 + p.x * scale;
+                    const y2 = height / 2 + p.y * scale;
+                    const size = Math.max(6 * scale, 1);
+                    ctx.font = size + 'px monospace';
+                    ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
+                    p.z -= speed;
+                    if (p.z < 1) {
+                        p.x = (Math.random() - 0.5) * width;
+                        p.y = (Math.random() - 0.5) * height;
+                        p.z = 800;
+                    }
+                }
+                raf = requestAnimationFrame(draw);
+            }
+
+            function onVis() {
+                if (document.hidden) {
+                    if (raf) { cancelAnimationFrame(raf); raf = null; }
+                } else {
+                    if (!raf) raf = requestAnimationFrame(draw);
                 }
             }
 
-            resize();
             window.addEventListener('resize', resize);
-            setInterval(draw, 45);
+            document.addEventListener('visibilitychange', onVis);
+            resize();
+            raf = requestAnimationFrame(draw);
         })();
     </script>
 </body>
