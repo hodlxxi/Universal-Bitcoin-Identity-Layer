@@ -4909,17 +4909,6 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
 # ============================================================================
 
 
-@app.route("/oidc")
-def landing_page():
-    """Serve the KeyAuth BTC OIDC landing page"""
-    # Get the issuer URL dynamically
-    base = request.url_root.rstrip("/")
-    # Render the template with the issuer variable
-    return render_template_string(LANDING_PAGE_HTML, issuer=base)
-
-
-# ============================================================================
-
 # ----------------------------------------------------------------------------
 # PREVIEW ROUTES (template-based pages)
 # ----------------------------------------------------------------------------

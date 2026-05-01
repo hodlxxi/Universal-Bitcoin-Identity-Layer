@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HODLXXI — OIDC / KeyAuth Direction</title>
+    <meta name="description" content="Human-readable context for HODLXXI's experimental OIDC direction and Bitcoin-native pubkey identity runtime.">
+    <style>
+        :root {
+            --bg: #0b0f10;
+            --panel: rgba(17, 23, 26, 0.92);
+            --fg: #e6f1ef;
+            --accent: #00ff88;
+            --muted: #86a3a1;
+            --warning: #ff6b35;
+            --border: #0f2a24;
+            --glow: rgba(0, 255, 136, 0.22);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: ui-monospace, "SF Mono", Monaco, Inconsolata, monospace;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.65;
+        }
+        .matrix-canvas {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            opacity: 0.3;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .matrix-canvas {
+                display: none !important;
+            }
+        }
+
+        body > *:not(.matrix-canvas) {
+            position: relative;
+            z-index: 1;
+        }
+        .container { max-width: 980px; margin: 0 auto; padding: 24px; }
+        header { padding: 48px 0 24px; }
+        .title {
+            color: var(--accent);
+            font-size: clamp(1.4rem, 3vw, 2.2rem);
+            margin: 0 0 10px;
+            text-shadow: 0 0 24px var(--glow);
+        }
+        .subtitle { color: var(--muted); margin: 0; }
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 22px;
+            margin: 0 0 20px;
+        }
+        .card h2 { margin-top: 0; color: var(--accent); font-size: 1.1rem; }
+        .card p, .card li { color: var(--muted); }
+        .warning { border-color: var(--warning); background: rgba(255, 107, 53, 0.08); }
+        .warning h2 { color: var(--warning); }
+        ul { margin: 0; padding-left: 20px; }
+        li { margin-bottom: 8px; }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .links { display: grid; gap: 8px; }
+        footer { padding: 24px 0 40px; color: var(--muted); font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+    <canvas class="matrix-canvas" id="matrix-bg"></canvas>
+
+    <main class="container">
+        <header>
+            <h1 class="title">HODLXXI — OIDC / KeyAuth Direction</h1>
+            <p class="subtitle">Experimental identity bridge work for Bitcoin-native pubkey identity and interoperable auth surfaces.</p>
+        </header>
+
+        <section class="card warning">
+            <h2>Important context</h2>
+            <ul>
+                <li>OIDC support here is experimental and in-progress.</li>
+                <li>KeyAuth is a reference implementation, not an authority.</li>
+                <li>HODLXXI is not a centralized identity provider.</li>
+                <li>No production authority or governance guarantee is implied by these endpoints.</li>
+            </ul>
+        </section>
+
+        <section class="card">
+            <h2>Direction</h2>
+            <p>
+                HODLXXI is experimenting with OIDC-compatible identity flows for Bitcoin-native pubkey identity.
+                The objective is compatibility with conventional app expectations while preserving a decentralized,
+                cryptographic identity model where trust is surfaced, not centrally granted.
+            </p>
+        </section>
+
+        <section class="card">
+            <h2>What this page is</h2>
+            <p>
+                This page is a human-readable bridge between conventional OIDC expectations and HODLXXI's
+                Bitcoin-native identity/runtime direction.
+            </p>
+        </section>
+
+        <section class="card">
+            <h2>What this page is not</h2>
+            <ul>
+                <li>Not a final standard.</li>
+                <li>Not a custody layer.</li>
+                <li>Not a promise of enterprise readiness.</li>
+            </ul>
+        </section>
+
+        <section class="card">
+            <h2>Live surfaces</h2>
+            <div class="links">
+                <a href="/.well-known/openid-configuration">/.well-known/openid-configuration</a>
+                <a href="/.well-known/agent.json">/.well-known/agent.json</a>
+                <a href="/agent/capabilities">/agent/capabilities</a>
+                <a href="/agent/reputation">/agent/reputation</a>
+                <a href="/api/public/status">/api/public/status</a>
+                <a href="/docs">/docs</a>
+                <a href="/new-index">/new-index</a>
+                <a href="https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer" target="_blank" rel="noopener noreferrer">GitHub repo</a>
+            </div>
+        </section>
+    </main>
+
+    <footer class="container">
+        <p>HODLXXI / UBID — research-oriented infrastructure; iterate carefully, verify assumptions, and treat compatibility as experimental.</p>
+    </footer>
+
+    <script>
+        // Matrix background (warp effect with 0s and 1s)
+        (function() {
+            const canvas = document.getElementById('matrix-bg');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const CHARS = ['0','1'];
+            const isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+            let width = 0, height = 0, particles = [], raf = null;
+
+            function resize() {
+                const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+                const cssW = window.innerWidth, cssH = window.innerHeight;
+                canvas.width = Math.floor(cssW * dpr);
+                canvas.height = Math.floor(cssH * dpr);
+                canvas.style.width = cssW + 'px';
+                canvas.style.height = cssH + 'px';
+                ctx.setTransform(1,0,0,1,0,0);
+                ctx.scale(dpr, dpr);
+                width = cssW;
+                height = cssH;
+                particles = [];
+                const count = isMobile ? 120 : 300;
+                for (let i = 0; i < count; i++) {
+                    particles.push({
+                        x: (Math.random() - 0.5) * width,
+                        y: (Math.random() - 0.5) * height,
+                        z: Math.random() * 800 + 100
+                    });
+                }
+                ctx.fillStyle = 'rgba(11, 15, 16, 1)';
+                ctx.fillRect(0, 0, width, height);
+            }
+
+            function draw() {
+                ctx.fillStyle = 'rgba(11, 15, 16, 0.3)';
+                ctx.fillRect(0, 0, width, height);
+                ctx.fillStyle = '#00ff88';
+                const speed = isMobile ? 2 : 4;
+                for (const p of particles) {
+                    const scale = 200 / p.z;
+                    const x2 = width / 2 + p.x * scale;
+                    const y2 = height / 2 + p.y * scale;
+                    const size = Math.max(6 * scale, 1);
+                    ctx.font = size + 'px monospace';
+                    ctx.fillText(CHARS[(Math.random() > 0.5) | 0], x2, y2);
+                    p.z -= speed;
+                    if (p.z < 1) {
+                        p.x = (Math.random() - 0.5) * width;
+                        p.y = (Math.random() - 0.5) * height;
+                        p.z = 800;
+                    }
+                }
+                raf = requestAnimationFrame(draw);
+            }
+
+            function onVis() {
+                if (document.hidden) {
+                    if (raf) { cancelAnimationFrame(raf); raf = null; }
+                } else {
+                    if (!raf) raf = requestAnimationFrame(draw);
+                }
+            }
+
+            window.addEventListener('resize', resize);
+            document.addEventListener('visibilitychange', onVis);
+            resize();
+            raf = requestAnimationFrame(draw);
+        })();
+    </script>
+</body>
+</html>
