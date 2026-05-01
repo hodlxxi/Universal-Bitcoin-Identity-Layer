@@ -61,6 +61,16 @@ class AppConfig(TypedDict):
     APP_VERSION: str
     APP_HOST: str
     APP_PORT: int
+    HERALD_ZAP_MODE: str
+    HERALD_ZAP_DAILY_BUDGET_SATS: int
+    HERALD_ZAP_MAX_PER_DAY: int
+    HERALD_ZAP_MAX_PER_AUTHOR_WINDOW_HOURS: int
+    HERALD_SEARCH_WINDOW_HOURS: int
+    HERALD_RELAY_URLS: str
+    HERALD_ALIGNMENT_HASHTAGS: str
+    HERALD_ALIGNMENT_KEYWORDS: str
+    HERALD_SPAM_TERMS: str
+    HERALD_DISCOVERY_STATE_FILE: str
 
 
 def _get_env_bool(name: str, default: bool) -> bool:
@@ -154,6 +164,24 @@ def get_config() -> AppConfig:
         "APP_VERSION": os.getenv("APP_VERSION", "1.0.0-alpha"),
         "APP_HOST": os.getenv("APP_HOST", "0.0.0.0"),
         "APP_PORT": _get_env_int("APP_PORT", 5000),
+        # Herald Nostr discovery + alignment zaps (dry-run first)
+        "HERALD_ZAP_MODE": os.getenv("HERALD_ZAP_MODE", "dry_run"),
+        "HERALD_ZAP_DAILY_BUDGET_SATS": _get_env_int("HERALD_ZAP_DAILY_BUDGET_SATS", 500),
+        "HERALD_ZAP_MAX_PER_DAY": _get_env_int("HERALD_ZAP_MAX_PER_DAY", 3),
+        "HERALD_ZAP_MAX_PER_AUTHOR_WINDOW_HOURS": _get_env_int("HERALD_ZAP_MAX_PER_AUTHOR_WINDOW_HOURS", 24),
+        "HERALD_SEARCH_WINDOW_HOURS": _get_env_int("HERALD_SEARCH_WINDOW_HOURS", 72),
+        "HERALD_RELAY_URLS": os.getenv("HERALD_RELAY_URLS", "wss://relay.damus.io,wss://nos.lol"),
+        "HERALD_ALIGNMENT_HASHTAGS": os.getenv(
+            "HERALD_ALIGNMENT_HASHTAGS",
+            "bitcoin,lightning,nostr,ai,agents,identity,sovereignidentity,machinepayments",
+        ),
+        "HERALD_ALIGNMENT_KEYWORDS": os.getenv(
+            "HERALD_ALIGNMENT_KEYWORDS",
+            "bitcoin agent,lightning agent,machine payments,agent identity,key-based identity,signed receipts,"
+            "attestations,verifiable agent,nostr agent,bitcoin-native identity,universal bitcoin identity,UBID,HODLXXI",
+        ),
+        "HERALD_SPAM_TERMS": os.getenv("HERALD_SPAM_TERMS", "giveaway,casino,100x,pump,moon,airdrop,betting,sportsbook"),
+        "HERALD_DISCOVERY_STATE_FILE": os.getenv("HERALD_DISCOVERY_STATE_FILE", "data/herald_nostr_discovery_state.json"),
     }
 
 
