@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HODLXXI — Bitcoin-Native Research Framework</title>
-    <meta name="description" content="An open research framework exploring long-term coordination through cryptographic identity and time-locked commitments.">
+    <title>HODLXXI — Bitcoin Identity & Agent Runtime</title>
+    <meta name="description" content="Experimental Bitcoin-native identity and trust runtime for humans, agents, Lightning-paid work, and long-horizon covenant commitments.">
     <style>
         * {
             margin: 0;
@@ -420,23 +420,19 @@
             <div class="hero-content">
                 <h1>HODLXXI</h1>
                 <p class="subtitle">
-                    A Bitcoin-native research framework for long-term coordination
+                    Bitcoin-native identity and trust runtime for agents and humans.
                 </p>
 
                 <p class="meta-statement">
-                    HODLXXI explores how cryptographic identity,
-                    time-locked commitments,
-                    and voluntary participation
-                    can support cooperation without central authority.
+                    HODLXXI links pubkey identity, Lightning-priced jobs, machine-readable agent discovery, and time-locked Bitcoin commitments into one open-source runtime.
                 </p>
 
                 <div class="filter-box">
-                    <p>There is no token.<br>
+                    <p>Experimental, open-source, and built in public.</p>
+                    <p>No token.<br>
                     No promised returns.<br>
-                    No central operator.</p>
-                    <p>This is not a product.<br>
-                    This is not a service.<br>
-                    This is an open research framework.</p>
+                    Not a custodial wallet.<br>
+                    Not an identity authority.</p>
                 </div>
 
                 <div class="hero-buttons">
@@ -453,86 +449,82 @@
         </div>
     </section>
 
-    <!-- What This Is -->
+    <!-- Runtime Overview -->
     <section>
         <div class="container">
             <div class="section-header">
-                <h2>What This Is</h2>
-                <p>HODLXXI is an applied research effort exploring constraint-based coordination over long human time horizons.</p>
+                <h2>Runtime Overview</h2>
+                <p>HODLXXI is an experimental runtime that combines Bitcoin identity, payment rails, and verifiable cooperation signals for humans and software agents.</p>
             </div>
 
             <div class="content-block">
-                <h3>Core Components</h3>
+                <h3>What Runs Here</h3>
                 <ul>
-                    <li>Bitcoin time primitives (OP_CHECKLOCKTIMEVERIFY, descriptors)</li>
-                    <li>Cryptographic identity (public key authentication)</li>
-                    <li>Repeated-game incentives (iterated Prisoner's Dilemma)</li>
-                    <li>Explicit exit and forkability (no lock-in)</li>
+                    <li>Pubkey-based identity for people and agents</li>
+                    <li>Lightning-priced tasks and machine-readable service surfaces</li>
+                    <li>Receipts and reputation primitives for repeated cooperation</li>
+                    <li>Time-locked Bitcoin covenant research for long-horizon commitments</li>
                 </ul>
                 <p style="margin-top: 16px;">
-                    The goal is not optimization. The goal is constraint-based coordination that preserves agency and allows exit.
+                    This is experimental infrastructure, not an enterprise-ready platform. Expect iteration, limits, and explicit tradeoffs.
                 </p>
-            </div>
-
-            <div class="link-list">
-                <a href="/docs/research_status">Research Status</a>
-                <a href="/docs/threat_model_and_failure_modes">Threat Model & Failure Modes</a>
-                <a href="/docs/architecture">Technical Architecture</a>
             </div>
         </div>
     </section>
 
-    <!-- Transparency First -->
+    <!-- Live Runtime Surfaces -->
     <section class="section-alt">
         <div class="container">
             <div class="section-header">
-                <h2>Transparency First</h2>
-                <p>Every assumption is documented. Every limitation is explicit. Every failure mode is acknowledged.</p>
+                <h2>Live Runtime Surfaces</h2>
+                <p>Inspectable endpoints that expose current runtime interfaces. OIDC is available for experimentation and may evolve.</p>
+            </div>
+
+            <div class="content-block">
+                <h3>Public Interfaces</h3>
+                <div class="link-list" style="margin-top: 0;">
+                    <a href="/.well-known/agent.json">/.well-known/agent.json</a>
+                    <a href="/agent/capabilities">/agent/capabilities</a>
+                    <a href="/agent/reputation">/agent/reputation</a>
+                    <a href="/api/public/status">/api/public/status</a>
+                    <a href="/docs">/docs</a>
+                    <a href="/oidc">/oidc</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Why It Matters -->
+    <section>
+        <div class="container">
+            <div class="section-header">
+                <h2>Why It Matters</h2>
+                <p>Agent economies need more than login credentials; they need trustworthy interaction loops.</p>
             </div>
 
             <div class="two-col-grid">
                 <div class="content-block">
-                    <h3>Open Assumptions</h3>
-                    <p>
-                        All design decisions are documented with rationale. 
-                        We state what we believe and why.
-                        We invite critique and alternative interpretations.
-                    </p>
+                    <h3>Beyond Static Identity</h3>
+                    <ul>
+                        <li>Agents need identity, payment, receipts, and reputation in one workflow</li>
+                        <li>Static identity alone does not prove reliability under repeated interactions</li>
+                        <li>Cross-agent coordination needs machine-readable discovery and pricing</li>
+                    </ul>
                 </div>
 
                 <div class="content-block">
-                    <h3>Explicit Limits</h3>
-                    <p>
-                        We document what the system cannot do.
-                        We list failure modes upfront.
-                        We acknowledge uncertainty.
-                    </p>
-                </div>
-
-                <div class="content-block">
-                    <h3>Designed for Fork</h3>
-                    <p>
-                        The system is designed to remain inspectable, 
-                        forkable, and functional without its original authors.
-                    </p>
-                </div>
-
-                <div class="content-block">
-                    <h3>No Authority</h3>
-                    <p>
-                        No single entity controls the protocol.
-                        No privileged keys exist.
-                        Exit is always possible.
-                    </p>
+                    <h3>Cooperation Over Time</h3>
+                    <ul>
+                        <li>Repeated cooperation needs verifiable history and incentive alignment</li>
+                        <li>Bitcoin-native commitments can add durable constraints for long horizons</li>
+                        <li>Open-source runtimes let participants audit, fork, and challenge assumptions</li>
+                    </ul>
                 </div>
             </div>
 
-            <div class="link-list">
-                <a href="/docs/limits">Explicit Limits</a>
-                <a href="/docs/ethics">Ethics & Invariants</a>
-                <a href="/docs/governance">Governance</a>
-                <a href="/docs/license">License (MIT)</a>
-            </div>
+            <p style="margin-top: 40px; color: var(--muted); font-size: 14px;">
+                Philosophical covenant and long-horizon research remains core to HODLXXI, but the immediate focus is practical runtime surfaces that can be tested today.
+            </p>
         </div>
     </section>
 
