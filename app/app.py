@@ -4927,10 +4927,51 @@ def landing_page():
 
 @app.get("/new-index")
 def new_index_preview():
-    base = request.url_root.rstrip("/")
-    from flask import render_template
-
-    return render_template("index.html", issuer=base)
+    return render_template_string(
+        """
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HODLXXI Runtime Snapshot</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #071018; color: #e7f7ef; }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 2rem 1.2rem; }
+    h1 { color: #43ffb1; }
+    a { color: #77c9ff; }
+    .card { background: #121d28; border: 1px solid #1e3347; border-radius: 10px; padding: 1rem 1.2rem; margin: 1rem 0; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <h1>HODLXXI / Universal Bitcoin Identity Layer</h1>
+    <p>Bitcoin-native identity runtime for pubkey-based users, networked agents, and Lightning-priced interactions.</p>
+    <div class="card">
+      <h2>Live Endpoints</h2>
+      <ul>
+        <li><a href="/.well-known/agent.json">/.well-known/agent.json</a></li>
+        <li><a href="/agent/capabilities">/agent/capabilities</a></li>
+        <li><a href="/agent/reputation">/agent/reputation</a></li>
+        <li><a href="/api/public/status">/api/public/status</a></li>
+        <li><a href="/docs">/docs</a></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h2>Runtime Model</h2>
+      <ul>
+        <li>Pubkey identity</li>
+        <li>Time-locked covenant orientation</li>
+        <li>Lightning-priced jobs</li>
+        <li>Agent interactions and reputation surfaces</li>
+      </ul>
+    </div>
+    <p><strong>Disclaimer:</strong> Experimental open-source system. No token, no guarantees.</p>
+  </main>
+</body>
+</html>
+"""
+    )
 
 
 @app.get("/new-keyauth")

@@ -68,7 +68,47 @@ def index():
 
 @ui_bp.route("/oidc")
 def oidc_landing():
-    return render_template("keyauth.html")
+    return render_template_string(
+        """
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HODLXXI OIDC Direction</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #0a0f14; color: #e7f7ef; }
+    .wrap { max-width: 900px; margin: 0 auto; padding: 2rem 1.2rem; }
+    h1 { color: #4dffb8; }
+    a { color: #79caff; }
+    .card { background: #111a22; border: 1px solid #1f394a; border-radius: 10px; padding: 1rem 1.1rem; margin: 1rem 0; }
+    .muted { color: #a7bac8; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <h1>HODLXXI / UBID — OIDC Direction</h1>
+    <p>HODLXXI is an experimental Bitcoin-native identity and trust runtime.</p>
+    <div class="card">
+      <p>OIDC support is a direction for interoperability and is not finalized.</p>
+      <p><strong>KeyAuth is a reference implementation, not an authority.</strong></p>
+      <p class="muted">No production authority, warranty, or governance guarantees are implied by this page.</p>
+    </div>
+    <h2>Live Surfaces</h2>
+    <ul>
+      <li><a href="/.well-known/openid-configuration">/.well-known/openid-configuration</a></li>
+      <li><a href="/.well-known/agent.json">/.well-known/agent.json</a></li>
+      <li><a href="/agent/capabilities">/agent/capabilities</a></li>
+      <li><a href="/agent/reputation">/agent/reputation</a></li>
+      <li><a href="/api/public/status">/api/public/status</a></li>
+      <li><a href="/docs">/docs</a></li>
+      <li><a href="https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer">GitHub repository</a></li>
+    </ul>
+  </main>
+</body>
+</html>
+"""
+    )
 
 
 @ui_bp.route("/screensaver")
