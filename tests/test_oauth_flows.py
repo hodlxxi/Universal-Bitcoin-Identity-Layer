@@ -23,6 +23,7 @@ import pytest
 
 from app.factory import create_app
 
+
 def _pkce_pair():
     verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
@@ -227,13 +228,16 @@ class TestAuthorizationFlow:
         with client.session_transaction() as sess:
             sess["logged_in_pubkey"] = "02" + "a" * 64
 
-        _, response = _authorize_with_pkce(client, {
-            "response_type": "code",
-            "client_id": registered_client["client_id"],
-            "redirect_uri": registered_client["redirect_uris"][0],
-            "state": "test_state",
-            "scope": "openid profile",
-        })
+        _, response = _authorize_with_pkce(
+            client,
+            {
+                "response_type": "code",
+                "client_id": registered_client["client_id"],
+                "redirect_uri": registered_client["redirect_uris"][0],
+                "state": "test_state",
+                "scope": "openid profile",
+            },
+        )
 
         # Should redirect to client with authorization code
         assert response.status_code == 302
@@ -245,11 +249,14 @@ class TestAuthorizationFlow:
         with client.session_transaction() as sess:
             sess["logged_in_pubkey"] = "02" + "a" * 64
 
-        _, response = _authorize_with_pkce(client, {
-            "response_type": "code",
-            "client_id": registered_client["client_id"],
-            "redirect_uri": "https://evil.com/callback",
-        })
+        _, response = _authorize_with_pkce(
+            client,
+            {
+                "response_type": "code",
+                "client_id": registered_client["client_id"],
+                "redirect_uri": "https://evil.com/callback",
+            },
+        )
 
         assert response.status_code == 400
         data = json.loads(response.data)
@@ -432,11 +439,14 @@ class TestOAuthErrorLeakage:
         with client.session_transaction() as sess:
             sess["logged_in_pubkey"] = "02" + "d" * 64
 
-        verifier, auth_response = _authorize_with_pkce(client, {
-            "response_type": "code",
-            "client_id": registered_client["client_id"],
-            "redirect_uri": registered_client["redirect_uris"][0],
-        })
+        verifier, auth_response = _authorize_with_pkce(
+            client,
+            {
+                "response_type": "code",
+                "client_id": registered_client["client_id"],
+                "redirect_uri": registered_client["redirect_uris"][0],
+            },
+        )
         code = auth_response.location.split("code=")[1].split("&")[0]
 
         def _boom(*_args, **_kwargs):
@@ -471,11 +481,14 @@ class TestTokenEndpoint:
         with client.session_transaction() as sess:
             sess["logged_in_pubkey"] = "02" + "a" * 64
 
-        verifier, auth_response = _authorize_with_pkce(client, {
-            "response_type": "code",
-            "client_id": registered_client["client_id"],
-            "redirect_uri": registered_client["redirect_uris"][0],
-        })
+        verifier, auth_response = _authorize_with_pkce(
+            client,
+            {
+                "response_type": "code",
+                "client_id": registered_client["client_id"],
+                "redirect_uri": registered_client["redirect_uris"][0],
+            },
+        )
 
         code = auth_response.location.split("code=")[1].split("&")[0]
 
@@ -524,11 +537,14 @@ class TestTokenEndpoint:
         with client.session_transaction() as sess:
             sess["logged_in_pubkey"] = "02" + "a" * 64
 
-        verifier, auth_response = _authorize_with_pkce(client, {
-            "response_type": "code",
-            "client_id": registered_client["client_id"],
-            "redirect_uri": registered_client["redirect_uris"][0],
-        })
+        verifier, auth_response = _authorize_with_pkce(
+            client,
+            {
+                "response_type": "code",
+                "client_id": registered_client["client_id"],
+                "redirect_uri": registered_client["redirect_uris"][0],
+            },
+        )
 
         code = auth_response.location.split("code=")[1].split("&")[0]
 
@@ -573,11 +589,14 @@ class TestTokenIntrospection:
         with client.session_transaction() as sess:
             sess["logged_in_pubkey"] = "02" + "a" * 64
 
-        verifier, auth_response = _authorize_with_pkce(client, {
-            "response_type": "code",
-            "client_id": registered_client["client_id"],
-            "redirect_uri": registered_client["redirect_uris"][0],
-        })
+        verifier, auth_response = _authorize_with_pkce(
+            client,
+            {
+                "response_type": "code",
+                "client_id": registered_client["client_id"],
+                "redirect_uri": registered_client["redirect_uris"][0],
+            },
+        )
 
         code = auth_response.location.split("code=")[1]
 

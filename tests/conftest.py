@@ -36,6 +36,8 @@ def client(app):
 
 # Set test environment before importing app
 os.environ["FLASK_ENV"] = "testing"
+os.environ.setdefault("DISABLE_FORCE_HTTPS", "1")
+os.environ.setdefault("FLASK_SECRET_KEY", "test-secret-for-pytest")
 os.environ["FLASK_SECRET_KEY"] = "test-secret-key-for-testing-only"
 os.environ["JWT_SECRET"] = "test-jwt-secret"
 os.environ["RPC_HOST"] = "localhost"

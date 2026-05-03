@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Generate an auditable Flask route inventory and flag duplicate path+method ownership."""
+
 from collections import defaultdict
 import json
 import sys
@@ -50,11 +51,13 @@ def main():
         for m in methods:
             by_method_path[(m, rule.rule)].append(endpoint)
 
-    duplicates = {
-        f"{m} {p}": owners for (m, p), owners in sorted(by_method_path.items()) if len(owners) > 1
-    }
+    duplicates = {f"{m} {p}": owners for (m, p), owners in sorted(by_method_path.items()) if len(owners) > 1}
 
-    out = {"route_count": len(rows), "routes": sorted(rows, key=lambda r: (r["path"], ",".join(r["methods"]))), "duplicates": duplicates}
+    out = {
+        "route_count": len(rows),
+        "routes": sorted(rows, key=lambda r: (r["path"], ",".join(r["methods"]))),
+        "duplicates": duplicates,
+    }
     print(json.dumps(out, indent=2, sort_keys=False))
 
 

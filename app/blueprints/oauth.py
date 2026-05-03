@@ -370,7 +370,9 @@ def token():
         if not code_verifier:
             delete_oauth_code(code)
             return jsonify({"error": "invalid_request", "error_description": "code_verifier required"}), 400
-        if not validate_pkce(code_data["code_challenge"], code_verifier, code_data.get("code_challenge_method", "S256")):
+        if not validate_pkce(
+            code_data["code_challenge"], code_verifier, code_data.get("code_challenge_method", "S256")
+        ):
             delete_oauth_code(code)
             audit_logger.log_event(
                 "oauth.token_failed", reason="pkce_validation_failed", client_id=client_id, ip=request.remote_addr

@@ -74,7 +74,6 @@ def publish_nostr_event(event: dict[str, Any], *, dry_run: bool = True) -> dict[
     raise NotImplementedError("Live Nostr publish transport/signing is not implemented yet")
 
 
-
 def configured_relays_from_env(env_value: str | None) -> list[str]:
     """Parse NOSTR_RELAYS-style comma-separated relay URLs."""
     if not env_value:
