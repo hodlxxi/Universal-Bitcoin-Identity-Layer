@@ -1,4 +1,5 @@
-import hashlib, base64
+import base64
+import hashlib
 
 
 def test_pkce_required_on_authorize(client):
