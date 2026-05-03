@@ -5,6 +5,7 @@ Implements OAuth 2.0 and OpenID Connect flows with PKCE.
 """
 
 import logging
+import hmac
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -195,7 +196,7 @@ def authorize():
     scope = request.args.get("scope", "openid profile")
     state = request.args.get("state")
     code_challenge = request.args.get("code_challenge")
-    code_challenge_method = request.args.get("code_challenge_method", "S256")
+    code_challenge_method = (request.args.get("code_challenge_method") or "").upper()
 
     # Validate required parameters
     if not all([response_type, client_id, redirect_uri]):
@@ -208,6 +209,11 @@ def authorize():
             ),
             400,
         )
+
+    if not code_challenge:
+        return jsonify({"error": "invalid_request", "error_description": "code_challenge is required"}), 400
+    if code_challenge_method != "S256":
+        return jsonify({"error": "invalid_request", "error_description": "code_challenge_method must be S256"}), 400
 
     try:
         # Validate client
@@ -329,7 +335,7 @@ def token():
                 client = _get_oauth_client(client_id)
             except Exception:
                 pass
-        if not client or client.get("client_secret") != client_secret:
+        if not client or not hmac.compare_digest(str(client.get("client_secret", "")), str(client_secret or "")):
             audit_logger.log_event(
                 "oauth.token_failed", reason="invalid_client", client_id=client_id, ip=request.remote_addr
             )
@@ -361,23 +367,17 @@ def token():
             delete_oauth_code(code)
             return jsonify({"error": "invalid_grant", "error_description": "Redirect URI mismatch"}), 400
 
-        # Validate PKCE if used
-        if code_data.get("code_challenge"):
-            if not code_verifier:
-                delete_oauth_code(code)
-                return (
-                    jsonify({"error": "invalid_request", "error_description": "code_verifier required for PKCE"}),
-                    400,
-                )
-
-            if not validate_pkce(
-                code_data["code_challenge"], code_verifier, code_data.get("code_challenge_method", "S256")
-            ):
-                delete_oauth_code(code)
-                audit_logger.log_event(
-                    "oauth.token_failed", reason="pkce_validation_failed", client_id=client_id, ip=request.remote_addr
-                )
-                return jsonify({"error": "invalid_grant", "error_description": "PKCE validation failed"}), 400
+        if not code_verifier:
+            delete_oauth_code(code)
+            return jsonify({"error": "invalid_request", "error_description": "code_verifier required"}), 400
+        if not validate_pkce(
+            code_data["code_challenge"], code_verifier, code_data.get("code_challenge_method", "S256")
+        ):
+            delete_oauth_code(code)
+            audit_logger.log_event(
+                "oauth.token_failed", reason="pkce_validation_failed", client_id=client_id, ip=request.remote_addr
+            )
+            return jsonify({"error": "invalid_grant", "error_description": "PKCE validation failed"}), 400
 
         # Code is valid - delete it (one-time use)
         delete_oauth_code(code)

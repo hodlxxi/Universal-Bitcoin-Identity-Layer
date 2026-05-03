@@ -24,6 +24,20 @@ import pytest
 from app.factory import create_app
 
 
+def _pkce_pair():
+    verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    return verifier, challenge
+
+
+def _authorize_with_pkce(client, query: dict):
+    verifier, challenge = _pkce_pair()
+    q = dict(query)
+    q["code_challenge"] = challenge
+    q["code_challenge_method"] = "S256"
+    return verifier, client.get("/oauth/authorize", query_string=q)
+
+
 @pytest.fixture
 def app():
     """Create test application."""
@@ -199,6 +213,8 @@ class TestAuthorizationFlow:
                 "client_id": registered_client["client_id"],
                 "redirect_uri": registered_client["redirect_uris"][0],
                 "state": "random_state",
+                "code_challenge": "abc123",
+                "code_challenge_method": "S256",
             },
         )
 
@@ -212,9 +228,9 @@ class TestAuthorizationFlow:
         with client.session_transaction() as sess:
             sess["logged_in_pubkey"] = "02" + "a" * 64
 
-        response = client.get(
-            "/oauth/authorize",
-            query_string={
+        _, response = _authorize_with_pkce(
+            client,
+            {
                 "response_type": "code",
                 "client_id": registered_client["client_id"],
                 "redirect_uri": registered_client["redirect_uris"][0],
@@ -233,9 +249,9 @@ class TestAuthorizationFlow:
         with client.session_transaction() as sess:
             sess["logged_in_pubkey"] = "02" + "a" * 64
 
-        response = client.get(
-            "/oauth/authorize",
-            query_string={
+        _, response = _authorize_with_pkce(
+            client,
+            {
                 "response_type": "code",
                 "client_id": registered_client["client_id"],
                 "redirect_uri": "https://evil.com/callback",
@@ -254,6 +270,8 @@ class TestAuthorizationFlow:
                 "response_type": "token",  # Implicit flow not supported
                 "client_id": registered_client["client_id"],
                 "redirect_uri": registered_client["redirect_uris"][0],
+                "code_challenge": "abc123",
+                "code_challenge_method": "S256",
             },
         )
 
@@ -421,9 +439,9 @@ class TestOAuthErrorLeakage:
         with client.session_transaction() as sess:
             sess["logged_in_pubkey"] = "02" + "d" * 64
 
-        auth_response = client.get(
-            "/oauth/authorize",
-            query_string={
+        verifier, auth_response = _authorize_with_pkce(
+            client,
+            {
                 "response_type": "code",
                 "client_id": registered_client["client_id"],
                 "redirect_uri": registered_client["redirect_uris"][0],
@@ -444,6 +462,7 @@ class TestOAuthErrorLeakage:
                 "redirect_uri": registered_client["redirect_uris"][0],
                 "client_id": registered_client["client_id"],
                 "client_secret": registered_client["client_secret"],
+                "code_verifier": verifier,
             },
         )
 
@@ -462,9 +481,9 @@ class TestTokenEndpoint:
         with client.session_transaction() as sess:
             sess["logged_in_pubkey"] = "02" + "a" * 64
 
-        auth_response = client.get(
-            "/oauth/authorize",
-            query_string={
+        verifier, auth_response = _authorize_with_pkce(
+            client,
+            {
                 "response_type": "code",
                 "client_id": registered_client["client_id"],
                 "redirect_uri": registered_client["redirect_uris"][0],
@@ -482,6 +501,7 @@ class TestTokenEndpoint:
                 "redirect_uri": registered_client["redirect_uris"][0],
                 "client_id": registered_client["client_id"],
                 "client_secret": registered_client["client_secret"],
+                "code_verifier": verifier,
             },
         )
 
@@ -517,9 +537,9 @@ class TestTokenEndpoint:
         with client.session_transaction() as sess:
             sess["logged_in_pubkey"] = "02" + "a" * 64
 
-        auth_response = client.get(
-            "/oauth/authorize",
-            query_string={
+        verifier, auth_response = _authorize_with_pkce(
+            client,
+            {
                 "response_type": "code",
                 "client_id": registered_client["client_id"],
                 "redirect_uri": registered_client["redirect_uris"][0],
@@ -537,6 +557,7 @@ class TestTokenEndpoint:
                 "redirect_uri": registered_client["redirect_uris"][0],
                 "client_id": registered_client["client_id"],
                 "client_secret": registered_client["client_secret"],
+                "code_verifier": verifier,
             },
         )
 
@@ -568,9 +589,9 @@ class TestTokenIntrospection:
         with client.session_transaction() as sess:
             sess["logged_in_pubkey"] = "02" + "a" * 64
 
-        auth_response = client.get(
-            "/oauth/authorize",
-            query_string={
+        verifier, auth_response = _authorize_with_pkce(
+            client,
+            {
                 "response_type": "code",
                 "client_id": registered_client["client_id"],
                 "redirect_uri": registered_client["redirect_uris"][0],
@@ -587,6 +608,7 @@ class TestTokenIntrospection:
                 "redirect_uri": registered_client["redirect_uris"][0],
                 "client_id": registered_client["client_id"],
                 "client_secret": registered_client["client_secret"],
+                "code_verifier": verifier,
             },
         )
 

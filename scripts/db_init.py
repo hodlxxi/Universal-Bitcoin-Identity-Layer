@@ -5,6 +5,7 @@ Database initialization script for HODLXXI.
 This script initializes the database and creates all tables.
 For production, use Alembic migrations instead.
 """
+
 import os
 import sys
 
