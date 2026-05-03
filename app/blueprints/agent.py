@@ -21,6 +21,7 @@ from app.models import AgentEvent, AgentJob
 from app.payments.ln import check_invoice_paid, create_invoice
 from app.structured_logging import log_event
 from app.services.covenant_visualizer import CovenantInputError, visualize_covenant
+from app.services.nostr_reports import configured_relays_from_env
 from app.services.trust_surface import (
     DEFAULT_AGENT_ID,
     DEFAULT_COVENANT_ID,
@@ -1311,8 +1312,17 @@ def verify_report_page(report_id: str):
 
 @agent_bp.get("/verify/nostr/<event_id>")
 def verify_nostr_page(event_id: str):
+    relays = configured_relays_from_env(os.getenv("NOSTR_RELAYS"))
+    verification = {
+        "status": "pending",
+        "verified": False,
+        "reason": "relay_transport_not_implemented",
+        "event_id": event_id,
+        "configured_relays": relays,
+    }
     return render_template(
         "agent/verify_nostr.html",
         event_id=event_id,
         trust_summary=build_trust_summary(DEFAULT_AGENT_ID),
+        verification=verification,
     )
