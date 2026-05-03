@@ -137,6 +137,8 @@ class TestOAuthEndpoints:
             "response_type": "code",
             "scope": "openid profile",
             "state": "random_state_123",
+            "code_challenge": "abc123",
+            "code_challenge_method": "S256",
         }
 
         response = client.get("/oauth/authorize", query_string=params)
