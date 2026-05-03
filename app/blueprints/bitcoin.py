@@ -10,7 +10,7 @@ import re
 import time
 import uuid
 from decimal import Decimal
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -41,6 +41,18 @@ bitcoin_bp = Blueprint("bitcoin", __name__)
 
 RPC_RATE_LIMIT = "30 per minute"
 
+SAFE_RPC_METHODS: dict[str, dict[str, Any]] = {
+    "getblockchaininfo": {"call": lambda rpc, _args: rpc.getblockchaininfo(), "max_args": 0},
+    "getblockcount": {"call": lambda rpc, _args: rpc.getblockcount(), "max_args": 0},
+    "getbestblockhash": {"call": lambda rpc, _args: rpc.getbestblockhash(), "max_args": 0},
+    "getmempoolinfo": {"call": lambda rpc, _args: rpc.getmempoolinfo(), "max_args": 0},
+    "getnetworkinfo": {"call": lambda rpc, _args: rpc.getnetworkinfo(), "max_args": 0},
+    "uptime": {"call": lambda rpc, _args: rpc.uptime(), "max_args": 0},
+    "getwalletinfo": {"call": lambda rpc, _args: rpc.getwalletinfo(), "max_args": 0},
+    "getbalance": {"call": lambda rpc, args: rpc.getbalance(*args), "max_args": 3},
+    "listdescriptors": {"call": lambda rpc, _args: rpc.listdescriptors(), "max_args": 0},
+}
+
 
 @bitcoin_bp.route("/rpc/<cmd>", methods=["GET"])
 @limiter.limit(RPC_RATE_LIMIT)
@@ -58,26 +70,17 @@ def rpc_command(cmd: str):
     Returns:
         JSON with RPC response
     """
-    # Whitelist of safe read-only commands
-    SAFE_COMMANDS = {
-        "getblockchaininfo",
-        "getblockcount",
-        "getbestblockhash",
-        "getmempoolinfo",
-        "getnetworkinfo",
-        "uptime",
-        "getwalletinfo",
-        "getbalance",
-        "listdescriptors",
-    }
-
-    if cmd not in SAFE_COMMANDS:
+    method = SAFE_RPC_METHODS.get(cmd)
+    if method is None:
         audit_logger.log_event("bitcoin.rpc_blocked", command=cmd, ip=request.remote_addr)
         return jsonify({"error": f"Command '{cmd}' not allowed"}), 403
+    params = request.args.getlist("p")
+    if len(params) > int(method.get("max_args", 0)):
+        return jsonify({"error": "too_many_arguments"}), 400
 
     try:
         rpc = get_rpc_connection()
-        result = getattr(rpc, cmd)()
+        result = method["call"](rpc, params)
 
         audit_logger.log_event("bitcoin.rpc_success", command=cmd, ip=request.remote_addr)
 

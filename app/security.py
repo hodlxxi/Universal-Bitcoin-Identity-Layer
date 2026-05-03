@@ -75,10 +75,14 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
         "font-src": "'self' https://fonts.googleapis.com https://fonts.gstatic.com",
     }
     if Talisman is not None:
+        hsts_enabled = bool(force_https)
         Talisman(
             app,
-            force_https=False,
-            strict_transport_security=False,
+            force_https=force_https,
+            strict_transport_security=hsts_enabled,
+            strict_transport_security_preload=hsts_enabled,
+            strict_transport_security_include_subdomains=hsts_enabled,
+            strict_transport_security_max_age=31536000 if hsts_enabled else 0,
             frame_options=None,
             x_xss_protection=False,
             force_file_save=False,
