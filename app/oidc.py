@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 from typing import Mapping, Optional
 
 from flask import Blueprint, current_app, jsonify, request
@@ -39,7 +40,7 @@ def well_known_configuration():
             "covenant_create",
             "read_limited",
         ],
-        "code_challenge_methods_supported": ["S256", "plain"],
+        "code_challenge_methods_supported": ["S256"],
         "id_token_signing_alg_values_supported": ["RS256"],
         "subject_types_supported": ["public"],
     }
@@ -60,9 +61,8 @@ def validate_pkce(code_challenge: Optional[str], code_verifier: Optional[str], m
     Compatibility behavior:
       - normalize base64url padding
     """
-    # If no challenge was provided, treat as no PKCE required
     if not code_challenge:
-        return True
+        return False
     if not code_verifier:
         return False
 
@@ -75,12 +75,12 @@ def validate_pkce(code_challenge: Optional[str], code_verifier: Optional[str], m
         expected = str(challenge).rstrip("=")
         ver = str(verifier)
         if m == "PLAIN":
-            return ver == expected
+            return hmac.compare_digest(ver, expected)
         if m != "S256":
             return False
         digest = hashlib.sha256(ver.encode("utf-8")).digest()
         computed = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
-        return computed == expected
+        return hmac.compare_digest(computed, expected)
 
     return _check(code_challenge, code_verifier)
 
