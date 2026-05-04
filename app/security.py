@@ -19,6 +19,7 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for tests
 
 logger = logging.getLogger(__name__)
 
+
 def _redact_uri_for_log(uri: str | None) -> str:
     """Redact credentials from connection/storage URIs before logging."""
     if not uri:
@@ -46,7 +47,6 @@ def _redact_uri_for_log(uri: str | None) -> str:
             scheme, rest = raw.split("://", 1)
             return f"{scheme}://<redacted>@{rest.split('@', 1)[1]}"
         return raw
-
 
 
 limiter = Limiter(key_func=get_remote_address, storage_uri="memory://")
