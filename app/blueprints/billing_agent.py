@@ -3,6 +3,7 @@ OAuth client_id billing endpoints for Lightning PAYG.
 """
 
 import logging
+import os
 
 from flask import Blueprint, jsonify, request
 
@@ -12,6 +13,17 @@ from app.oauth_utils import require_oauth_token
 logger = logging.getLogger(__name__)
 
 billing_agent_bp = Blueprint("billing_agent", __name__)
+
+DEFAULT_AGENT_BILLING_MAX_AMOUNT_SATS = 100_000
+
+
+def _agent_billing_max_amount_sats() -> int:
+    raw = os.getenv("AGENT_BILLING_MAX_AMOUNT_SATS", str(DEFAULT_AGENT_BILLING_MAX_AMOUNT_SATS))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_AGENT_BILLING_MAX_AMOUNT_SATS
+    return max(1, value)
 
 
 @billing_agent_bp.route("/api/billing/agent/create-invoice", methods=["POST"])
@@ -27,6 +39,19 @@ def create_agent_invoice():
         return jsonify({"ok": False, "error": "amount_sats must be an integer"}), 400
     if amount_sats <= 0:
         return jsonify({"ok": False, "error": "amount_sats must be > 0"}), 400
+
+    max_amount_sats = _agent_billing_max_amount_sats()
+    if amount_sats > max_amount_sats:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "amount_sats exceeds maximum",
+                    "max_amount_sats": max_amount_sats,
+                }
+            ),
+            400,
+        )
 
     client_id = request.oauth_client_id
     memo = f"HODLXXI PAYG topup for client {client_id}"
