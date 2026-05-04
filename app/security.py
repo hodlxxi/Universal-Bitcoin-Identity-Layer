@@ -19,6 +19,36 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for tests
 
 logger = logging.getLogger(__name__)
 
+def _redact_uri_for_log(uri: str | None) -> str:
+    """Redact credentials from connection/storage URIs before logging."""
+    if not uri:
+        return ""
+    raw = str(uri)
+    try:
+        from urllib.parse import urlsplit, urlunsplit
+
+        parts = urlsplit(raw)
+        if not parts.netloc:
+            return raw
+
+        host = parts.hostname or ""
+        port = f":{parts.port}" if parts.port else ""
+
+        if parts.username or "@" in parts.netloc:
+            user = parts.username or "user"
+            netloc = f"{user}:<redacted>@{host}{port}"
+        else:
+            netloc = parts.netloc
+
+        return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
+    except Exception:
+        if "://" in raw and "@" in raw:
+            scheme, rest = raw.split("://", 1)
+            return f"{scheme}://<redacted>@{rest.split('@', 1)[1]}"
+        return raw
+
+
+
 limiter = Limiter(key_func=get_remote_address, storage_uri="memory://")
 
 
@@ -125,7 +155,7 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
         except Exception:
             pass
 
-    logger.info(f"Rate limiter initialized with {storage_uri} storage (limit: {limit_default})")
+    logger.info(f"Rate limiter initialized with {_redact_uri_for_log(storage_uri)} storage (limit: {limit_default})")
 
     log_level = str(cfg.get("LOG_LEVEL", "INFO")).upper()
     level = getattr(logging, log_level, logging.INFO)
@@ -184,7 +214,7 @@ def init_rate_limiter(app):
 
     try:
         app.logger.info(
-            f"Rate limiter initialized with {storage_uri} storage (limit: {default_limit}), enabled={enabled}"
+            f"Rate limiter initialized with {_redact_uri_for_log(storage_uri)} storage (limit: {default_limit}), enabled={enabled}"
         )
     except Exception:
         pass
