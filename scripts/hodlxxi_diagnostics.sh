@@ -32,6 +32,23 @@ subsection() {
   echo "${BOLD}${YELLOW}-- $1${RESET}"
 }
 
+
+redact_secrets() {
+  python3 -c 'import re,sys
+s=sys.stdin.read()
+# URI credentials: postgresql://user:pass@host, redis://user:pass@host
+s=re.sub(r"(?i)((?:postgresql|redis)(?:\+\w+)?://[^:\s/@\"]+):([^@\s\"]+)@", r"\1:<redacted>@", s)
+
+# Shell/env key=value lines, including export KEY=value
+secret_key=r"[A-Z0-9_]*(?:SECRET|PASSWORD|PASS|TOKEN|KEY|DATABASE_URL|POSTGRES_URL|SQLALCHEMY_DATABASE_URI|REDIS_URL|REDIS_DSN|RATELIMIT_STORAGE_URL|RPC_PASSWORD|REDIS_PASSWORD|MACAROON|PRIVKEY|PRIVATE)[A-Z0-9_]*"
+s=re.sub(rf"(?im)^(\s*(?:export\s+)?{secret_key}\s*=\s*)[^\n#]*", r"\1<redacted>", s)
+
+# systemd Environment=KEY=value and Environment=\"KEY=value\"
+s=re.sub(rf"(?i)(Environment=\"?{secret_key}=)[^\"\s]+(\"?)", r"\1<redacted>\2", s)
+
+print(s, end="")'
+}
+
 # 0. Basic context
 section "0. Context"
 echo "App:        $APP_NAME"
@@ -71,21 +88,21 @@ df -hT || true
 section "2. Services & Logs"
 
 subsection "2.1 Systemd status (app + core services)"
-systemctl status "$SERVICE_NAME" --no-pager || true
+systemctl status "$SERVICE_NAME" --no-pager 2>&1 | redact_secrets || true
 echo
-systemctl status nginx --no-pager || true
+systemctl status nginx --no-pager 2>&1 | redact_secrets || true
 echo
-systemctl status postgresql --no-pager || true
+systemctl status postgresql --no-pager 2>&1 | redact_secrets || true
 echo
-systemctl status redis-server --no-pager || true
+systemctl status redis-server --no-pager 2>&1 | redact_secrets || true
 
 subsection "2.2 Recent app logs (journalctl)"
-journalctl -u "$SERVICE_NAME" --no-pager --since "1 hour ago" | tail -n 200 || true
+journalctl -u "$SERVICE_NAME" --no-pager --since "1 hour ago" | tail -n 200 | redact_secrets || true
 
 subsection "2.3 Nginx error logs (last 100 lines)"
 NGINX_ERR="/var/log/nginx/error.log"
 if [ -f "$NGINX_ERR" ]; then
-  tail -n 100 "$NGINX_ERR" || true
+  tail -n 100 "$NGINX_ERR" | redact_secrets || true
 else
   echo "No $NGINX_ERR found."
 fi
@@ -114,7 +131,7 @@ if [ -f "$APP_DIR/.env" ]; then
   echo "Env file: $APP_DIR/.env"
   echo
   echo "# Showing only non-secret lines (filtered by keyword)..."
-  egrep -v 'SECRET|PASSWORD|PASS=|KEY=|TOKEN=' "$APP_DIR/.env" || true
+  redact_secrets < "$APP_DIR/.env" || true
 else
   echo "No $APP_DIR/.env found."
 fi
@@ -202,10 +219,10 @@ section "9. Nginx Access Stats (recent)"
 NGINX_ACCESS="/var/log/nginx/access.log"
 if [ -f "$NGINX_ACCESS" ]; then
   subsection "9.1 Top endpoints hit (last 1000 lines)"
-  tail -n 1000 "$NGINX_ACCESS" | awk '{print $7}' | sort | uniq -c | sort -nr | head -n 20 || true
+  tail -n 1000 "$NGINX_ACCESS" | redact_secrets | awk '{print $7}' | sort | uniq -c | sort -nr | head -n 20 || true
 
   subsection "9.2 Recent 50 lines"
-  tail -n 50 "$NGINX_ACCESS" || true
+  tail -n 50 "$NGINX_ACCESS" | redact_secrets || true
 else
   echo "No $NGINX_ACCESS found."
 fi
