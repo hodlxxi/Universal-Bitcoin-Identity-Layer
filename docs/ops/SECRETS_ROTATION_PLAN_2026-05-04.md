@@ -75,3 +75,27 @@ Run on production, but save only redacted variable names and file paths.
 - No raw secrets are committed.
 - Existing runtime stays green.
 - Rotation steps and rollback steps are explicit.
+
+## Production consolidation checkpoint — 2026-05-04
+
+Production systemd no longer reads `/srv/ubid/.env` as an `EnvironmentFile`.
+
+Current canonical production env source:
+
+- `/etc/hodlxxi/hodlxxi.env`
+
+Validation:
+
+- `systemctl show hodlxxi -p EnvironmentFiles` shows only `/etc/hodlxxi/hodlxxi.env`
+- `/health/ready`: ready
+- `/agent/chain/health`: `chain_ok=true`
+- `/agent/reputation`: 200
+- `/api/public/status`: BTC height present, LND active
+- OIDC metadata advertises `S256`
+- Recent serious error scan after successful consolidation: empty
+
+Rollback material retained:
+
+- `/srv/ubid/.env`
+- timestamped backups of `/etc/hodlxxi/hodlxxi.env`
+- timestamped backups of `/srv/ubid/.env`
