@@ -184,8 +184,8 @@ def authorize():
         - redirect_uri: Redirect URI
         - scope: Requested scopes
         - state: CSRF protection token
-        - code_challenge: PKCE challenge (S256 or plain)
-        - code_challenge_method: "S256" or "plain"
+        - code_challenge: PKCE challenge (S256)
+        - code_challenge_method: "S256"
 
     Returns:
         Redirect to client redirect_uri with authorization code or error
@@ -297,7 +297,7 @@ def token():
         - redirect_uri: Redirect URI (must match authorization)
         - client_id: Client identifier
         - client_secret: Client secret
-        - code_verifier: PKCE verifier (if PKCE was used)
+        - code_verifier: PKCE verifier
 
     Returns:
         JSON with access_token, id_token, and token metadata
@@ -437,7 +437,7 @@ def introspect():
     # Validate client
     try:
         client = get_oauth_client(client_id)
-        if not client or client.get("client_secret") != client_secret:
+        if not client or not hmac.compare_digest(str(client.get("client_secret", "")), str(client_secret or "")):
             return jsonify({"active": False}), 200
     except Exception:
         return jsonify({"active": False}), 200
