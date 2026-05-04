@@ -7,10 +7,48 @@
 
 set -e
 
-# Load environment variables
-if [ -f .env ]; then
-    export $(cat .env | grep -v '^#' | xargs)
-fi
+# Load database environment variables safely
+load_db_env() {
+    if [ ! -f .env ]; then
+        return 0
+    fi
+
+    # Parse .env without shell-expanding arbitrary file contents.
+    # Only export DB_* values needed by backup/restore.
+    eval "$(
+        python3 - <<'PYENV'
+from pathlib import Path
+from urllib.parse import urlparse, unquote
+import shlex
+
+env = {}
+for raw in Path(".env").read_text().splitlines():
+    line = raw.strip()
+    if not line or line.startswith("#") or "=" not in line:
+        continue
+    key, value = line.split("=", 1)
+    key = key.strip()
+    value = value.strip().strip('"').strip("'")
+    env[key] = value
+
+url = env.get("DATABASE_URL", "")
+if url and url.startswith(("postgresql://", "postgresql+psycopg2://")):
+    parsed = urlparse(url)
+    env.setdefault("DB_HOST", parsed.hostname or "localhost")
+    env.setdefault("DB_PORT", str(parsed.port or 5432))
+    env.setdefault("DB_NAME", (parsed.path or "/hodlxxi").lstrip("/"))
+    env.setdefault("DB_USER", unquote(parsed.username or "hodlxxi"))
+    env.setdefault("DB_PASSWORD", unquote(parsed.password or ""))
+
+allowed = ("DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD")
+for key in allowed:
+    if key in env and env[key] != "":
+        print(f"export {key}={shlex.quote(env[key])}")
+PYENV
+    )"
+}
+
+load_db_env
 
 # Configuration
 BACKUP_DIR="${1:-./backups}"
