@@ -8,6 +8,7 @@ import logging
 import hmac
 import secrets
 import time
+from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlsplit
@@ -100,6 +101,47 @@ except Exception:
     pass
 
 
+def _is_loopback_host(hostname: str | None) -> bool:
+    return hostname in {"localhost", "127.0.0.1", "::1"}
+
+
+def _validate_redirect_uris(redirect_uris):
+    if not redirect_uris or not isinstance(redirect_uris, list):
+        return None, "redirect_uris must be a non-empty array"
+
+    cleaned = []
+    for uri in redirect_uris:
+        if not isinstance(uri, str):
+            return None, "redirect_uris must contain only strings"
+
+        uri = uri.strip()
+        if not uri:
+            return None, "redirect_uris must not contain empty values"
+
+        if "*" in uri:
+            return None, "redirect_uris must not contain wildcards"
+
+        parsed = urlparse(uri)
+        if parsed.scheme not in {"https", "http"}:
+            return None, "redirect_uris must use https, except localhost http for development"
+
+        if not parsed.hostname:
+            return None, "redirect_uris must include a valid host"
+
+        if parsed.username or parsed.password:
+            return None, "redirect_uris must not include userinfo"
+
+        if parsed.fragment:
+            return None, "redirect_uris must not include fragments"
+
+        if parsed.scheme == "http" and not _is_loopback_host(parsed.hostname):
+            return None, "http redirect_uris are only allowed for localhost"
+
+        cleaned.append(uri)
+
+    return cleaned, None
+
+
 @oauth_bp.route("/register", methods=["POST"])
 @limiter.limit(OAUTH_REGISTER_RATE_LIMIT)
 def register_client():
@@ -120,9 +162,9 @@ def register_client():
     if not data or not data.get("client_name"):
         return jsonify({"error": "client_name is required"}), 400
 
-    redirect_uris = data.get("redirect_uris", [])
-    if not redirect_uris or not isinstance(redirect_uris, list):
-        return jsonify({"error": "redirect_uris must be a non-empty array"}), 400
+    redirect_uris, redirect_error = _validate_redirect_uris(data.get("redirect_uris", []))
+    if redirect_error:
+        return jsonify({"error": redirect_error}), 400
 
     try:
         # Generate client credentials
