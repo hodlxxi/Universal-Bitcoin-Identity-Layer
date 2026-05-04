@@ -3007,7 +3007,6 @@ def rpc_dispatch(cmd):
         "listaddressgroupings": lambda: rpc.listaddressgroupings(),
         "listlabels": lambda: rpc.listlabels(),
         "getbalance": lambda: rpc.getbalance(),
-        "rescanblockchain": lambda: rpc.rescanblockchain(),
     }
     if cmd not in allowed:
         return jsonify({"error": f"Unsupported RPC method `{cmd}`"}), 400
