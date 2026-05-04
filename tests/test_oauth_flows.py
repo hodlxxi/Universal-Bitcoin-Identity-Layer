@@ -779,3 +779,72 @@ class TestJWTTokens:
         header = jwt.get_unverified_header(id_token)
         assert header.get("alg") == "RS256"
         assert "kid" in header
+
+
+def test_register_client_rejects_unsafe_redirect_uri_schemes(client):
+    bad_uris = [
+        "javascript:alert(1)",
+        "data:text/html,pwn",
+        "file:///tmp/callback",
+        "ftp://example.com/callback",
+    ]
+
+    for uri in bad_uris:
+        response = client.post(
+            "/oauth/register",
+            json={"client_name": "Bad App", "redirect_uris": [uri]},
+        )
+
+        assert response.status_code == 400
+        assert "redirect_uris" in response.get_json()["error"]
+
+
+def test_register_client_rejects_wildcard_empty_userinfo_and_fragment_redirects(client):
+    bad_uris = [
+        "https://*.example.com/callback",
+        "",
+        "   ",
+        "https://user:pass@example.com/callback",
+        "https://example.com/callback#token",
+    ]
+
+    for uri in bad_uris:
+        response = client.post(
+            "/oauth/register",
+            json={"client_name": "Bad App", "redirect_uris": [uri]},
+        )
+
+        assert response.status_code == 400
+        assert "redirect_uris" in response.get_json()["error"]
+
+
+def test_register_client_allows_https_and_localhost_http_redirects(client):
+    response = client.post(
+        "/oauth/register",
+        json={
+            "client_name": "Good App",
+            "redirect_uris": [
+                "https://app.example.com/callback",
+                "http://localhost:3000/callback",
+                "http://127.0.0.1:3000/callback",
+            ],
+        },
+    )
+
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data["redirect_uris"] == [
+        "https://app.example.com/callback",
+        "http://localhost:3000/callback",
+        "http://127.0.0.1:3000/callback",
+    ]
+
+
+def test_register_client_rejects_non_loopback_http_redirect_uri(client):
+    response = client.post(
+        "/oauth/register",
+        json={"client_name": "Bad App", "redirect_uris": ["http://example.com/callback"]},
+    )
+
+    assert response.status_code == 400
+    assert "redirect_uris" in response.get_json()["error"]
