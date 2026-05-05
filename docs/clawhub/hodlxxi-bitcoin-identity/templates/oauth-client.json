@@ -1,0 +1,12 @@
+{
+  "client_name": "Example Public PKCE Client",
+  "redirect_uris": [
+    "http://127.0.0.1:8080/callback"
+  ],
+  "scopes": [
+    "openid",
+    "profile"
+  ],
+  "token_endpoint_auth_method": "none",
+  "notes": "Example only. Register clients only with explicit operator approval. Do not place secrets in this file."
+}
