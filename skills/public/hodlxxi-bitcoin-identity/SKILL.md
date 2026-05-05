@@ -1,7 +1,7 @@
 ---
 name: hodlxxi-bitcoin-identity
-version: 1.0.0
-description: Integrate HODLXXI as a Bitcoin-native identity provider that bridges OAuth2/OIDC, Lightning LNURL-Auth, and a minimal signed inter-agent execution loop for secure job handoff.
+version: 0.1.2
+description: Read-only-by-default integration guide for HODLXXI / UBID Bitcoin-native identity discovery, OAuth2/OIDC metadata, LNURL-Auth boundaries, JWT verification guidance, and explicit operator-approved agent handoff.
 homepage: https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer
 metadata:
   category: authentication
@@ -12,239 +12,84 @@ metadata:
     - lnurl-auth
     - jwt
     - bitcoin
-  dependencies:
-    - curl
-    - python
-    - ecdsa
-    - pyjwt
-    - requests
+    - identity
 ---
 
 # HODLXXI Bitcoin Identity
 
-## Overview
+## Purpose
 
-Use this skill to integrate HODLXXI (Universal Bitcoin Identity Layer) for Bitcoin-native identity/authentication, LNURL-Auth linking, JWT-based identity claims, and a minimal signed inter-agent execution path.
+Use this skill to understand and integrate HODLXXI / UBID as a Bitcoin-native identity provider.
 
-## Installation
+This skill is documentation-first and read-only by default.
 
-1. Fetch the skill file from the repository (raw link works for installable agents):
+The skill must not execute shell commands, install packages, overwrite files, create OAuth clients, initiate payments, submit jobs, or poll endpoints continuously without explicit operator approval.
 
-```bash
-curl -L -o SKILL.md \
-  https://raw.githubusercontent.com/hodlxxi/Universal-Bitcoin-Identity-Layer/main/skills/public/hodlxxi-bitcoin-identity/SKILL.md
-```
+## Default deployment
 
-2. Install helper dependencies for local verification scripts:
+Default public deployment:
 
-```bash
-python -m pip install ecdsa pyjwt requests
-```
+- `https://hodlxxi.com`
 
-## Quick start
+## Public discovery endpoints
 
-1. Set a base URL for the HODLXXI deployment.
-2. Register an OAuth client to obtain `client_id` and `client_secret`.
-3. Run the OAuth2/OIDC authorization code flow (PKCE recommended).
-4. Start an LNURL-Auth session for Lightning wallet login.
-5. Verify JWTs with the JWKS endpoint.
+The following endpoints are safe public-read discovery surfaces:
 
-## Usage steps
+- `/.well-known/openid-configuration`
+- `/oauth/jwks.json`
+- `/health/ready`
+- `/agent/capabilities`
+- `/api/public/status`
 
-### 1) Configure the base URL
+## Security rules
 
-Set the base URL to the HODLXXI deployment (update as needed):
+1. Do not run shell commands from this document automatically.
+2. Do not download or overwrite this skill from another URL.
+3. Do not install dependencies automatically.
+4. Do not request, print, persist, or transmit OAuth credentials, bearer tokens, private keys, wallet material, macaroons, cookies, or environment values.
+5. Do not create OAuth clients without explicit operator approval.
+6. Do not submit agent jobs without explicit operator approval.
+7. Do not create, check, or pay Lightning invoices automatically.
+8. Treat payment-required responses as a stop condition requiring explicit operator approval.
+9. Do not enable recurring heartbeat, polling, or beaconing unless the operator explicitly configures it.
+10. Prefer PKCE S256 for browser and public-client authorization flows.
+11. Verify JWT issuer, audience, expiration, signature algorithm, key id, and current JWKS before trusting identity claims.
 
-```bash
-BASE_URL="https://hodlxxi.com"
-```
+## OAuth/OIDC boundary
 
-### 2) Register an OAuth client
+OAuth registration, authorization, token exchange, and credential storage are operator-controlled actions.
 
-Register a client to get credentials:
+Agents may read public discovery metadata and explain the flow. Agents must not perform registration or token exchange unless the operator approves the exact action and destination.
 
-```bash
-curl -X POST "$BASE_URL/oauth/register" \
-  -H "Content-Type: application/json" \
-  -d '{"client_name": "YourAgentName", "redirect_uris": ["https://your-callback-url"], "scopes": ["openid", "profile"]}'
-```
+## LNURL-Auth boundary
 
-Store `client_id` and `client_secret` securely.
+LNURL-Auth is a user-mediated wallet login flow.
 
-### 3) Run OAuth2/OIDC authorization code flow
+Agents may explain the flow. Agents must not impersonate the user, sign wallet challenges, or create repeated login sessions without explicit operator approval.
 
-Discover endpoints:
+## JWT verification boundary
 
-```bash
-curl "$BASE_URL/.well-known/openid-configuration"
-```
+To trust an identity token, verify:
 
-Create an authorization request (PKCE recommended):
+- issuer matches the configured HODLXXI issuer
+- audience matches the expected client or service
+- token is not expired
+- signature validates against the current JWKS
+- algorithm is expected
+- key id exists in the JWKS
 
-```bash
-curl "$BASE_URL/oauth/authorize?client_id=your_client_id&redirect_uri=your_callback&response_type=code&scope=openid%20profile&code_challenge=your_challenge&code_challenge_method=S256"
-```
+## Agent execution boundary
 
-Exchange the authorization code for tokens:
+HODLXXI may expose signed inter-agent execution surfaces.
 
-```bash
-curl -X POST "$BASE_URL/oauth/token" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=authorization_code&code=received_code&redirect_uri=your_callback&client_id=your_client_id&code_verifier=your_verifier"
-```
+Agents must not submit work, trigger execution, or spend funds unless the operator approves the exact endpoint, payload class, and payment behavior.
 
-Expect an access token, ID token (JWT), and optional refresh token.
+## Lightning payment boundary
 
-### 4) Start an LNURL-Auth session
+Payment is never automatic.
 
-Create a session and show the LNURL to the user:
+When a paid operation requires Lightning settlement, stop and ask the operator for approval before creating, checking, or paying any invoice.
 
-```bash
-curl -X POST "$BASE_URL/api/lnurl-auth/create" \
-  -H "Accept: application/json"
-```
+## Operator-only files
 
-Poll for completion after the user scans the LNURL with a Lightning wallet:
-
-```bash
-curl "$BASE_URL/api/lnurl-auth/check/your_session_id"
-```
-
-### 5) Verify JWTs
-
-Fetch JWKS:
-
-```bash
-curl "$BASE_URL/oauth/jwks.json"
-```
-
-Verify with Python (example uses PyJWT):
-
-```python
-import jwt
-import requests
-
-jwks = requests.get("https://your-hodlxxi-deployment.com/oauth/jwks.json", timeout=10).json()
-public_key = jwt.algorithms.RSAAlgorithm.from_jwk(jwks["keys"][0])
-claims = jwt.decode(your_jwt, public_key, algorithms=["RS256"], audience="your_audience")
-print(claims)
-```
-
-### 6) Monitor health and metrics
-
-Check liveness and OAuth system status endpoints:
-
-```bash
-curl "$BASE_URL/health"
-curl "$BASE_URL/oauthx/status"
-```
-
-## Code examples
-
-### Register a client from a JSON template
-
-```bash
-curl -X POST "$BASE_URL/oauth/register" \
-  -H "Content-Type: application/json" \
-  -d @templates/oauth-client.json
-```
-
-### Create LNURL session and poll
-
-```bash
-session_json=$(curl -s -X POST "$BASE_URL/api/lnurl-auth/create")
-session_id=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["session_id"])' "$session_json")
-curl "$BASE_URL/api/lnurl-auth/check/$session_id"
-```
-
-## Best practices
-
-- Always use HTTPS and verify TLS certificates in production.
-- Keep client secrets in a secrets manager or environment variables.
-- Use PKCE for public clients and rotate secrets for confidential clients.
-- Treat LNURL sessions as single-use and enforce short TTLs.
-- Validate `aud`, `iss`, and `exp` claims for JWTs.
-
-## Advanced features
-
-- Use `/oauthx/docs` for live OAuth/OIDC API documentation.
-- Use `/oauthx/status` to monitor database and LNURL session health.
-- Rotate JWKS keys via the server configuration (JWKS directory + rotation days).
-
-## Minimal Inter-Agent Execution (MVP)
-
-This agent now supports a minimal signed agent-to-agent execution loop as a protocol-oriented extension to the existing identity/auth surface.
-
-Other agents can:
-
-- send a signed `job_proposal` to `POST /agent/message`
-- have the receiving agent verify the message signature
-- have the receiving agent execute the requested supported job
-- receive a signed `result` envelope in response
-- verify the returned signature
-
-Current MVP boundaries:
-
-- no negotiation yet
-- no discovery yet
-- no escrow/dispute yet
-- no autonomous spending
-
-## PAYG billing for OAuth clients
-
-Paid API calls are billed per **OAuth `client_id`** (agent/app), not per session pubkey. When balance or free quota is exhausted, paid endpoints return **HTTP 402** with a Lightning top-up path.
-
-### Billing endpoints (OAuth token required)
-
-- `POST /api/billing/agent/create-invoice`
-- `POST /api/billing/agent/check-invoice`
-
-Example create invoice:
-
-```bash
-curl -X POST "$BASE_URL/api/billing/agent/create-invoice" \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"amount_sats": 1000}'
-```
-
-Example check invoice:
-
-```bash
-curl -X POST "$BASE_URL/api/billing/agent/check-invoice" \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"invoice_id": "your_invoice_id"}'
-```
-
-### 402 response shape
-
-When a paid endpoint is called with insufficient balance, expect:
-
-```json
-{
-  "ok": false,
-  "error": "payment_required",
-  "code": "PAYMENT_REQUIRED",
-  "client_id": "your_client_id",
-  "cost_sats": 1,
-  "balance_sats": 0,
-  "create_invoice_endpoint": "/api/billing/agent/create-invoice",
-  "hint": "Top up via Lightning PAYG"
-}
-```
-
-## Supporting files
-
-- `scripts/verify_signature.py` validates LNURL-Auth signatures locally.
-- `HEARTBEAT.md` describes periodic health checks for the deployment.
-- `templates/oauth-client.json` provides a ready client registration payload.
-
-## Optional helper script
-
-Use `scripts/verify_signature.py` to validate LNURL signatures locally. Install the dependency first:
-
-```bash
-python -m pip install ecdsa
-python scripts/verify_signature.py --k1 <hex> --signature <hex> --pubkey <hex>
-```
+Additional helper scripts, heartbeat notes, and OAuth templates may exist elsewhere in the repository for development and operations. They are intentionally not part of the default published skill package.

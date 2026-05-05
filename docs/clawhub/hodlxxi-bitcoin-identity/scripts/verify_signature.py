@@ -5,7 +5,6 @@ Usage:
   python scripts/verify_signature.py --k1 <hex> --signature <hex> --pubkey <hex>
 
 Install dependency:
-  pip install ecdsa
 """
 
 import argparse
@@ -33,7 +32,7 @@ def main() -> int:
         from ecdsa import SECP256k1, VerifyingKey
         from ecdsa.util import sigdecode_der, sigdecode_string
     except ImportError:
-        print("Missing dependency: install with 'pip install ecdsa'", file=sys.stderr)
+        print("Missing optional dependency: ecdsa. Install only in an isolated operator-approved development environment.", file=sys.stderr)
         return 2
 
     try:
