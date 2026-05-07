@@ -812,16 +812,28 @@ def api_public_status():
         if cache and (time.time() - cache.get("ts", 0)) < ttl:
             lnd = cache.get("data", {}) or {}
         else:
-            state = None
+            try:
+                timeout = float(os.getenv("PUBLIC_STATUS_LND_SYSTEMCTL_TIMEOUT", "2.0"))
+            except Exception:
+                timeout = 2.0
             try:
                 r = subprocess.run(
-                    ["systemctl", "is-active", "lnd.service"], capture_output=True, text=True, timeout=0.6
+                    ["systemctl", "is-active", "lnd.service"],
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
                 )
                 state = (r.stdout or "").strip() or (r.stderr or "").strip() or "unknown"
+                lnd = {"active": True if state == "active" else False, "state": state}
+                api_public_status._lnd_cache = {"ts": time.time(), "data": lnd}
             except Exception as e:
-                state = f"unknown:{e.__class__.__name__}"
-            lnd = {"active": True if state == "active" else False, "state": state}
-            api_public_status._lnd_cache = {"ts": time.time(), "data": lnd}
+                cached = (cache or {}).get("data") if isinstance(cache, dict) else None
+                if isinstance(cached, dict) and cached:
+                    lnd = dict(cached)
+                    lnd["cached"] = True
+                    lnd["cache_reason"] = e.__class__.__name__
+                else:
+                    lnd = {"active": False, "state": f"unknown:{e.__class__.__name__}"}
     except Exception as e:
         lnd = {"active": False, "state": f"unknown:{e.__class__.__name__}"}
 
