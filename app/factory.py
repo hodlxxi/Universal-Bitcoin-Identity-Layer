@@ -223,6 +223,12 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(billing_agent_bp)
     app.register_blueprint(agent_bp)
 
+    # Public status route: factory-native and lightweight.
+    # Must register before legacy_bridge so /api/public/status does not lazy-import app.app.
+    from app.blueprints.public_status import public_status_bp
+
+    app.register_blueprint(public_status_bp)
+
     # Public documentation routes
     from app.docs_routes import register_docs_routes
 
