@@ -861,6 +861,47 @@ def api_public_status():
 # /PUBLIC_STATUS_EXT_V3
 
 
+def _first_existing_path(candidates):
+    return next((path for path in candidates if path and os.path.exists(path)), None)
+
+
+def _resolve_lnd_status_cli_config():
+    """Resolve lncli config for /api/lnd/status.
+
+    Prefer canonical LND TLS naming while preserving read-only macaroon behavior
+    when LND_READONLY_MACAROON is explicitly configured.
+    """
+
+    lncli_bin = os.getenv("LND_LNCLI_BIN") or os.getenv("LNCLI_BIN") or "/usr/local/bin/lncli"
+    lnddir = os.getenv("LND_DIR") or os.getenv("LNCLI_LNDDIR") or "/var/lib/lnd"
+
+    tls = _first_existing_path(
+        [
+            os.getenv("LND_TLSCERTPATH", ""),
+            os.getenv("LND_TLS_CERT", ""),
+            "/srv/ubid/runtime/lnd/tls.cert",
+            f"{lnddir}/tls.cert",
+        ]
+    )
+    mac = _first_existing_path(
+        [
+            os.getenv("LND_READONLY_MACAROON", ""),
+            os.getenv("LND_MACAROONPATH", ""),
+            os.getenv("LND_MACAROON", ""),
+            "/srv/ubid/runtime/lnd/readonly.macaroon",
+            f"{lnddir}/data/chain/bitcoin/mainnet/readonly.macaroon",
+        ]
+    )
+
+    return {
+        "lncli_bin": lncli_bin,
+        "lnddir": lnddir,
+        "tls": tls,
+        "mac": mac,
+        "rpcserver": (os.getenv("LND_RPCSERVER") or "127.0.0.1:10009").strip(),
+    }
+
+
 # LND_STATUS_API_V1: wallet/channel stats (login + full only)
 @app.route("/api/lnd/status", methods=["GET"])
 def api_lnd_status():
@@ -877,34 +918,24 @@ def api_lnd_status():
     if cache and (time.time() - cache.get("ts", 0)) < ttl:
         return jsonify(cache.get("data", {})), 200
 
-    lncli_bin = os.getenv("LND_LNCLI_BIN", "/usr/local/bin/lncli")
-    lnddir = os.getenv("LND_DIR", "/var/lib/lnd")
-
-    # Prefer runtime copies if present
-    tls_candidates = [
-        os.getenv("LND_TLS_CERT", ""),
-        "/srv/ubid/runtime/lnd/tls.cert",
-        f"{lnddir}/tls.cert",
-    ]
-    mac_candidates = [
-        os.getenv("LND_READONLY_MACAROON", ""),
-        os.getenv("LND_MACAROON", ""),
-        "/srv/ubid/runtime/lnd/readonly.macaroon",
-        f"{lnddir}/data/chain/bitcoin/mainnet/readonly.macaroon",
-    ]
-    tls = next((x for x in tls_candidates if x and os.path.exists(x)), None)
-    mac = next((x for x in mac_candidates if x and os.path.exists(x)), None)
+    cfg = _resolve_lnd_status_cli_config()
+    tls = cfg["tls"]
+    mac = cfg["mac"]
 
     if not tls or not mac:
         data = {"ok": False, "error": "LND cert/macaroon not found", "active": False}
         api_lnd_status._cache = {"ts": time.time(), "data": data}
         return jsonify(data), 500
 
-    base = [lncli_bin, f"--lnddir={lnddir}", f"--tlscertpath={tls}", f"--macaroonpath={mac}"]
+    base = [
+        cfg["lncli_bin"],
+        f"--lnddir={cfg['lnddir']}",
+        f"--tlscertpath={tls}",
+        f"--macaroonpath={mac}",
+    ]
 
-    rpcserver = (os.getenv("LND_RPCSERVER") or "127.0.0.1:10009").strip()
-    if rpcserver:
-        base.append(f"--rpcserver={rpcserver}")
+    if cfg["rpcserver"]:
+        base.append(f"--rpcserver={cfg['rpcserver']}")
 
     def run(args, timeout=8.0):
         r = subprocess.run(base + args, capture_output=True, text=True, timeout=timeout)
