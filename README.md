@@ -127,6 +127,29 @@ For the protocol and trust model, see:
 
 The current agent surface is intentionally conservative: it exposes public-key identity, declared operator metadata, paid execution, signed receipts, and observable history, while treating time-locked capital and on-chain backing as optional trust anchors rather than verified runtime facts.
 
+
+### Python SDK for agents
+
+Developers can start from the SDK index:
+
+- `docs/sdk/README.md`
+
+The SDK covers:
+
+- public discovery and agent job requests
+- Bitcoin-message auth challenge flow
+- Nostr auth challenge flow
+- receipt helpers
+- signing helpers with caller-provided signers
+
+Examples:
+
+- `examples/python/ping_agent.py`
+- `examples/python/auth_challenge_flow.py`
+- `examples/python/nostr_auth_challenge_flow.py`
+
+The SDK does not hold private keys. Applications bring their own wallet, hardware, Bitcoin Core, Nostr, or agent-runtime signer.
+
 ---
 
 ## 🤝 Contributing

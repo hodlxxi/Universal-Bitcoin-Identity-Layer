@@ -39,7 +39,15 @@
    - `/agent/skills`
    - `/agent/marketplace/listing`
 
-6. **[COVENANT_VISUALIZATION_MVP.md](COVENANT_VISUALIZATION_MVP.md)** - Paid covenant visualization capability
+6. **Python SDK**
+   - `docs/sdk/README.md`
+   - `docs/sdk/AUTH_CHALLENGE_FLOW.md`
+   - `docs/sdk/NOSTR_AUTH_CHALLENGE_FLOW.md`
+   - `examples/python/ping_agent.py`
+   - `examples/python/auth_challenge_flow.py`
+   - `examples/python/nostr_auth_challenge_flow.py`
+
+7. **[COVENANT_VISUALIZATION_MVP.md](COVENANT_VISUALIZATION_MVP.md)** - Paid covenant visualization capability
    - `job_type: covenant_visualize`
    - input/output contracts
    - parsing boundaries and limitations
