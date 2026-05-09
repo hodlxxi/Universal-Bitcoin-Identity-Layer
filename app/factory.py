@@ -229,6 +229,12 @@ def register_blueprints(app: Flask) -> None:
 
     app.register_blueprint(public_status_bp)
 
+    # LND status route: factory-native and lightweight.
+    # Must register before legacy_bridge so /api/lnd/status does not lazy-import app.app.
+    from app.blueprints.lnd_status import lnd_status_bp
+
+    app.register_blueprint(lnd_status_bp)
+
     # Public documentation routes
     from app.docs_routes import register_docs_routes
 
