@@ -87,6 +87,54 @@ class HODLXXIClient:
             json={"job_type": job_type, "payload": payload},
         )
 
+    def create_challenge(self, pubkey: str, *, method: Optional[str] = None) -> Dict[str, Any]:
+        """Create a login/auth challenge for a compressed public key.
+
+        The live API expects `pubkey`. It does not accept `public_key`, `npub`,
+        or an empty body. The optional method is passed through for server-side
+        flows such as `nostr`.
+        """
+        if not pubkey:
+            raise ValueError("pubkey is required")
+
+        body: Dict[str, Any] = {"pubkey": pubkey}
+        if method:
+            body["method"] = method
+
+        return self._request("POST", "/api/challenge", json=body)
+
+    def verify_challenge(
+        self,
+        challenge_id: str,
+        *,
+        pubkey: Optional[str] = None,
+        signature: Optional[str] = None,
+        nostr_event: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Verify a previously-created auth challenge.
+
+        For the default Bitcoin-message flow, pass `pubkey` and `signature`.
+        For the Nostr flow, pass `nostr_event`; `pubkey` may still be supplied
+        for client-side clarity, but the server validates the Nostr event
+        against the challenge record.
+        """
+        if not challenge_id:
+            raise ValueError("challenge_id is required")
+
+        body: Dict[str, Any] = {"challenge_id": challenge_id}
+
+        if pubkey:
+            body["pubkey"] = pubkey
+        if signature:
+            body["signature"] = signature
+        if nostr_event is not None:
+            body["nostr_event"] = nostr_event
+
+        if not signature and nostr_event is None:
+            raise ValueError("signature or nostr_event is required")
+
+        return self._request("POST", "/api/verify", json=body)
+
     def get_job(self, job_id: str) -> Dict[str, Any]:
         if not job_id:
             raise ValueError("job_id is required")
