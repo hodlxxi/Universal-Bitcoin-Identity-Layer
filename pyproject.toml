@@ -1,3 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hodlxxi-sdk"
+version = "0.1.0"
+description = "Minimal Python SDK for HODLXXI / UBID public agent surfaces."
+requires-python = ">=3.10"
+dependencies = [
+  "requests>=2.31",
+]
+
+[tool.setuptools.packages.find]
+include = ["hodlxxi_sdk*"]
+
 [tool.black]
 line-length = 120
 target-version = ["py312"]
