@@ -50,6 +50,9 @@ SKILLS_REPO_RAW_BASE = "https://raw.githubusercontent.com/hodlxxi/Universal-Bitc
 
 IP_WINDOW_SECONDS = 60
 IP_MAX_REQUESTS = 20
+AGENT_MAX_BODY_BYTES = 16 * 1024
+AGENT_MAX_STRING_LENGTH = 4096
+AGENT_MAX_NESTED_DEPTH = 12
 _ip_requests = defaultdict(list)
 
 
@@ -644,6 +647,37 @@ def _validate_agent_message_envelope(envelope: dict) -> tuple[bool, str | None]:
     return True, None
 
 
+def _request_body_too_large() -> bool:
+    content_length = request.content_length
+    return bool(content_length is not None and content_length > AGENT_MAX_BODY_BYTES)
+
+
+def _payload_has_oversized_string(value: object) -> bool:
+    if isinstance(value, str):
+        return len(value) > AGENT_MAX_STRING_LENGTH
+    if isinstance(value, dict):
+        return any(_payload_has_oversized_string(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_payload_has_oversized_string(v) for v in value)
+    return False
+
+
+def _payload_depth(value: object, level: int = 1) -> int:
+    if isinstance(value, dict):
+        return max([level] + [_payload_depth(v, level + 1) for v in value.values()])
+    if isinstance(value, list):
+        return max([level] + [_payload_depth(v, level + 1) for v in value])
+    return level
+
+
+def _validate_payload_ceilings(payload: object) -> tuple[bool, str | None]:
+    if _payload_has_oversized_string(payload):
+        return False, "field_too_large"
+    if _payload_depth(payload) > AGENT_MAX_NESTED_DEPTH:
+        return False, "payload_too_deep"
+    return True, None
+
+
 def _sign_envelope(envelope: dict) -> str:
     return sign_message(_signed_message_bytes(envelope))
 
@@ -669,6 +703,9 @@ def post_agent_message():
     if not _check_ip_rate_limit():
         return jsonify({"error": "invalid_payload"}), 429
 
+    if _request_body_too_large():
+        return jsonify({"error": "payload_too_large"}), 413
+
     envelope = request.get_json(silent=True)
     if not isinstance(envelope, dict):
         return jsonify({"error": "invalid_json"}), 400
@@ -690,6 +727,10 @@ def post_agent_message():
 
     if not isinstance(job_type, str) or not isinstance(job_payload, dict):
         return jsonify({"error": "invalid_payload"}), 400
+
+    ok, error = _validate_payload_ceilings(job_payload)
+    if not ok and error:
+        return jsonify({"error": error}), 400
 
     spec = _job_spec(job_type)
     if not spec:
@@ -725,9 +766,21 @@ def create_job_request():
         log_event(logger, "agent.request_rejected", outcome="ip_rate_limited")
         return jsonify({"error": "ip_rate_limited"}), 429
 
-    data = request.get_json(silent=True) or {}
+    if _request_body_too_large():
+        return jsonify({"error": "payload_too_large"}), 413
+
+    data = request.get_json(silent=True)
+    if data is None:
+        return jsonify({"error": "invalid_json"}), 400
+    if not isinstance(data, dict):
+        return jsonify({"error": "invalid_payload"}), 400
+
     job_type = data.get("job_type")
     payload = _request_payload_from_data(data)
+
+    ok, error = _validate_payload_ceilings(payload)
+    if not ok and error:
+        return jsonify({"error": error}), 400
 
     if len(str(payload)) > 10000:
         log_event(logger, "agent.request_rejected", outcome="payload_too_large")
