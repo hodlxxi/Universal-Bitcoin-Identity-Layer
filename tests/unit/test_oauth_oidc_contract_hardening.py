@@ -1,0 +1,212 @@
+import base64
+import hashlib
+from urllib.parse import urlparse, parse_qs
+from unittest.mock import patch
+
+from app.factory import create_app
+
+
+def _pkce_pair(verifier: str = "contract-verifier"):
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+    return verifier, challenge
+
+
+def _build_client():
+    app = create_app(
+        {
+            "FLASK_SECRET_KEY": "test_secret_key_oauth_contract",
+            "FLASK_ENV": "testing",
+            "JWKS_DIR": "runtime/test_jwks_oauth_contract",
+            "DATABASE_URL": "sqlite:///:memory:",
+            "JWT_ISSUER": "https://test.example.com",
+            "TESTING": True,
+        }
+    )
+    return app.test_client()
+
+
+def test_oidc_discovery_contract_fields_present():
+    client = _build_client()
+    resp = client.get("/.well-known/openid-configuration")
+    assert resp.status_code == 200
+
+    data = resp.get_json()
+    assert isinstance(data.get("issuer"), str)
+    assert data.get("authorization_endpoint")
+    assert data.get("token_endpoint")
+    assert data.get("jwks_uri")
+    assert data.get("response_types_supported")
+    assert data.get("subject_types_supported")
+
+    algs = data.get("id_token_signing_alg_values_supported") or []
+    assert "RS256" in algs
+
+
+def test_jwks_contract_public_only():
+    client = _build_client()
+    resp = client.get("/oauth/jwks.json")
+    assert resp.status_code == 200
+
+    data = resp.get_json()
+    assert isinstance(data.get("keys"), list)
+    assert data["keys"], "JWKS should include at least one key"
+
+    private_fields = {"d", "p", "q", "dp", "dq", "qi", "oth", "k"}
+    for key in data["keys"]:
+        assert key.get("kid")
+        assert key.get("kty")
+        assert key.get("use") or key.get("alg")
+        assert private_fields.isdisjoint(key.keys())
+
+
+def test_authorize_rejects_missing_client_id_without_500():
+    client = _build_client()
+    resp = client.get(
+        "/oauth/authorize",
+        query_string={
+            "response_type": "code",
+            "redirect_uri": "https://app.example.com/callback",
+            "code_challenge": "abc",
+            "code_challenge_method": "S256",
+        },
+    )
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert body["error"] == "invalid_request"
+
+
+def test_authorize_rejects_invalid_redirect_uri_without_500():
+    client = _build_client()
+    with patch(
+        "app.blueprints.oauth.get_oauth_client", return_value={"redirect_uris": ["https://app.example.com/callback"]}
+    ):
+        with client.session_transaction() as sess:
+            sess["logged_in_pubkey"] = "02" + "a" * 64
+
+        _, challenge = _pkce_pair()
+        resp = client.get(
+            "/oauth/authorize",
+            query_string={
+                "response_type": "code",
+                "client_id": "client_1",
+                "redirect_uri": "https://evil.example.com/callback",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            },
+        )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "invalid_request"
+
+
+def test_authorize_rejects_unsupported_response_type():
+    client = _build_client()
+    resp = client.get(
+        "/oauth/authorize",
+        query_string={
+            "response_type": "token",
+            "client_id": "client_1",
+            "redirect_uri": "https://app.example.com/callback",
+            "code_challenge": "abc",
+            "code_challenge_method": "S256",
+        },
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "unsupported_response_type"
+
+
+def test_authorize_malformed_request_is_structured_error_not_500():
+    client = _build_client()
+    resp = client.get("/oauth/authorize")
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "invalid_request"
+
+
+def test_pkce_requires_s256_challenge():
+    client = _build_client()
+    with patch(
+        "app.blueprints.oauth.get_oauth_client", return_value={"redirect_uris": ["https://app.example.com/callback"]}
+    ):
+        with client.session_transaction() as sess:
+            sess["logged_in_pubkey"] = "02" + "a" * 64
+
+        plain_resp = client.get(
+            "/oauth/authorize",
+            query_string={
+                "response_type": "code",
+                "client_id": "client_1",
+                "redirect_uri": "https://app.example.com/callback",
+                "code_challenge": "plain-challenge",
+                "code_challenge_method": "plain",
+            },
+        )
+        missing_resp = client.get(
+            "/oauth/authorize",
+            query_string={
+                "response_type": "code",
+                "client_id": "client_1",
+                "redirect_uri": "https://app.example.com/callback",
+                "code_challenge_method": "S256",
+            },
+        )
+
+    assert plain_resp.status_code == 400
+    assert plain_resp.get_json()["error"] == "invalid_request"
+    assert missing_resp.status_code == 400
+    assert missing_resp.get_json()["error"] == "invalid_request"
+
+
+def test_pkce_s256_authorize_and_bad_verifier_rejected_without_500():
+    client = _build_client()
+    verifier, challenge = _pkce_pair("correct-verifier")
+    code_record = {
+        "client_id": "client_1",
+        "redirect_uri": "https://app.example.com/callback",
+        "scope": "openid profile",
+        "user_pubkey": "02" + "b" * 64,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+    }
+
+    with (
+        patch(
+            "app.blueprints.oauth.get_oauth_client",
+            return_value={"client_secret": "secret", "redirect_uris": ["https://app.example.com/callback"]},
+        ),
+        patch("app.blueprints.oauth.store_oauth_code") as _store,
+        patch("app.blueprints.oauth.get_oauth_code", return_value=code_record),
+        patch("app.blueprints.oauth.delete_oauth_code") as delete_code,
+    ):
+        with client.session_transaction() as sess:
+            sess["logged_in_pubkey"] = code_record["user_pubkey"]
+
+        auth = client.get(
+            "/oauth/authorize",
+            query_string={
+                "response_type": "code",
+                "client_id": "client_1",
+                "redirect_uri": "https://app.example.com/callback",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            },
+        )
+        assert auth.status_code == 302
+        parsed = urlparse(auth.location)
+        code = parse_qs(parsed.query).get("code", [None])[0]
+        assert code
+
+        bad_token = client.post(
+            "/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": "https://app.example.com/callback",
+                "client_id": "client_1",
+                "client_secret": "secret",
+                "code_verifier": verifier + "-wrong",
+            },
+        )
+
+    assert bad_token.status_code == 400
+    assert bad_token.get_json()["error"] == "invalid_grant"
+    delete_code.assert_called()
