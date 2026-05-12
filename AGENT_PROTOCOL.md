@@ -46,6 +46,20 @@ The public key is the stable identity anchor of the agent. All receipts and atte
 
 ---
 
+
+## Runtime Version Markers
+
+The currently shipped runtime surfaces advertise:
+
+- runtime agent capabilities version `0.1`
+- `capability_schema.version`: `1.0`
+- `receipt.version`: `1.0`
+- `listing_version`: `1.0`
+
+These values are descriptive of current runtime behavior and should be treated as contract markers for compatibility checks.
+
+---
+
 ## Capability Discovery
 
 A client starts by fetching:
