@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MY_KYC_ID — Be known without being exposed</title>
+  <style>
+    :root{--bg:#020704;--green:#00ff88;--cyan:#00e5ff;--orange:#f7931a;--text:#e6fff3;--muted:#9bd8bd;--border:rgba(0,255,136,.28)}
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(circle at top,#052414,#020704 55%);color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;line-height:1.55}
+    main{width:min(1100px,calc(100% - 32px));margin:0 auto;padding:28px 0 56px}
+    .nav{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:64px}
+    .brand{color:var(--green);font-weight:900;font-size:1.25rem;text-shadow:0 0 16px rgba(0,255,136,.8)}
+    a{color:var(--green);text-decoration:none}
+    .hero{padding:54px 0}
+    .eyebrow{color:var(--cyan);text-transform:uppercase;letter-spacing:.18em;font-size:.8rem}
+    h1{font-size:clamp(3rem,8vw,7rem);line-height:.92;margin:0;color:var(--orange);text-shadow:0 0 22px rgba(247,147,26,.55)}
+    .lead{font-size:clamp(1.05rem,2vw,1.45rem);max-width:850px;margin:28px 0;color:var(--text)}
+    .actions{display:flex;gap:14px;flex-wrap:wrap;margin-top:30px}
+    .btn{display:inline-flex;border:1px solid var(--border);border-radius:999px;padding:13px 18px;font-weight:900;box-shadow:0 0 28px rgba(0,255,136,.16)}
+    .primary{background:var(--green);color:#00190d}
+    .secondary{background:rgba(0,255,136,.08);color:var(--green)}
+    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:32px}
+    .card{border:1px solid var(--border);background:rgba(0,20,10,.72);border-radius:22px;padding:22px;box-shadow:0 0 28px rgba(0,255,136,.12)}
+    h2,h3{color:var(--green);margin-top:0}
+    .card p{color:var(--muted)}
+    .warning{border-color:rgba(247,147,26,.45)}
+    @media(max-width:800px){.grid{grid-template-columns:1fr}.nav{align-items:flex-start;flex-direction:column}}
+  </style>
+</head>
+<body>
+<main>
+  <header class="nav">
+    <div class="brand">MY_KYC_ID</div>
+    <a href="/screensaver">← Screensaver</a>
+  </header>
+
+  <section class="hero">
+    <p class="eyebrow">Bitcoin-native pseudonymous identity</p>
+    <h1>Be known without being exposed.</h1>
+    <p class="lead">
+      MY_KYC_ID is a key-owned identity layer for pseudonymous users. No platform issues your ID.
+      Your key is your ID. Enter by proving control, not by uploading secrets.
+    </p>
+    <div class="actions">
+      <a class="btn primary" href="/login?next=/home">Enter with your key</a>
+      <a class="btn secondary" href="/home">Go to Home</a>
+    </div>
+  </section>
+
+  <section class="grid">
+    <article class="card">
+      <h3>Your key is your ID</h3>
+      <p>Identity begins with cryptographic control, signatures, and public keys.</p>
+    </article>
+    <article class="card">
+      <h3>Reputation without doxxing</h3>
+      <p>Attestations and interactions can build reputation without requiring a real-name account.</p>
+    </article>
+    <article class="card warning">
+      <h3>Never paste secrets</h3>
+      <p>Do not paste seed phrases, private keys, macaroons, wallet passwords, or secret tokens.</p>
+    </article>
+  </section>
+</main>
+</body>
+</html>

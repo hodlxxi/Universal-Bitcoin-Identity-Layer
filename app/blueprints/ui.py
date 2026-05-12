@@ -175,3 +175,23 @@ def legacy_oneword_route():
 @ui_bp.route("/upgrade", methods=["GET", "POST"])
 def legacy_upgrade_route():
     return render_upgrade_page()
+
+
+@ui_bp.get("/my-kyc-id")
+def my_kyc_id_landing():
+    """Public MY_KYC_ID landing page.
+
+    CTA intentionally points to /login?next=/home so successful login returns
+    to the existing browser home/onboarding/explorer surface.
+    """
+    return render_template("my_kyc_id_landing.html")
+
+
+@ui_bp.get("/chat-landing")
+def chat_landing():
+    """Public chat landing page.
+
+    CTA intentionally points to /login?next=/app so successful login returns
+    to the existing chat runtime.
+    """
+    return render_template("chat_landing.html")
