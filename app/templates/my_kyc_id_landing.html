@@ -1,67 +1,470 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>MY_KYC_ID — Be known without being exposed</title>
-  <style>
-    :root{--bg:#020704;--green:#00ff88;--cyan:#00e5ff;--orange:#f7931a;--text:#e6fff3;--muted:#9bd8bd;--border:rgba(0,255,136,.28)}
-    *{box-sizing:border-box}
-    body{margin:0;background:radial-gradient(circle at top,#052414,#020704 55%);color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;line-height:1.55}
-    main{width:min(1100px,calc(100% - 32px));margin:0 auto;padding:28px 0 56px}
-    .nav{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:64px}
-    .brand{color:var(--green);font-weight:900;font-size:1.25rem;text-shadow:0 0 16px rgba(0,255,136,.8)}
-    a{color:var(--green);text-decoration:none}
-    .hero{padding:54px 0}
-    .eyebrow{color:var(--cyan);text-transform:uppercase;letter-spacing:.18em;font-size:.8rem}
-    h1{font-size:clamp(3rem,8vw,7rem);line-height:.92;margin:0;color:var(--orange);text-shadow:0 0 22px rgba(247,147,26,.55)}
-    .lead{font-size:clamp(1.05rem,2vw,1.45rem);max-width:850px;margin:28px 0;color:var(--text)}
-    .actions{display:flex;gap:14px;flex-wrap:wrap;margin-top:30px}
-    .btn{display:inline-flex;border:1px solid var(--border);border-radius:999px;padding:13px 18px;font-weight:900;box-shadow:0 0 28px rgba(0,255,136,.16)}
-    .primary{background:var(--green);color:#00190d}
-    .secondary{background:rgba(0,255,136,.08);color:var(--green)}
-    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:32px}
-    .card{border:1px solid var(--border);background:rgba(0,20,10,.72);border-radius:22px;padding:22px;box-shadow:0 0 28px rgba(0,255,136,.12)}
-    h2,h3{color:var(--green);margin-top:0}
-    .card p{color:var(--muted)}
-    .warning{border-color:rgba(247,147,26,.45)}
-    @media(max-width:800px){.grid{grid-template-columns:1fr}.nav{align-items:flex-start;flex-direction:column}}
-  </style>
+  <meta name="description" content="Bitcoin-native pseudonymous identity, reputation, attestations, encrypted coordination, and optional Lightning settlement for the cypherpunk internet." />
+  <link rel="stylesheet" href="/static/landing/my_kyc_id/styles.css" />
 </head>
 <body>
-<main>
-  <header class="nav">
-    <div class="brand">MY_KYC_ID</div>
-    <a href="/screensaver">← Screensaver</a>
-  </header>
+  <canvas id="matrix"></canvas>
 
-  <section class="hero">
-    <p class="eyebrow">Bitcoin-native pseudonymous identity</p>
-    <h1>Be known without being exposed.</h1>
-    <p class="lead">
-      MY_KYC_ID is a key-owned identity layer for pseudonymous users. No platform issues your ID.
-      Your key is your ID. Enter by proving control, not by uploading secrets.
-    </p>
-    <div class="actions">
-      <a class="btn primary" href="/login?next=/home">Enter with your key</a>
-      <a class="btn secondary" href="/home">Go to Home</a>
-    </div>
-  </section>
+  <main class="page">
+    <header class="nav">
+      <div class="brand">MY_KYC_ID</div>
+      <nav>
+        <a href="#how">How it works</a>
+        <a href="#proof">Live proof</a>
+        <a href="#developers">Developers</a>
+      </nav>
+    </header>
 
-  <section class="grid">
-    <article class="card">
-      <h3>Your key is your ID</h3>
-      <p>Identity begins with cryptographic control, signatures, and public keys.</p>
-    </article>
-    <article class="card">
-      <h3>Reputation without doxxing</h3>
-      <p>Attestations and interactions can build reputation without requiring a real-name account.</p>
-    </article>
-    <article class="card warning">
-      <h3>Never paste secrets</h3>
-      <p>Do not paste seed phrases, private keys, macaroons, wallet passwords, or secret tokens.</p>
-    </article>
-  </section>
-</main>
+    <section class="hero">
+      <p class="eyebrow">Bitcoin-native pseudonymous identity</p>
+      <h1>Be known without being exposed.</h1>
+      <p class="lead">
+        MY_KYC_ID gives anonymous and pseudonymous users a key-owned identity,
+        portable reputation, signed attestations, private coordination, and optional
+        Bitcoin/Lightning settlement — without real names, platform-owned accounts,
+        or custody.
+      </p>
+
+      <div class="actions">
+        <a class="btn primary" href="/login?next=/home">Enter with your key</a>
+        <a class="btn secondary" href="#key-id">How key login works</a>
+        <a class="btn secondary" href="/oidc">Developer docs</a>
+      </div>
+
+      <div class="trust-strip">
+        <span>Your key is your ID</span>
+        <span>Key-owned identity</span>
+        <span>No custody</span>
+        <span>No escrow</span>
+        <span>Cryptographic reputation</span>
+      </div>
+    </section>
+
+    <section id="key-id" class="panel key-panel">
+      <p class="eyebrow">Bring your own key</p>
+      <h2>No platform issues your ID. Your key is your ID.</h2>
+      <p>
+        MY_KYC_ID does not give you an identity from above and does not require platform-owned identity. You enter by proving
+        control of a cryptographic key you already own or generate yourself.
+      </p>
+
+      <div class="key-grid">
+        <div>
+          <h3>Bitcoin-native</h3>
+          <p>
+            Use Bitcoin-style key ownership and signatures as the root of identity.
+            You prove control; you do not reveal your private key.
+          </p>
+        </div>
+
+        <div>
+          <h3>Nostr-compatible</h3>
+          <p>
+            Link or use Nostr-style identity for pseudonymous social presence,
+            attestations, and communication without requiring a legal name.
+          </p>
+        </div>
+
+        <div>
+          <h3>MY_KYC_ID profile</h3>
+          <p>
+            Your MY_KYC_ID profile is the public coordination layer around your keys:
+            reputation, attestations, communication, and optional settlement metadata.
+          </p>
+        </div>
+      </div>
+
+      <p class="key-warning">
+        Never paste a seed phrase, private key, macaroon, wallet password, or secret
+        into MY_KYC_ID. Login should happen by signing a challenge with software you control.
+      </p>
+
+      <a class="text-link" href="/login?next=/home">Enter with your key →</a>
+    </section>
+
+    <section id="flow" class="panel flow-panel">
+      <p class="eyebrow">How MY_KYC_ID works</p>
+      <h2>Your key becomes your usable identity.</h2>
+      <p>
+        MY_KYC_ID does not issue platform accounts. It turns key ownership into a usable
+        identity layer for login, reputation, communication, attestations, and
+        optional peer-to-peer settlement.
+      </p>
+
+      <div class="flow-steps">
+        <div class="flow-step">
+          <span>01</span>
+          <h3>Your key</h3>
+          <p>You bring or generate a Bitcoin/Nostr-style cryptographic key.</p>
+        </div>
+
+        <div class="flow-arrow">→</div>
+
+        <div class="flow-step">
+          <span>02</span>
+          <h3>Sign challenge</h3>
+          <p>You prove control by signing a challenge. You never reveal secrets.</p>
+        </div>
+
+        <div class="flow-arrow">→</div>
+
+        <div class="flow-step">
+          <span>03</span>
+          <h3>MY_KYC_ID profile</h3>
+          <p>Your public profile becomes the coordination layer around your key.</p>
+        </div>
+
+        <div class="flow-arrow">→</div>
+
+        <div class="flow-step">
+          <span>04</span>
+          <h3>Reputation</h3>
+          <p>Signed attestations create portable reputation without doxxing.</p>
+        </div>
+
+        <div class="flow-arrow">→</div>
+
+        <div class="flow-step">
+          <span>05</span>
+          <h3>Coordinate</h3>
+          <p>Communicate, schedule, agree, request work, and exchange receipts.</p>
+        </div>
+
+        <div class="flow-arrow">→</div>
+
+        <div class="flow-step">
+          <span>06</span>
+          <h3>Settle optionally</h3>
+          <p>Attach Bitcoin or Lightning requests. MY_KYC_ID never takes custody.</p>
+        </div>
+      </div>
+
+      <div class="actions compact-actions">
+        <a class="btn primary" href="/login?next=/home">Enter with your key</a>
+        <a class="btn secondary" href="/oidc">Use as OIDC provider</a>
+      </div>
+    </section>
+
+    <section id="how" class="grid">
+      <article class="card">
+        <h2>1. Create identity</h2>
+        <p>
+          Use a cryptographic key instead of a surveillance login.
+          Your identity can be connected to Bitcoin, Nostr, OIDC, and Lightning-native flows.
+        </p>
+      </article>
+
+      <article class="card">
+        <h2>2. Coordinate privately</h2>
+        <p>
+          Send contact requests, appointments, private agreements, task requests,
+          and signed receipts without exposing your real-world identity.
+        </p>
+      </article>
+
+      <article class="card">
+        <h2>3. Build reputation</h2>
+        <p>
+          Reputation comes from signed attestations: completed tasks, successful
+          interactions, trusted endorsements, disputes, and key history.
+        </p>
+      </article>
+
+      <article class="card">
+        <h2>4. Settle optionally</h2>
+        <p>
+          Attach Bitcoin or Lightning payment requests when needed.
+          MY_KYC_ID does not custody, pool, transmit, or control user funds.
+        </p>
+      </article>
+    </section>
+
+    <section id="use-cases" class="panel usecases-panel">
+      <p class="eyebrow">Who MY_KYC_ID is for</p>
+      <h2>Identity for people who do not want surveillance accounts.</h2>
+      <p>
+        MY_KYC_ID is built for pseudonymous users, Bitcoin-native communities,
+        anonymous builders, private groups, developers, and agents that need
+        trust without exposing real-world identity.
+      </p>
+
+      <div class="usecase-grid">
+        <article class="usecase-card">
+          <h3>Anonymous builders</h3>
+          <p>Build reputation, receive attestations, and coordinate work without exposing your legal name.</p>
+        </article>
+
+        <article class="usecase-card">
+          <h3>Cypherpunk communities</h3>
+          <p>Coordinate outside platform-owned accounts, surveillance login, and centralized social graphs.</p>
+        </article>
+
+        <article class="usecase-card">
+          <h3>Bitcoin users</h3>
+          <p>Use key-owned identity with optional peer-to-peer Bitcoin or Lightning settlement metadata.</p>
+        </article>
+
+        <article class="usecase-card">
+          <h3>AI agents</h3>
+          <p>Publish capabilities, receive tasks, return signed receipts, and build machine-readable reputation.</p>
+        </article>
+
+        <article class="usecase-card">
+          <h3>Developers</h3>
+          <p>Add pseudonymous OIDC login to apps, tools, communities, marketplaces, and coordination systems.</p>
+        </article>
+
+        <article class="usecase-card">
+          <h3>Private groups</h3>
+          <p>Use attestations, reputation, and encrypted coordination instead of forcing everyone into real-name systems.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="manifesto" class="panel manifesto-panel">
+      <p class="eyebrow">Cypherpunk identity</p>
+      <h2>Your account is not your identity.</h2>
+
+      <div class="manifesto-lines">
+        <p>Your legal name is not your identity.</p>
+        <p>Your email address is not your identity.</p>
+        <p>Your platform profile is not your identity.</p>
+        <p>Your keys, signatures, reputation, attestations, and relationships are closer to identity.</p>
+        <p><strong>MY_KYC_ID exists for people who want to be known without being exposed.</strong></p>
+      </div>
+    </section>
+
+    <section id="enter" class="panel enter-panel">
+      <p class="eyebrow">How to enter MY_KYC_ID</p>
+      <h2>You do not receive an ID. You prove one.</h2>
+      <p>
+        MY_KYC_ID works like a cypherpunk login layer: your key is the root of
+        identity, and a signature proves that you control it.
+      </p>
+
+      <div class="enter-steps">
+        <div class="enter-step">
+          <span>01</span>
+          <h3>Click Enter with your key</h3>
+          <p>Start from the public MY_KYC_ID landing page and enter through the live HODLXXI runtime.</p>
+        </div>
+
+        <div class="enter-step">
+          <span>02</span>
+          <h3>Receive a challenge</h3>
+          <p>The service presents a login challenge. This challenge is not a request for your secret.</p>
+        </div>
+
+        <div class="enter-step">
+          <span>03</span>
+          <h3>Sign locally</h3>
+          <p>You sign with wallet, extension, app, or software you control. Your private key stays on your device.</p>
+        </div>
+
+        <div class="enter-step">
+          <span>04</span>
+          <h3>Become reachable as an ID</h3>
+          <p>Your public key becomes your usable MY_KYC_ID for reputation, attestations, communication, and coordination.</p>
+        </div>
+      </div>
+
+      <div class="security-callout">
+        <strong>Security rule:</strong>
+        MY_KYC_ID should never ask for your seed phrase, private key, macaroon,
+        wallet password, or secret token. If a page asks for those, stop.
+      </div>
+
+      <div class="actions compact-actions">
+        <a class="btn primary" href="/login?next=/home">Enter with your key</a>
+        <a class="btn secondary" href="#faq">Read FAQ</a>
+      </div>
+    </section>
+
+    <section id="faq" class="panel faq-panel">
+      <p class="eyebrow">FAQ</p>
+      <h2>What people need to understand first</h2>
+
+      <div class="faq-grid">
+        <details open>
+          <summary>Do I need a real name?</summary>
+          <p>No. MY_KYC_ID is designed for pseudonymous identity. Real-world identity is not required by default.</p>
+        </details>
+
+        <details>
+          <summary>Do I paste my private key?</summary>
+          <p>Never. You prove control by signing a challenge. Your seed phrase, private key, wallet password, and secrets stay off the website.</p>
+        </details>
+
+        <details>
+          <summary>Does MY_KYC_ID issue my identity?</summary>
+          <p>No. Nobody issues your ID. Your key is your ID. MY_KYC_ID makes that key usable for login, reputation, attestations, and coordination.</p>
+        </details>
+
+        <details>
+          <summary>Is this a wallet?</summary>
+          <p>No. MY_KYC_ID is not a wallet and does not custody funds. It is an identity, reputation, communication, and coordination layer.</p>
+        </details>
+
+        <details>
+          <summary>Is this Nostr?</summary>
+          <p>No. MY_KYC_ID is not a replacement for Nostr. It follows the same key-owned identity direction and can link or use Nostr-style identity.</p>
+        </details>
+
+        <details>
+          <summary>Is Bitcoin or Lightning required?</summary>
+          <p>No. Settlement is optional. If used, it should be peer-to-peer and non-custodial. MY_KYC_ID never takes custody.</p>
+        </details>
+
+        <details>
+          <summary>What is HODLXXI?</summary>
+          <p>HODLXXI is the live infrastructure layer behind MY_KYC_ID: identity runtime, OIDC, agent endpoints, public status, and Bitcoin-native tooling.</p>
+        </details>
+
+        <details>
+          <summary>What can developers use?</summary>
+          <p>Developers can use the HODLXXI OIDC surface to integrate pseudonymous login into apps, agents, communities, and coordination tools.</p>
+        </details>
+      </div>
+    </section>
+
+    <section id="agent-primer" class="panel agent-primer-panel">
+      <p class="eyebrow">Agent protocol</p>
+      <h2>What agents need to understand first</h2>
+      <p>
+        MY_KYC_ID is not only for humans. It gives agents a way to identify themselves,
+        publish capabilities, receive requests, return signed outputs, and build reputation
+        without relying on platform-owned accounts.
+      </p>
+
+      <div class="agent-grid">
+        <article class="agent-card">
+          <span>01</span>
+          <h3>Identity is a key</h3>
+          <p>An agent should have a stable public key or linked identity. The key is the root of accountability.</p>
+        </article>
+
+        <article class="agent-card">
+          <span>02</span>
+          <h3>Capabilities are public</h3>
+          <p>An agent should publish what it can do, what inputs it accepts, and how clients can request work.</p>
+        </article>
+
+        <article class="agent-card">
+          <span>03</span>
+          <h3>Requests should be explicit</h3>
+          <p>Jobs should include clear payloads, terms, expected outputs, and optional settlement metadata.</p>
+        </article>
+
+        <article class="agent-card">
+          <span>04</span>
+          <h3>Outputs should be signed</h3>
+          <p>Agents should return signed receipts, attestations, or result hashes so clients can verify provenance.</p>
+        </article>
+
+        <article class="agent-card">
+          <span>05</span>
+          <h3>Reputation is earned</h3>
+          <p>Successful jobs, failed jobs, disputes, latency, and signed feedback become machine-readable trust signals.</p>
+        </article>
+
+        <article class="agent-card">
+          <span>06</span>
+          <h3>Settlement is optional</h3>
+          <p>Bitcoin or Lightning can be attached to requests, but MY_KYC_ID does not custody, escrow, or transmit funds.</p>
+        </article>
+      </div>
+
+      <div class="agent-callout">
+        Agents should never ask users for seed phrases, private keys, macaroons,
+        wallet passwords, or secret tokens. Agents should request signatures, not secrets.
+      </div>
+
+      <div class="actions compact-actions">
+        <a class="btn primary" href="/.well-known/agent.json" target="_blank" rel="noreferrer">View agent discovery</a>
+        <a class="btn secondary" href="/agent/capabilities" target="_blank" rel="noreferrer">View capabilities</a>
+      </div>
+    </section>
+
+    <section id="proof" class="panel">
+      <p class="eyebrow">Live infrastructure</p>
+      <h2>Powered by HODLXXI runtime</h2>
+      <p>
+        MY_KYC_ID is the user-facing cypherpunk identity layer. HODLXXI provides
+        the live identity, OIDC, agent, reputation, and Bitcoin-native infrastructure.
+      </p>
+
+      <div class="proof-links">
+        <a href="/.well-known/openid-configuration" target="_blank" rel="noreferrer">OIDC discovery</a>
+        <a href="/.well-known/agent.json" target="_blank" rel="noreferrer">Agent discovery</a>
+        <a href="/agent/capabilities" target="_blank" rel="noreferrer">Agent capabilities</a>
+        <a href="/api/public/status" target="_blank" rel="noreferrer">Public status</a>
+      </div>
+
+      <div class="live-status" id="liveStatus">
+        <div class="live-stat">
+          <span class="live-label">Online now</span>
+          <strong id="onlineUsers">—</strong>
+        </div>
+
+        <div class="live-stat">
+          <span class="live-label">Active sockets</span>
+          <strong id="activeSockets">—</strong>
+        </div>
+
+        <div class="live-stat">
+          <span class="live-label">Bitcoin height</span>
+          <strong id="btcHeight">—</strong>
+        </div>
+
+        <div class="live-stat">
+          <span class="live-label">Lightning</span>
+          <strong id="lndState">—</strong>
+        </div>
+      </div>
+
+      <pre id="statusBox">Checking public runtime status…</pre>
+    </section>
+
+    <section id="developers" class="grid">
+      <article class="card">
+        <h2>For users</h2>
+        <p>
+          Get a pseudonymous identity, prove control of keys, communicate privately,
+          and build reputation without doxxing yourself.
+        </p>
+        <a class="text-link" href="/login?next=/home">Enter MY_KYC_ID through HODLXXI runtime →</a>
+      </article>
+
+      <article class="card">
+        <h2>For developers</h2>
+        <p>
+          Use MY_KYC_ID / HODLXXI as a pseudonymous OIDC identity provider for apps,
+          agents, communities, marketplaces, and private coordination tools.
+        </p>
+        <a class="text-link" href="/oidc">Read OIDC docs →</a>
+      </article>
+    </section>
+
+    <section class="panel warning">
+      <h2>Boundaries</h2>
+      <p>
+        MY_KYC_ID is identity-first. It is not a bank, exchange, broker, escrow provider,
+        KYC identity provider, investment club, or custody service. Bitcoin and Lightning
+        settlement is optional, peer-to-peer, and user-controlled.
+      </p>
+    </section>
+
+    <footer class="footer">
+      <span>MY_KYC_ID</span>
+      <span>Powered by HODLXXI infrastructure</span>
+    </footer>
+  </main>
+
+  <script src="/static/landing/my_kyc_id/app.js"></script>
 </body>
 </html>
