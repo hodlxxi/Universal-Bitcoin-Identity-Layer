@@ -6,129 +6,240 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="{{ tagline }}">
   <style>
-    :root{
-      --bg:#06110b;
-      --panel:#0b1b12;
-      --text:#d9ffe7;
-      --muted:#8fd3aa;
-      --line:#1f5a39;
-      --accent:#49ff93;
-      --accent2:#7dd3fc;
-      --warn:#f6c45c;
+    :root {
+      --bg: #020704;
+      --panel: rgba(0, 20, 10, 0.72);
+      --panel-2: rgba(0, 40, 25, 0.56);
+      --green: #00ff88;
+      --cyan: #00e5ff;
+      --bitcoin-orange: #f7931a;
+      --text: #e6fff3;
+      --muted: #9bd8bd;
+      --danger: #ffd27d;
+      --border: rgba(0, 255, 136, 0.28);
+      --shadow: 0 0 35px rgba(0, 255, 136, 0.16);
     }
-    *{box-sizing:border-box}
-    body{
-      margin:0;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      background:linear-gradient(180deg, #030906 0%, var(--bg) 100%);
-      color:var(--text);
-      line-height:1.5;
+
+    * {
+      box-sizing: border-box;
     }
-    .wrap{
-      max-width:1100px;
-      margin:0 auto;
-      padding:32px 20px 64px;
+
+    html {
+      scroll-behavior: smooth;
     }
-    .hero, .card{
-      background:rgba(11,27,18,.88);
-      border:1px solid var(--line);
-      border-radius:18px;
-      padding:20px;
-      box-shadow:0 0 0 1px rgba(73,255,147,.05), 0 12px 30px rgba(0,0,0,.25);
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      line-height: 1.55;
+      min-height: 100vh;
     }
-    .hero h1{
-      margin:0 0 10px;
-      font-size:clamp(28px, 5vw, 44px);
-      color:var(--accent);
+
+    #matrix {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      opacity: 0.32;
     }
-    .hero p{
-      margin:0 0 10px;
-      color:var(--muted);
-      max-width:900px;
+
+    .wrap {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 24px 0 48px;
     }
-    .status-row{
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-      margin:12px 0 14px;
+
+    .hero {
+      padding: clamp(56px, 9vw, 100px) 24px;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      box-shadow: var(--shadow);
+      border-radius: 24px;
+      backdrop-filter: blur(8px);
+      margin: 20px 0 22px;
     }
-    .status-badge{
-      border:1px solid var(--line);
-      border-radius:999px;
-      padding:5px 10px;
-      font-size:13px;
-      background:#0a1911;
-      color:var(--accent2);
+
+    .hero h1 {
+      max-width: 980px;
+      font-size: clamp(2.8rem, 7.4vw, 6.6rem);
+      line-height: 0.94;
+      margin: 0 0 24px;
+      color: var(--bitcoin-orange);
+      text-shadow:
+        0 0 18px rgba(247, 147, 26, 0.65),
+        0 0 42px rgba(247, 147, 26, 0.28);
     }
-    .status-badge.warn{ color:var(--warn); }
-    .btns{
-      display:flex;
-      flex-wrap:wrap;
-      gap:12px;
-      margin-top:12px;
+
+    .hero p {
+      max-width: 920px;
+      font-size: clamp(1rem, 1.8vw, 1.25rem);
+      color: var(--muted);
+      margin: 0 0 12px;
     }
-    .btn{
-      display:inline-block;
-      padding:10px 14px;
-      border:1px solid var(--line);
-      border-radius:12px;
-      color:var(--text);
-      text-decoration:none;
-      background:#0d2117;
+
+    .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 22px 0 18px;
     }
-    .btn:hover{
-      border-color:var(--accent);
-      color:var(--accent);
+
+    .status-badge {
+      border: 1px solid var(--border);
+      background: rgba(0, 255, 136, 0.07);
+      border-radius: 999px;
+      padding: 8px 11px;
+      color: var(--muted);
+      font-size: 0.88rem;
     }
-    .grid{
-      display:grid;
-      grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));
-      gap:18px;
-      margin-top:20px;
+
+    .status-badge.warn {
+      border-color: rgba(247, 147, 26, 0.42);
+      background: rgba(247, 147, 26, 0.08);
+      color: var(--bitcoin-orange);
     }
-    h2{
-      margin:0 0 12px;
-      font-size:18px;
-      color:var(--accent2);
+
+    .btns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin: 28px 0;
     }
-    ul{
-      margin:0;
-      padding-left:18px;
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 13px 18px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      box-shadow: var(--shadow);
+      font-weight: 900;
+      background: rgba(0, 255, 136, 0.08);
+      color: var(--green);
+      text-decoration: none;
     }
-    li{ margin:8px 0; }
-    a{ color:var(--accent); }
-    .endpoint-list{
-      list-style:none;
-      padding:0;
-      margin:0;
+
+    .btn:hover {
+      color: var(--cyan);
+      border-color: rgba(0, 229, 255, 0.5);
     }
-    .endpoint-list li{
-      padding:12px 0;
-      border-top:1px solid rgba(31,90,57,.6);
+
+    .btn[href="/my-kyc-id"] {
+      background: var(--green);
+      color: #00190d;
     }
-    .endpoint-list li:first-child{
-      border-top:none;
-      padding-top:0;
+
+    .btn[href="/chat-landing"] {
+      border-color: rgba(247, 147, 26, 0.42);
+      color: var(--bitcoin-orange);
+      background: rgba(247, 147, 26, 0.08);
     }
-    .endpoint-name{
-      display:inline-block;
-      margin-bottom:4px;
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 18px;
+      margin: 22px 0;
     }
-    code{
-      color:#c8ffe0;
-      background:#08140d;
-      padding:2px 6px;
-      border-radius:8px;
-      border:1px solid #163924;
+
+    .card {
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      box-shadow: var(--shadow);
+      border-radius: 24px;
+      padding: 24px;
+      backdrop-filter: blur(8px);
     }
-    .footer{
-      margin-top:16px;
-      color:var(--muted);
-      font-size:14px;
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 1.2rem;
+      color: var(--green);
+    }
+
+    p,
+    li {
+      color: var(--muted);
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    li {
+      margin: 8px 0;
+    }
+
+    a {
+      color: var(--green);
+      text-decoration: none;
+    }
+
+    a:hover {
+      color: var(--cyan);
+    }
+
+    .endpoint-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .endpoint-list li {
+      padding: 12px 0;
+      border-top: 1px solid rgba(0, 255, 136, 0.18);
+    }
+
+    .endpoint-list li:first-child {
+      border-top: none;
+      padding-top: 0;
+    }
+
+    .endpoint-name {
+      display: inline-block;
+      margin-bottom: 4px;
+    }
+
+    code {
+      color: var(--cyan);
+      background: rgba(0, 229, 255, 0.08);
+      border: 1px solid rgba(0, 229, 255, 0.2);
+      border-radius: 8px;
+      padding: 2px 6px;
+    }
+
+    .footer {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    @media (max-width: 980px) {
+      .hero {
+        padding: 36px 18px;
+      }
+
+      .hero h1 {
+        font-size: clamp(2.4rem, 14vw, 4.8rem);
+      }
+
+      .btn {
+        width: 100%;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #matrix {
+        display: none;
+      }
     }
   </style>
 </head>
 <body>
+  <canvas id="matrix"></canvas>
   <div class="wrap">
     <section class="hero">
       <h1>{{ agent_name }}</h1>
@@ -265,5 +376,47 @@
       </ul>
     </section>
   </div>
+
+  <script>
+    const canvas = document.getElementById("matrix");
+    const ctx = canvas.getContext("2d");
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+
+    resize();
+    window.addEventListener("resize", resize);
+
+    const chars = "01₿⚡HODLXXI_MY_KYC_ID_CHAT_AGENT";
+    const fontSize = 16;
+    let columns = Math.floor(canvas.width / fontSize);
+    let drops = Array(columns).fill(1);
+
+    function drawMatrix() {
+      ctx.fillStyle = "rgba(2, 7, 4, 0.08)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = "#00ff88";
+      ctx.font = `${fontSize}px monospace`;
+
+      columns = Math.floor(canvas.width / fontSize);
+      if (drops.length !== columns) drops = Array(columns).fill(1);
+
+      for (let i = 0; i < drops.length; i++) {
+        const text = chars[Math.floor(Math.random() * chars.length)];
+        ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+          drops[i] = 0;
+        }
+
+        drops[i]++;
+      }
+    }
+
+    setInterval(drawMatrix, 48);
+  </script>
 </body>
 </html>
