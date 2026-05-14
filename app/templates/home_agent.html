@@ -51,24 +51,42 @@
     }
 
     .hero {
-      padding: clamp(56px, 9vw, 100px) 24px;
-      border: 1px solid var(--border);
-      background: linear-gradient(180deg, var(--panel), var(--panel-2));
-      box-shadow: var(--shadow);
-      border-radius: 24px;
-      backdrop-filter: blur(8px);
-      margin: 20px 0 22px;
+      padding: clamp(56px, 9vw, 120px) 0 34px;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+      border-radius: 0;
+      backdrop-filter: none;
+      margin: 0 0 22px;
+    }
+
+    .eyebrow {
+      color: var(--cyan);
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: 0.78rem;
+      margin: 0 0 14px;
     }
 
     .hero h1 {
       max-width: 980px;
-      font-size: clamp(2.8rem, 7.4vw, 6.6rem);
-      line-height: 0.94;
-      margin: 0 0 24px;
+      font-size: clamp(3rem, 8vw, 7rem);
+      line-height: 0.92;
+      margin: 0;
       color: var(--bitcoin-orange);
       text-shadow:
         0 0 18px rgba(247, 147, 26, 0.65),
         0 0 42px rgba(247, 147, 26, 0.28);
+    }
+
+    .hero .eyebrow {
+      color: var(--cyan);
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: 0.78rem;
+      line-height: 1.2;
+      margin: 0 0 14px;
+      max-width: none;
     }
 
     .hero p {
@@ -242,27 +260,24 @@
   <canvas id="matrix"></canvas>
   <div class="wrap">
     <section class="hero">
+      <p class="eyebrow">Bitcoin-native identity and execution layer for agents and humans</p>
       <h1>HODLXXI / ₿</h1>
-      <p><strong>Bitcoin-native identity and execution layer for agents and humans.</strong></p>
-      <p>This production surface exposes a live paid-agent loop: discoverable identity, priced capabilities, Lightning invoices, paid execution, signed receipts, cryptographic verification, and reputation evidence.</p>
 
       <div class="status-row">
         <span class="status-badge">Current stage: live paid-agent runtime</span>
-        <span class="status-badge">Agent execution: Lightning-priced jobs + signed receipts</span>
-        <span class="status-badge warn">Negotiation / discovery / escrow: next layer</span>
+        <span class="status-badge">Lightning-priced jobs + signed receipts</span>
       </div>
 
       <div class="btns">
         <a class="btn" href="/agent/capabilities">Read capabilities</a>
         <a class="btn" href="/agent/reputation">Reputation + trust signals</a>
-        <a class="btn" href="/agent/request">Lightning job request</a>
         <a class="btn" href="/.well-known/agent.json">Agent discovery</a>
         <a class="btn" href="/my-kyc-id">my-kyc-id</a>
         <a class="btn" href="/chat-landing">Chat</a>
       </div>
 
       <div class="footer">
-        Root remains agent-first. my-kyc-id is available at <code>/my-kyc-id</code>. Chat is available at <code>/chat-landing</code>.
+        <p>This production surface exposes a live paid-agent loop: discoverable identity, priced capabilities, Lightning invoices, paid execution, signed receipts, cryptographic verification, and reputation evidence.</p>
       </div>
     </section>
 
