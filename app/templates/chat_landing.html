@@ -31,7 +31,7 @@
       </p>
 
       <div class="actions">
-        <a class="btn primary" href="/login?next=/app">Enter chat app</a>
+        <a class="btn primary" href="#guest" id="enterAsGuest" data-guest-entry="true">Enter as Guest</a>
         <a class="btn secondary" href="/login?next=/app">Enter with your key</a>
       </div>
 
@@ -226,5 +226,49 @@
   </main>
 
   <script src="/static/landing/chat/app.js"></script>
+
+<script>
+(function () {
+  const btn = document.getElementById("enterAsGuest");
+  if (!btn) return;
+
+  btn.addEventListener("click", async function (event) {
+    event.preventDefault();
+
+    const originalText = btn.textContent;
+    btn.textContent = "Entering as Guest...";
+    btn.setAttribute("aria-busy", "true");
+
+    try {
+      const response = await fetch("/guest_login", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Accept": "application/json"
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error("guest_login_failed_" + response.status);
+      }
+
+      const data = await response.json().catch(() => ({}));
+      if (data && data.ok === false) {
+        throw new Error("guest_login_not_ok");
+      }
+
+      window.location.href = "/app";
+    } catch (error) {
+      console.error("Guest entry failed:", error);
+      btn.textContent = "Guest entry failed — try login";
+      setTimeout(function () {
+        btn.textContent = originalText;
+        btn.removeAttribute("aria-busy");
+      }, 1800);
+    }
+  });
+})();
+</script>
+
 </body>
 </html>
