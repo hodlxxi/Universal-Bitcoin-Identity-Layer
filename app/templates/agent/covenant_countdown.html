@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Agent Covenant Countdown</title>
+  <style>
+    :root {
+      --bg: #020704;
+      --panel: rgba(0, 20, 10, 0.72);
+      --panel-2: rgba(0, 40, 25, 0.56);
+      --green: #00ff88;
+      --cyan: #00e5ff;
+      --bitcoin-orange: #f7931a;
+      --text: #e6fff3;
+      --muted: #9bd8bd;
+      --danger: #ffd27d;
+      --border: rgba(0, 255, 136, 0.28);
+      --shadow: 0 0 35px rgba(0, 255, 136, 0.16);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      line-height: 1.55;
+      min-height: 100vh;
+    }
+    #matrix { position: fixed; inset: 0; z-index: -1; opacity: 0.32; }
+    .wrap { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 24px 0 48px; }
+    .hero { padding: clamp(42px, 7vw, 88px) 0 28px; margin: 0 0 22px; }
+    .eyebrow { color: var(--cyan); text-transform: uppercase; letter-spacing: 0.18em; font-size: 0.78rem; margin: 0 0 14px; }
+    h1 {
+      max-width: 980px;
+      font-size: clamp(2.6rem, 7vw, 6rem);
+      line-height: 0.95;
+      margin: 0;
+      color: var(--bitcoin-orange);
+      text-shadow: 0 0 18px rgba(247, 147, 26, 0.65), 0 0 42px rgba(247, 147, 26, 0.28);
+    }
+    .hero p { max-width: 920px; font-size: clamp(1rem, 1.8vw, 1.2rem); color: var(--muted); margin: 12px 0; }
+    .status-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 12px; }
+    .status-badge {
+      border: 1px solid var(--border);
+      background: rgba(0, 255, 136, 0.07);
+      border-radius: 999px;
+      padding: 8px 11px;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+    .status-badge.warn { border-color: rgba(247, 147, 26, 0.42); background: rgba(247, 147, 26, 0.08); color: var(--bitcoin-orange); }
+    .btns { display: flex; flex-wrap: wrap; gap: 14px; margin: 24px 0; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 13px 18px; border: 1px solid var(--border); border-radius: 999px;
+      box-shadow: var(--shadow); font-weight: 900; background: rgba(0, 255, 136, 0.08);
+      color: var(--green); text-decoration: none;
+    }
+    .btn:hover { color: var(--cyan); border-color: rgba(0, 229, 255, 0.5); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; margin: 22px 0; }
+    .card {
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      box-shadow: var(--shadow);
+      border-radius: 24px;
+      padding: 24px;
+      backdrop-filter: blur(8px);
+    }
+    h2 { margin: 0 0 12px; font-size: 1.2rem; color: var(--green); }
+    .label { color: var(--muted); font-size: 0.9rem; margin-bottom: 6px; }
+    .value { color: var(--text); word-break: break-word; }
+    .value.big { font-size: 1.5rem; color: var(--cyan); }
+    code {
+      color: var(--cyan); background: rgba(0, 229, 255, 0.08);
+      border: 1px solid rgba(0, 229, 255, 0.2); border-radius: 8px; padding: 2px 6px;
+    }
+    a { color: var(--green); text-decoration: none; }
+    a:hover { color: var(--cyan); }
+    .footer { margin-top: 18px; color: var(--muted); font-size: 0.94rem; }
+    @media (max-width: 980px) {
+      .hero { padding: 36px 18px; }
+      h1 { font-size: clamp(2.2rem, 13vw, 4.4rem); }
+      .btn { width: 100%; }
+    }
+    @media (prefers-reduced-motion: reduce) { #matrix { display: none; } }
+  </style>
+</head>
+<body>
+  <canvas id="matrix"></canvas>
+
+  {% set next_unlock = payload.covenant.next_unlock %}
+  {% set agent_path = (payload.covenant.spend_paths | selectattr('party', 'equalto', 'agent') | list | first) %}
+  {% set operator_path = (payload.covenant.spend_paths | selectattr('party', 'equalto', 'operator') | list | first) %}
+  {% set agent_pub = payload.covenant.agent_pubkey or "" %}
+  {% set operator_pub = payload.covenant.operator_pubkey or "" %}
+
+  <div class="wrap">
+    <section class="hero">
+      <p class="eyebrow">Bitcoin block-height clock for HODLXXI Herald</p>
+      <h1>Agent Covenant Countdown</h1>
+
+      <div class="status-row">
+        <span class="status-badge">Status: {{ payload.status }}</span>
+        <span class="status-badge">Network: {{ payload.chain.network }}</span>
+        <span class="status-badge">Funding: {{ payload.covenant.funding_status or "unknown" }}</span>
+        {% if payload.covenant.funding_status == "unfunded_declared" %}
+          <span class="status-badge warn">Declared trust layer today; not yet funded on-chain capital proof</span>
+        {% endif %}
+      </div>
+
+      <p>Bitcoin block height is authoritative. UTC date is only an estimate.</p>
+
+      <div class="btns">
+        <a class="btn" href="/agent/covenant-countdown.json">Read countdown JSON</a>
+        <a class="btn" href="/agent/trust/hodlxxi-herald-01">Herald trust page</a>
+        <a class="btn" href="/agent/covenants/hodlxxi-herald-covenant-v1.json">Covenant artifact</a>
+        <a class="btn" href="/agent/capabilities">Capabilities</a>
+        <a class="btn" href="/agent/reputation">Reputation</a>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="card"><div class="label">Current block height</div><div class="value big">{{ payload.chain.current_block_height if payload.chain.current_block_height is not none else "unavailable" }}</div></article>
+      <article class="card"><div class="label">Blocks remaining</div><div class="value big">{{ next_unlock.remaining_blocks if next_unlock and next_unlock.remaining_blocks is not none else "n/a" }}</div></article>
+      <article class="card"><div class="label">Estimated days remaining</div><div class="value big">{{ next_unlock.estimated_days_remaining if next_unlock and next_unlock.estimated_days_remaining is not none else "n/a" }}</div></article>
+      <article class="card"><div class="label">Estimated unlock date UTC</div><div class="value">{{ next_unlock.estimated_unlock_date if next_unlock and next_unlock.estimated_unlock_date else "n/a" }}</div></article>
+      <article class="card"><div class="label">Agent unlock block</div><div class="value">{{ agent_path.lock_height if agent_path else "n/a" }}</div></article>
+      <article class="card"><div class="label">Operator unlock block</div><div class="value">{{ operator_path.lock_height if operator_path else "n/a" }}</div></article>
+      <article class="card"><div class="label">Declared address</div><div class="value">{{ payload.covenant.address or "n/a" }}</div></article>
+      <article class="card"><div class="label">Agent pubkey</div><div class="value">{{ agent_pub[:12] ~ "…" ~ agent_pub[-8:] if agent_pub else "n/a" }}</div></article>
+      <article class="card"><div class="label">Operator pubkey</div><div class="value">{{ operator_pub[:12] ~ "…" ~ operator_pub[-8:] if operator_pub else "n/a" }}</div></article>
+      <article class="card"><div class="label">Descriptor summary</div><div class="value"><code>{{ (payload.covenant.descriptor or "n/a")[:120] }}{% if payload.covenant.descriptor and payload.covenant.descriptor|length > 120 %}...{% endif %}</code></div></article>
+    </section>
+
+    <section class="card">
+      <h2>What this agent represents</h2>
+      <p class="footer">{{ payload.agent_interpretation.trust_claim }}</p>
+      <p class="footer">Cooperative path is available now with both signatures. Timelocked unilateral paths become available only after their Bitcoin block heights.</p>
+    </section>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("matrix");
+    const ctx = canvas.getContext("2d");
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+
+    resize();
+    window.addEventListener("resize", resize);
+
+    const chars = "01₿⚡HODLXXI_AGENT_CLOCK_COVENANT_CLTV";
+    const fontSize = 16;
+    let columns = Math.floor(canvas.width / fontSize);
+    let drops = Array(columns).fill(1);
+
+    function drawMatrix() {
+      ctx.fillStyle = "rgba(2, 7, 4, 0.08)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = "#00ff88";
+      ctx.font = `${fontSize}px monospace`;
+
+      columns = Math.floor(canvas.width / fontSize);
+      if (drops.length !== columns) drops = Array(columns).fill(1);
+
+      for (let i = 0; i < drops.length; i++) {
+        const text = chars[Math.floor(Math.random() * chars.length)];
+        ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+          drops[i] = 0;
+        }
+
+        drops[i]++;
+      }
+    }
+
+    setInterval(drawMatrix, 48);
+  </script>
+</body>
+</html>
