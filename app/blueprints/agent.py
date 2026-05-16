@@ -33,6 +33,7 @@ from app.services.trust_surface import (
     load_covenant,
     trust_page_context,
 )
+from app.utils import get_rpc_connection
 
 logger = logging.getLogger(__name__)
 audit_logger = get_audit_logger()
@@ -54,6 +55,8 @@ AGENT_MAX_BODY_BYTES = 16 * 1024
 AGENT_MAX_STRING_LENGTH = 4096
 AGENT_MAX_NESTED_DEPTH = 12
 _ip_requests = defaultdict(list)
+
+COVENANT_COUNTDOWN_SCHEMA = "hodlxxi.agent.covenant_countdown.v1"
 
 
 def _check_ip_rate_limit() -> bool:
@@ -131,6 +134,239 @@ def _agent_endpoints() -> dict:
         "verify_report": "/verify/report/<report_id>",
         "verify_nostr": "/verify/nostr/<event_id>",
     }
+
+
+def _parse_int(value: object) -> int | None:
+    try:
+        if value is None or str(value).strip() == "":
+            return None
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_chain_state() -> dict:
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    try:
+        rpc = get_rpc_connection()
+        height = int(rpc.getblockcount())
+        net = "unknown"
+        try:
+            info = rpc.getblockchaininfo()
+            net = str(info.get("chain") or "unknown")
+        except Exception:
+            pass
+        return {
+            "network": net if net in {"main", "test", "signet", "regtest", "mainnet", "testnet"} else "unknown",
+            "current_block_height": height,
+            "source": "bitcoin_rpc",
+            "as_of": now,
+        }
+    except Exception:
+        return {"network": "unknown", "current_block_height": None, "source": "unavailable", "as_of": now}
+
+
+def _normalize_network_label(network: str) -> str:
+    mapping = {"main": "mainnet", "test": "testnet", "mainnet": "mainnet", "testnet": "testnet"}
+    return mapping.get(network, network if network in {"signet", "regtest"} else "unknown")
+
+
+def _build_covenant_countdown_payload() -> dict:
+    chain = _resolve_chain_state()
+    chain["network"] = _normalize_network_label(str(chain.get("network") or "unknown"))
+    now = datetime.now(timezone.utc)
+    agent_name = os.getenv("AGENT_NAME", "UBID Agent")
+    configured_covenant_id = (os.getenv("AGENT_COVENANT_ID") or DEFAULT_COVENANT_ID).strip() or DEFAULT_COVENANT_ID
+    artifact_exists = has_covenant_artifact(configured_covenant_id)
+    covenant = load_covenant(configured_covenant_id) if artifact_exists else {}
+    policy = covenant.get("policy") if isinstance(covenant.get("policy"), dict) else {}
+    future_logic = policy.get("future_exit_logic") if isinstance(policy.get("future_exit_logic"), list) else []
+
+    current_height = chain.get("current_block_height")
+    spend_paths = [
+        {
+            "name": "cooperative",
+            "type": "multisig",
+            "required_signers": 2,
+            "total_signers": 2,
+            "available_now": True,
+            "description": "2-of-2 cooperative spend path.",
+        }
+    ]
+    next_unlock: dict | None = None
+    for idx, path in enumerate(future_logic):
+        if not isinstance(path, dict):
+            continue
+        lock_height = _parse_int(path.get("lock_height"))
+        remaining_blocks = None
+        estimated_seconds = None
+        estimated_days = None
+        estimated_unlock_date = None
+        available_now = False
+        if lock_height is not None and isinstance(current_height, int):
+            remaining_blocks = max(lock_height - current_height, 0)
+            estimated_seconds = remaining_blocks * 600
+            estimated_days = round(estimated_seconds / 86400, 1)
+            estimated_unlock_date = (
+                (now + timedelta(seconds=estimated_seconds)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            )
+            available_now = current_height >= lock_height
+
+        item = {
+            "name": f"{path.get('party') or 'unknown'}_unilateral_timeout_{idx + 1}",
+            "party": str(path.get("party") or "unknown"),
+            "type": str(path.get("type") or "timelocked_path"),
+            "lock_height": lock_height,
+            "current_block_height": current_height,
+            "remaining_blocks": remaining_blocks,
+            "estimated_seconds_remaining": estimated_seconds,
+            "estimated_days_remaining": estimated_days,
+            "estimated_unlock_date": estimated_unlock_date,
+            "available_now": available_now,
+            "description": "Unilateral spend path after lock-height maturity.",
+        }
+        spend_paths.append(item)
+        if lock_height is not None and (next_unlock is None or lock_height < next_unlock["lock_height"]):
+            next_unlock = {
+                "unlock_block_height": lock_height,
+                "remaining_blocks": remaining_blocks,
+                "estimated_days_remaining": estimated_days,
+                "estimated_unlock_date": estimated_unlock_date,
+                "beneficiary": item["party"],
+                "path_name": item["name"],
+                "lock_height": lock_height,
+            }
+
+    descriptor = covenant.get("descriptor", {}).get("value") if isinstance(covenant.get("descriptor"), dict) else None
+    script_hex = os.getenv("AGENT_COVENANT_SCRIPT_HEX")
+    if not spend_paths[1:] and descriptor:
+        try:
+            viz = visualize_covenant({"descriptor": descriptor})
+            timelocks = viz.get("machine_explanation", {}).get("observed", {}).get("timelocks") or []
+            for i, tl in enumerate(timelocks):
+                if tl.get("type") == "block_height" and isinstance(tl.get("value"), int):
+                    lock_height = int(tl["value"])
+                    remaining_blocks = max(lock_height - current_height, 0) if isinstance(current_height, int) else None
+                    spend_paths.append(
+                        {
+                            "name": f"unknown_unilateral_timeout_{i + 1}",
+                            "party": "unknown",
+                            "type": "timelocked_path",
+                            "lock_height": lock_height,
+                            "current_block_height": current_height,
+                            "remaining_blocks": remaining_blocks,
+                            "estimated_seconds_remaining": (
+                                remaining_blocks * 600 if remaining_blocks is not None else None
+                            ),
+                            "estimated_days_remaining": (
+                                round((remaining_blocks * 600) / 86400, 1) if remaining_blocks is not None else None
+                            ),
+                            "estimated_unlock_date": (
+                                (
+                                    (now + timedelta(seconds=remaining_blocks * 600))
+                                    .replace(microsecond=0)
+                                    .isoformat()
+                                    .replace("+00:00", "Z")
+                                )
+                                if remaining_blocks is not None
+                                else None
+                            ),
+                            "available_now": isinstance(current_height, int) and current_height >= lock_height,
+                            "description": "Unilateral spend path after lock-height maturity.",
+                        }
+                    )
+        except CovenantInputError:
+            pass
+
+    if not spend_paths[1:]:
+        env_unlock = _parse_int(os.getenv("AGENT_COVENANT_UNLOCK_HEIGHT"))
+        env_party = (os.getenv("AGENT_COVENANT_BENEFICIARY") or "unknown").strip() or "unknown"
+        if env_unlock is not None:
+            rem = max(env_unlock - current_height, 0) if isinstance(current_height, int) else None
+            spend_paths.append(
+                {
+                    "name": "env_unilateral_timeout",
+                    "party": env_party if env_party in {"agent", "operator", "counterparty", "unknown"} else "unknown",
+                    "type": "timelocked_path",
+                    "lock_height": env_unlock,
+                    "current_block_height": current_height,
+                    "remaining_blocks": rem,
+                    "estimated_seconds_remaining": rem * 600 if rem is not None else None,
+                    "estimated_days_remaining": round((rem * 600) / 86400, 1) if rem is not None else None,
+                    "estimated_unlock_date": (
+                        ((now + timedelta(seconds=rem * 600)).replace(microsecond=0).isoformat().replace("+00:00", "Z"))
+                        if rem is not None
+                        else None
+                    ),
+                    "available_now": isinstance(current_height, int) and current_height >= env_unlock,
+                    "description": "Unilateral spend path after lock-height maturity.",
+                }
+            )
+
+    has_timelock_paths = len(spend_paths) > 1
+    status = "ok" if artifact_exists and has_timelock_paths else "unconfigured"
+    payload = {
+        "schema": COVENANT_COUNTDOWN_SCHEMA,
+        "status": status,
+        "agent": {
+            "name": agent_name,
+            "service": "HODLXXI",
+            "capabilities_url": "/agent/capabilities",
+            "reputation_url": "/agent/reputation",
+            "attestations_url": "/agent/attestations",
+            "countdown_url": "/agent/covenant-countdown.json",
+        },
+        "trust_surface": {
+            "identity_model": "Public-key identified software agent with externally observable API surfaces.",
+            "observable_behavior": "Attestations, capabilities, and reputation endpoints expose historical behavior.",
+            "time_locked_capital_proof_exposed": has_timelock_paths and covenant.get("funding_status") == "funded",
+            "machine_verifiable": True,
+            "limitations": [
+                "Countdown is based on parsed covenant data and current chain height.",
+                "Estimated wall-clock dates assume average 10 minute Bitcoin blocks.",
+                "Wallet ownership and UTXO control require separate verification unless proven by signed challenge.",
+            ],
+        },
+        "chain": chain,
+        "covenant": {
+            "id": covenant.get("covenant_id") or configured_covenant_id,
+            "label": os.getenv("AGENT_COVENANT_LABEL", covenant.get("covenant_id") or "Agent Covenant"),
+            "descriptor": descriptor,
+            "script_hex": script_hex,
+            "address": (
+                (covenant.get("anchor") or {}).get("address")
+                if isinstance(covenant.get("anchor"), dict)
+                else os.getenv("AGENT_COVENANT_ADDRESS")
+            ),
+            "funding_status": covenant.get("funding_status", "unfunded_declared"),
+            "agent_pubkey": covenant.get("agent_pubkey"),
+            "operator_pubkey": covenant.get("operator_pubkey"),
+            "trust_interpretation": covenant.get("trust_interpretation"),
+            "visualizer_url": "/agent/request",
+            "spend_paths": spend_paths,
+            "next_unlock": next_unlock,
+        },
+        "agent_interpretation": {
+            "summary": "This agent exposes a Bitcoin time-locked commitment surface.",
+            "trust_claim": "The agent cannot unilaterally spend this covenant path before the stated block height, assuming the parsed covenant and UTXO reference are valid.",
+            "recommended_agent_actions": [
+                "Fetch /agent/capabilities",
+                "Fetch /agent/reputation",
+                "Verify descriptor/script independently",
+                "Verify current block height independently",
+                "Request signed ownership proof if capital control matters",
+            ],
+        },
+        "links": {
+            "human": "/agent/covenant-countdown",
+            "json": "/agent/covenant-countdown.json",
+            "capabilities": "/agent/capabilities",
+            "reputation": "/agent/reputation",
+            "attestations": "/agent/attestations",
+            "agent_request": "/agent/request",
+        },
+    }
+    return payload
 
 
 def _parse_front_matter_text(skill_path: Path) -> tuple[dict, str]:
@@ -1310,6 +1546,18 @@ def reputation():
                 "trust_trend": trust_trend,
             }
         )
+
+
+@agent_bp.get("/agent/covenant-countdown.json")
+@agent_bp.get("/agent/covenants/countdown.json")
+def covenant_countdown_json():
+    return jsonify(_build_covenant_countdown_payload())
+
+
+@agent_bp.get("/agent/covenant-countdown")
+def covenant_countdown_page():
+    payload = _build_covenant_countdown_payload()
+    return render_template("agent/covenant_countdown.html", payload=payload)
 
 
 @agent_bp.get("/agent/trust/<agent_id>")

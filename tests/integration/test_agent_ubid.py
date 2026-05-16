@@ -43,6 +43,98 @@ def test_capabilities_signature_verifies(client):
     assert body["skills"]["count"] >= 1
 
 
+def test_covenant_countdown_page_is_public(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.blueprints.agent._resolve_chain_state",
+        lambda: {
+            "network": "main",
+            "current_block_height": 10,
+            "source": "bitcoin_rpc",
+            "as_of": "2026-01-01T00:00:00Z",
+        },
+    )
+    res = client.get("/agent/covenant-countdown")
+    assert res.status_code == 200
+
+
+def test_covenant_countdown_json_schema(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.blueprints.agent._resolve_chain_state",
+        lambda: {
+            "network": "main",
+            "current_block_height": 10,
+            "source": "bitcoin_rpc",
+            "as_of": "2026-01-01T00:00:00Z",
+        },
+    )
+    res = client.get("/agent/covenant-countdown.json")
+    assert res.status_code == 200
+    assert res.get_json()["schema"] == "hodlxxi.agent.covenant_countdown.v1"
+
+
+def test_covenant_countdown_remaining_blocks(client, monkeypatch):
+    monkeypatch.setenv("AGENT_COVENANT_ID", "hodlxxi-herald-covenant-v1")
+    monkeypatch.setattr(
+        "app.blueprints.agent._resolve_chain_state",
+        lambda: {
+            "network": "main",
+            "current_block_height": 901245,
+            "source": "bitcoin_rpc",
+            "as_of": "2026-01-01T00:00:00Z",
+        },
+    )
+    body = client.get("/agent/covenant-countdown.json").get_json()
+    agent_paths = [p for p in body["covenant"]["spend_paths"] if p.get("party") == "agent"]
+    assert len(agent_paths) >= 1
+    assert agent_paths[0]["remaining_blocks"] == 876532
+    assert agent_paths[0]["available_now"] is False
+
+
+def test_covenant_countdown_unlock_available_now(client, monkeypatch):
+    monkeypatch.setenv("AGENT_COVENANT_UNLOCK_HEIGHT", "100")
+    monkeypatch.setenv("AGENT_COVENANT_ID", "missing-covenant-id")
+    monkeypatch.setattr(
+        "app.blueprints.agent._resolve_chain_state",
+        lambda: {
+            "network": "main",
+            "current_block_height": 100,
+            "source": "bitcoin_rpc",
+            "as_of": "2026-01-01T00:00:00Z",
+        },
+    )
+    body = client.get("/agent/covenant-countdown.json").get_json()
+    unilateral = [p for p in body["covenant"]["spend_paths"] if p.get("name") == "env_unilateral_timeout"][0]
+    assert unilateral["remaining_blocks"] == 0
+    assert unilateral["available_now"] is True
+
+
+def test_covenant_countdown_unconfigured_returns_200(client, monkeypatch):
+    monkeypatch.delenv("AGENT_COVENANT_UNLOCK_HEIGHT", raising=False)
+    monkeypatch.delenv("AGENT_COVENANT_DESCRIPTOR", raising=False)
+    monkeypatch.delenv("AGENT_COVENANT_SCRIPT_HEX", raising=False)
+    monkeypatch.setenv("AGENT_COVENANT_ID", "missing-covenant-id")
+    monkeypatch.setattr(
+        "app.blueprints.agent._resolve_chain_state",
+        lambda: {
+            "network": "unknown",
+            "current_block_height": None,
+            "source": "unavailable",
+            "as_of": "2026-01-01T00:00:00Z",
+        },
+    )
+    res = client.get("/agent/covenant-countdown.json")
+    assert res.status_code == 200
+    assert res.get_json()["status"] == "unconfigured"
+
+
+def test_capabilities_still_works(client):
+    assert client.get("/agent/capabilities").status_code == 200
+
+
+def test_reputation_still_works(client):
+    assert client.get("/agent/reputation").status_code == 200
+
+
 def test_capabilities_schema_is_machine_readable(client):
     res = client.get("/agent/capabilities/schema")
     assert res.status_code == 200
