@@ -79,6 +79,25 @@
     a { color: var(--green); text-decoration: none; }
     a:hover { color: var(--cyan); }
     .footer { margin-top: 18px; color: var(--muted); font-size: 0.94rem; }
+    .collapse-toggle {
+      width: 100%; text-align: left; cursor: pointer;
+      background: rgba(0, 255, 136, 0.08); color: var(--green);
+      border: 1px solid var(--border); border-radius: 12px;
+      padding: 12px 14px; font-family: inherit; font-size: 0.95rem;
+    }
+    .collapse-toggle:hover { color: var(--cyan); border-color: rgba(0, 229, 255, 0.5); }
+    .raw-descriptor {
+      margin-top: 12px;
+      overflow-x: auto;
+      white-space: pre;
+      word-break: normal;
+      padding: 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(0, 229, 255, 0.28);
+      background: rgba(0, 229, 255, 0.08);
+      color: var(--cyan);
+    }
+    .placeholder { color: var(--muted); font-style: italic; margin-top: 10px; }
     @media (max-width: 980px) {
       .hero { padding: 36px 18px; }
       h1 { font-size: clamp(2.2rem, 13vw, 4.4rem); }
@@ -95,6 +114,7 @@
   {% set operator_path = (payload.covenant.spend_paths | selectattr('party', 'equalto', 'operator') | list | first) %}
   {% set agent_pub = payload.covenant.agent_pubkey or "" %}
   {% set operator_pub = payload.covenant.operator_pubkey or "" %}
+  {% set covenant_summary = payload.covenant.summary or payload.agent_interpretation.summary or "2-of-2 cooperative covenant with delayed unilateral exits." %}
 
   <div class="wrap">
     <section class="hero">
@@ -118,6 +138,7 @@
         <a class="btn" href="/agent/covenants/hodlxxi-herald-covenant-v1.json">Covenant artifact</a>
         <a class="btn" href="/agent/capabilities">Capabilities</a>
         <a class="btn" href="/agent/reputation">Reputation</a>
+        <a class="btn" href="/agent/request">Visualize covenant</a>
       </div>
     </section>
 
@@ -131,7 +152,18 @@
       <article class="card"><div class="label">Declared address</div><div class="value">{{ payload.covenant.address or "n/a" }}</div></article>
       <article class="card"><div class="label">Agent pubkey</div><div class="value">{{ agent_pub[:12] ~ "…" ~ agent_pub[-8:] if agent_pub else "n/a" }}</div></article>
       <article class="card"><div class="label">Operator pubkey</div><div class="value">{{ operator_pub[:12] ~ "…" ~ operator_pub[-8:] if operator_pub else "n/a" }}</div></article>
-      <article class="card"><div class="label">Descriptor summary</div><div class="value"><code>{{ (payload.covenant.descriptor or "n/a")[:120] }}{% if payload.covenant.descriptor and payload.covenant.descriptor|length > 120 %}...{% endif %}</code></div></article>
+      <article class="card"><div class="label">Covenant interpretation</div><div class="value">{{ covenant_summary }}</div></article>
+    </section>
+
+
+
+    <section class="card">
+      <h2>Raw descriptor</h2>
+      <details>
+        <summary class="collapse-toggle">Show full descriptor</summary>
+        <pre class="raw-descriptor">{{ payload.covenant.descriptor or "Descriptor unavailable." }}</pre>
+      </details>
+      <p class="placeholder">Interactive covenant graph coming soon.</p>
     </section>
 
     <section class="card">
