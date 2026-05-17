@@ -46,18 +46,19 @@ def _broadcast_chat_message(text: str, client_id: str | None = None):
     logger.debug(f"CHAT DEBUG: appended history len={len(CHAT_HISTORY)} payload={m}")
 
     # Old clients listen to "message"; current UI listens to "chat:message".
-    # Explicitly echo to the sender sid, then broadcast to everyone else.
-    # This avoids the "message saved but not visible until refresh" failure mode.
-    if sid:
-        socketio.emit("message", m, room=sid)
-        socketio.emit("chat:message", m, room=sid)
-        socketio.emit("message", m, skip_sid=sid)
-        socketio.emit("chat:message", m, skip_sid=sid)
-    else:
-        socketio.emit("message", m)
-        socketio.emit("chat:message", m)
+    # Emit globally on the default namespace. This is intentionally blunt:
+    # client_id-based UI dedupe handles sender echo, while global emit avoids
+    # silent non-delivery caused by sid/skip_sid edge cases.
+    socketio.emit("message", m, namespace="/")
+    socketio.emit("chat:message", m, namespace="/")
 
-    logger.debug("CHAT DEBUG: emitted message and chat:message")
+    logger.info(
+        "socket_chat_broadcast sid=%s pubkey_tail=%s client_id_present=%s history_len=%s",
+        sid,
+        str(pk)[-8:],
+        bool(client_id),
+        len(CHAT_HISTORY),
+    )
 
 
 def _handle_chat_send(data):
@@ -67,6 +68,12 @@ def _handle_chat_send(data):
     Client sends: socket.emit('chat:send', { text: 'hello' })
     """
     try:
+        logger.info(
+            "socket_chat_send sid=%s session_pubkey_tail=%s data_type=%s",
+            getattr(request, "sid", None),
+            str(session.get("logged_in_pubkey", ""))[-8:],
+            type(data).__name__,
+        )
         logger.debug(f"CHAT DEBUG: raw incoming data={data!r} sid={getattr(request, 'sid', None)}")
         client_id = None
         if isinstance(data, dict):
@@ -102,13 +109,24 @@ def _build_online_list(online_users, online_meta, online_user_meta):
 def _handle_socket_connect(auth=None):
     pubkey = session.get("logged_in_pubkey", "")
     level = session.get("access_level")
+    sid = request.sid
     if not pubkey:
+        logger.info("socket_connect_rejected sid=%s reason=no_session_pubkey", sid)
         return False
     role = classify_presence(pubkey, level)
 
-    ACTIVE_SOCKETS[request.sid] = pubkey
+    ACTIVE_SOCKETS[sid] = pubkey
     ONLINE_USERS.add(pubkey)
     ONLINE_META[pubkey] = role
+
+    logger.info(
+        "socket_connect sid=%s pubkey_tail=%s role=%s active_sockets=%s online_users=%s",
+        sid,
+        str(pubkey)[-8:],
+        role,
+        len(ACTIVE_SOCKETS),
+        len(ONLINE_USERS),
+    )
 
     # Use emit() not socketio.emit()
     # PRESENCE_LABEL_BROADCAST_V2: attach label to presence join payload (PIN guests)
@@ -130,16 +148,29 @@ def _handle_socket_disconnect(*args, **kwargs):
     sid = request.sid
     pubkey = ACTIVE_SOCKETS.pop(sid, None)
     if not pubkey:
+        logger.info("socket_disconnect sid=%s pubkey_tail=none active_sockets=%s online_users=%s", sid, len(ACTIVE_SOCKETS), len(ONLINE_USERS))
         return
 
+    removed_user = False
     if pubkey not in ACTIVE_SOCKETS.values():
         ONLINE_USERS.discard(pubkey)
         ONLINE_META.pop(pubkey, None)
+        ONLINE_USER_META.pop(pubkey, None)
+        removed_user = True
 
         # Use emit() not socketio.emit()
         emit("user:left", {"pubkey": pubkey}, broadcast=True)
 
         emit("online:list", _build_online_list(ONLINE_USERS, ONLINE_META, ONLINE_USER_META), broadcast=True)
+
+    logger.info(
+        "socket_disconnect sid=%s pubkey_tail=%s removed_user=%s active_sockets=%s online_users=%s",
+        sid,
+        str(pubkey)[-8:],
+        removed_user,
+        len(ACTIVE_SOCKETS),
+        len(ONLINE_USERS),
+    )
 
 
 def sids_for_pubkey(pk: str):
