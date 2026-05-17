@@ -148,7 +148,12 @@ def _handle_socket_disconnect(*args, **kwargs):
     sid = request.sid
     pubkey = ACTIVE_SOCKETS.pop(sid, None)
     if not pubkey:
-        logger.info("socket_disconnect sid=%s pubkey_tail=none active_sockets=%s online_users=%s", sid, len(ACTIVE_SOCKETS), len(ONLINE_USERS))
+        logger.info(
+            "socket_disconnect sid=%s pubkey_tail=none active_sockets=%s online_users=%s",
+            sid,
+            len(ACTIVE_SOCKETS),
+            len(ONLINE_USERS),
+        )
         return
 
     removed_user = False
