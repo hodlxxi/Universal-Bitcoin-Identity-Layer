@@ -3051,10 +3051,30 @@ def register_browser_routes(
         }
 
         // Socket.IO
-        const socket = io();
+        const socket = io({
+          transports: ['websocket', 'polling'],
+          reconnection: true,
+          reconnectionAttempts: Infinity,
+          reconnectionDelay: 500,
+          reconnectionDelayMax: 5000
+        });
 
-        socket.on('connect', () => setStatus('Connected'));
-        socket.on('disconnect', () => setStatus('Disconnected'));
+        window.hodlxxiSocket = socket;
+
+        socket.on('connect', () => {
+          console.log('[HODLXXI chat] socket connected', socket.id);
+          setStatus('Connected');
+        });
+
+        socket.on('disconnect', (reason) => {
+          console.warn('[HODLXXI chat] socket disconnected', reason);
+          setStatus('Disconnected');
+        });
+
+        socket.on('connect_error', (err) => {
+          console.error('[HODLXXI chat] socket connect_error', err && (err.message || err));
+          setStatus('Socket error');
+        });
 
         socket.on('chat:history', (payload) => {
           const msgs = payload?.messages || payload;
