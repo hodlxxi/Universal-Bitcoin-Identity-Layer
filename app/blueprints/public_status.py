@@ -9,6 +9,8 @@ from flask import Blueprint, jsonify
 
 from bitcoinrpc.authproxy import AuthServiceProxy
 
+from app.socket_state import ACTIVE_SOCKETS, ONLINE_META, ONLINE_USERS
+
 public_status_bp = Blueprint("public_status", __name__)
 
 _PROCESS_START_TIME = time.time()
@@ -110,6 +112,16 @@ def _safe_lnd_status() -> dict[str, Any]:
         return {"active": False, "state": f"unknown:{e.__class__.__name__}"}
 
 
+def _online_role_counts() -> dict[str, int]:
+    roles = {"full": 0, "limited": 0, "pin": 0, "random": 0, "other": 0}
+    for pk in list(ONLINE_USERS):
+        role = ONLINE_META.get(pk) or "other"
+        if role not in roles:
+            role = "other"
+        roles[role] += 1
+    return roles
+
+
 @public_status_bp.route("/api/public/status", methods=["GET"])
 def api_public_status():
     now = int(time.time())
@@ -138,9 +150,9 @@ def api_public_status():
             "server_time_utc": iso,
             "block_height": height,
             "error": err,
-            "online_users": 0,
-            "active_sockets": 0,
-            "online_roles": {"full": 0, "limited": 0, "pin": 0, "random": 0, "other": 0},
+            "online_users": len(ONLINE_USERS),
+            "active_sockets": len(ACTIVE_SOCKETS),
+            "online_roles": _online_role_counts(),
             "uptime_sec": uptime_sec,
             "load": load,
             "btc": btc,
