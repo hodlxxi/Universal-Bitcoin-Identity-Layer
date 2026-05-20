@@ -122,6 +122,8 @@ def _agent_endpoints() -> dict:
         "job": "/agent/jobs/<job_id>",
         "verify": "/agent/verify/<job_id>",
         "attestations": "/agent/attestations",
+        "trust_events": "/agent/trust/events",
+        "discovery": "/agent/discovery",
         "reputation": "/agent/reputation",
         "chain_health": "/agent/chain/health",
         "marketplace_listing": "/agent/marketplace/listing",
@@ -757,6 +759,103 @@ def _request_payload_from_data(data: dict) -> dict:
         result["nonce"] = nonce
 
     return result
+
+
+def _sanitize_public_value(value: object) -> object:
+    """Reject accidental secret-shaped public output."""
+    sensitive = ("secret", "token", "private", "seed", "mnemonic", "macaroon", "password")
+    if isinstance(value, dict):
+        return {
+            str(k): _sanitize_public_value(v)
+            for k, v in value.items()
+            if not any(term in str(k).lower() for term in sensitive)
+        }
+    if isinstance(value, list):
+        return [_sanitize_public_value(v) for v in value]
+    if isinstance(value, str):
+        lowered = value.lower()
+        if any(term in lowered for term in sensitive):
+            return "[redacted]"
+    return value
+
+
+@agent_bp.get("/agent/discovery")
+def agent_discovery():
+    endpoints = _agent_endpoints()
+    payload = {
+        "schema": "hodlxxi.agent.discovery.v1",
+        "agent_pubkey": get_agent_pubkey_hex(),
+        "service_name": "HODLXXI Agent UBID",
+        "network": "bitcoin",
+        "discovery": {
+            "well_known_agent": endpoints["well_known"],
+            "capabilities": endpoints["capabilities"],
+            "capabilities_schema": endpoints["capabilities_schema"],
+            "skills": endpoints["skills"],
+            "marketplace_listing": endpoints["marketplace_listing"],
+            "reputation": endpoints["reputation"],
+            "attestations": endpoints["attestations"],
+            "trust_events": endpoints["trust_events"],
+            "chain_health": endpoints["chain_health"],
+            "request": endpoints["request"],
+            "message": endpoints["message"],
+        },
+        "trust_surfaces": {
+            "events": endpoints["trust_events"],
+            "attestations": endpoints["attestations"],
+            "reputation": endpoints["reputation"],
+            "chain_health": endpoints["chain_health"],
+        },
+        "timestamp": _iso_now(),
+    }
+    payload["signature"] = sign_message(canonical_json_bytes(payload))
+    return jsonify(_sanitize_public_value(payload))
+
+
+@agent_bp.get("/agent/trust/events")
+def trust_events():
+    try:
+        limit = min(max(int(request.args.get("limit", 20)), 1), 100)
+        offset = max(int(request.args.get("offset", 0)), 0)
+    except ValueError:
+        return jsonify({"error": "invalid_pagination"}), 400
+
+    with session_scope() as session:
+        events = session.query(AgentEvent).order_by(AgentEvent.created_at.desc()).offset(offset).limit(limit).all()
+        job_ids = {event.job_id for event in events}
+        jobs = (
+            {job.id: job for job in session.query(AgentJob).filter(AgentJob.id.in_(job_ids)).all()} if job_ids else {}
+        )
+
+        items = []
+        for event in events:
+            job = jobs.get(event.job_id)
+            raw = event.event_json or {}
+            items.append(
+                {
+                    "event_hash": event.event_hash,
+                    "prev_event_hash": event.prev_event_hash,
+                    "event_type": raw.get("event_type", "job_receipt"),
+                    "job_id": event.job_id,
+                    "job_type": raw.get("job_type") or (job.job_type if job else None),
+                    "request_hash": raw.get("request_hash") or (job.request_hash if job else None),
+                    "payment_hash": raw.get("payment_hash") or (job.payment_hash if job else None),
+                    "result_hash": raw.get("result_hash") or (job.result_hash if job else None),
+                    "timestamp": raw.get("timestamp") or event.created_at.isoformat(),
+                    "agent_pubkey": raw.get("agent_pubkey", get_agent_pubkey_hex()),
+                    "signature": raw.get("signature", event.signature),
+                }
+            )
+
+    payload = {
+        "schema": "hodlxxi.agent.trust_events.v1",
+        "agent_pubkey": get_agent_pubkey_hex(),
+        "items": items,
+        "count": len(items),
+        "limit": limit,
+        "offset": offset,
+    }
+    return jsonify(_sanitize_public_value(payload))
 
 
 @agent_bp.get("/agent/capabilities")

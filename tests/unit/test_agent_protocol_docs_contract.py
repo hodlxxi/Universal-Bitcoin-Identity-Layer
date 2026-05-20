@@ -34,6 +34,8 @@ def test_documented_agent_endpoints_are_registered(app) -> None:
         "/agent/jobs/<job_id>",
         "/agent/verify/<job_id>",
         "/agent/attestations",
+        "/agent/trust/events",
+        "/agent/discovery",
         "/agent/reputation",
         "/agent/chain/health",
         "/agent/skills",
