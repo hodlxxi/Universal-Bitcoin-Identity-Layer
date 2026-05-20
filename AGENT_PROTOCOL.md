@@ -415,3 +415,13 @@ Natural next protocol extensions include:
 ## Summary
 
 HODLXXI Agent Protocol is a Lightning-paid, receipt-signed, attestation-linked protocol for agents that need to be machine-usable, cryptographically accountable, and discoverable through conservative trust metadata.
+
+
+## Runtime Discovery Index
+
+The compact runtime index is available in `docs/AGENT_RUNTIME.md`.
+
+Additional machine-readable public surfaces:
+
+- `GET /agent/discovery` — compact discovery document for agent clients.
+- `GET /agent/trust/events` — sanitized public trust-event stream derived from signed agent events.

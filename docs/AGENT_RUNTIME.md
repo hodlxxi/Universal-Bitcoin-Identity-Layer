@@ -1,0 +1,45 @@
+# HODLXXI Agent Runtime Index
+
+This is a compact index for the machine-readable HODLXXI agent runtime.
+
+Canonical protocol and trust details remain in:
+
+- `AGENT_PROTOCOL.md`
+- `TRUST_MODEL.md`
+
+## Discovery
+
+- `/.well-known/agent.json`
+- `/agent/discovery`
+- `/agent/capabilities`
+- `/agent/capabilities/schema`
+- `/agent/skills`
+- `/agent/marketplace/listing`
+
+## Paid Work
+
+- `POST /agent/request`
+- `GET /agent/jobs/<job_id>`
+- `GET /agent/verify/<job_id>`
+
+## Agent-to-Agent Message Flow
+
+- `POST /agent/message`
+
+## Trust Surfaces
+
+- `/agent/trust/events`
+- `/agent/attestations`
+- `/agent/reputation`
+- `/agent/chain/health`
+
+## Runtime Rules
+
+- no custody
+- no pooled funds
+- no escrow guarantees
+- peer-to-peer settlement only
+- public-key identity
+- signed receipts
+- machine-readable attestations
+- verify, do not trust

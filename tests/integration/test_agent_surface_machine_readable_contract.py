@@ -44,6 +44,27 @@ def test_capabilities_schema_required_top_level_keys_declared(client):
     assert {"agent_pubkey", "endpoints", "job_types", "signature", "version", "timestamp"}.issubset(required)
 
 
+def test_agent_discovery_shape_contract(client):
+    body = client.get("/agent/discovery").get_json()
+    assert body["schema"] == "hodlxxi.agent.discovery.v1"
+    assert body["agent_pubkey"]
+    assert body["discovery"]["well_known_agent"] == "/.well-known/agent.json"
+    assert body["discovery"]["capabilities"] == "/agent/capabilities"
+    assert body["discovery"]["trust_events"] == "/agent/trust/events"
+    assert body["trust_surfaces"]["events"] == "/agent/trust/events"
+    assert isinstance(body["signature"], str) and body["signature"]
+
+
+def test_agent_trust_events_shape_contract(client):
+    body = client.get("/agent/trust/events").get_json()
+    assert body["schema"] == "hodlxxi.agent.trust_events.v1"
+    assert body["agent_pubkey"]
+    assert isinstance(body["items"], list)
+    assert isinstance(body["count"], int)
+    assert body["limit"] == 20
+    assert body["offset"] == 0
+
+
 def test_reputation_shape_contract(client):
     body = client.get("/agent/reputation").get_json()
     assert "completed_jobs" in body
@@ -66,6 +87,8 @@ def test_public_surfaces_do_not_expose_secret_like_fields(client):
         "/.well-known/agent.json",
         "/agent/capabilities",
         "/agent/capabilities/schema",
+        "/agent/discovery",
+        "/agent/trust/events",
         "/agent/reputation",
         "/agent/chain/health",
         "/agent/skills",
