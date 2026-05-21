@@ -65,6 +65,34 @@ def test_agent_trust_events_shape_contract(client):
     assert body["offset"] == 0
 
 
+def test_agent_nostr_announcement_shape_contract(client):
+    body = client.get("/agent/nostr/announcement").get_json()
+
+    assert body["schema"] == "hodlxxi.agent.nostr_announcement.v1"
+    assert body["agent_pubkey"]
+    assert body["service_name"] == "HODLXXI Agent UBID"
+    assert body["publication_status"] == "template_only_not_published"
+    assert body["sig_scheme"] == "secp256k1"
+    assert body["nostr"]["nip89_kind"] == 31990
+    assert body["nostr"]["nip90_request_kinds"] == ["5000"]
+    assert body["nostr"]["nip90_result_kinds"] == ["6000"]
+    assert body["nostr"]["nip90_feedback_kind"] == 7000
+    assert ["k", "5000"] in body["nostr"]["tags"]
+    assert body["links"]["discovery"] == "/agent/discovery"
+    assert body["links"]["capabilities"] == "/agent/capabilities"
+    assert body["links"]["trust_events"] == "/agent/trust/events"
+    assert body["content_template"]["web"] == "https://hodlxxi.com/agent/discovery"
+    assert isinstance(body["signature"], str) and body["signature"]
+
+
+def test_agent_nostr_announcement_propagates_to_capabilities_and_discovery(client):
+    capabilities = client.get("/agent/capabilities").get_json()
+    discovery = client.get("/agent/discovery").get_json()
+
+    assert capabilities["endpoints"]["nostr_announcement"] == "/agent/nostr/announcement"
+    assert discovery["discovery"]["nostr_announcement"] == "/agent/nostr/announcement"
+
+
 def test_reputation_shape_contract(client):
     body = client.get("/agent/reputation").get_json()
     assert "completed_jobs" in body
@@ -88,6 +116,7 @@ def test_public_surfaces_do_not_expose_secret_like_fields(client):
         "/agent/capabilities",
         "/agent/capabilities/schema",
         "/agent/discovery",
+        "/agent/nostr/announcement",
         "/agent/trust/events",
         "/agent/reputation",
         "/agent/chain/health",

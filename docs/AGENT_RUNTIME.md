@@ -15,6 +15,7 @@ Canonical protocol and trust details remain in:
 - `/agent/capabilities/schema`
 - `/agent/skills`
 - `/agent/marketplace/listing`
+- `/agent/nostr/announcement`
 
 ## Paid Work
 
