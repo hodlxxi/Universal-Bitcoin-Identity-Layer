@@ -1,0 +1,23 @@
+{
+  "kind": 7000,
+  "content": "payment_required",
+  "tags": [
+    [
+      "status",
+      "payment-required"
+    ],
+    [
+      "amount",
+      "21000",
+      "<bolt11-invoice-from-agent-request>"
+    ],
+    [
+      "e",
+      "<nip90-request-event-id>"
+    ],
+    [
+      "p",
+      "<customer-pubkey-hex>"
+    ]
+  ]
+}

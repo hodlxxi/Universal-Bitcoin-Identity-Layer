@@ -23,3 +23,8 @@ This endpoint does not:
 ## Intended use
 
 External DVM builders can fetch this endpoint, inspect the template, and adapt it for their own Nostr tooling.
+
+
+## NIP-90 examples
+
+See `docs/AGENT_NIP90_COMPATIBILITY.md` and `examples/nostr/` for request, feedback, and result examples.

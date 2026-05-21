@@ -44,3 +44,8 @@ Canonical protocol and trust details remain in:
 - signed receipts
 - machine-readable attestations
 - verify, do not trust
+
+
+## Nostr NIP-90 Compatibility
+
+See `docs/AGENT_NIP90_COMPATIBILITY.md` for the current NIP-90 mapping and example request/feedback/result payloads.
