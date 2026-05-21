@@ -1,0 +1,35 @@
+{
+  "kind": 6000,
+  "content": "{\"ok\":true,\"job_type\":\"ping\",\"receipt\":\"<hodlxxi-signed-receipt-json>\"}",
+  "tags": [
+    [
+      "request",
+      "<stringified-original-nip90-request-event>"
+    ],
+    [
+      "e",
+      "<nip90-request-event-id>"
+    ],
+    [
+      "p",
+      "<customer-pubkey-hex>"
+    ],
+    [
+      "amount",
+      "21000",
+      "<paid-bolt11-invoice>"
+    ],
+    [
+      "t",
+      "bitcoin"
+    ],
+    [
+      "t",
+      "lightning"
+    ],
+    [
+      "t",
+      "receipt"
+    ]
+  ]
+}

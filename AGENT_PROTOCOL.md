@@ -432,3 +432,12 @@ Additional machine-readable public surfaces:
 HODLXXI exposes `GET /agent/nostr/announcement` as a template-only compatibility surface for Nostr DVM / NIP-89 / NIP-90 builders.
 
 This endpoint does not publish to relays, does not manage Nostr private keys, and does not perform NIP-47/NWC spending. It only exposes a signed runtime template that external builders can inspect and adapt.
+
+
+## NIP-90 Compatibility Examples
+
+HODLXXI documents a template-only NIP-90 mapping in `docs/AGENT_NIP90_COMPATIBILITY.md`.
+
+Example request, feedback, and result payloads are available in `examples/nostr/`.
+
+This does not add relay publishing, relay listening, Nostr private key handling, NIP-47/NWC spending, custody, or auto-payments.

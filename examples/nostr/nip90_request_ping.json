@@ -1,0 +1,35 @@
+{
+  "kind": 5000,
+  "content": "",
+  "tags": [
+    [
+      "i",
+      "{\"job_type\":\"ping\",\"payload\":{\"message\":\"hello from nostr dvm\"}}",
+      "text"
+    ],
+    [
+      "output",
+      "application/json"
+    ],
+    [
+      "bid",
+      "21000"
+    ],
+    [
+      "t",
+      "bitcoin"
+    ],
+    [
+      "t",
+      "lightning"
+    ],
+    [
+      "t",
+      "agent"
+    ],
+    [
+      "p",
+      "<hodlxxi-agent-pubkey-hex>"
+    ]
+  ]
+}
