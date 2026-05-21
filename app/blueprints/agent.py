@@ -124,6 +124,7 @@ def _agent_endpoints() -> dict:
         "attestations": "/agent/attestations",
         "trust_events": "/agent/trust/events",
         "discovery": "/agent/discovery",
+        "nostr_announcement": "/agent/nostr/announcement",
         "reputation": "/agent/reputation",
         "chain_health": "/agent/chain/health",
         "marketplace_listing": "/agent/marketplace/listing",
@@ -793,6 +794,7 @@ def agent_discovery():
             "capabilities_schema": endpoints["capabilities_schema"],
             "skills": endpoints["skills"],
             "marketplace_listing": endpoints["marketplace_listing"],
+            "nostr_announcement": endpoints["nostr_announcement"],
             "reputation": endpoints["reputation"],
             "attestations": endpoints["attestations"],
             "trust_events": endpoints["trust_events"],
@@ -855,6 +857,56 @@ def trust_events():
         "limit": limit,
         "offset": offset,
     }
+    return jsonify(_sanitize_public_value(payload))
+
+
+@agent_bp.get("/agent/nostr/announcement")
+def nostr_announcement():
+    endpoints = _agent_endpoints()
+    payload = {
+        "schema": "hodlxxi.agent.nostr_announcement.v1",
+        "agent_pubkey": get_agent_pubkey_hex(),
+        "service_name": "HODLXXI Agent UBID",
+        "publication_status": "template_only_not_published",
+        "sig_scheme": "secp256k1",
+        "nostr": {
+            "nip89_kind": 31990,
+            "nip90_request_kinds": ["5000"],
+            "nip90_result_kinds": ["6000"],
+            "nip90_feedback_kind": 7000,
+            "tags": [
+                ["k", "5000"],
+                ["t", "bitcoin"],
+                ["t", "lightning"],
+                ["t", "identity"],
+                ["t", "agent"],
+                ["t", "trust"],
+            ],
+        },
+        "links": {
+            "well_known_agent": endpoints["well_known"],
+            "discovery": endpoints["discovery"],
+            "capabilities": endpoints["capabilities"],
+            "request": endpoints["request"],
+            "trust_events": endpoints["trust_events"],
+            "reputation": endpoints["reputation"],
+            "chain_health": endpoints["chain_health"],
+        },
+        "content_template": {
+            "name": "HODLXXI Agent UBID",
+            "about": "Bitcoin-native paid agent runtime with Lightning jobs, signed receipts, and public trust events.",
+            "web": "https://hodlxxi.com/agent/discovery",
+        },
+        "non_goals": [
+            "no_relay_publish",
+            "no_nostr_private_key_handling",
+            "no_nip47_nwc_spending",
+            "no_auto_payments",
+            "no_custody",
+        ],
+        "timestamp": _iso_now(),
+    }
+    payload["signature"] = sign_message(canonical_json_bytes(payload))
     return jsonify(_sanitize_public_value(payload))
 
 

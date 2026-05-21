@@ -425,3 +425,10 @@ Additional machine-readable public surfaces:
 
 - `GET /agent/discovery` — compact discovery document for agent clients.
 - `GET /agent/trust/events` — sanitized public trust-event stream derived from signed agent events.
+
+
+## Nostr DVM Announcement Template
+
+HODLXXI exposes `GET /agent/nostr/announcement` as a template-only compatibility surface for Nostr DVM / NIP-89 / NIP-90 builders.
+
+This endpoint does not publish to relays, does not manage Nostr private keys, and does not perform NIP-47/NWC spending. It only exposes a signed runtime template that external builders can inspect and adapt.
