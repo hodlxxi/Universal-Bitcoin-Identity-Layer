@@ -54,3 +54,8 @@ See `docs/AGENT_NIP90_COMPATIBILITY.md` for the current NIP-90 mapping and examp
 ## MCP Read-Only Wrapper
 
 See `docs/MCP_READONLY_WRAPPER.md` and `examples/mcp/hodlxxi_mcp_readonly_tools.json` for a read-only MCP wrapper profile over public HODLXXI agent endpoints.
+
+
+## External Agent Registry
+
+See `docs/EXTERNAL_AGENT_REGISTRY.md` for the future external-agent registry profile and safety model.

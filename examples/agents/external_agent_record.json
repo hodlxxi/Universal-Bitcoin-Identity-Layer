@@ -1,0 +1,54 @@
+{
+  "schema": "hodlxxi.external_agent.record.v1",
+  "agent_id": "example-dvm-agent-01",
+  "agent_pubkey": "<external-agent-pubkey-hex>",
+  "display_name": "Example External DVM Agent",
+  "source": {
+    "type": "manual",
+    "discovered_via": "operator_supplied",
+    "first_seen_at": null,
+    "last_seen_at": null
+  },
+  "discovery": {
+    "well_known_agent": "https://example.com/.well-known/agent.json",
+    "agent_discovery": "https://example.com/agent/discovery",
+    "capabilities": "https://example.com/agent/capabilities",
+    "nostr_announcement": "https://example.com/agent/nostr/announcement"
+  },
+  "trust_surfaces": {
+    "trust_events": "https://example.com/agent/trust/events",
+    "reputation": "https://example.com/agent/reputation",
+    "chain_health": "https://example.com/agent/chain/health"
+  },
+  "payment": {
+    "inbound_methods_claimed": [
+      "lightning_invoice"
+    ],
+    "outbound_payment_allowed": false,
+    "requires_operator_approval": true,
+    "spending_cap_sats": 0
+  },
+  "verification": {
+    "status": "unverified",
+    "last_checked_at": null,
+    "verified_signature": false,
+    "verified_receipt": false,
+    "verified_chain_health": false,
+    "notes": "Template record only. Do not trust until verified."
+  },
+  "policy": {
+    "registry_status": "candidate",
+    "trust_level": "unknown",
+    "allow_paid_calls": false,
+    "allow_background_calls": false
+  },
+  "non_goals": [
+    "no_auto_trust",
+    "no_auto_payments",
+    "no_custody",
+    "no_private_key_storage",
+    "no_wallet_secret_storage",
+    "no_shell_access",
+    "no_env_access"
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hodlxxi.com/schemas/external_agent_record.schema.json",
+  "title": "HODLXXI External Agent Record",
+  "type": "object",
+  "required": [
+    "schema",
+    "agent_id",
+    "agent_pubkey",
+    "discovery",
+    "trust_surfaces",
+    "payment",
+    "verification",
+    "policy"
+  ],
+  "properties": {
+    "schema": {
+      "const": "hodlxxi.external_agent.record.v1"
+    },
+    "agent_id": {
+      "type": "string"
+    },
+    "agent_pubkey": {
+      "type": "string"
+    },
+    "display_name": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object"
+    },
+    "discovery": {
+      "type": "object"
+    },
+    "trust_surfaces": {
+      "type": "object"
+    },
+    "payment": {
+      "type": "object"
+    },
+    "verification": {
+      "type": "object"
+    },
+    "policy": {
+      "type": "object"
+    },
+    "non_goals": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": true
+}
