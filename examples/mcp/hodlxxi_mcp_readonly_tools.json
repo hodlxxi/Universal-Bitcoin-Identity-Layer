@@ -1,0 +1,59 @@
+{
+  "schema": "hodlxxi.mcp.readonly_tools.v1",
+  "service_name": "HODLXXI Agent UBID",
+  "base_url": "https://hodlxxi.com",
+  "mode": "read_only",
+  "non_goals": [
+    "no_shell_execution",
+    "no_env_access",
+    "no_wallet_access",
+    "no_private_key_access",
+    "no_auto_payments",
+    "no_post_agent_request",
+    "no_custody"
+  ],
+  "tools": [
+    {
+      "name": "hodlxxi_get_agent_discovery",
+      "description": "Fetch the HODLXXI public agent discovery document.",
+      "method": "GET",
+      "path": "/agent/discovery",
+      "read_only": true
+    },
+    {
+      "name": "hodlxxi_get_capabilities",
+      "description": "Fetch supported HODLXXI agent job types, prices, schemas, and endpoint links.",
+      "method": "GET",
+      "path": "/agent/capabilities",
+      "read_only": true
+    },
+    {
+      "name": "hodlxxi_get_nostr_announcement",
+      "description": "Fetch the template-only Nostr/DVM announcement surface.",
+      "method": "GET",
+      "path": "/agent/nostr/announcement",
+      "read_only": true
+    },
+    {
+      "name": "hodlxxi_get_trust_events",
+      "description": "Fetch public trust-event history for the HODLXXI agent runtime.",
+      "method": "GET",
+      "path": "/agent/trust/events",
+      "read_only": true
+    },
+    {
+      "name": "hodlxxi_get_reputation",
+      "description": "Fetch public HODLXXI agent reputation metrics.",
+      "method": "GET",
+      "path": "/agent/reputation",
+      "read_only": true
+    },
+    {
+      "name": "hodlxxi_get_chain_health",
+      "description": "Fetch public HODLXXI trust-chain health.",
+      "method": "GET",
+      "path": "/agent/chain/health",
+      "read_only": true
+    }
+  ]
+}
