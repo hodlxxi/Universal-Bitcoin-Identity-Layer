@@ -441,3 +441,10 @@ HODLXXI documents a template-only NIP-90 mapping in `docs/AGENT_NIP90_COMPATIBIL
 Example request, feedback, and result payloads are available in `examples/nostr/`.
 
 This does not add relay publishing, relay listening, Nostr private key handling, NIP-47/NWC spending, custody, or auto-payments.
+
+
+## MCP Read-Only Wrapper Profile
+
+HODLXXI documents a read-only MCP wrapper profile in `docs/MCP_READONLY_WRAPPER.md`.
+
+The profile maps MCP tools to public GET endpoints only. It does not add shell execution, environment access, wallet access, private-key access, LND macaroon access, auto-payments, custody, or `POST /agent/request`.

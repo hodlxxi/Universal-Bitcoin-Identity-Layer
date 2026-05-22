@@ -49,3 +49,8 @@ Canonical protocol and trust details remain in:
 ## Nostr NIP-90 Compatibility
 
 See `docs/AGENT_NIP90_COMPATIBILITY.md` for the current NIP-90 mapping and example request/feedback/result payloads.
+
+
+## MCP Read-Only Wrapper
+
+See `docs/MCP_READONLY_WRAPPER.md` and `examples/mcp/hodlxxi_mcp_readonly_tools.json` for a read-only MCP wrapper profile over public HODLXXI agent endpoints.
