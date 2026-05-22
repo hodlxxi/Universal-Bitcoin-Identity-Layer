@@ -448,3 +448,10 @@ This does not add relay publishing, relay listening, Nostr private key handling,
 HODLXXI documents a read-only MCP wrapper profile in `docs/MCP_READONLY_WRAPPER.md`.
 
 The profile maps MCP tools to public GET endpoints only. It does not add shell execution, environment access, wallet access, private-key access, LND macaroon access, auto-payments, custody, or `POST /agent/request`.
+
+
+## External Agent Registry Profile
+
+HODLXXI documents a future external-agent registry profile in `docs/EXTERNAL_AGENT_REGISTRY.md`.
+
+This profile defines how HODLXXI may remember external agents before calling or paying them. It does not add ingestion workers, relay watching, outbound payments, auto-trust, custody, or spending behavior.

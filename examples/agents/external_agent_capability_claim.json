@@ -1,0 +1,27 @@
+{
+  "schema": "hodlxxi.external_agent.capability_claim.v1",
+  "claim_id": "example-capability-claim-01",
+  "agent_pubkey": "<external-agent-pubkey-hex>",
+  "claimed_capabilities": [
+    {
+      "name": "nip90_ping",
+      "description": "Claims support for a NIP-90-style ping job.",
+      "request_kind": 5000,
+      "result_kind": 6000,
+      "feedback_kind": 7000,
+      "price_sats": 21
+    }
+  ],
+  "evidence": {
+    "capabilities_url": "https://example.com/agent/capabilities",
+    "announcement_url": "https://example.com/agent/nostr/announcement",
+    "trust_events_url": "https://example.com/agent/trust/events"
+  },
+  "verification": {
+    "status": "unverified",
+    "verified_by_hodlxxi": false,
+    "verified_at": null,
+    "receipt_job_id": null
+  },
+  "signature": null
+}
