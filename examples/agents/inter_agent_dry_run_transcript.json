@@ -1,0 +1,40 @@
+{
+  "schema": "hodlxxi.inter_agent.dry_run_transcript.v1",
+  "mode": "dry_run_no_network",
+  "created_at": "2026-05-22T00:00:00Z",
+  "agent_a_pubkey": "<agent-a-pubkey-hex>",
+  "agent_b_pubkey": "<agent-b-pubkey-hex>",
+  "agent_b_url": "http://127.0.0.1:5000/agent/message",
+  "http_post_performed": false,
+  "payment_performed": false,
+  "request_envelope": {
+    "message_id": "<uuid>",
+    "conversation_id": "<uuid>",
+    "thread_id": "thread-1",
+    "type": "job_proposal",
+    "from_pubkey": "<agent-a-pubkey-hex>",
+    "to_pubkey": "<agent-b-pubkey-hex>",
+    "created_at": "2026-05-22T00:00:00Z",
+    "payload": {
+      "job_type": "ping",
+      "payload": {
+        "message": "dry-run ping"
+      }
+    },
+    "signature": "<agent-a-signature-hex>"
+  },
+  "verification": {
+    "request_signature_valid": true,
+    "agent_b_response_verified": false,
+    "reason": "dry_run_no_agent_b_response"
+  },
+  "non_goals": [
+    "no_http_post",
+    "no_agent_b_execution",
+    "no_lightning_payment",
+    "no_outbound_payment",
+    "no_auto_spending",
+    "no_registry_write",
+    "no_relay_publish"
+  ]
+}

@@ -59,3 +59,8 @@ See `docs/MCP_READONLY_WRAPPER.md` and `examples/mcp/hodlxxi_mcp_readonly_tools.
 ## External Agent Registry
 
 See `docs/EXTERNAL_AGENT_REGISTRY.md` for the future external-agent registry profile and safety model.
+
+
+## Inter-Agent Dry Run
+
+See `docs/INTER_AGENT_DRY_RUN.md` for a no-network dry-run profile for the existing inter-agent demo harness.

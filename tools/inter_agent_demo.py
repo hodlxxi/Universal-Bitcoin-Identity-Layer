@@ -92,11 +92,50 @@ def build_request_envelope(agent_a_privkey_hex: str, agent_b_pubkey_hex: str, me
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Send a signed Agent A -> Agent B /agent/message demo request.")
-    parser.add_argument("--agent-b-url", default="http://127.0.0.1:5000/agent/message", help="Target Agent B /agent/message URL")
-    parser.add_argument("--agent-b-pubkey", default=os.getenv("AGENT_B_PUBKEY_HEX", ""), help="Agent B compressed pubkey hex")
-    parser.add_argument("--agent-a-privkey", default=os.getenv("AGENT_A_PRIVKEY_HEX", ""), help="Agent A private key hex")
+    parser.add_argument(
+        "--agent-b-url", default="http://127.0.0.1:5000/agent/message", help="Target Agent B /agent/message URL"
+    )
+    parser.add_argument(
+        "--agent-b-pubkey", default=os.getenv("AGENT_B_PUBKEY_HEX", ""), help="Agent B compressed pubkey hex"
+    )
+    parser.add_argument(
+        "--agent-a-privkey", default=os.getenv("AGENT_A_PRIVKEY_HEX", ""), help="Agent A private key hex"
+    )
     parser.add_argument("--message", default="hello from agent a", help="Ping payload message")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Build and verify the Agent A request envelope without POSTing to Agent B",
+    )
     return parser.parse_args()
+
+
+def build_dry_run_transcript(args: argparse.Namespace, request_envelope: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema": "hodlxxi.inter_agent.dry_run_transcript.v1",
+        "mode": "dry_run_no_network",
+        "created_at": now_rfc3339(),
+        "agent_a_pubkey": request_envelope["from_pubkey"],
+        "agent_b_pubkey": args.agent_b_pubkey,
+        "agent_b_url": args.agent_b_url,
+        "http_post_performed": False,
+        "payment_performed": False,
+        "request_envelope": request_envelope,
+        "verification": {
+            "request_signature_valid": verify_envelope_signature(request_envelope),
+            "agent_b_response_verified": False,
+            "reason": "dry_run_no_agent_b_response",
+        },
+        "non_goals": [
+            "no_http_post",
+            "no_agent_b_execution",
+            "no_lightning_payment",
+            "no_outbound_payment",
+            "no_auto_spending",
+            "no_registry_write",
+            "no_relay_publish",
+        ],
+    }
 
 
 def main() -> int:
@@ -114,6 +153,16 @@ def main() -> int:
 
     print("=== Agent A signed request envelope ===")
     print(json.dumps(request_envelope, indent=2))
+
+    if args.dry_run:
+        transcript = build_dry_run_transcript(args, request_envelope)
+        print("\n=== Dry-run transcript ===")
+        print(json.dumps(transcript, indent=2))
+        if not transcript["verification"]["request_signature_valid"]:
+            print("DRY-RUN FAILED: Agent A request signature verification failed", file=sys.stderr)
+            return 1
+        print("\nOK: dry-run request envelope signature verified locally")
+        return 0
 
     resp = requests.post(args.agent_b_url, json=request_envelope, timeout=20)
     print(f"\\n=== Agent B HTTP status: {resp.status_code} ===")
