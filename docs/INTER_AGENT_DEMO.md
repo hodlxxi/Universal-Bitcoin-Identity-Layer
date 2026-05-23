@@ -144,3 +144,10 @@ OK: Agent B result signature verified by Agent A
 - no escrow/dispute yet
 - no autonomous spending
 - this is minimal inter-agent execution only
+
+
+## Dry-run mode
+
+For a no-network dry run, see `docs/INTER_AGENT_DRY_RUN.md`.
+
+The dry-run mode builds and verifies the Agent A signed request envelope locally and does not POST to `/agent/message`.

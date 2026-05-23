@@ -455,3 +455,10 @@ The profile maps MCP tools to public GET endpoints only. It does not add shell e
 HODLXXI documents a future external-agent registry profile in `docs/EXTERNAL_AGENT_REGISTRY.md`.
 
 This profile defines how HODLXXI may remember external agents before calling or paying them. It does not add ingestion workers, relay watching, outbound payments, auto-trust, custody, or spending behavior.
+
+
+## Inter-Agent Dry Run
+
+HODLXXI documents a no-network inter-agent dry-run profile in `docs/INTER_AGENT_DRY_RUN.md`.
+
+This profile verifies local signed-envelope construction only. It does not call `/agent/message`, create invoices, pay invoices, write registry state, publish relays, or perform outbound payments.
