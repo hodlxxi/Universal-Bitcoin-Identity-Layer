@@ -1,0 +1,33 @@
+{
+  "schema": "hodlxxi.herald.outreach_candidates.example.v1",
+  "mode": "dry_run_only",
+  "declared_herald_pubkey": "02019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f92",
+  "candidates_found": 1,
+  "top_candidates": [
+    {
+      "event_id": "example-event-id",
+      "author_pubkey": "example-author-pubkey",
+      "score": 4.5,
+      "zap_eligible": "true",
+      "suggested_zap_amount_sats": 69,
+      "suggested_comment": "Aligned with machine-native Bitcoin identity and execution.",
+      "action_taken": "dry_run_candidate",
+      "action_reason": "zap_mode=dry_run",
+      "reasons": [
+        "keyword:bitcoin agent",
+        "keyword:signed receipts",
+        "compound:nostr+agent"
+      ]
+    }
+  ],
+  "non_goals": [
+    "no_real_zaps",
+    "no_auto_payments",
+    "no_outbound_spending",
+    "no_nwc",
+    "no_nip47",
+    "no_private_key_handling",
+    "no_relay_publish",
+    "no_background_daemon"
+  ]
+}
