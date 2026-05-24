@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.services.herald_nostr_discovery import HeraldNostrDiscoveryEngine
+from app.services.herald_nostr_discovery import HeraldNostrDiscoveryEngine, HeraldRelayReadonlyClient
 
 
 class FixtureRelayDiscoveryClient:
@@ -34,6 +34,11 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Load discovery events from a local JSON fixture file.",
     )
+    parser.add_argument(
+        "--live-relay-readonly",
+        action="store_true",
+        help="Read public kind-1 notes from configured relays using read-only mode.",
+    )
     return parser.parse_args()
 
 
@@ -50,9 +55,14 @@ def _load_fixture_events(path: Path) -> list[dict[str, Any]]:
 def main() -> int:
     args = _parse_args()
     relay_client = None
+    source_mode = "noop"
     if args.fixture is not None:
         fixture_events = _load_fixture_events(args.fixture)
         relay_client = FixtureRelayDiscoveryClient(fixture_events)
+        source_mode = "fixture"
+    elif args.live_relay_readonly:
+        relay_client = HeraldRelayReadonlyClient(max_events=100, timeout_seconds=8.0)
+        source_mode = "live_relay_readonly"
 
     engine = HeraldNostrDiscoveryEngine(relay_client=relay_client)
     rows = engine.discover_and_evaluate()
@@ -61,6 +71,7 @@ def main() -> int:
         json.dumps(
             {
                 "declared_herald_pubkey": engine.config.declared_herald_pubkey,
+                "source_mode": source_mode,
                 "zap_mode": engine.config.zap_mode,
                 "relay_urls": engine.config.relay_urls,
                 "candidates_found": len(rows),
