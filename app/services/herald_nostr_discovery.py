@@ -119,7 +119,7 @@ class HeraldRelayReadonlyClient:
         timeout_seconds: float = 8.0,
         websocket_connect: Any | None = None,
     ):
-        self.relays = relays or list(DEFAULT_RELAYS)
+        self.relays = list(relays) if relays is not None else None
         self.max_events = max(1, int(max_events))
         self.timeout_seconds = max(0.5, float(timeout_seconds))
         self.warnings: list[str] = []
@@ -134,7 +134,7 @@ class HeraldRelayReadonlyClient:
         since: datetime,
     ) -> list[dict[str, Any]]:
         self.warnings = []
-        relay_urls = relays or self.relays
+        relay_urls = self.relays if self.relays is not None else relays
         if not relay_urls:
             return []
 

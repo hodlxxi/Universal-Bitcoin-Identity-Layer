@@ -39,6 +39,11 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Read public kind-1 notes from configured relays using read-only mode.",
     )
+    parser.add_argument(
+        "--relay", action="append", default=None, help="Relay URL (repeatable) for live read-only mode."
+    )
+    parser.add_argument("--limit", type=int, default=100, help="Max events to read in live read-only mode.")
+    parser.add_argument("--timeout", type=float, default=8.0, help="Per-recv timeout seconds in live read-only mode.")
     return parser.parse_args()
 
 
@@ -61,11 +66,16 @@ def main() -> int:
         relay_client = FixtureRelayDiscoveryClient(fixture_events)
         source_mode = "fixture"
     elif args.live_relay_readonly:
-        relay_client = HeraldRelayReadonlyClient(max_events=100, timeout_seconds=8.0)
+        relay_client = HeraldRelayReadonlyClient(
+            relays=args.relay,
+            max_events=max(1, int(args.limit)),
+            timeout_seconds=max(0.5, float(args.timeout)),
+        )
         source_mode = "live_relay_readonly"
 
     engine = HeraldNostrDiscoveryEngine(relay_client=relay_client)
     rows = engine.discover_and_evaluate()
+    output_relays = getattr(relay_client, "relays", None) or engine.config.relay_urls
 
     print(
         json.dumps(
@@ -73,8 +83,9 @@ def main() -> int:
                 "declared_herald_pubkey": engine.config.declared_herald_pubkey,
                 "source_mode": source_mode,
                 "zap_mode": engine.config.zap_mode,
-                "relay_urls": engine.config.relay_urls,
+                "relay_urls": output_relays,
                 "candidates_found": len(rows),
+                "relay_warnings": getattr(relay_client, "warnings", []),
                 "top_candidates": [
                     {
                         "event_id": item.event_id,
