@@ -1,0 +1,34 @@
+[
+  {
+    "id": "fixture_evt_spam_0001",
+    "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "kind": 1,
+    "created_at": 1779570000,
+    "content": "Massive 100x casino giveaway airdrop moon now",
+    "tags": [["t", "bitcoin"], ["t", "nostr"]]
+  },
+  {
+    "id": "fixture_evt_weak_0002",
+    "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "kind": 1,
+    "created_at": 1779570600,
+    "content": "Short note on bitcoin agent experiments.",
+    "tags": [["t", "bitcoin"]]
+  },
+  {
+    "id": "fixture_evt_strong_0003",
+    "pubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "kind": 1,
+    "created_at": 1779571200,
+    "content": "Shipping Bitcoin-native identity for verifiable attestations on Nostr.",
+    "tags": [["t", "nostr"], ["t", "bitcoin"], ["t", "identity"]]
+  },
+  {
+    "id": "fixture_evt_direct_0004",
+    "pubkey": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "kind": 1,
+    "created_at": 1779571800,
+    "content": "HODLXXI UBID signed receipts live: universal bitcoin identity with machine payments and attestations.",
+    "tags": [["t", "bitcoin"], ["t", "nostr"], ["t", "identity"], ["t", "machinepayments"]]
+  }
+]
