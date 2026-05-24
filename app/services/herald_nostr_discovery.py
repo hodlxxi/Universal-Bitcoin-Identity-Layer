@@ -11,10 +11,12 @@ import json
 import logging
 import os
 import re
+import secrets
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +102,136 @@ class NoopRelayDiscoveryClient:
             since.isoformat(),
         )
         return []
+
+
+class HeraldRelayReadonlyClient:
+    """Read-only relay adapter for public kind-1 note discovery.
+
+    This adapter is intentionally scoped to reading public notes only. It does
+    not publish, sign, message, or perform any payment actions.
+    """
+
+    def __init__(
+        self,
+        *,
+        relays: list[str] | None = None,
+        max_events: int = 100,
+        timeout_seconds: float = 8.0,
+        websocket_connect: Any | None = None,
+    ):
+        self.relays = relays or list(DEFAULT_RELAYS)
+        self.max_events = max(1, int(max_events))
+        self.timeout_seconds = max(0.5, float(timeout_seconds))
+        self.warnings: list[str] = []
+        self._websocket_connect = websocket_connect
+
+    def search_recent_notes(
+        self,
+        *,
+        relays: list[str],
+        hashtags: list[str],
+        keywords: list[str],
+        since: datetime,
+    ) -> list[dict[str, Any]]:
+        self.warnings = []
+        relay_urls = relays or self.relays
+        if not relay_urls:
+            return []
+
+        connect = self._websocket_connect
+        if connect is None:
+            try:
+                from websockets.sync.client import connect as ws_connect  # type: ignore
+
+                connect = ws_connect
+            except Exception:
+                self.warnings.append("websocket_dependency_unavailable")
+                logger.warning("Read-only relay adapter unavailable: websockets dependency missing")
+                return []
+
+        results: list[dict[str, Any]] = []
+        per_relay_limit = max(1, self.max_events // max(1, len(relay_urls)))
+        for relay_url in relay_urls:
+            if len(results) >= self.max_events:
+                break
+            if not _is_valid_relay_url(relay_url):
+                self.warnings.append(f"invalid_relay_url:{relay_url}")
+                continue
+            try:
+                remaining = self.max_events - len(results)
+                results.extend(
+                    self._fetch_from_relay(
+                        connect=connect,
+                        relay_url=relay_url,
+                        since=since,
+                        hashtags=hashtags,
+                        keywords=keywords,
+                        limit=min(per_relay_limit, remaining),
+                    )
+                )
+            except Exception as exc:
+                logger.warning("Read-only relay query failed for %s: %s", relay_url, exc)
+                self.warnings.append(f"relay_error:{relay_url}")
+                continue
+        return results[: self.max_events]
+
+    def _fetch_from_relay(
+        self, *, connect: Any, relay_url: str, since: datetime, hashtags: list[str], keywords: list[str], limit: int
+    ) -> list[dict[str, Any]]:
+        sub_id = f"herald-{secrets.token_hex(4)}"
+        since_unix = int(since.timestamp())
+        event_filter: dict[str, Any] = {"kinds": [1], "since": since_unix, "limit": limit}
+        clean_tags = [tag.strip().lower().lstrip("#") for tag in hashtags if tag.strip()]
+        if clean_tags:
+            event_filter["#t"] = clean_tags[:10]
+        req = json.dumps(["REQ", sub_id, event_filter])
+        close = json.dumps(["CLOSE", sub_id])
+
+        collected: list[dict[str, Any]] = []
+        with connect(relay_url, open_timeout=self.timeout_seconds, close_timeout=1.0) as websocket:
+            websocket.send(req)
+            while len(collected) < limit:
+                raw = websocket.recv(timeout=self.timeout_seconds)
+                if raw is None:
+                    break
+                msg = _safe_json_load(raw)
+                if not isinstance(msg, list) or len(msg) < 2:
+                    continue
+                msg_type = str(msg[0]).upper()
+                if msg_type == "EOSE":
+                    break
+                if msg_type != "EVENT" or len(msg) < 3:
+                    continue
+                event = self._normalize_event(msg[2])
+                if event is None:
+                    continue
+                if not _matches_keywords(event, keywords):
+                    continue
+                collected.append(event)
+            websocket.send(close)
+        return collected
+
+    def _normalize_event(self, payload: Any) -> dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return None
+        if int(payload.get("kind", -1)) != 1:
+            return None
+        event_id = str(payload.get("id") or "").strip()
+        pubkey = str(payload.get("pubkey") or "").strip().lower()
+        created_at = payload.get("created_at")
+        if not event_id or not pubkey:
+            return None
+        normalized = {
+            "id": event_id,
+            "pubkey": pubkey,
+            "kind": 1,
+            "created_at": created_at,
+            "content": str(payload.get("content") or ""),
+            "tags": payload.get("tags") if isinstance(payload.get("tags"), list) else [],
+        }
+        if _coerce_timestamp(normalized["created_at"]) is None:
+            return None
+        return normalized
 
 
 class NoopMetadataResolver:
@@ -543,3 +675,23 @@ def _parse_iso(value: Any) -> datetime | None:
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _safe_json_load(raw: Any) -> Any:
+    try:
+        return json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return None
+
+
+def _matches_keywords(event: dict[str, Any], keywords: list[str]) -> bool:
+    terms = [item.strip().lower() for item in keywords if item.strip()]
+    if not terms:
+        return True
+    haystack = str(event.get("content") or "").lower()
+    return any(term in haystack for term in terms)
+
+
+def _is_valid_relay_url(url: str) -> bool:
+    parts = urlparse(str(url))
+    return parts.scheme in {"ws", "wss"} and bool(parts.netloc)
