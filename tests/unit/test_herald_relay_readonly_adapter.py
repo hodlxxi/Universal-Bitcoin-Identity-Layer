@@ -61,6 +61,7 @@ def test_cli_default_still_noop_returns_zero(tmp_path: Path):
     payload = json.loads(proc.stdout)
     assert payload["source_mode"] == "noop"
     assert payload["candidates_found"] == 0
+    assert payload["relay_warnings"] == []
 
 
 def test_cli_fixture_still_returns_expected_tiers(tmp_path: Path):
@@ -79,6 +80,31 @@ def test_cli_fixture_still_returns_expected_tiers(tmp_path: Path):
     assert payload["candidates_found"] >= 3
     sats = {row["suggested_zap_amount_sats"] for row in payload["top_candidates"]}
     assert {21, 69, 210}.issubset(sats)
+
+
+def test_cli_live_readonly_accepts_relay_limit_timeout_and_reports_warnings(tmp_path: Path):
+    env = dict(__import__("os").environ)
+    env["HERALD_DISCOVERY_STATE_FILE"] = str(tmp_path / "state.json")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "tools/herald_discovery_scan.py",
+            "--live-relay-readonly",
+            "--relay",
+            "https://not-a-wss-relay.example",
+            "--limit",
+            "10",
+            "--timeout",
+            "5",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
+    )
+    payload = json.loads(proc.stdout)
+    assert payload["source_mode"] == "live_relay_readonly"
+    assert payload["relay_warnings"]
 
 
 def test_adapter_has_no_forbidden_action_methods():
