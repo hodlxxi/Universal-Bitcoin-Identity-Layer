@@ -14,6 +14,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app.services.herald_nostr_discovery import HeraldNostrDiscoveryEngine, HeraldRelayReadonlyClient
+from app.services.herald_outreach_queue import build_outreach_queue, write_outreach_queue
 
 
 class FixtureRelayDiscoveryClient:
@@ -44,6 +45,18 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--limit", type=int, default=100, help="Max events to read in live read-only mode.")
     parser.add_argument("--timeout", type=float, default=8.0, help="Per-recv timeout seconds in live read-only mode.")
+    parser.add_argument(
+        "--write-outreach-queue",
+        type=Path,
+        default=None,
+        help="Write local operator-approval outreach queue JSON to this path.",
+    )
+    parser.add_argument(
+        "--max-queue-items",
+        type=int,
+        default=10,
+        help="Maximum dry-run candidates to include in the outreach queue.",
+    )
     return parser.parse_args()
 
 
@@ -77,6 +90,18 @@ def main() -> int:
     rows = engine.discover_and_evaluate()
     output_relays = getattr(relay_client, "relays", None) or engine.config.relay_urls
 
+    outreach_queue_written = None
+    outreach_queue_count = 0
+    if args.write_outreach_queue is not None:
+        queue_items = build_outreach_queue(
+            candidates=rows,
+            source_mode=source_mode,
+            max_items=args.max_queue_items,
+        )
+        write_outreach_queue(args.write_outreach_queue, queue_items)
+        outreach_queue_written = str(args.write_outreach_queue)
+        outreach_queue_count = len(queue_items)
+
     print(
         json.dumps(
             {
@@ -86,6 +111,8 @@ def main() -> int:
                 "relay_urls": output_relays,
                 "candidates_found": len(rows),
                 "relay_warnings": getattr(relay_client, "warnings", []),
+                "outreach_queue_written": outreach_queue_written,
+                "outreach_queue_count": outreach_queue_count,
                 "top_candidates": [
                     {
                         "event_id": item.event_id,

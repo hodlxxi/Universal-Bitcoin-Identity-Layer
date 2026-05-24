@@ -1,0 +1,31 @@
+[
+  {
+    "action_taken": "none",
+    "approval_required": true,
+    "candidate_author_pubkey": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "candidate_event_id": "fixture_evt_direct_0004",
+    "created_at": "2026-05-24T00:00:00+00:00",
+    "proposed_action": "zap_invite",
+    "queue_id": "heraldq_example_direct",
+    "queue_schema": "hodlxxi.herald.operator_approval_queue.v1",
+    "reasons": [
+      "keyword:hodlxxi",
+      "direct_alignment:hodlxxi_or_ubid"
+    ],
+    "safety": {
+      "non_goals": [
+        "no_live_zaps",
+        "no_outbound_payments",
+        "no_relay_publishing",
+        "no_nostr_signing",
+        "operator_approval_required"
+      ],
+      "requires_operator_approval": true
+    },
+    "score": 14.6,
+    "source_mode": "fixture",
+    "status": "pending_operator_approval",
+    "suggested_comment": "Useful work for the Bitcoin agent stack.",
+    "suggested_zap_amount_sats": 210
+  }
+]
