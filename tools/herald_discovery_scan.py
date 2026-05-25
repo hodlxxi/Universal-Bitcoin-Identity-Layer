@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,8 @@ if str(REPO_ROOT) not in sys.path:
 
 from app.services.herald_nostr_discovery import HeraldNostrDiscoveryEngine, HeraldRelayReadonlyClient
 from app.services.herald_outreach_queue import build_outreach_queue, write_outreach_queue
+
+COOLDOWN_SCHEMA = "hodlxxi.herald.live_queue_cooldown.v1"
 
 
 class FixtureRelayDiscoveryClient:
@@ -30,10 +33,7 @@ class FixtureRelayDiscoveryClient:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--fixture",
-        type=Path,
-        default=None,
-        help="Load discovery events from a local JSON fixture file.",
+        "--fixture", type=Path, default=None, help="Load discovery events from a local JSON fixture file."
     )
     parser.add_argument(
         "--live-relay-readonly",
@@ -45,6 +45,15 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--limit", type=int, default=100, help="Max events to read in live read-only mode.")
     parser.add_argument("--timeout", type=float, default=8.0, help="Per-recv timeout seconds in live read-only mode.")
+    parser.add_argument(
+        "--max-live-events", type=int, default=None, help="Safety cap for live events considered (<= --limit)."
+    )
+    parser.add_argument("--min-score", type=float, default=0.0, help="Minimum candidate score to enter queue.")
+    parser.add_argument(
+        "--dedupe-authors", action="store_true", help="Keep highest-scoring candidate per author_pubkey."
+    )
+    parser.add_argument("--cooldown-state", type=Path, default=None, help="Optional local JSON cooldown state path.")
+    parser.add_argument("--cooldown-hours", type=int, default=24, help="Cooldown lookback window in hours.")
     parser.add_argument(
         "--write-outreach-queue",
         type=Path,
@@ -70,8 +79,51 @@ def _load_fixture_events(path: Path) -> list[dict[str, Any]]:
     return payload
 
 
+def _load_cooldown_entries(path: Path, cooldown_hours: int, now: datetime) -> list[dict[str, str]]:
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(payload, dict) or payload.get("schema") != COOLDOWN_SCHEMA:
+        return []
+    cutoff = now - timedelta(hours=max(0, int(cooldown_hours)))
+    entries = payload.get("entries", [])
+    kept: list[dict[str, str]] = []
+    for row in entries:
+        if not isinstance(row, dict):
+            continue
+        queued_at = row.get("queued_at")
+        if not isinstance(queued_at, str):
+            continue
+        try:
+            queued_dt = datetime.fromisoformat(queued_at.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if queued_dt.tzinfo is None:
+            queued_dt = queued_dt.replace(tzinfo=timezone.utc)
+        if queued_dt >= cutoff:
+            kept.append(row)
+    return kept
+
+
+def _write_cooldown_state(path: Path, entries: list[dict[str, str]], now: datetime) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema": COOLDOWN_SCHEMA,
+        "updated_at": now.isoformat(),
+        "entries": entries,
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     args = _parse_args()
+    resolved_max_live_events = max(1, int(args.limit))
+    if args.max_live_events is not None:
+        resolved_max_live_events = min(resolved_max_live_events, max(1, int(args.max_live_events)))
+
     relay_client = None
     source_mode = "noop"
     if args.fixture is not None:
@@ -81,7 +133,7 @@ def main() -> int:
     elif args.live_relay_readonly:
         relay_client = HeraldRelayReadonlyClient(
             relays=args.relay,
-            max_events=max(1, int(args.limit)),
+            max_events=resolved_max_live_events,
             timeout_seconds=max(0.5, float(args.timeout)),
         )
         source_mode = "live_relay_readonly"
@@ -92,15 +144,62 @@ def main() -> int:
 
     outreach_queue_written = None
     outreach_queue_count = 0
+    skipped_by_score_count = 0
+    skipped_by_dedupe_count = 0
+    skipped_by_cooldown_count = 0
+
     if args.write_outreach_queue is not None:
+        candidates = [r for r in rows if getattr(r, "action_taken", None) == "dry_run_candidate"]
+        score_filtered = [r for r in candidates if float(getattr(r, "score", 0.0)) >= float(args.min_score)]
+        skipped_by_score_count = len(candidates) - len(score_filtered)
+
+        deduped = score_filtered
+        if args.dedupe_authors:
+            best_by_author: dict[str, Any] = {}
+            for row in score_filtered:
+                author = str(getattr(row, "author_pubkey", ""))
+                prev = best_by_author.get(author)
+                if prev is None or float(getattr(row, "score", 0.0)) > float(getattr(prev, "score", 0.0)):
+                    best_by_author[author] = row
+            deduped = sorted(best_by_author.values(), key=lambda r: float(getattr(r, "score", 0.0)), reverse=True)
+            skipped_by_dedupe_count = len(score_filtered) - len(deduped)
+
+        now = datetime.now(timezone.utc)
+        cooldown_entries: list[dict[str, str]] = []
+        seen_authors: set[str] = set()
+        seen_events: set[str] = set()
+        if args.cooldown_state is not None:
+            cooldown_entries = _load_cooldown_entries(args.cooldown_state, args.cooldown_hours, now)
+            seen_authors = {str(e.get("candidate_author_pubkey", "")) for e in cooldown_entries}
+            seen_events = {str(e.get("candidate_event_id", "")) for e in cooldown_entries}
+
+        post_cooldown: list[Any] = []
+        for row in deduped:
+            author = str(getattr(row, "author_pubkey", ""))
+            event_id = str(getattr(row, "event_id", ""))
+            if args.cooldown_state is not None and (author in seen_authors or event_id in seen_events):
+                continue
+            post_cooldown.append(row)
+        skipped_by_cooldown_count = len(deduped) - len(post_cooldown)
+
         queue_items = build_outreach_queue(
-            candidates=rows,
-            source_mode=source_mode,
-            max_items=args.max_queue_items,
+            candidates=post_cooldown, source_mode=source_mode, max_items=args.max_queue_items
         )
         write_outreach_queue(args.write_outreach_queue, queue_items)
         outreach_queue_written = str(args.write_outreach_queue)
         outreach_queue_count = len(queue_items)
+
+        if args.cooldown_state is not None:
+            new_entries = list(cooldown_entries)
+            for item in queue_items:
+                new_entries.append(
+                    {
+                        "candidate_author_pubkey": str(item.get("candidate_author_pubkey", "")),
+                        "candidate_event_id": str(item.get("candidate_event_id", "")),
+                        "queued_at": now.isoformat(),
+                    }
+                )
+            _write_cooldown_state(args.cooldown_state, new_entries, now)
 
     print(
         json.dumps(
@@ -111,8 +210,18 @@ def main() -> int:
                 "relay_urls": output_relays,
                 "candidates_found": len(rows),
                 "relay_warnings": getattr(relay_client, "warnings", []),
+                "live_safety": {
+                    "max_live_events": resolved_max_live_events,
+                    "min_score": float(args.min_score),
+                    "dedupe_authors": bool(args.dedupe_authors),
+                    "cooldown_state": str(args.cooldown_state) if args.cooldown_state is not None else None,
+                    "cooldown_hours": max(0, int(args.cooldown_hours)),
+                },
                 "outreach_queue_written": outreach_queue_written,
                 "outreach_queue_count": outreach_queue_count,
+                "skipped_by_score_count": skipped_by_score_count,
+                "skipped_by_dedupe_count": skipped_by_dedupe_count,
+                "skipped_by_cooldown_count": skipped_by_cooldown_count,
                 "top_candidates": [
                     {
                         "event_id": item.event_id,
