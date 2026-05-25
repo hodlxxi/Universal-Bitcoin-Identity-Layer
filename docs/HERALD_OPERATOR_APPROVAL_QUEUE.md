@@ -89,3 +89,14 @@ Non-goals remain explicit:
 - no relay publish
 - no signing
 - no direct messages
+
+
+## Stage 7C.4 manual outreach receipt recorder
+
+Stage 7C.4 adds a local-only receipt command so an operator can record the manual outcome for one exported queue item after handling it outside software.
+
+Example:
+
+    python tools/herald_outreach_receipt.py --package /tmp/herald-send-package.json --output /tmp/herald-receipt.json --queue-id heraldq_... --completed --operator operator --note "manual Nostr reply sent" --external-reference "nostr-event-id-or-url"
+
+This command only records operator-provided outcome metadata in local JSON. It does not verify, fetch, send, pay, sign, or publish anything.
