@@ -50,4 +50,10 @@ Stage 7C does not:
 
 The operator reviews the JSON queue manually and decides whether any later stage should create an approved action.
 
-A future Stage 7C.1 may add an approval command. This stage only writes proposals.
+Stage 7C.1 adds a local-only review command that marks queue items as approved or rejected by an operator.
+
+Run local review:
+
+    python tools/herald_outreach_review.py --queue /tmp/herald-outreach-queue.json --output /tmp/herald-outreach-reviewed.json --approve heraldq_... --reviewer operator --reason "good fit"
+
+This remains local-only and proposal-only. Approval metadata is written to a local JSON file, and no action is executed.
