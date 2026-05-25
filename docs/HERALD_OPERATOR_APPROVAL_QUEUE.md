@@ -66,3 +66,26 @@ After local review, export approved items to a manual operator package:
 
 This export stage is manual-send packaging only. It does not execute any action, does not send zaps, and does not execute payments.
 
+
+## Stage 7C.3 live relay queue rate limits and safety caps
+
+Stage 7C.3 adds explicit live read-only queue controls while keeping manual approval/export safety.
+
+Recommended safe live read-only command:
+
+    HERALD_DISCOVERY_STATE_FILE=/tmp/herald-live-state.json python tools/herald_discovery_scan.py --live-relay-readonly --relay wss://relay.damus.io --limit 25 --timeout 5 --min-score 3.0 --dedupe-authors --cooldown-state /tmp/herald-cooldown.json --cooldown-hours 24 --write-outreach-queue /tmp/herald-live-queue.json --max-queue-items 5 | jq .
+
+Notes:
+
+- read-only relay discovery only; no execution path exists.
+- queue output still contains pending_operator_approval items with action_taken set to none.
+- cooldown state is local JSON only and suppresses recently queued author/event pairs for cooldown-hours.
+- dedupe mode keeps only the highest-scoring candidate per author for a scan run.
+
+Non-goals remain explicit:
+
+- no zaps
+- no outbound payments
+- no relay publish
+- no signing
+- no direct messages
