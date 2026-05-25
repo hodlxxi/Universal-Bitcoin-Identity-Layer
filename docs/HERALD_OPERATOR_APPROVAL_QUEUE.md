@@ -57,3 +57,12 @@ Run local review:
     python tools/herald_outreach_review.py --queue /tmp/herald-outreach-queue.json --output /tmp/herald-outreach-reviewed.json --approve heraldq_... --reviewer operator --reason "good fit"
 
 This remains local-only and proposal-only. Approval metadata is written to a local JSON file, and no action is executed.
+
+## Stage 7C.2 export manual-send package
+
+After local review, export approved items to a manual operator package:
+
+    python tools/herald_outreach_export.py --reviewed-queue /tmp/herald-reviewed.json --json-output /tmp/herald-send-package.json --markdown-output /tmp/herald-send-package.md
+
+This export stage is manual-send packaging only. It does not execute any action, does not send zaps, and does not execute payments.
+
