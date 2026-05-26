@@ -112,3 +112,38 @@ Example diagnostic command:
 Diagnostics include counts for raw relay events seen, per-relay counts, keyword prefilter matched/skipped, invalid event count, relay errors, and small redacted raw samples.
 
 This mode is still read-only and may produce noisy candidates when the keyword prefilter is disabled. Operators should keep using min-score, dedupe, and cooldown controls before approval.
+
+## Stage 7C.6 targeted live candidate discovery profiles
+
+Stage 7C.6 adds named targeted discovery profiles so live relay scans can focus on Bitcoin-native agent identity topics instead of generic firehose noise.
+
+Available profiles:
+
+- bitcoin-agents: Bitcoin-native agents, machine payments, signed receipts, zaps, LNURL, and Nostr agent terms.
+- identity: sovereign identity, pubkey identity, attestations, reputation, OIDC, and OAuth terms.
+- lightning: Lightning payments, LNURL, zaps, bolt11, and machine payment terms.
+- ai-agents: autonomous AI, agent identity, tool calling, machine customer, and signed receipt terms.
+- nostr-dev: relay, client, NIP, pubkey, npub, nprofile, and Nostr developer terms.
+- volya: Universal Bitcoin Identity, Volya.ID, HODLXXI, UBID, cypherpunk identity, and no-KYC identity terms.
+
+List the available profile JSON:
+
+    python tools/herald_discovery_scan.py --list-target-profiles | jq '{profiles: keys}'
+
+Recommended targeted live read-only command:
+
+    HERALD_DISCOVERY_STATE_FILE=/tmp/herald-targeted-state.json python tools/herald_discovery_scan.py --live-relay-readonly --target-profile bitcoin-agents --target-profile ai-agents --search-mode mixed --relay wss://relay.damus.io --relay wss://nos.lol --limit 200 --timeout 8 --disable-relay-keyword-prefilter --raw-sample-size 5 --dedupe-authors --cooldown-state /tmp/herald-targeted-cooldown.json --cooldown-hours 24 --write-outreach-queue /tmp/herald-targeted-queue.json --max-queue-items 10 | jq '{target_profiles,search_modes,candidates_found,outreach_queue_count,relay_diagnostics,top_candidates}'
+
+Target profiles only change read-only search focus and operator visibility. The flow remains manual approval, export, and receipt recording only.
+
+This stage still does not:
+
+- execute zaps
+- execute outbound payments
+- use NWC
+- use NIP-47
+- call LND
+- publish events to relays
+- sign Nostr events
+- send direct messages
+- handle wallet or secret material

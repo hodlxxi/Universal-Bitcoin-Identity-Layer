@@ -14,6 +14,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from app.services.herald_discovery_profiles import (
+    available_target_profiles,
+    list_target_profiles,
+    resolve_target_profiles,
+)
 from app.services.herald_nostr_discovery import HeraldNostrDiscoveryEngine, HeraldRelayReadonlyClient
 from app.services.herald_outreach_queue import build_outreach_queue, write_outreach_queue
 
@@ -56,6 +61,25 @@ def _parse_args() -> argparse.Namespace:
         default=5,
         help="Max number of raw relay event samples to include in diagnostics.",
     )
+    parser.add_argument(
+        "--target-profile",
+        action="append",
+        default=None,
+        choices=available_target_profiles(),
+        help="Named targeted discovery profile to merge into this run (repeatable).",
+    )
+    parser.add_argument(
+        "--list-target-profiles",
+        action="store_true",
+        help="Print available targeted discovery profiles as JSON and exit.",
+    )
+    parser.add_argument(
+        "--search-mode",
+        action="append",
+        default=None,
+        choices=["keyword", "hashtag", "mixed"],
+        help="Descriptive search mode label for operator visibility (repeatable).",
+    )
     parser.add_argument("--keyword", action="append", default=None, help="Override alignment keyword (repeatable).")
     parser.add_argument("--hashtag", action="append", default=None, help="Override alignment hashtag (repeatable).")
     parser.add_argument(
@@ -64,7 +88,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-live-events", type=int, default=None, help="Safety cap for live events considered (<= --limit)."
     )
-    parser.add_argument("--min-score", type=float, default=0.0, help="Minimum candidate score to enter queue.")
+    parser.add_argument("--min-score", type=float, default=None, help="Minimum candidate score to enter queue.")
     parser.add_argument(
         "--dedupe-authors", action="store_true", help="Keep highest-scoring candidate per author_pubkey."
     )
@@ -134,8 +158,40 @@ def _write_cooldown_state(path: Path, entries: list[dict[str, str]], now: dateti
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _clean_keywords(values: list[str] | None) -> list[str]:
+    return [str(value).strip() for value in values or [] if str(value).strip()]
+
+
+def _clean_hashtags(values: list[str] | None) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw_value in values or []:
+        value = str(raw_value).strip().lower().lstrip("#")
+        if not value or value in seen:
+            continue
+        cleaned.append(value)
+        seen.add(value)
+    return cleaned
+
+
+def _dedupe_strings(values: list[str] | None) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for raw_value in values or []:
+        value = str(raw_value).strip()
+        if not value or value in seen:
+            continue
+        ordered.append(value)
+        seen.add(value)
+    return ordered
+
+
 def main() -> int:
     args = _parse_args()
+    if args.list_target_profiles:
+        print(json.dumps(list_target_profiles(), indent=2))
+        return 0
+
     resolved_max_live_events = max(1, int(args.limit))
     if args.max_live_events is not None:
         resolved_max_live_events = min(resolved_max_live_events, max(1, int(args.max_live_events)))
@@ -157,12 +213,36 @@ def main() -> int:
         source_mode = "live_relay_readonly"
 
     engine = HeraldNostrDiscoveryEngine(relay_client=relay_client)
-    if args.keyword is not None:
-        engine.config.alignment_keywords = [k for k in args.keyword if str(k).strip()]
-    if args.hashtag is not None:
-        engine.config.alignment_hashtags = [h for h in args.hashtag if str(h).strip()]
+    target_profiles = _dedupe_strings(args.target_profile)
+    search_modes = _dedupe_strings(args.search_mode)
+    explicit_keywords = _clean_keywords(args.keyword)
+    explicit_hashtags = _clean_hashtags(args.hashtag)
+
+    recommended_profile_min_score = 0.0
+    if target_profiles:
+        resolved_profiles = resolve_target_profiles(
+            target_profiles,
+            extra_keywords=explicit_keywords,
+            extra_hashtags=explicit_hashtags,
+        )
+        engine.config.alignment_keywords = list(resolved_profiles.keywords)
+        engine.config.alignment_hashtags = list(resolved_profiles.hashtags)
+        recommended_profile_min_score = float(resolved_profiles.min_score)
+    else:
+        if args.keyword is not None:
+            engine.config.alignment_keywords = explicit_keywords
+        if args.hashtag is not None:
+            engine.config.alignment_hashtags = explicit_hashtags
+
     if args.since_hours is not None:
         engine.config.search_window_hours = max(0, int(args.since_hours))
+
+    resolved_min_score = 0.0
+    if args.min_score is not None:
+        resolved_min_score = float(args.min_score)
+    elif target_profiles:
+        resolved_min_score = recommended_profile_min_score
+
     rows = engine.discover_and_evaluate()
     output_relays = getattr(relay_client, "relays", None) or engine.config.relay_urls
 
@@ -174,7 +254,7 @@ def main() -> int:
 
     if args.write_outreach_queue is not None:
         candidates = [r for r in rows if getattr(r, "action_taken", None) == "dry_run_candidate"]
-        score_filtered = [r for r in candidates if float(getattr(r, "score", 0.0)) >= float(args.min_score)]
+        score_filtered = [r for r in candidates if float(getattr(r, "score", 0.0)) >= resolved_min_score]
         skipped_by_score_count = len(candidates) - len(score_filtered)
 
         deduped = score_filtered
@@ -232,6 +312,10 @@ def main() -> int:
                 "source_mode": source_mode,
                 "zap_mode": engine.config.zap_mode,
                 "relay_urls": output_relays,
+                "target_profiles": target_profiles,
+                "search_modes": search_modes,
+                "effective_keywords": list(engine.config.alignment_keywords),
+                "effective_hashtags": list(engine.config.alignment_hashtags),
                 "candidates_found": len(rows),
                 "relay_warnings": getattr(relay_client, "warnings", []),
                 "relay_diagnostics": getattr(
@@ -249,7 +333,7 @@ def main() -> int:
                 )(),
                 "live_safety": {
                     "max_live_events": resolved_max_live_events,
-                    "min_score": float(args.min_score),
+                    "min_score": resolved_min_score,
                     "dedupe_authors": bool(args.dedupe_authors),
                     "cooldown_state": str(args.cooldown_state) if args.cooldown_state is not None else None,
                     "cooldown_hours": max(0, int(args.cooldown_hours)),

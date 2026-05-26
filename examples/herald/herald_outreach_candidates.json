@@ -26,7 +26,7 @@
     "no_outbound_spending",
     "no_nwc",
     "no_nip47",
-    "no_private_key_handling",
+    "no_secret_material_handling",
     "no_relay_publish",
     "no_background_daemon"
   ]
