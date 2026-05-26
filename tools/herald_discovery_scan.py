@@ -46,6 +46,22 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=100, help="Max events to read in live read-only mode.")
     parser.add_argument("--timeout", type=float, default=8.0, help="Per-recv timeout seconds in live read-only mode.")
     parser.add_argument(
+        "--disable-relay-keyword-prefilter",
+        action="store_true",
+        help="Disable relay keyword prefilter in live read-only mode.",
+    )
+    parser.add_argument(
+        "--raw-sample-size",
+        type=int,
+        default=5,
+        help="Max number of raw relay event samples to include in diagnostics.",
+    )
+    parser.add_argument("--keyword", action="append", default=None, help="Override alignment keyword (repeatable).")
+    parser.add_argument("--hashtag", action="append", default=None, help="Override alignment hashtag (repeatable).")
+    parser.add_argument(
+        "--since-hours", type=int, default=None, help="Override discovery search window hours for this run."
+    )
+    parser.add_argument(
         "--max-live-events", type=int, default=None, help="Safety cap for live events considered (<= --limit)."
     )
     parser.add_argument("--min-score", type=float, default=0.0, help="Minimum candidate score to enter queue.")
@@ -135,10 +151,18 @@ def main() -> int:
             relays=args.relay,
             max_events=resolved_max_live_events,
             timeout_seconds=max(0.5, float(args.timeout)),
+            disable_keyword_prefilter=bool(args.disable_relay_keyword_prefilter),
+            raw_sample_size=max(0, int(args.raw_sample_size)),
         )
         source_mode = "live_relay_readonly"
 
     engine = HeraldNostrDiscoveryEngine(relay_client=relay_client)
+    if args.keyword is not None:
+        engine.config.alignment_keywords = [k for k in args.keyword if str(k).strip()]
+    if args.hashtag is not None:
+        engine.config.alignment_hashtags = [h for h in args.hashtag if str(h).strip()]
+    if args.since_hours is not None:
+        engine.config.search_window_hours = max(0, int(args.since_hours))
     rows = engine.discover_and_evaluate()
     output_relays = getattr(relay_client, "relays", None) or engine.config.relay_urls
 
@@ -210,12 +234,27 @@ def main() -> int:
                 "relay_urls": output_relays,
                 "candidates_found": len(rows),
                 "relay_warnings": getattr(relay_client, "warnings", []),
+                "relay_diagnostics": getattr(
+                    relay_client,
+                    "diagnostics",
+                    lambda: {
+                        "raw_events_seen": 0,
+                        "raw_events_by_relay": {},
+                        "keyword_prefilter_matched": 0,
+                        "keyword_prefilter_skipped": 0,
+                        "invalid_event_count": 0,
+                        "relay_errors": [],
+                        "raw_samples": [],
+                    },
+                )(),
                 "live_safety": {
                     "max_live_events": resolved_max_live_events,
                     "min_score": float(args.min_score),
                     "dedupe_authors": bool(args.dedupe_authors),
                     "cooldown_state": str(args.cooldown_state) if args.cooldown_state is not None else None,
                     "cooldown_hours": max(0, int(args.cooldown_hours)),
+                    "search_window_hours": int(engine.config.search_window_hours),
+                    "disable_relay_keyword_prefilter": bool(args.disable_relay_keyword_prefilter),
                 },
                 "outreach_queue_written": outreach_queue_written,
                 "outreach_queue_count": outreach_queue_count,

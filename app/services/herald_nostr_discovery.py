@@ -118,12 +118,23 @@ class HeraldRelayReadonlyClient:
         max_events: int = 100,
         timeout_seconds: float = 8.0,
         websocket_connect: Any | None = None,
+        disable_keyword_prefilter: bool = False,
+        raw_sample_size: int = 5,
     ):
         self.relays = list(relays) if relays is not None else None
         self.max_events = max(1, int(max_events))
         self.timeout_seconds = max(0.5, float(timeout_seconds))
         self.warnings: list[str] = []
         self._websocket_connect = websocket_connect
+        self.disable_keyword_prefilter = bool(disable_keyword_prefilter)
+        self.raw_sample_size = max(0, int(raw_sample_size))
+        self.raw_events_seen = 0
+        self.raw_events_by_relay: dict[str, int] = {}
+        self.keyword_prefilter_matched = 0
+        self.keyword_prefilter_skipped = 0
+        self.invalid_event_count = 0
+        self.relay_errors: list[str] = []
+        self.raw_samples: list[dict[str, Any]] = []
 
     def search_recent_notes(
         self,
@@ -134,6 +145,13 @@ class HeraldRelayReadonlyClient:
         since: datetime,
     ) -> list[dict[str, Any]]:
         self.warnings = []
+        self.raw_events_seen = 0
+        self.raw_events_by_relay = {}
+        self.keyword_prefilter_matched = 0
+        self.keyword_prefilter_skipped = 0
+        self.invalid_event_count = 0
+        self.relay_errors = []
+        self.raw_samples = []
         relay_urls = self.relays if self.relays is not None else relays
         if not relay_urls:
             return []
@@ -172,6 +190,7 @@ class HeraldRelayReadonlyClient:
             except Exception as exc:
                 logger.warning("Read-only relay query failed for %s: %s", relay_url, exc)
                 self.warnings.append(f"relay_error:{relay_url}")
+                self.relay_errors.append(relay_url)
                 continue
         return results[: self.max_events]
 
@@ -202,14 +221,48 @@ class HeraldRelayReadonlyClient:
                     break
                 if msg_type != "EVENT" or len(msg) < 3:
                     continue
+                self.raw_events_seen += 1
+                self.raw_events_by_relay[relay_url] = self.raw_events_by_relay.get(relay_url, 0) + 1
                 event = self._normalize_event(msg[2])
                 if event is None:
+                    self.invalid_event_count += 1
                     continue
-                if not _matches_keywords(event, keywords):
+                self._record_raw_sample(relay_url, event)
+                if self.disable_keyword_prefilter:
+                    collected.append(event)
                     continue
-                collected.append(event)
+                if _matches_keywords(event, keywords):
+                    self.keyword_prefilter_matched += 1
+                    collected.append(event)
+                else:
+                    self.keyword_prefilter_skipped += 1
             websocket.send(close)
         return collected
+
+    def _record_raw_sample(self, relay_url: str, event: dict[str, Any]) -> None:
+        if self.raw_sample_size <= 0 or len(self.raw_samples) >= self.raw_sample_size:
+            return
+        content_head = str(event.get("content") or "")[:180]
+        self.raw_samples.append(
+            {
+                "relay_url": relay_url,
+                "event_id": str(event.get("id") or ""),
+                "pubkey": str(event.get("pubkey") or ""),
+                "created_at": event.get("created_at"),
+                "content_head": content_head,
+            }
+        )
+
+    def diagnostics(self) -> dict[str, Any]:
+        return {
+            "raw_events_seen": self.raw_events_seen,
+            "raw_events_by_relay": dict(self.raw_events_by_relay),
+            "keyword_prefilter_matched": self.keyword_prefilter_matched,
+            "keyword_prefilter_skipped": self.keyword_prefilter_skipped,
+            "invalid_event_count": self.invalid_event_count,
+            "relay_errors": list(self.relay_errors),
+            "raw_samples": list(self.raw_samples),
+        }
 
     def _normalize_event(self, payload: Any) -> dict[str, Any] | None:
         if not isinstance(payload, dict):

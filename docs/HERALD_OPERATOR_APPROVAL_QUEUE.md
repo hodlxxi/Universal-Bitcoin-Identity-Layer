@@ -100,3 +100,15 @@ Example:
     python tools/herald_outreach_receipt.py --package /tmp/herald-send-package.json --output /tmp/herald-receipt.json --queue-id heraldq_... --completed --operator operator --note "manual Nostr reply sent" --external-reference "nostr-event-id-or-url"
 
 This command only records operator-provided outcome metadata in local JSON. It does not verify, fetch, send, pay, sign, or publish anything.
+
+## Stage 7C.5 live discovery diagnostics + loose prefilter controls
+
+Stage 7C.5 adds relay read-only diagnostics to show where events are being filtered before scoring.
+
+Example diagnostic command:
+
+    HERALD_DISCOVERY_STATE_FILE=/tmp/herald-diag-state.json python tools/herald_discovery_scan.py --live-relay-readonly --relay wss://relay.damus.io --limit 100 --timeout 8 --disable-relay-keyword-prefilter --raw-sample-size 5 --min-score 0 --write-outreach-queue /tmp/herald-diag-queue.json --max-queue-items 10 | jq '{source_mode,candidates_found,relay_diagnostics,top_candidates}'
+
+Diagnostics include counts for raw relay events seen, per-relay counts, keyword prefilter matched/skipped, invalid event count, relay errors, and small redacted raw samples.
+
+This mode is still read-only and may produce noisy candidates when the keyword prefilter is disabled. Operators should keep using min-score, dedupe, and cooldown controls before approval.
