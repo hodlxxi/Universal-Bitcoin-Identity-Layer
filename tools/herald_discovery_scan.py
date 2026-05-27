@@ -236,6 +236,13 @@ def main() -> int:
 
     if args.since_hours is not None:
         engine.config.search_window_hours = max(0, int(args.since_hours))
+    elif args.fixture is not None:
+        # Fixture mode must remain deterministic as wall-clock time advances.
+        # Keep production/live relay discovery on the normal default window.
+        engine.config.search_window_hours = max(
+            int(engine.config.search_window_hours),
+            24 * 365 * 5,
+        )
 
     resolved_min_score = 0.0
     if args.min_score is not None:
