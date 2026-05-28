@@ -119,6 +119,7 @@ def _agent_endpoints() -> dict:
         "capabilities_schema": "/agent/capabilities/schema",
         "request": "/agent/request",
         "message": "/agent/message",
+        "nostr_dm_policy": "/.well-known/nostr-dm-policy.json",
         "job": "/agent/jobs/<job_id>",
         "verify": "/agent/verify/<job_id>",
         "attestations": "/agent/attestations",
@@ -613,6 +614,18 @@ def _capabilities_payload() -> dict:
         "pricing": {"ping_sats": PING_SATS, "attestation_sats": ATTESTATION_SATS},
         "job_types": JOB_REGISTRY,
         "limits": {"max_jobs_per_day": MAX_JOBS_PER_DAY},
+        "messaging": {
+            "nip17": {
+                "planned": True,
+                "enabled": False,
+                "server_plaintext_storage": False,
+                "key_custody": False,
+                "supported_kinds": [14, 15],
+                "nip44_encryption": "planned",
+                "nip59_gift_wrap": "planned",
+                "relay_list_kind": 10050,
+            }
+        },
         "skills": {
             "count": len(skills),
             "endpoint": endpoints["skills"],
@@ -644,6 +657,7 @@ def _agent_identity_document() -> dict:
         },
         "pricing": capabilities["pricing"],
         "limits": capabilities["limits"],
+        "messaging": capabilities["messaging"],
         "endpoints": endpoints,
         "skills": skills,
         "trust_model": _trust_model_document(),
@@ -1778,3 +1792,23 @@ def verify_nostr_page(event_id: str):
         trust_summary=build_trust_summary(DEFAULT_AGENT_ID),
         verification=verification,
     )
+
+
+@agent_bp.get("/.well-known/nostr-dm-policy.json")
+def nostr_dm_policy():
+    payload = {
+        "version": "1",
+        "service": "HODLXXI",
+        "nip17": {
+            "planned": True,
+            "enabled": False,
+            "server_plaintext_storage": False,
+            "key_custody": False,
+            "supported_kinds": [14, 15],
+            "nip44_encryption": "planned",
+            "nip59_gift_wrap": "planned",
+            "relay_list_kind": 10050,
+        },
+        "timestamp": _iso_now(),
+    }
+    return jsonify(payload)
