@@ -407,6 +407,39 @@ class ChatMessage(Base):
         return f"<ChatMessage(id={self.id}, sender={self.sender_id})>"
 
 
+class NIP17Envelope(Base):
+    """
+    Opaque NIP-17/NIP-59 gift-wrap envelope storage.
+
+    Stores encrypted relay-visible kind-1059 envelopes only. This table must
+    never contain plaintext kind-14/kind-15 message bodies or user private keys.
+    """
+
+    __tablename__ = "nip17_envelopes"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    event_id = Column(String(64), unique=True, nullable=False, index=True)
+    envelope_hash = Column(String(64), unique=True, nullable=False, index=True)
+    wrapper_pubkey = Column(String(64), nullable=False, index=True)
+    receiver_pubkey = Column(String(64), nullable=False, index=True)
+    kind = Column(Integer, nullable=False, default=1059)
+    event_created_at = Column(BigInteger, nullable=False)
+    envelope_json = Column(JSON, nullable=False)
+    source = Column(String(64), nullable=False, default="api")
+    status = Column(String(32), nullable=False, default="received", index=True)
+    received_at = Column(DateTime, default=utc_now, nullable=False, index=True)
+    metadata_json = Column("metadata", JSON)
+
+    __table_args__ = (
+        Index("idx_nip17_receiver_received", "receiver_pubkey", "received_at"),
+        Index("idx_nip17_wrapper_received", "wrapper_pubkey", "received_at"),
+        Index("idx_nip17_status_received", "status", "received_at"),
+    )
+
+    def __repr__(self):
+        return f"<NIP17Envelope(event_id={self.event_id[:16]}..., receiver={self.receiver_pubkey[:16]}...)>"
+
+
 class ProofOfFunds(Base):
     """
     Proof of Funds attestations - cryptographic verification of Bitcoin holdings.
