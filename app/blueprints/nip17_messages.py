@@ -13,7 +13,7 @@ import os
 
 from flask import Blueprint, current_app, jsonify, request
 
-from app.services.nostr_dm import validate_nip59_gift_wrap_event
+from app.services.nip17_storage import store_opaque_nip17_envelope
 
 nip17_messages_bp = Blueprint("nip17_messages", __name__)
 
@@ -38,13 +38,17 @@ def post_nip17_envelope():
     if not isinstance(envelope, dict):
         return jsonify({"error": "invalid_envelope", "message": "envelope object required"}), 400
 
-    validation = validate_nip59_gift_wrap_event(envelope)
-    if not validation["ok"]:
+    stored = store_opaque_nip17_envelope(
+        envelope,
+        source="api",
+        metadata={"route": "/api/messages/nip17/envelopes"},
+    )
+    if not stored["ok"]:
         return (
             jsonify(
                 {
-                    "error": "invalid_nip59_gift_wrap",
-                    "details": validation["errors"],
+                    "error": stored["error"],
+                    "details": stored.get("details", []),
                 }
             ),
             400,
@@ -56,10 +60,14 @@ def post_nip17_envelope():
                 "ok": True,
                 "accepted": True,
                 "kind": 1059,
-                "stored": False,
+                "stored": bool(stored["stored"]),
+                "duplicate": bool(stored["duplicate"]),
+                "event_id": stored["event_id"],
+                "envelope_hash": stored["envelope_hash"],
+                "receiver_pubkey": stored["receiver_pubkey"],
                 "published": False,
                 "plaintext_seen": False,
-                "message": "opaque NIP-59 gift-wrap envelope validated; persistence and relay publishing are not enabled",
+                "message": "opaque NIP-59 gift-wrap envelope stored; relay publishing is not enabled",
             }
         ),
         202,
