@@ -93,11 +93,26 @@ Steps:
 2. Pull feature/nip17-messaging-stack.
 3. Verify no local dirty files.
 4. Verify database target without printing secrets.
-5. Apply migrations/2026-05-28_nip17_envelopes.sql.
-6. Restart ubid-staging.
-7. Smoke critical routes.
-8. Keep NIP17_MESSAGES_ENABLED=false by default.
-9. Enable NIP17_MESSAGES_ENABLED=true only after disabled-path smoke passes.
+5. Detect the staging DB backend without printing secrets.
+6. If staging uses PostgreSQL, apply migrations/2026-05-28_nip17_envelopes.sql.
+7. If staging uses SQLite, create the nip17_envelopes table from the SQLAlchemy model with checkfirst=True.
+8. Restart ubid-staging.
+9. Smoke critical routes.
+10. Keep NIP17_MESSAGES_ENABLED=false by default.
+11. Enable NIP17_MESSAGES_ENABLED=true only after disabled-path smoke passes.
+
+## Staging DB backend note
+
+The production migration file migrations/2026-05-28_nip17_envelopes.sql is PostgreSQL-oriented.
+
+If staging uses SQLite, do not apply the PostgreSQL SQL file directly. Instead, create the table from the SQLAlchemy model:
+
+- load the running ubid-staging environment from /proc/$MAINPID/environ without printing secrets
+- call NIP17Envelope.__table__.create(bind=engine, checkfirst=True)
+- verify columns with SQLAlchemy inspect(engine)
+- require table_ok=true before enabling NIP17_MESSAGES_ENABLED=true
+
+This keeps staging aligned with the model while preserving the PostgreSQL migration artifact for production.
 
 ## Staging smoke: disabled
 

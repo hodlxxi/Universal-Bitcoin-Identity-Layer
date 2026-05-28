@@ -17,6 +17,11 @@ def test_nip17_staging_runbook_documents_required_safety_gates():
         "rollback",
         "staging only",
         "production rollout gate",
+        "sqlite",
+        "postgresql",
+        "sqlalchemy model",
+        "checkfirst=true",
+        "table_ok=true",
     ]
 
     for needle in required:
