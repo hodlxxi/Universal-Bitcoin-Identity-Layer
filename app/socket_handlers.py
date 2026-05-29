@@ -46,18 +46,21 @@ def _broadcast_chat_message(text: str, client_id: str | None = None):
     logger.debug(f"CHAT DEBUG: appended history len={len(CHAT_HISTORY)} payload={m}")
 
     # Old clients listen to "message"; current UI listens to "chat:message".
-    # Emit globally on the default namespace. This is intentionally blunt:
-    # client_id-based UI dedupe handles sender echo, while global emit avoids
-    # silent non-delivery caused by sid/skip_sid edge cases.
-    socketio.emit("message", m, namespace="/")
-    socketio.emit("chat:message", m, namespace="/")
+    # Explicitly fan out to every active Socket.IO sid. In production, the
+    # global emit path can report a broadcast while some live clients do not
+    # receive the event until they refresh and reload CHAT_HISTORY.
+    target_sids = list(ACTIVE_SOCKETS.keys())
+    for target_sid in target_sids:
+        socketio.emit("message", m, to=target_sid, namespace="/")
+        socketio.emit("chat:message", m, to=target_sid, namespace="/")
 
     logger.info(
-        "socket_chat_broadcast sid=%s pubkey_tail=%s client_id_present=%s history_len=%s",
+        "socket_chat_broadcast sid=%s pubkey_tail=%s client_id_present=%s history_len=%s fanout_sids=%s",
         sid,
         str(pk)[-8:],
         bool(client_id),
         len(CHAT_HISTORY),
+        len(target_sids),
     )
 
 
