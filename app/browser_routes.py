@@ -1865,6 +1865,62 @@ def register_browser_routes(
           text-overflow:ellipsis;
         }
 
+        .hybrid-messaging-status{
+          margin-bottom: 0.75rem;
+          border-color: rgba(0,255,136,0.22);
+          background: rgba(0,0,0,0.26);
+        }
+
+        .hybrid-messaging-grid{
+          display:grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 0.75rem;
+        }
+
+        .hybrid-messaging-card{
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 14px;
+          padding: 0.75rem;
+          background: rgba(0,0,0,0.22);
+        }
+
+        .hybrid-messaging-card h3{
+          margin: 0 0 0.45rem;
+          font-family: var(--mono);
+          font-size: 0.78rem;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: var(--accent);
+        }
+
+        .hybrid-messaging-card p{
+          margin: 0.25rem 0;
+          color: rgba(235,255,245,0.78);
+          font-size: 0.88rem;
+          line-height: 1.35;
+        }
+
+        .hybrid-messaging-card code{
+          color: rgba(235,255,245,0.92);
+          background: rgba(0,0,0,0.30);
+          border: 1px solid rgba(255,255,255,0.06);
+          border-radius: 7px;
+          padding: 0.06rem 0.28rem;
+        }
+
+        .hybrid-messaging-note{
+          margin-top: 0.65rem;
+          color: rgba(235,255,245,0.66);
+          font-size: 0.82rem;
+          line-height: 1.35;
+        }
+
+        @media (max-width: 768px){
+          .hybrid-messaging-grid{
+            grid-template-columns: 1fr;
+          }
+        }
+
         .floating-call-btn{
           position:fixed;
           bottom: 18px;
@@ -2486,6 +2542,32 @@ def register_browser_routes(
             <div id="room-status" class="status-pill">Connecting…</div>
           </div>
         </header>
+
+        <section id="hybridMessagingStatus" class="panel hybrid-messaging-status" aria-label="Hybrid messaging status">
+          <div class="panel-header">
+            <div class="panel-title">Hybrid Messaging</div>
+            <div class="panel-badge">NIP-17 planned · intake disabled</div>
+          </div>
+          <div class="panel-body">
+            <div class="hybrid-messaging-grid">
+              <div class="hybrid-messaging-card">
+                <h3>Live chat / calls</h3>
+                <p><code>Socket.IO</code> realtime channel remains active.</p>
+                <p>Messages are ephemeral and self-erase after 45 seconds by default.</p>
+                <p>Voice/video signaling stays on the existing <code>rtc:*</code> path.</p>
+              </div>
+              <div class="hybrid-messaging-card">
+                <h3>Encrypted inbox</h3>
+                <p><code>NIP-17 / NIP-59</code> support is staged but disabled.</p>
+                <p>Server plaintext storage: <code>false</code>.</p>
+                <p>Server key custody: <code>false</code>.</p>
+              </div>
+            </div>
+            <div class="hybrid-messaging-note">
+              Current mode is hybrid: fast live chat stays ephemeral; encrypted persistent inbox will be added separately after client-side encryption and inbox UX are ready.
+            </div>
+          </div>
+        </section>
 
         <section class="layout">
           <!-- Chat -->
