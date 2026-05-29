@@ -2559,6 +2559,8 @@ def register_browser_routes(
               <div class="hybrid-messaging-card">
                 <h3>Encrypted inbox</h3>
                 <p><code>NIP-17 / NIP-59</code> support is staged but disabled.</p>
+                <p>Stored envelopes: <code id="nip17InboxCount">checking...</code></p>
+                <p>Receiver key supported: <code id="nip17ReceiverSupported">checking...</code></p>
                 <p>Server plaintext storage: <code>false</code>.</p>
                 <p>Server key custody: <code>false</code>.</p>
               </div>
@@ -3478,6 +3480,38 @@ def register_browser_routes(
           userListEl.querySelector(`.user-item[data-pubkey="${pk}"]`)?.remove();
           setOnlineCount(userListEl.querySelectorAll('.user-item').length);
         });
+
+        refreshNip17InboxStatus();
+
+        async function refreshNip17InboxStatus(){
+          const countEl = document.getElementById('nip17InboxCount');
+          const receiverEl = document.getElementById('nip17ReceiverSupported');
+          if (!countEl || !receiverEl) return;
+
+          try {
+            const res = await fetch('/api/messages/nip17/inbox/status', {
+              headers: { 'Accept': 'application/json' },
+              credentials: 'same-origin'
+            });
+
+            if (res.status === 401) {
+              countEl.textContent = 'login required';
+              receiverEl.textContent = 'unknown';
+              return;
+            }
+
+            const data = await res.json();
+            countEl.textContent = String(data.stored_envelopes ?? 0);
+            receiverEl.textContent = data.receiver_pubkey_supported ? 'true' : 'false';
+
+            if (data.enabled === false) {
+              countEl.title = 'NIP-17 intake is disabled; stored envelope count is read-only.';
+            }
+          } catch (err) {
+            countEl.textContent = 'unavailable';
+            receiverEl.textContent = 'unavailable';
+          }
+        }
 
         function sendMessage() {
           const text = (inputEl?.value || '').trim();
