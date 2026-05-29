@@ -1,11 +1,19 @@
 """NIP-17 opaque envelope API contract tests."""
 
+import uuid
+
 from app.services.nip17_storage import get_opaque_nip17_envelope
 
 HEX32_A = "a" * 64
 HEX32_B = "b" * 64
 HEX32_C = "c" * 64
 SIG = "d" * 128
+
+
+def _event_id(label: str) -> str:
+    """Generate an isolated 64-hex NIP-17 event id for this test invocation."""
+
+    return uuid.uuid4().hex + uuid.uuid4().hex
 
 
 def _gift_wrap_event(event_id=HEX32_A):
@@ -36,7 +44,7 @@ def test_nip17_envelope_route_is_disabled_by_default(client):
 
 def test_nip17_envelope_route_stores_gift_wrap_when_enabled(app, client):
     app.config["NIP17_MESSAGES_ENABLED"] = True
-    event_id = "2" * 64
+    event_id = _event_id("stores-gift-wrap-enabled")
 
     response = client.post("/api/messages/nip17/envelopes", json={"envelope": _gift_wrap_event(event_id)})
 
@@ -62,7 +70,7 @@ def test_nip17_envelope_route_stores_gift_wrap_when_enabled(app, client):
 
 def test_nip17_envelope_route_is_idempotent_by_event_id(app, client):
     app.config["NIP17_MESSAGES_ENABLED"] = True
-    event_id = "4" * 64
+    event_id = _event_id("rejects-invalid-envelope")
     envelope = _gift_wrap_event(event_id)
 
     first = client.post("/api/messages/nip17/envelopes", json={"envelope": envelope})
@@ -78,7 +86,7 @@ def test_nip17_envelope_route_is_idempotent_by_event_id(app, client):
 
 def test_nip17_envelope_route_rejects_plaintext_kind14_transport(app, client):
     app.config["NIP17_MESSAGES_ENABLED"] = True
-    event_id = "3" * 64
+    event_id = _event_id("rejects-plaintext-kind14")
     plaintext_event = {
         "id": event_id,
         "pubkey": HEX32_B,

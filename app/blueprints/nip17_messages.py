@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import os
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, session
 
-from app.services.nip17_storage import store_opaque_nip17_envelope
+from app.services.nip17_storage import count_opaque_nip17_envelopes_for_receiver, store_opaque_nip17_envelope
 
 nip17_messages_bp = Blueprint("nip17_messages", __name__)
 
@@ -23,6 +23,39 @@ def _nip17_messages_enabled() -> bool:
     if configured is not None:
         return bool(configured)
     return (os.getenv("NIP17_MESSAGES_ENABLED") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_nostr_pubkey(value: str) -> bool:
+    value = str(value or "").strip()
+    return len(value) == 64 and all(ch in "0123456789abcdefABCDEF" for ch in value)
+
+
+@nip17_messages_bp.get("/api/messages/nip17/inbox/status")
+def get_nip17_inbox_status():
+    logged_in_pubkey = str(session.get("logged_in_pubkey") or "").strip()
+    if not logged_in_pubkey:
+        return jsonify({"error": "unauthorized", "message": "login required"}), 401
+
+    receiver_pubkey_supported = _is_nostr_pubkey(logged_in_pubkey)
+    stored_envelopes = 0
+
+    if receiver_pubkey_supported:
+        stored_envelopes = count_opaque_nip17_envelopes_for_receiver(logged_in_pubkey.lower())
+
+    return jsonify(
+        {
+            "ok": True,
+            "enabled": _nip17_messages_enabled(),
+            "stored_envelopes": stored_envelopes,
+            "receiver_pubkey_supported": receiver_pubkey_supported,
+            "receiver_pubkey_tail": logged_in_pubkey[-8:] if receiver_pubkey_supported else None,
+            "plaintext_storage": False,
+            "key_custody": False,
+            "ciphertext_echo": False,
+            "relay_publish": False,
+            "message": "read-only NIP-17 inbox status; envelope bodies are not returned",
+        }
+    )
 
 
 @nip17_messages_bp.post("/api/messages/nip17/envelopes")

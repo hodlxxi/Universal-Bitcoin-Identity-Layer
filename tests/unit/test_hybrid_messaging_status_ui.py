@@ -15,6 +15,10 @@ def test_app_chat_surface_documents_hybrid_messaging_status():
         "self-erase after 45 seconds",
         "Server plaintext storage: <code>false</code>",
         "Server key custody: <code>false</code>",
+        'Stored envelopes: <code id="nip17InboxCount">checking...</code>',
+        'Receiver key supported: <code id="nip17ReceiverSupported">checking...</code>',
+        "function refreshNip17InboxStatus",
+        "/api/messages/nip17/inbox/status",
         "intake disabled",
     ]
 

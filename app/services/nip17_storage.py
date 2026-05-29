@@ -90,6 +90,24 @@ def store_opaque_nip17_envelope(
         }
 
 
+def count_opaque_nip17_envelopes_for_receiver(receiver_pubkey: str) -> int:
+    """Count stored opaque envelopes for one receiver without loading envelope_json."""
+
+    receiver = str(receiver_pubkey or "").strip().lower()
+    if not receiver:
+        return 0
+
+    with session_scope() as session:
+        return int(
+            session.query(NIP17Envelope.id)
+            .filter(
+                NIP17Envelope.receiver_pubkey == receiver,
+                NIP17Envelope.status == "received",
+            )
+            .count()
+        )
+
+
 def get_opaque_nip17_envelope(event_id: str, *, include_envelope: bool = False) -> dict[str, Any] | None:
     with session_scope() as session:
         row = session.query(NIP17Envelope).filter_by(event_id=str(event_id).lower()).first()
