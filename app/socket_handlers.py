@@ -46,18 +46,29 @@ def _broadcast_chat_message(text: str, client_id: str | None = None):
     logger.debug(f"CHAT DEBUG: appended history len={len(CHAT_HISTORY)} payload={m}")
 
     # Old clients listen to "message"; current UI listens to "chat:message".
-    # Emit globally on the default namespace. This is intentionally blunt:
-    # client_id-based UI dedupe handles sender echo, while global emit avoids
-    # silent non-delivery caused by sid/skip_sid edge cases.
-    socketio.emit("message", m, namespace="/")
-    socketio.emit("chat:message", m, namespace="/")
+    # Use the active Socket.IO request context broadcast first, then explicit
+    # per-sid fanout as a fallback. The browser dedupes sender echo by client_id.
+    context_broadcast_ok = False
+    try:
+        emit("message", m, broadcast=True)
+        emit("chat:message", m, broadcast=True)
+        context_broadcast_ok = True
+    except Exception as exc:
+        logger.warning("socket_chat_context_broadcast_failed sid=%s error=%s", sid, exc)
+
+    target_sids = list(ACTIVE_SOCKETS.keys())
+    for target_sid in target_sids:
+        socketio.emit("message", m, to=target_sid, namespace="/")
+        socketio.emit("chat:message", m, to=target_sid, namespace="/")
 
     logger.info(
-        "socket_chat_broadcast sid=%s pubkey_tail=%s client_id_present=%s history_len=%s",
+        "socket_chat_broadcast sid=%s pubkey_tail=%s client_id_present=%s history_len=%s fanout_sids=%s context_broadcast=%s",
         sid,
         str(pk)[-8:],
         bool(client_id),
         len(CHAT_HISTORY),
+        len(target_sids),
+        context_broadcast_ok,
     )
 
 
