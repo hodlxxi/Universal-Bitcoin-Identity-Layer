@@ -21,10 +21,20 @@ class FakeSocketIO:
         )
 
 
-def test_chat_broadcast_fans_out_to_each_active_socket_sid(app, monkeypatch):
+def test_chat_broadcast_uses_context_broadcast_and_fans_out_to_each_active_sid(app, monkeypatch):
     fake_socketio = FakeSocketIO()
+    context_emits = []
     original_sockets = dict(ACTIVE_SOCKETS)
     original_history = list(CHAT_HISTORY)
+
+    def fake_context_emit(event, payload, **kwargs):
+        context_emits.append(
+            {
+                "event": event,
+                "payload": payload,
+                "broadcast": kwargs.get("broadcast"),
+            }
+        )
 
     try:
         ACTIVE_SOCKETS.clear()
@@ -37,6 +47,7 @@ def test_chat_broadcast_fans_out_to_each_active_socket_sid(app, monkeypatch):
         )
 
         monkeypatch.setattr(socket_handlers, "get_socketio", lambda: fake_socketio)
+        monkeypatch.setattr(socket_handlers, "emit", fake_context_emit)
 
         with app.test_request_context("/socket.io/"):
             session["logged_in_pubkey"] = "a" * 64
@@ -46,8 +57,11 @@ def test_chat_broadcast_fans_out_to_each_active_socket_sid(app, monkeypatch):
         assert CHAT_HISTORY[0]["text"] == "hello live"
         assert CHAT_HISTORY[0]["client_id"] == "client-1"
 
-        emitted = {(call["event"], call["to"]) for call in fake_socketio.emits}
+        context_events = {(call["event"], call["broadcast"]) for call in context_emits}
+        assert ("message", True) in context_events
+        assert ("chat:message", True) in context_events
 
+        emitted = {(call["event"], call["to"]) for call in fake_socketio.emits}
         assert ("message", "sid-sender") in emitted
         assert ("chat:message", "sid-sender") in emitted
         assert ("message", "sid-receiver") in emitted
