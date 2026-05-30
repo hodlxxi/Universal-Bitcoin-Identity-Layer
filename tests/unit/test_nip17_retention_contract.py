@@ -124,3 +124,18 @@ def test_retention_rejects_unsafe_limits(app):
         assert "max_rows" in str(exc)
     else:
         raise AssertionError("max_rows=0 should fail")
+
+
+def test_retention_script_memory_db_guard_helpers():
+    from scripts.nip17_retention import _is_memory_database_url, _safe_database_target
+
+    assert _is_memory_database_url("sqlite://")
+    assert _is_memory_database_url("sqlite:///:memory:")
+    assert _is_memory_database_url("sqlite:///:memory")
+    assert not _is_memory_database_url("sqlite:////srv/ubid-staging/runtime/staging.db")
+
+    target = _safe_database_target("sqlite:////srv/ubid-staging/runtime/staging.db")
+    assert target["scheme"] == "sqlite"
+    assert target["is_memory"] is False
+    assert "password" not in repr(target).lower()
+    assert "username" not in repr(target).lower()
