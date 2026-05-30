@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.database import session_scope
@@ -130,3 +131,88 @@ def get_opaque_nip17_envelope(event_id: str, *, include_envelope: bool = False) 
         if include_envelope:
             payload["envelope"] = row.envelope_json
         return payload
+
+
+def preview_nip17_envelope_retention(*, max_age_days: int = 90, max_rows: int = 10000) -> dict[str, Any]:
+    """Preview NIP-17 envelope retention without deleting rows.
+
+    Retention is intentionally conservative:
+    - age cutoff applies to received_at
+    - max_rows keeps newest rows by received_at/id and selects older overflow
+    - no envelope_json/content is returned
+    """
+
+    if max_age_days < 1:
+        raise ValueError("max_age_days must be >= 1")
+    if max_rows < 1:
+        raise ValueError("max_rows must be >= 1")
+
+    with session_scope() as session:
+        total = session.query(NIP17Envelope).count()
+
+        age_cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+        age_ids = {
+            row[0] for row in session.query(NIP17Envelope.id).filter(NIP17Envelope.received_at < age_cutoff).all()
+        }
+
+        ordered_ids = [
+            row[0]
+            for row in session.query(NIP17Envelope.id)
+            .order_by(NIP17Envelope.received_at.desc(), NIP17Envelope.id.desc())
+            .all()
+        ]
+        overflow_ids = set(ordered_ids[max_rows:])
+
+        delete_ids = age_ids | overflow_ids
+
+        return {
+            "ok": True,
+            "dry_run": True,
+            "total": total,
+            "max_age_days": max_age_days,
+            "max_rows": max_rows,
+            "age_cutoff": age_cutoff.isoformat(),
+            "delete_count": len(delete_ids),
+            "age_delete_count": len(age_ids),
+            "overflow_delete_count": len(overflow_ids),
+            "kept_count_after_delete": total - len(delete_ids),
+        }
+
+
+def apply_nip17_envelope_retention(*, max_age_days: int = 90, max_rows: int = 10000) -> dict[str, Any]:
+    """Apply NIP-17 envelope retention and delete selected opaque rows."""
+
+    preview = preview_nip17_envelope_retention(max_age_days=max_age_days, max_rows=max_rows)
+    if preview["delete_count"] == 0:
+        result = dict(preview)
+        result["dry_run"] = False
+        result["deleted_count"] = 0
+        return result
+
+    age_cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+
+    with session_scope() as session:
+        ordered_ids = [
+            row[0]
+            for row in session.query(NIP17Envelope.id)
+            .order_by(NIP17Envelope.received_at.desc(), NIP17Envelope.id.desc())
+            .all()
+        ]
+        overflow_ids = set(ordered_ids[max_rows:])
+
+        age_ids = {
+            row[0] for row in session.query(NIP17Envelope.id).filter(NIP17Envelope.received_at < age_cutoff).all()
+        }
+
+        delete_ids = age_ids | overflow_ids
+        deleted_count = 0
+
+        if delete_ids:
+            deleted_count = (
+                session.query(NIP17Envelope).filter(NIP17Envelope.id.in_(delete_ids)).delete(synchronize_session=False)
+            )
+
+    result = preview_nip17_envelope_retention(max_age_days=max_age_days, max_rows=max_rows)
+    result["dry_run"] = False
+    result["deleted_count"] = deleted_count
+    return result
