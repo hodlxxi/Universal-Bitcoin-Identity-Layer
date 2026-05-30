@@ -216,3 +216,61 @@ def apply_nip17_envelope_retention(*, max_age_days: int = 90, max_rows: int = 10
     result["dry_run"] = False
     result["deleted_count"] = deleted_count
     return result
+
+
+def list_opaque_nip17_envelopes_for_receiver(
+    receiver_pubkey: str,
+    *,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """List metadata-only NIP-17 envelopes for a receiver pubkey.
+
+    This intentionally does not return envelope_json, content, ciphertext,
+    plaintext, or signatures. It is safe for authenticated inbox metadata UI.
+    """
+
+    normalized_receiver = (receiver_pubkey or "").strip().lower()
+
+    if not normalized_receiver:
+        raise ValueError("receiver_pubkey is required")
+    if limit < 1 or limit > 100:
+        raise ValueError("limit must be between 1 and 100")
+    if offset < 0:
+        raise ValueError("offset must be >= 0")
+
+    with session_scope() as session:
+        query = session.query(NIP17Envelope).filter(NIP17Envelope.receiver_pubkey == normalized_receiver)
+
+        total = query.count()
+
+        rows = (
+            query.order_by(NIP17Envelope.received_at.desc(), NIP17Envelope.id.desc()).limit(limit).offset(offset).all()
+        )
+
+        items = []
+        for row in rows:
+            items.append(
+                {
+                    "event_id": row.event_id,
+                    "envelope_hash": row.envelope_hash,
+                    "wrapper_pubkey": row.wrapper_pubkey,
+                    "receiver_pubkey": row.receiver_pubkey,
+                    "kind": row.kind,
+                    "event_created_at": row.event_created_at,
+                    "source": row.source,
+                    "status": row.status,
+                    "received_at": row.received_at.isoformat() if row.received_at else None,
+                    "metadata": row.metadata_json or {},
+                }
+            )
+
+        return {
+            "ok": True,
+            "receiver_pubkey": normalized_receiver,
+            "limit": limit,
+            "offset": offset,
+            "total": total,
+            "count": len(items),
+            "items": items,
+        }
