@@ -34,6 +34,7 @@ from app.services.trust_surface import (
     trust_page_context,
 )
 from app.utils import get_rpc_connection
+from app.blueprints.nip17_messages import get_nip17_metadata
 
 logger = logging.getLogger(__name__)
 audit_logger = get_audit_logger()
@@ -614,18 +615,7 @@ def _capabilities_payload() -> dict:
         "pricing": {"ping_sats": PING_SATS, "attestation_sats": ATTESTATION_SATS},
         "job_types": JOB_REGISTRY,
         "limits": {"max_jobs_per_day": MAX_JOBS_PER_DAY},
-        "messaging": {
-            "nip17": {
-                "planned": True,
-                "enabled": False,
-                "server_plaintext_storage": False,
-                "key_custody": False,
-                "supported_kinds": [14, 15],
-                "nip44_encryption": "planned",
-                "nip59_gift_wrap": "planned",
-                "relay_list_kind": 10050,
-            }
-        },
+        "messaging": {"nip17": get_nip17_metadata()},
         "skills": {
             "count": len(skills),
             "endpoint": endpoints["skills"],
@@ -1799,16 +1789,7 @@ def nostr_dm_policy():
     payload = {
         "version": "1",
         "service": "HODLXXI",
-        "nip17": {
-            "planned": True,
-            "enabled": False,
-            "server_plaintext_storage": False,
-            "key_custody": False,
-            "supported_kinds": [14, 15],
-            "nip44_encryption": "planned",
-            "nip59_gift_wrap": "planned",
-            "relay_list_kind": 10050,
-        },
+        "nip17": get_nip17_metadata(),
         "timestamp": _iso_now(),
     }
     return jsonify(payload)

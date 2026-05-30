@@ -25,6 +25,29 @@ def _nip17_messages_enabled() -> bool:
     return (os.getenv("NIP17_MESSAGES_ENABLED") or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def get_nip17_metadata() -> dict:
+    """Return public NIP-17/NIP-59 runtime metadata.
+
+    `enabled` means local HTTP intake accepts NIP-59 gift-wrap envelopes.
+    It does not mean relay publishing, decryption, plaintext storage, or key custody.
+    """
+
+    intake_enabled = _nip17_messages_enabled()
+    return {
+        "enabled": intake_enabled,
+        "intake_enabled": intake_enabled,
+        "planned": True,
+        "key_custody": False,
+        "server_plaintext_storage": False,
+        "nip44_encryption": "planned",
+        "nip59_gift_wrap": "planned",
+        "relay_list_kind": 10050,
+        "supported_kinds": [14, 15],
+        "accepted_transport_kind": 1059,
+        "relay_publishing": False,
+    }
+
+
 def _is_nostr_pubkey(value: str) -> bool:
     value = str(value or "").strip()
     return len(value) == 64 and all(ch in "0123456789abcdefABCDEF" for ch in value)
