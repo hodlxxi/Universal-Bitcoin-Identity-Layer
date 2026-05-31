@@ -128,3 +128,31 @@ def post_nip17_envelope():
         ),
         202,
     )
+
+
+@nip17_messages_bp.get("/api/messages/nip17/inbox/envelopes")
+def get_nip17_inbox_envelopes():
+    """Return authenticated receiver inbox metadata only."""
+
+    receiver_pubkey = (session.get("logged_in_pubkey") or "").strip().lower()
+    if not receiver_pubkey:
+        return jsonify({"error": "unauthorized", "message": "login required"}), 401
+
+    try:
+        limit = int(request.args.get("limit", "50"))
+        offset = int(request.args.get("offset", "0"))
+    except ValueError:
+        return jsonify({"error": "bad_request", "message": "limit and offset must be integers"}), 400
+
+    try:
+        from app.services.nip17_storage import list_opaque_nip17_envelopes_for_receiver
+
+        payload = list_opaque_nip17_envelopes_for_receiver(
+            receiver_pubkey,
+            limit=limit,
+            offset=offset,
+        )
+    except ValueError as exc:
+        return jsonify({"error": "bad_request", "message": str(exc)}), 400
+
+    return jsonify(payload), 200
