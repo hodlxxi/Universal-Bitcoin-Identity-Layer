@@ -8,6 +8,8 @@ ciphertext, plaintext, signatures, or secrets.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import sys
@@ -58,12 +60,12 @@ def _redact_runtime_path(target: dict[str, object]) -> dict[str, object]:
     return redacted
 
 
-def verify_receiver_inbox(receiver_pubkey: str, *, limit: int = 10) -> dict[str, object]:
-    receiver = str(receiver_pubkey or "").strip().lower()
-    if not _is_hex(receiver, 64):
-        raise ValueError("receiver_pubkey must be 64 hex chars")
-    if limit < 1 or limit > 100:
-        raise ValueError("limit must be between 1 and 100")
+def _query_receiver_inbox(receiver: str, *, limit: int) -> dict[str, object]:
+    """Query receiver inbox metadata.
+
+    Imports and app initialization can emit startup logs. Callers that need
+    machine-readable stdout should wrap this function with stdout capture.
+    """
 
     from wsgi import app
     from app.database import session_scope
@@ -109,6 +111,21 @@ def verify_receiver_inbox(receiver_pubkey: str, *, limit: int = 10) -> dict[str,
         "count": len(items),
         "items": items,
     }
+
+
+def verify_receiver_inbox(receiver_pubkey: str, *, limit: int = 10, quiet: bool = True) -> dict[str, object]:
+    receiver = str(receiver_pubkey or "").strip().lower()
+    if not _is_hex(receiver, 64):
+        raise ValueError("receiver_pubkey must be 64 hex chars")
+    if limit < 1 or limit > 100:
+        raise ValueError("limit must be between 1 and 100")
+
+    if not quiet:
+        return _query_receiver_inbox(receiver, limit=limit)
+
+    captured_stdout = io.StringIO()
+    with contextlib.redirect_stdout(captured_stdout):
+        return _query_receiver_inbox(receiver, limit=limit)
 
 
 def main() -> int:

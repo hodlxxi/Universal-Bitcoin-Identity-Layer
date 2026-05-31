@@ -86,6 +86,45 @@ def test_verify_receiver_inbox_rejects_bad_receiver():
         tool.verify_receiver_inbox("not-a-pubkey")
 
 
+def test_verifier_main_prints_machine_readable_json(app, monkeypatch, capsys):
+    receiver = _hex64()
+    event_id = _insert_envelope(receiver_pubkey=receiver, content="DO-NOT-LEAK-CONTENT")
+
+    try:
+        monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "nip17_verify_receiver_inbox.py",
+                "--receiver-pubkey",
+                receiver,
+                "--allow-memory-db",
+            ],
+        )
+
+        rc = tool.main()
+
+        assert rc == 0
+
+        captured = capsys.readouterr()
+        payload = json.loads(captured.out)
+
+        assert payload["ok"] is True
+        assert payload["total"] == 1
+        assert payload["count"] == 1
+        assert payload["items"][0]["event_id"] == event_id
+
+        assert captured.out.lstrip().startswith("{")
+        assert "Application factory completed successfully" not in captured.out
+        assert "Database initialized" not in captured.out
+        assert "envelope_json" not in captured.out
+        assert "DO-NOT-LEAK" not in captured.out
+        assert "content" not in captured.out.lower()
+        assert "sig" not in captured.out.lower()
+    finally:
+        _delete_envelopes([event_id])
+
+
 def test_database_target_memory_detection_and_redaction():
     assert tool._is_memory_database_url("sqlite://")
     assert tool._is_memory_database_url("sqlite:///:memory:")
