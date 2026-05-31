@@ -60,9 +60,35 @@ Expected response includes:
 }
 ```
 
-## Verify metadata-only inbox API
+## Verify metadata-only inbox with runtime DB context
 
-Use the browser to log in as the same receiver. The `/app` Hybrid Messaging panel should show the stored envelope count and a metadata row.
+Use the same receiver pubkey from the send step. This verifier loads the staging runtime env from the service MainPID and prints metadata only.
+
+```bash
+cd /srv/ubid-staging
+source venv/bin/activate
+
+python scripts/nip17_verify_receiver_inbox.py \
+  --receiver-pubkey <64_HEX_RECEIVER_PUBKEY> \
+  --runtime-pid "$(systemctl show -p MainPID --value ubid-staging)"
+```
+
+Expected response includes:
+
+```json
+{
+  "ok": true,
+  "total": 1,
+  "count": 1,
+  "database": {
+    "is_memory": false
+  }
+}
+```
+
+The verifier must not print `envelope_json`, `content`, `sig`, ciphertext, plaintext, private keys, or env secrets.
+
+## Verify unauthenticated API remains protected
 
 Unauthenticated API should still return 401:
 
