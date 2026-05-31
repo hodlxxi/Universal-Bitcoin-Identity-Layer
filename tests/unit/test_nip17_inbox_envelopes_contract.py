@@ -11,6 +11,17 @@ def _event_id() -> str:
     return f"{uuid4().hex}{uuid4().hex}"
 
 
+def _receiver_pubkey() -> str:
+    return f"{uuid4().hex}{uuid4().hex}"
+
+
+def _delete_envelopes(event_ids: list[str]) -> None:
+    if not event_ids:
+        return
+    with session_scope() as session:
+        (session.query(NIP17Envelope).filter(NIP17Envelope.event_id.in_(event_ids)).delete(synchronize_session=False))
+
+
 def _insert_envelope(*, receiver_pubkey: str, content: str = "ciphertext-secret") -> str:
     event_id = _event_id()
     with session_scope() as session:
@@ -45,41 +56,47 @@ def test_inbox_envelopes_requires_login(client):
 
 
 def test_inbox_envelopes_returns_metadata_only_for_session_receiver(client):
-    receiver = "c" * 64
-    other = "e" * 64
-    event_id = _insert_envelope(receiver_pubkey=receiver, content="DO-NOT-LEAK-CIPHERTEXT")
-    _insert_envelope(receiver_pubkey=other, content="OTHER-DO-NOT-LEAK")
+    receiver = _receiver_pubkey()
+    other = _receiver_pubkey()
+    event_ids = [
+        _insert_envelope(receiver_pubkey=receiver, content="DO-NOT-LEAK-CIPHERTEXT"),
+        _insert_envelope(receiver_pubkey=other, content="OTHER-DO-NOT-LEAK"),
+    ]
+    event_id = event_ids[0]
 
-    with client.session_transaction() as sess:
-        sess["logged_in_pubkey"] = receiver
-        sess["access_level"] = "limited"
+    try:
+        with client.session_transaction() as sess:
+            sess["logged_in_pubkey"] = receiver
+            sess["access_level"] = "limited"
 
-    response = client.get("/api/messages/nip17/inbox/envelopes")
+        response = client.get("/api/messages/nip17/inbox/envelopes")
 
-    assert response.status_code == 200
-    payload = response.get_json()
+        assert response.status_code == 200
+        payload = response.get_json()
 
-    assert payload["ok"] is True
-    assert payload["receiver_pubkey"] == receiver
-    assert payload["count"] == 1
-    assert payload["total"] == 1
+        assert payload["ok"] is True
+        assert payload["receiver_pubkey"] == receiver
+        assert payload["count"] == 1
+        assert payload["total"] == 1
 
-    item = payload["items"][0]
-    assert item["event_id"] == event_id
-    assert item["kind"] == 1059
-    assert item["receiver_pubkey"] == receiver
-    assert item["metadata"] == {"safe": True}
+        item = payload["items"][0]
+        assert item["event_id"] == event_id
+        assert item["kind"] == 1059
+        assert item["receiver_pubkey"] == receiver
+        assert item["metadata"] == {"safe": True}
 
-    rendered = repr(payload)
-    assert "envelope_json" not in rendered
-    assert "content" not in rendered.lower()
-    assert "DO-NOT-LEAK-CIPHERTEXT" not in rendered
-    assert "OTHER-DO-NOT-LEAK" not in rendered
-    assert "sig" not in rendered.lower()
+        rendered = repr(payload)
+        assert "envelope_json" not in rendered
+        assert "content" not in rendered.lower()
+        assert "DO-NOT-LEAK-CIPHERTEXT" not in rendered
+        assert "OTHER-DO-NOT-LEAK" not in rendered
+        assert "sig" not in rendered.lower()
+    finally:
+        _delete_envelopes(event_ids)
 
 
 def test_inbox_envelopes_limit_validation(client):
-    receiver = "c" * 64
+    receiver = _receiver_pubkey()
     with client.session_transaction() as sess:
         sess["logged_in_pubkey"] = receiver
         sess["access_level"] = "limited"
@@ -95,7 +112,7 @@ def test_inbox_envelopes_limit_validation(client):
 
 
 def test_inbox_envelopes_integer_validation(client):
-    receiver = "c" * 64
+    receiver = _receiver_pubkey()
     with client.session_transaction() as sess:
         sess["logged_in_pubkey"] = receiver
         sess["access_level"] = "limited"
