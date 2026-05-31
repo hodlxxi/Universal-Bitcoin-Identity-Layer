@@ -1884,6 +1884,28 @@ def register_browser_routes(
           background: rgba(0,0,0,0.22);
         }
 
+        .nip17-inbox-list{
+          margin-top: 0.65rem;
+          border-top: 1px solid rgba(255,255,255,0.08);
+          padding-top: 0.45rem;
+        }
+
+        .nip17-inbox-row{
+          padding: 0.45rem 0;
+          border-top: 1px solid rgba(255,255,255,0.06);
+          font-size: 0.78rem;
+          word-break: break-word;
+        }
+
+        .nip17-inbox-row:first-child{
+          border-top: 0;
+        }
+
+        .nip17-inbox-muted{
+          color: var(--muted);
+          font-size: 0.76rem;
+        }
+
         .hybrid-messaging-card h3{
           margin: 0 0 0.45rem;
           font-family: var(--mono);
@@ -2561,6 +2583,8 @@ def register_browser_routes(
                 <p><code>NIP-17 / NIP-59</code> support is staged but disabled.</p>
                 <p>Stored envelopes: <code id="nip17InboxCount">checking...</code></p>
                 <p>Receiver key supported: <code id="nip17ReceiverSupported">checking...</code></p>
+                <p class="small" id="nip17InboxSummary">Encrypted inbox metadata is read-only.</p>
+                <div class="nip17-inbox-list" id="nip17InboxRows" aria-live="polite"></div>
                 <p>Server plaintext storage: <code>false</code>.</p>
                 <p>Server key custody: <code>false</code>.</p>
               </div>
@@ -3504,12 +3528,79 @@ def register_browser_routes(
             countEl.textContent = String(data.stored_envelopes ?? 0);
             receiverEl.textContent = data.receiver_pubkey_supported ? 'true' : 'false';
 
+            const summaryEl = document.getElementById('nip17InboxSummary');
+            if (summaryEl) {
+              summaryEl.textContent = `Stored opaque envelopes: ${data.stored_envelopes ?? 0}`;
+            }
+
+            await refreshNip17InboxRows();
+
             if (data.enabled === false) {
               countEl.title = 'NIP-17 intake is disabled; stored envelope count is read-only.';
             }
           } catch (err) {
             countEl.textContent = 'unavailable';
             receiverEl.textContent = 'unavailable';
+          }
+        }
+
+        function shortKey(value){
+          const s = String(value || "");
+          if (s.length <= 16) return s;
+          return `${s.slice(0, 8)}…${s.slice(-8)}`;
+        }
+
+        function renderNip17InboxRows(items){
+          const rowsEl = document.getElementById('nip17InboxRows');
+          if (!rowsEl) return;
+
+          if (!Array.isArray(items) || items.length === 0) {
+            rowsEl.innerHTML = '<div class="nip17-inbox-muted">No stored encrypted inbox metadata yet.</div>';
+            return;
+          }
+
+          rowsEl.innerHTML = items.map((item) => {
+            const eventId = escapeHtml(shortKey(item.event_id));
+            const wrapper = escapeHtml(shortKey(item.wrapper_pubkey));
+            const received = escapeHtml(item.received_at || 'unknown time');
+            const statusText = escapeHtml(item.status || 'unknown');
+            const source = escapeHtml(item.source || 'unknown');
+
+            return `
+              <div class="nip17-inbox-row">
+                <div><strong>event</strong>: ${eventId}</div>
+                <div><strong>wrapper</strong>: ${wrapper}</div>
+                <div><strong>status</strong>: ${statusText} · <strong>source</strong>: ${source}</div>
+                <div class="nip17-inbox-muted">${received}</div>
+              </div>
+            `;
+          }).join('');
+        }
+
+        async function refreshNip17InboxRows(){
+          const rowsEl = document.getElementById('nip17InboxRows');
+          if (!rowsEl) return;
+
+          try {
+            const res = await fetch('/api/messages/nip17/inbox/envelopes?limit=10', {
+              headers: { 'Accept': 'application/json' },
+              credentials: 'same-origin'
+            });
+
+            if (res.status === 401) {
+              rowsEl.innerHTML = '<div class="nip17-inbox-muted">Login required.</div>';
+              return;
+            }
+
+            if (!res.ok) {
+              rowsEl.innerHTML = `<div class="nip17-inbox-muted">Envelope list unavailable (${res.status}).</div>`;
+              return;
+            }
+
+            const data = await res.json();
+            renderNip17InboxRows(Array.isArray(data.items) ? data.items : []);
+          } catch (err) {
+            rowsEl.innerHTML = '<div class="nip17-inbox-muted">Encrypted inbox metadata unavailable.</div>';
           }
         }
 
