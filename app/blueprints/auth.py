@@ -133,6 +133,9 @@ def verify_signature():
     # Set session
     session["logged_in_pubkey"] = matched_pubkey
     session["access_level"] = access_level
+    session["login_method"] = "legacy"
+    session.pop("guest_label", None)
+    session.pop("guestLabel", None)
     session.permanent = True
 
     # Audit log successful authentication

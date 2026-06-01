@@ -2701,6 +2701,16 @@ def register_browser_routes(
           catch { return {}; }
         })();
 
+        function isGuestIdentity(pk) {
+          const s = String(pk || '').trim();
+          return s.startsWith('guest-') || s.startsWith('guest_') || s.startsWith('anon_') || s.length < 20;
+        }
+
+        function isRealHexPubkey(pk) {
+          const s = String(pk || '').trim();
+          return /^[0-9a-fA-F]{64}$/.test(s) || /^(02|03)[0-9a-fA-F]{64}$/.test(s);
+        }
+
         // Matrix "space warp"
         (() => {
           const canvas = document.getElementById('matrix-bg');
@@ -2865,14 +2875,14 @@ def register_browser_routes(
       try {
         const lm = window.__labelByPubkey || {};
         const lbl = lm[pk];
-        if (lbl) return String(lbl);
+        if (lbl && isGuestIdentity(pk)) return String(lbl);
       } catch(e) {}
 
       // Current PIN guest label for self
       try {
         const my = (window.__myPubkey || '').trim();
         const gl = (window.__guestLabel || '').trim();
-        if (gl && my && pk === my) return gl;
+        if (gl && my && pk === my && isGuestIdentity(my)) return gl;
       } catch(e) {}
 
       if (!pk) return "";
@@ -2895,7 +2905,7 @@ def register_browser_routes(
           try {
             const lm = window.__labelByPubkey || {};
             const lbl = lm[pk];
-            if (lbl) return String(lbl);
+            if (lbl && isGuestIdentity(pk)) return String(lbl);
           } catch(e) {}
 
           if (!pk) return "";
@@ -2913,13 +2923,13 @@ def register_browser_routes(
           try {
             const lm = window.__labelByPubkey || {};
             const lbl = lm[pk];
-            if (lbl) return lbl;
+            if (lbl && isGuestIdentity(pk)) return lbl;
           } catch(e) {}
 
           if (!pk) return "anon";
           if (SPECIAL_NAMES && SPECIAL_NAMES[pk]) return SPECIAL_NAMES[pk];
           const last4 = pk.slice(-4);
-          if (pk.startsWith("guest") || pk.length < 20) return "guest …" + last4;
+          if (isGuestIdentity(pk)) return "guest …" + last4;
           if (pk === myPubkey) return "you · …" + last4;
           return "…"+last4;
         }
@@ -3106,7 +3116,7 @@ def register_browser_routes(
             li.dataset.pubkey = pk;
 
             const isMe = myPubkey && pk === myPubkey;
-            const isGuest = pk.length < 20 || pk.startsWith('guest');
+            const isGuest = isGuestIdentity(pk);
 
             li.innerHTML = `
               <div class="user-left">
@@ -3236,7 +3246,7 @@ def register_browser_routes(
                   try {
                     const my = (window.__myPubkey || '').trim();
                     const gl = (window.__guestLabel || '').trim();
-                    if (!my || !gl) return;
+                    if (!my || !gl || !isGuestIdentity(my)) return;
 
                     const tail8 = my.slice(-8);
                     const tail6 = my.slice(-6);
@@ -3302,7 +3312,7 @@ def register_browser_routes(
             try {
               const my = window.__myPubkey || '';
               const gl = window.__guestLabel || '';
-              if (my && gl) {
+              if (my && gl && isGuestIdentity(my)) {
                 document.querySelectorAll('[data-pubkey]').forEach((el) => {
                   try {
                     if (el && el.dataset && el.dataset.pubkey === my) {
