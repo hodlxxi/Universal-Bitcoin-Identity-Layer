@@ -2588,6 +2588,20 @@ def register_browser_routes(
                 <p>Server plaintext storage: <code>false</code>.</p>
                 <p>Server key custody: <code>false</code>.</p>
               </div>
+              <div class="hybrid-messaging-card" id="nip17ComposeCard">
+                <h3>Compose sealed message</h3>
+                <p>Nostr signer: <code id="nip17SignerStatus">checking...</code></p>
+                <p>Signer pubkey: <code id="nip17SignerPubkey">not requested</code></p>
+                <label class="small" for="nip17RecipientInput">Recipient x-only pubkey</label>
+                <input id="nip17RecipientInput" type="text" autocomplete="off" placeholder="64-hex recipient pubkey" disabled />
+                <label class="small" for="nip17MessageInput">Message</label>
+                <textarea id="nip17MessageInput" rows="3" placeholder="Client-side encryption required before sending" disabled></textarea>
+                <div class="composer-actions">
+                  <button id="nip17CheckSignerBtn" class="send-btn" type="button">Check signer</button>
+                  <button id="nip17SendPlaceholderBtn" class="send-btn" type="button" disabled>Send sealed envelope</button>
+                </div>
+                <p class="small" id="nip17ComposeSummary">No plaintext is sent to the server. Real sending waits for client-side NIP-17/NIP-59 envelope generation.</p>
+              </div>
             </div>
             <div class="hybrid-messaging-note">
               Current mode is hybrid: fast live chat stays ephemeral; encrypted persistent inbox will be added separately after client-side encryption and inbox UX are ready.
@@ -3516,6 +3530,53 @@ def register_browser_routes(
         });
 
         refreshNip17InboxStatus();
+        initNip17ComposeCapabilityPanel();
+
+        function setNip17ComposeStatus(message, pubkey){
+          const statusEl = document.getElementById('nip17SignerStatus');
+          const pubkeyEl = document.getElementById('nip17SignerPubkey');
+          const summaryEl = document.getElementById('nip17ComposeSummary');
+          if (statusEl) statusEl.textContent = message || 'unavailable';
+          if (pubkeyEl && pubkey) pubkeyEl.textContent = shortKey(pubkey);
+          if (summaryEl) {
+            summaryEl.textContent = 'No plaintext is sent to the server. Real sending waits for client-side NIP-17/NIP-59 envelope generation.';
+          }
+        }
+
+        function initNip17ComposeCapabilityPanel(){
+          const checkBtn = document.getElementById('nip17CheckSignerBtn');
+          const sendBtn = document.getElementById('nip17SendPlaceholderBtn');
+          const recipientInput = document.getElementById('nip17RecipientInput');
+          const messageInput = document.getElementById('nip17MessageInput');
+
+          if (!checkBtn) return;
+
+          const hasSigner = !!(window.nostr && typeof window.nostr.getPublicKey === 'function');
+          setNip17ComposeStatus(hasSigner ? 'available' : 'unavailable', '');
+
+          if (sendBtn) sendBtn.disabled = true;
+          if (recipientInput) recipientInput.disabled = true;
+          if (messageInput) messageInput.disabled = true;
+
+          checkBtn.addEventListener('click', async () => {
+            try {
+              const signer = window.nostr;
+              if (!signer || typeof signer.getPublicKey !== 'function') {
+                setNip17ComposeStatus('unavailable', '');
+                return;
+              }
+
+              const pubkey = await signer.getPublicKey();
+              if (typeof pubkey === 'string' && /^[0-9a-fA-F]{64}$/.test(pubkey)) {
+                setNip17ComposeStatus('available', pubkey);
+              } else {
+                setNip17ComposeStatus('available / unsupported pubkey', '');
+              }
+            } catch (err) {
+              setNip17ComposeStatus('permission denied', '');
+            }
+          });
+        }
 
         async function refreshNip17InboxStatus(){
           const countEl = document.getElementById('nip17InboxCount');
