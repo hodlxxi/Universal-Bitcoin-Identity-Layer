@@ -3707,13 +3707,34 @@ def register_browser_routes(
           return state;
         }
 
-        function buildNip17LocalEnvelopePreflight(){
-          const summaryEl = document.getElementById('nip17ComposeSummary');
-          const state = updateNip17LocalBuildState();
+        function nip17NowSeconds(){
+          return Math.floor(Date.now() / 1000);
+        }
 
-          window.__nip17LocalEnvelopePreflight = {
-            ok: state.ready,
-            signer_pubkey_tail: String(window.__nip17SignerPubkey || '').slice(-8),
+        function nip17LocalEventIdHint(event){
+          const material = JSON.stringify([
+            0,
+            event.pubkey || '',
+            event.created_at || 0,
+            event.kind || 0,
+            event.tags || [],
+            event.content || ''
+          ]);
+          return String(material.length) + ':' + String(event.kind || 0) + ':' + String(event.created_at || 0);
+        }
+
+        async function buildNip17LocalEnvelopePreflight(){
+          const summaryEl = document.getElementById('nip17ComposeSummary');
+          const messageInput = document.getElementById('nip17MessageInput');
+          const signer = window.nostr;
+          const state = updateNip17LocalBuildState();
+          const signerPubkey = String(window.__nip17SignerPubkey || '').toLowerCase();
+          const message = String(messageInput?.value || '');
+          const now = nip17NowSeconds();
+
+          const result = {
+            ok: false,
+            signer_pubkey_tail: signerPubkey.slice(-8),
             recipient_pubkey_tail: state.recipient.slice(-8),
             recipient_valid: state.recipientValid,
             message_present: state.messagePresent,
@@ -3722,16 +3743,82 @@ def register_browser_routes(
             posted_to_server: false,
             relay_publishing: false,
             envelope_kind: 1059,
-            note: 'Local-only preflight. Real NIP-17/NIP-59 envelope generation is not implemented in this PR.'
+            event_layers: {
+              rumor_candidate: false,
+              seal_candidate: false,
+              gift_wrap_candidate: false
+            },
+            note: 'Local-only NIP-17/NIP-59 event-layer skeleton. Not posted to server.'
           };
 
-          if (summaryEl) {
-            summaryEl.textContent = state.ready
-              ? 'Local envelope preflight is ready. Nothing was posted to the server; send remains disabled.'
-              : 'Local envelope preflight is not ready. Check signer, recipient, and message.';
+          try {
+            if (!state.ready || !signer || !signer.nip44 || typeof signer.nip44.encrypt !== 'function') {
+              window.__nip17LocalEnvelopePreflight = result;
+              if (summaryEl) summaryEl.textContent = 'Local envelope skeleton is not ready. Check signer, recipient, and message.';
+              return result;
+            }
+
+            const rumor = {
+              kind: 14,
+              pubkey: signerPubkey,
+              created_at: now,
+              tags: [['p', state.recipient]],
+              content: message
+            };
+
+            const rumorPlaintext = JSON.stringify(rumor);
+            const sealedContent = await signer.nip44.encrypt(state.recipient, rumorPlaintext);
+
+            const seal = {
+              kind: 13,
+              pubkey: signerPubkey,
+              created_at: now,
+              tags: [],
+              content: sealedContent
+            };
+
+            const signedSeal = await signer.signEvent(seal);
+            const giftWrapContent = await signer.nip44.encrypt(state.recipient, JSON.stringify(signedSeal));
+
+            const giftWrapCandidate = {
+              kind: 1059,
+              pubkey: signerPubkey,
+              created_at: now,
+              tags: [['p', state.recipient]],
+              content: giftWrapContent
+            };
+
+            result.ok = true;
+            result.event_layers = {
+              rumor_candidate: true,
+              rumor_kind: rumor.kind,
+              rumor_recipient_tail: state.recipient.slice(-8),
+              seal_candidate: true,
+              seal_kind: signedSeal.kind,
+              seal_id_present: !!signedSeal.id,
+              seal_sig_present: !!signedSeal.sig,
+              gift_wrap_candidate: true,
+              gift_wrap_kind: giftWrapCandidate.kind,
+              gift_wrap_id_hint: nip17LocalEventIdHint(giftWrapCandidate),
+              gift_wrap_content_present: giftWrapCandidate.content.length > 0,
+              gift_wrap_receiver_tail: state.recipient.slice(-8)
+            };
+            result.compatibility_warning = 'Skeleton only: gift-wrap is not finalized/signed with ephemeral key in this PR. Do not publish.';
+            result.note = 'Local-only event-layer skeleton was built. Nothing was posted to the server; send remains disabled.';
+          } catch (err) {
+            result.error = String(err && (err.message || err));
+            result.note = 'Local event-layer skeleton failed locally. Nothing was posted to the server.';
           }
 
-          return window.__nip17LocalEnvelopePreflight;
+          window.__nip17LocalEnvelopePreflight = result;
+
+          if (summaryEl) {
+            summaryEl.textContent = result.ok
+              ? 'Local event-layer skeleton built. Nothing was posted to the server; send remains disabled.'
+              : 'Local event-layer skeleton failed or is not ready. Nothing was posted to the server.';
+          }
+
+          return result;
         }
 
         function initNip17ComposeCapabilityPanel(){
@@ -3759,8 +3846,8 @@ def register_browser_routes(
             messageInput.addEventListener('input', updateNip17LocalBuildState);
           }
           if (buildBtn) {
-            buildBtn.addEventListener('click', () => {
-              const result = buildNip17LocalEnvelopePreflight();
+            buildBtn.addEventListener('click', async () => {
+              const result = await buildNip17LocalEnvelopePreflight();
               console.log('NIP17 LOCAL ENVELOPE PREFLIGHT', JSON.stringify(result, null, 2));
             });
           }
