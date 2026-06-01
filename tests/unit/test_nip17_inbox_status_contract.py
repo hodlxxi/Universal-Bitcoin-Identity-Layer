@@ -67,8 +67,8 @@ def test_nip17_inbox_status_counts_only_logged_in_receiver(app, client):
 
 def test_nip17_inbox_status_handles_non_nostr_session_pubkey(client):
     with client.session_transaction() as sess:
-        sess["logged_in_pubkey"] = "02" + "a" * 64
-        sess["access_level"] = "full"
+        sess["logged_in_pubkey"] = "guest-random-abc123"
+        sess["access_level"] = "guest"
 
     response = client.get("/api/messages/nip17/inbox/status")
 
