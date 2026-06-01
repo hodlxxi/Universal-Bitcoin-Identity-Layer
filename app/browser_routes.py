@@ -2665,6 +2665,10 @@ def register_browser_routes(
                 <h3>Compose sealed message</h3>
                 <p>Nostr signer: <code id="nip17SignerStatus">checking...</code></p>
                 <p>Signer pubkey: <code id="nip17SignerPubkey">not requested</code></p>
+                <p>signEvent: <code id="nip17SignEventSupport">checking...</code></p>
+                <p>NIP-44: <code id="nip17Nip44Support">checking...</code></p>
+                <p>NIP-04 fallback: <code id="nip17Nip04Support">checking...</code></p>
+                <p>Preflight ready: <code id="nip17PreflightReady">false</code></p>
                 <div class="nip17-compose-field">
                   <label for="nip17RecipientInput">Recipient x-only pubkey</label>
                   <input id="nip17RecipientInput" class="nip17-compose-input" type="text" autocomplete="off" placeholder="64-hex recipient pubkey" disabled />
@@ -3609,14 +3613,57 @@ def register_browser_routes(
         refreshNip17InboxStatus();
         initNip17ComposeCapabilityPanel();
 
-        function setNip17ComposeStatus(message, pubkey){
-          const statusEl = document.getElementById('nip17SignerStatus');
-          const pubkeyEl = document.getElementById('nip17SignerPubkey');
+        function nip17SetText(id, value){
+          const el = document.getElementById(id);
+          if (el) el.textContent = String(value);
+        }
+
+        function nip17Timeout(promise, ms, label){
+          return Promise.race([
+            promise,
+            new Promise((resolve) => setTimeout(() => resolve({ __timeout: true, label, ms }), ms))
+          ]);
+        }
+
+        function getNip17SignerCapabilities(pubkey){
+          const signer = window.nostr;
+          const hasSigner = !!signer;
+          const hasGetPublicKey = !!(signer && typeof signer.getPublicKey === 'function');
+          const hasSignEvent = !!(signer && typeof signer.signEvent === 'function');
+          const hasNip44Encrypt = !!(signer && signer.nip44 && typeof signer.nip44.encrypt === 'function');
+          const hasNip44Decrypt = !!(signer && signer.nip44 && typeof signer.nip44.decrypt === 'function');
+          const hasNip04Encrypt = !!(signer && signer.nip04 && typeof signer.nip04.encrypt === 'function');
+          const hasNip04Decrypt = !!(signer && signer.nip04 && typeof signer.nip04.decrypt === 'function');
+          const pubkeyIs64Hex = typeof pubkey === 'string' && /^[0-9a-fA-F]{64}$/.test(pubkey);
+
+          return {
+            hasSigner,
+            hasGetPublicKey,
+            hasSignEvent,
+            hasNip44Encrypt,
+            hasNip44Decrypt,
+            hasNip04Encrypt,
+            hasNip04Decrypt,
+            pubkeyIs64Hex,
+            ready: hasSigner && hasGetPublicKey && hasSignEvent && hasNip44Encrypt && hasNip44Decrypt && pubkeyIs64Hex
+          };
+        }
+
+        function setNip17ComposeStatus(message, pubkey, caps){
           const summaryEl = document.getElementById('nip17ComposeSummary');
-          if (statusEl) statusEl.textContent = message || 'unavailable';
-          if (pubkeyEl && pubkey) pubkeyEl.textContent = shortKey(pubkey);
+          nip17SetText('nip17SignerStatus', message || 'unavailable');
+          nip17SetText('nip17SignerPubkey', pubkey ? shortKey(pubkey) : 'not requested');
+
+          const effectiveCaps = caps || getNip17SignerCapabilities(pubkey);
+          nip17SetText('nip17SignEventSupport', effectiveCaps.hasSignEvent ? 'true' : 'false');
+          nip17SetText('nip17Nip44Support', (effectiveCaps.hasNip44Encrypt && effectiveCaps.hasNip44Decrypt) ? 'true' : 'false');
+          nip17SetText('nip17Nip04Support', (effectiveCaps.hasNip04Encrypt && effectiveCaps.hasNip04Decrypt) ? 'true' : 'false');
+          nip17SetText('nip17PreflightReady', effectiveCaps.ready ? 'true' : 'false');
+
           if (summaryEl) {
-            summaryEl.textContent = 'No plaintext is sent to the server. Real sending waits for client-side NIP-17/NIP-59 envelope generation.';
+            summaryEl.textContent = effectiveCaps.ready
+              ? 'Signer preflight is ready. Send remains disabled until client-side NIP-17/NIP-59 envelope generation is implemented.'
+              : 'No plaintext is sent to the server. Real sending waits for client-side NIP-17/NIP-59 envelope generation.';
           }
         }
 
@@ -3628,8 +3675,8 @@ def register_browser_routes(
 
           if (!checkBtn) return;
 
-          const hasSigner = !!(window.nostr && typeof window.nostr.getPublicKey === 'function');
-          setNip17ComposeStatus(hasSigner ? 'available' : 'unavailable', '');
+          const initialCaps = getNip17SignerCapabilities('');
+          setNip17ComposeStatus(initialCaps.hasGetPublicKey ? 'available' : 'unavailable', '', initialCaps);
 
           if (sendBtn) sendBtn.disabled = true;
           if (recipientInput) recipientInput.disabled = true;
@@ -3639,18 +3686,26 @@ def register_browser_routes(
             try {
               const signer = window.nostr;
               if (!signer || typeof signer.getPublicKey !== 'function') {
-                setNip17ComposeStatus('unavailable', '');
+                setNip17ComposeStatus('unavailable', '', getNip17SignerCapabilities(''));
                 return;
               }
 
-              const pubkey = await signer.getPublicKey();
-              if (typeof pubkey === 'string' && /^[0-9a-fA-F]{64}$/.test(pubkey)) {
-                setNip17ComposeStatus('available', pubkey);
+              setNip17ComposeStatus('checking...', '', getNip17SignerCapabilities(''));
+              const pubkeyResult = await nip17Timeout(signer.getPublicKey(), 5000, 'getPublicKey');
+
+              if (pubkeyResult && pubkeyResult.__timeout) {
+                setNip17ComposeStatus('permission timeout', '', getNip17SignerCapabilities(''));
+                return;
+              }
+
+              const caps = getNip17SignerCapabilities(pubkeyResult);
+              if (caps.pubkeyIs64Hex) {
+                setNip17ComposeStatus(caps.ready ? 'available / ready' : 'available / incomplete', pubkeyResult, caps);
               } else {
-                setNip17ComposeStatus('available / unsupported pubkey', '');
+                setNip17ComposeStatus('available / unsupported pubkey', '', caps);
               }
             } catch (err) {
-              setNip17ComposeStatus('permission denied', '');
+              setNip17ComposeStatus('permission denied', '', getNip17SignerCapabilities(''));
             }
           });
         }

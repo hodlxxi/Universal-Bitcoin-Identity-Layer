@@ -42,9 +42,9 @@ def test_nip17_compose_detects_nip07_without_auto_requesting_key():
 
     assert "function initNip17ComposeCapabilityPanel()" in text
     assert "window.nostr" in text
-    assert "typeof window.nostr.getPublicKey === 'function'" in text
+    assert "typeof signer.getPublicKey === 'function'" in text
     assert "checkBtn.addEventListener('click'" in text
-    assert "await signer.getPublicKey()" in text
+    assert "await nip17Timeout(signer.getPublicKey(), 5000, 'getPublicKey')" in text
 
 
 def test_nip17_compose_does_not_post_plaintext_or_enable_intake():
