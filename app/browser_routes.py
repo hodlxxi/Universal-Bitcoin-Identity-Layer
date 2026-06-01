@@ -2669,6 +2669,9 @@ def register_browser_routes(
                 <p>NIP-44: <code id="nip17Nip44Support">checking...</code></p>
                 <p>NIP-04 fallback: <code id="nip17Nip04Support">checking...</code></p>
                 <p>Preflight ready: <code id="nip17PreflightReady">false</code></p>
+                <p>Recipient valid: <code id="nip17RecipientValid">false</code></p>
+                <p>Message present: <code id="nip17MessagePresent">false</code></p>
+                <p>Local build ready: <code id="nip17LocalBuildReady">false</code></p>
                 <div class="nip17-compose-field">
                   <label for="nip17RecipientInput">Recipient x-only pubkey</label>
                   <input id="nip17RecipientInput" class="nip17-compose-input" type="text" autocomplete="off" placeholder="64-hex recipient pubkey" disabled />
@@ -2679,6 +2682,7 @@ def register_browser_routes(
                 </div>
                 <div class="nip17-compose-actions">
                   <button id="nip17CheckSignerBtn" class="nip17-compose-btn" type="button">Check signer</button>
+                  <button id="nip17BuildLocalBtn" class="nip17-compose-btn" type="button" disabled>Build local envelope</button>
                   <button id="nip17SendPlaceholderBtn" class="nip17-compose-btn" type="button" disabled>Send sealed envelope</button>
                 </div>
                 <p class="small" id="nip17ComposeSummary">No plaintext is sent to the server. Real sending waits for client-side NIP-17/NIP-59 envelope generation.</p>
@@ -3655,20 +3659,84 @@ def register_browser_routes(
           nip17SetText('nip17SignerPubkey', pubkey ? shortKey(pubkey) : 'not requested');
 
           const effectiveCaps = caps || getNip17SignerCapabilities(pubkey);
+          window.__nip17PreflightReady = !!effectiveCaps.ready;
+          window.__nip17SignerPubkey = effectiveCaps.ready ? pubkey : '';
+
           nip17SetText('nip17SignEventSupport', effectiveCaps.hasSignEvent ? 'true' : 'false');
           nip17SetText('nip17Nip44Support', (effectiveCaps.hasNip44Encrypt && effectiveCaps.hasNip44Decrypt) ? 'true' : 'false');
           nip17SetText('nip17Nip04Support', (effectiveCaps.hasNip04Encrypt && effectiveCaps.hasNip04Decrypt) ? 'true' : 'false');
           nip17SetText('nip17PreflightReady', effectiveCaps.ready ? 'true' : 'false');
 
+          updateNip17LocalBuildState();
+
           if (summaryEl) {
             summaryEl.textContent = effectiveCaps.ready
-              ? 'Signer preflight is ready. Send remains disabled until client-side NIP-17/NIP-59 envelope generation is implemented.'
+              ? 'Signer preflight is ready. Recipient/message can be checked locally. Send remains disabled until real NIP-17/NIP-59 envelope generation is implemented.'
               : 'No plaintext is sent to the server. Real sending waits for client-side NIP-17/NIP-59 envelope generation.';
           }
         }
 
+        function getNip17LocalBuildState(){
+          const recipientInput = document.getElementById('nip17RecipientInput');
+          const messageInput = document.getElementById('nip17MessageInput');
+          const recipient = String(recipientInput?.value || '').trim().toLowerCase();
+          const message = String(messageInput?.value || '');
+          const recipientValid = /^[0-9a-f]{64}$/.test(recipient);
+          const messagePresent = message.trim().length > 0;
+          const signerReady = !!window.__nip17PreflightReady;
+          const ready = signerReady && recipientValid && messagePresent;
+          return { recipient, messagePresent, recipientValid, signerReady, ready };
+        }
+
+        function updateNip17LocalBuildState(){
+          const recipientInput = document.getElementById('nip17RecipientInput');
+          const messageInput = document.getElementById('nip17MessageInput');
+          const buildBtn = document.getElementById('nip17BuildLocalBtn');
+          const sendBtn = document.getElementById('nip17SendPlaceholderBtn');
+
+          const signerReady = !!window.__nip17PreflightReady;
+          if (recipientInput) recipientInput.disabled = !signerReady;
+          if (messageInput) messageInput.disabled = !signerReady;
+          if (sendBtn) sendBtn.disabled = true;
+
+          const state = getNip17LocalBuildState();
+          nip17SetText('nip17RecipientValid', state.recipientValid ? 'true' : 'false');
+          nip17SetText('nip17MessagePresent', state.messagePresent ? 'true' : 'false');
+          nip17SetText('nip17LocalBuildReady', state.ready ? 'true' : 'false');
+          if (buildBtn) buildBtn.disabled = !state.ready;
+          return state;
+        }
+
+        function buildNip17LocalEnvelopePreflight(){
+          const summaryEl = document.getElementById('nip17ComposeSummary');
+          const state = updateNip17LocalBuildState();
+
+          window.__nip17LocalEnvelopePreflight = {
+            ok: state.ready,
+            signer_pubkey_tail: String(window.__nip17SignerPubkey || '').slice(-8),
+            recipient_pubkey_tail: state.recipient.slice(-8),
+            recipient_valid: state.recipientValid,
+            message_present: state.messagePresent,
+            signer_ready: state.signerReady,
+            local_only: true,
+            posted_to_server: false,
+            relay_publishing: false,
+            envelope_kind: 1059,
+            note: 'Local-only preflight. Real NIP-17/NIP-59 envelope generation is not implemented in this PR.'
+          };
+
+          if (summaryEl) {
+            summaryEl.textContent = state.ready
+              ? 'Local envelope preflight is ready. Nothing was posted to the server; send remains disabled.'
+              : 'Local envelope preflight is not ready. Check signer, recipient, and message.';
+          }
+
+          return window.__nip17LocalEnvelopePreflight;
+        }
+
         function initNip17ComposeCapabilityPanel(){
           const checkBtn = document.getElementById('nip17CheckSignerBtn');
+          const buildBtn = document.getElementById('nip17BuildLocalBtn');
           const sendBtn = document.getElementById('nip17SendPlaceholderBtn');
           const recipientInput = document.getElementById('nip17RecipientInput');
           const messageInput = document.getElementById('nip17MessageInput');
@@ -3678,9 +3746,24 @@ def register_browser_routes(
           const initialCaps = getNip17SignerCapabilities('');
           setNip17ComposeStatus(initialCaps.hasGetPublicKey ? 'available' : 'unavailable', '', initialCaps);
 
+          window.__nip17PreflightReady = false;
+          window.__nip17SignerPubkey = '';
           if (sendBtn) sendBtn.disabled = true;
-          if (recipientInput) recipientInput.disabled = true;
-          if (messageInput) messageInput.disabled = true;
+          if (buildBtn) buildBtn.disabled = true;
+          if (recipientInput) {
+            recipientInput.disabled = true;
+            recipientInput.addEventListener('input', updateNip17LocalBuildState);
+          }
+          if (messageInput) {
+            messageInput.disabled = true;
+            messageInput.addEventListener('input', updateNip17LocalBuildState);
+          }
+          if (buildBtn) {
+            buildBtn.addEventListener('click', () => {
+              const result = buildNip17LocalEnvelopePreflight();
+              console.log('NIP17 LOCAL ENVELOPE PREFLIGHT', JSON.stringify(result, null, 2));
+            });
+          }
 
           checkBtn.addEventListener('click', async () => {
             try {
