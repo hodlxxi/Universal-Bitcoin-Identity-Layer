@@ -143,6 +143,8 @@ def api_verify():
         session["logged_in_pubkey"] = rec["pubkey"]
         session["access_level"] = "full"
         session["login_method"] = "nostr"
+        session.pop("guest_label", None)
+        session.pop("guestLabel", None)
 
         logger.warning("NOSTR_STEP=before_pop cid=%r", cid)
         ACTIVE_CHALLENGES.pop(cid, None)
