@@ -23,9 +23,18 @@ def test_nip17_compose_capability_panel_is_safe_by_default():
     text = Path("app/browser_routes.py").read_text(encoding="utf-8")
 
     assert "No plaintext is sent to the server" in text
-    assert 'id="nip17SendPlaceholderBtn" class="send-btn" type="button" disabled' in text
-    assert 'placeholder="Client-side encryption required before sending" disabled' in text
-    assert 'placeholder="64-hex recipient pubkey" disabled' in text
+    assert 'id="nip17SendPlaceholderBtn" class="nip17-compose-btn" type="button" disabled' in text
+    assert (
+        'class="nip17-compose-textarea" rows="3" placeholder="Client-side encryption required before sending" disabled'
+        in text
+    )
+    assert (
+        'class="nip17-compose-input" type="text" autocomplete="off" placeholder="64-hex recipient pubkey" disabled'
+        in text
+    )
+    assert ".nip17-compose-btn:disabled" in text
+    assert ".nip17-compose-actions" in text
+    assert ".nip17-compose-field" in text
 
 
 def test_nip17_compose_detects_nip07_without_auto_requesting_key():

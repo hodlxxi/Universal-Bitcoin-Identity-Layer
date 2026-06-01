@@ -2536,6 +2536,79 @@ def register_browser_routes(
     }
 
 
+    .nip17-compose-field{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      margin-top:12px;
+    }
+    .nip17-compose-field label{
+      color:var(--accent);
+      font-family:var(--mono);
+      font-size:0.78rem;
+      letter-spacing:0.08em;
+      text-transform:uppercase;
+    }
+    .nip17-compose-input,
+    .nip17-compose-textarea{
+      width:100%;
+      box-sizing:border-box;
+      border:1px solid rgba(0,255,136,0.24);
+      border-radius:12px;
+      background:rgba(0,0,0,0.42);
+      color:var(--text);
+      padding:10px 12px;
+      font-family:var(--mono);
+      font-size:0.92rem;
+      outline:none;
+      box-shadow:inset 0 0 14px rgba(0,255,136,0.06);
+    }
+    .nip17-compose-textarea{
+      resize:vertical;
+      min-height:84px;
+    }
+    .nip17-compose-input:disabled,
+    .nip17-compose-textarea:disabled{
+      opacity:0.62;
+      cursor:not-allowed;
+      color:rgba(230,255,245,0.72);
+      background:rgba(255,255,255,0.045);
+    }
+    .nip17-compose-actions{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      align-items:center;
+      margin-top:14px;
+    }
+    .nip17-compose-btn{
+      appearance:none;
+      border:1px solid rgba(0,255,136,0.34);
+      border-radius:999px;
+      background:rgba(0,255,136,0.08);
+      color:var(--accent);
+      font-family:var(--mono);
+      font-size:0.82rem;
+      font-weight:700;
+      line-height:1;
+      padding:9px 13px;
+      cursor:pointer;
+      box-shadow:0 0 12px rgba(0,255,136,0.12);
+      white-space:nowrap;
+    }
+    .nip17-compose-btn:hover:not(:disabled){
+      background:rgba(0,255,136,0.16);
+      box-shadow:0 0 18px rgba(0,255,136,0.20);
+    }
+    .nip17-compose-btn:disabled{
+      opacity:0.42;
+      cursor:not-allowed;
+      color:rgba(230,255,245,0.62);
+      border-color:rgba(255,255,255,0.14);
+      background:rgba(255,255,255,0.04);
+      box-shadow:none;
+    }
+
     /* KB_LIFT_DISABLED_V1: disable mobile keyboard lift (restore old behavior) */
     </style></head>
 
@@ -2592,13 +2665,17 @@ def register_browser_routes(
                 <h3>Compose sealed message</h3>
                 <p>Nostr signer: <code id="nip17SignerStatus">checking...</code></p>
                 <p>Signer pubkey: <code id="nip17SignerPubkey">not requested</code></p>
-                <label class="small" for="nip17RecipientInput">Recipient x-only pubkey</label>
-                <input id="nip17RecipientInput" type="text" autocomplete="off" placeholder="64-hex recipient pubkey" disabled />
-                <label class="small" for="nip17MessageInput">Message</label>
-                <textarea id="nip17MessageInput" rows="3" placeholder="Client-side encryption required before sending" disabled></textarea>
-                <div class="composer-actions">
-                  <button id="nip17CheckSignerBtn" class="send-btn" type="button">Check signer</button>
-                  <button id="nip17SendPlaceholderBtn" class="send-btn" type="button" disabled>Send sealed envelope</button>
+                <div class="nip17-compose-field">
+                  <label for="nip17RecipientInput">Recipient x-only pubkey</label>
+                  <input id="nip17RecipientInput" class="nip17-compose-input" type="text" autocomplete="off" placeholder="64-hex recipient pubkey" disabled />
+                </div>
+                <div class="nip17-compose-field">
+                  <label for="nip17MessageInput">Message</label>
+                  <textarea id="nip17MessageInput" class="nip17-compose-textarea" rows="3" placeholder="Client-side encryption required before sending" disabled></textarea>
+                </div>
+                <div class="nip17-compose-actions">
+                  <button id="nip17CheckSignerBtn" class="nip17-compose-btn" type="button">Check signer</button>
+                  <button id="nip17SendPlaceholderBtn" class="nip17-compose-btn" type="button" disabled>Send sealed envelope</button>
                 </div>
                 <p class="small" id="nip17ComposeSummary">No plaintext is sent to the server. Real sending waits for client-side NIP-17/NIP-59 envelope generation.</p>
               </div>
