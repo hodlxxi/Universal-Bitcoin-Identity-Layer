@@ -53,17 +53,43 @@ def _is_nostr_pubkey(value: str) -> bool:
     return len(value) == 64 and all(ch in "0123456789abcdefABCDEF" for ch in value)
 
 
+def _receiver_pubkey_from_session() -> str | None:
+    """Return x-only NIP-17 receiver pubkey for the current session.
+
+    HODLXXI Legacy/Bitcoin login stores compressed secp256k1 pubkeys as
+    66-hex values. Nostr/NIP-17 receiver keys are x-only 64-hex pubkeys.
+    A compressed 02/03 key maps to its x-only tail for inbox lookup.
+
+    Guest, anonymous, PIN, and non-hex identities are not supported receivers.
+    """
+
+    logged_in_pubkey = str(session.get("logged_in_pubkey") or "").strip().lower()
+
+    if _is_nostr_pubkey(logged_in_pubkey):
+        return logged_in_pubkey
+
+    if (
+        len(logged_in_pubkey) == 66
+        and logged_in_pubkey[:2] in {"02", "03"}
+        and all(ch in "0123456789abcdef" for ch in logged_in_pubkey)
+    ):
+        return logged_in_pubkey[2:]
+
+    return None
+
+
 @nip17_messages_bp.get("/api/messages/nip17/inbox/status")
 def get_nip17_inbox_status():
     logged_in_pubkey = str(session.get("logged_in_pubkey") or "").strip()
     if not logged_in_pubkey:
         return jsonify({"error": "unauthorized", "message": "login required"}), 401
 
-    receiver_pubkey_supported = _is_nostr_pubkey(logged_in_pubkey)
+    receiver_pubkey = _receiver_pubkey_from_session()
+    receiver_pubkey_supported = receiver_pubkey is not None
     stored_envelopes = 0
 
     if receiver_pubkey_supported:
-        stored_envelopes = count_opaque_nip17_envelopes_for_receiver(logged_in_pubkey.lower())
+        stored_envelopes = count_opaque_nip17_envelopes_for_receiver(receiver_pubkey)
 
     return jsonify(
         {
@@ -71,7 +97,7 @@ def get_nip17_inbox_status():
             "enabled": _nip17_messages_enabled(),
             "stored_envelopes": stored_envelopes,
             "receiver_pubkey_supported": receiver_pubkey_supported,
-            "receiver_pubkey_tail": logged_in_pubkey[-8:] if receiver_pubkey_supported else None,
+            "receiver_pubkey_tail": receiver_pubkey[-8:] if receiver_pubkey_supported else None,
             "plaintext_storage": False,
             "key_custody": False,
             "ciphertext_echo": False,
@@ -134,9 +160,13 @@ def post_nip17_envelope():
 def get_nip17_inbox_envelopes():
     """Return authenticated receiver inbox metadata only."""
 
-    receiver_pubkey = (session.get("logged_in_pubkey") or "").strip().lower()
-    if not receiver_pubkey:
+    logged_in_pubkey = str(session.get("logged_in_pubkey") or "").strip()
+    if not logged_in_pubkey:
         return jsonify({"error": "unauthorized", "message": "login required"}), 401
+
+    receiver_pubkey = _receiver_pubkey_from_session()
+    if not receiver_pubkey:
+        return jsonify({"ok": True, "items": [], "count": 0, "limit": 0, "offset": 0}), 200
 
     try:
         limit = int(request.args.get("limit", "50"))
