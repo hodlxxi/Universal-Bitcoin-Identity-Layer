@@ -1,0 +1,15 @@
+{
+  "name": "hodlxxi-nip59-client-builder",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Builder-only package template for future HODLXXI NIP-59 client finalization bundle.",
+  "type": "module",
+  "scripts": {
+    "build:nip59-client": "node ../../scripts/build_nip59_client_bundle.mjs",
+    "verify:nip59-builder-safety": "python ../../scripts/verify_nip59_builder_safety.py"
+  },
+  "dependencies": {
+    "nostr-tools": "PIN_EXACT_VERSION_IN_BUILDER_PR"
+  },
+  "devDependencies": {}
+}
