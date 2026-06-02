@@ -9,12 +9,14 @@
       "role": "Nostr event construction and NIP-59/NIP-44 related client tooling"
     }
   ],
+  "dependencyProvenanceChecklist": "frontend/nip59/dependency-provenance-checklist.json",
   "exactVersionSelected": false,
   "lockfileRequiredBeforeCrypto": true,
   "name": "hodlxxi-nip59-client-builder-skeleton",
   "postEnabled": false,
   "productionInstallAllowed": false,
   "productionNpmRequired": false,
+  "provenanceReviewRequiredBeforeVersionPin": true,
   "realCryptoImplemented": false,
   "relayPublishing": false,
   "requiredFutureArtifacts": [
@@ -25,9 +27,13 @@
     "send-disabled contract test",
     "exact nostr-tools version selected outside production",
     "builder-generated package-lock.json reviewed before crypto",
-    "dependency provenance notes"
+    "dependency provenance notes",
+    "completed dependency provenance checklist",
+    "exact package version with integrity evidence",
+    "reviewed transitive crypto dependency list"
   ],
   "rootPackageMutationAllowed": false,
   "sendEnabled": false,
-  "status": "builder-plan-only"
+  "status": "builder-plan-only",
+  "versionSelectionStatus": "pending"
 }

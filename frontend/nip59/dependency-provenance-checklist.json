@@ -1,0 +1,37 @@
+{
+  "name": "nip59-dependency-provenance-checklist",
+  "status": "checklist-only",
+  "versionSelected": false,
+  "lockfileGenerated": false,
+  "productionInstallAllowed": false,
+  "cryptoImplemented": false,
+  "sendEnabled": false,
+  "postEnabled": false,
+  "relayPublishing": false,
+  "candidatePackage": "nostr-tools",
+  "requiredReviewFields": [
+    "exact package name",
+    "exact package version",
+    "package license",
+    "upstream repository URL",
+    "npm package URL",
+    "tarball or lockfile integrity",
+    "direct dependencies",
+    "transitive cryptographic dependencies",
+    "secp256k1/Schnorr implementation path",
+    "SHA-256/event-hash implementation path",
+    "NIP-44 implementation path",
+    "NIP-59 support assumptions",
+    "bundle size impact",
+    "known advisories or audit notes",
+    "reason for selecting this version"
+  ],
+  "requiredFutureGates": [
+    "exact dependency version, not a range",
+    "committed lockfile",
+    "local static bundle built from reviewed source",
+    "no CDN crypto",
+    "production npm install remains forbidden",
+    "send remains disabled until final validation passes"
+  ]
+}
