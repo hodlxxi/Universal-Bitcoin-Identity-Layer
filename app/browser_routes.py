@@ -3641,7 +3641,14 @@ def register_browser_routes(
           };
         }
 
-        setTimeout(updateNip59BundleCapabilityDisplay, 0);
+        function scheduleNip59BundleCapabilityDisplay(){
+          updateNip59BundleCapabilityDisplay();
+          setTimeout(updateNip59BundleCapabilityDisplay, 0);
+          setTimeout(updateNip59BundleCapabilityDisplay, 250);
+          window.addEventListener('load', updateNip59BundleCapabilityDisplay, { once: true });
+        }
+
+        scheduleNip59BundleCapabilityDisplay();
 
         function nip17Timeout(promise, ms, label){
           return Promise.race([
