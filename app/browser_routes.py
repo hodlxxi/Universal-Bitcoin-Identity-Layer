@@ -3641,11 +3641,43 @@ def register_browser_routes(
           };
         }
 
+        function ensureNip59BundleLoaded(){
+          if (window.HODLXXI_NIP59_CLIENT) {
+            return Promise.resolve(window.HODLXXI_NIP59_CLIENT);
+          }
+
+          const existing = document.querySelector('script[data-hodlxxi-nip59-client="true"]');
+          if (existing) {
+            return new Promise((resolve) => {
+              setTimeout(() => resolve(window.HODLXXI_NIP59_CLIENT || null), 250);
+            });
+          }
+
+          return new Promise((resolve) => {
+            const script = document.createElement('script');
+            script.src = '/static/js/nip59_client_bundle.js';
+            script.async = false;
+            script.dataset.hodlxxiNip59Client = 'true';
+            script.onload = () => resolve(window.HODLXXI_NIP59_CLIENT || null);
+            script.onerror = () => resolve(null);
+            document.head.appendChild(script);
+          });
+        }
+
         function scheduleNip59BundleCapabilityDisplay(){
           updateNip59BundleCapabilityDisplay();
+
+          ensureNip59BundleLoaded().then(() => {
+            updateNip59BundleCapabilityDisplay();
+          });
+
           setTimeout(updateNip59BundleCapabilityDisplay, 0);
           setTimeout(updateNip59BundleCapabilityDisplay, 250);
-          window.addEventListener('load', updateNip59BundleCapabilityDisplay, { once: true });
+          window.addEventListener('load', () => {
+            ensureNip59BundleLoaded().then(() => {
+              updateNip59BundleCapabilityDisplay();
+            });
+          }, { once: true });
         }
 
         scheduleNip59BundleCapabilityDisplay();
