@@ -713,6 +713,7 @@ def render_browser_login(*, generate_challenge, get_rpc_connection, render_templ
   <script src="/static/js/ios_tapfix.js"></script>
 <script src="/static/js/tapfix_v2.js"></script>
 <script src="/static/js/tap_probe.js"></script>
+<script src="/static/js/nip59_client_bundle.js"></script>
 
 
   <script>
@@ -2668,6 +2669,10 @@ def register_browser_routes(
                 <p>signEvent: <code id="nip17SignEventSupport">checking...</code></p>
                 <p>NIP-44: <code id="nip17Nip44Support">checking...</code></p>
                 <p>NIP-04 fallback: <code id="nip17Nip04Support">checking...</code></p>
+                <p>NIP-59 bundle: <code id="nip59BundleStatus">checking...</code></p>
+                <p>NIP-59 crypto ready: <code id="nip59CryptoReady">false</code></p>
+                <p>NIP-59 can finalize gift-wrap: <code id="nip59CanFinalizeGiftWrap">false</code></p>
+                <p>NIP-59 can post envelope: <code id="nip59CanPostEnvelope">false</code></p>
                 <p>Preflight ready: <code id="nip17PreflightReady">false</code></p>
                 <p>Recipient valid: <code id="nip17RecipientValid">false</code></p>
                 <p>Message present: <code id="nip17MessagePresent">false</code></p>
@@ -3621,6 +3626,22 @@ def register_browser_routes(
           const el = document.getElementById(id);
           if (el) el.textContent = String(value);
         }
+
+        function updateNip59BundleCapabilityDisplay(){
+          const client = window.HODLXXI_NIP59_CLIENT || {};
+          nip17SetText('nip59BundleStatus', client.status || 'unavailable');
+          nip17SetText('nip59CryptoReady', client.cryptoReady === true ? 'true' : 'false');
+          nip17SetText('nip59CanFinalizeGiftWrap', client.canFinalizeGiftWrap === true ? 'true' : 'false');
+          nip17SetText('nip59CanPostEnvelope', client.canPostEnvelope === true ? 'true' : 'false');
+          return {
+            status: client.status || 'unavailable',
+            cryptoReady: client.cryptoReady === true,
+            canFinalizeGiftWrap: client.canFinalizeGiftWrap === true,
+            canPostEnvelope: client.canPostEnvelope === true
+          };
+        }
+
+        setTimeout(updateNip59BundleCapabilityDisplay, 0);
 
         function nip17Timeout(promise, ms, label){
           return Promise.race([

@@ -51,11 +51,28 @@ def test_generated_bundle_is_explicitly_non_crypto_and_non_delivery():
     assert "XMLHttpRequest" not in text
 
 
-def test_bundle_is_not_wired_into_runtime_ui_yet():
+def test_bundle_wiring_remains_read_only_when_present():
+    # P25 may wire the skeleton bundle into /app as a read-only capability
+    # display. This contract still requires that the skeleton bundle does not
+    # enable crypto, POST, or send.
     text = BROWSER.read_text(encoding="utf-8")
 
-    assert "nip59_client_bundle.js" not in text
-    assert "HODLXXI_NIP59_CLIENT" not in text
+    if "nip59_client_bundle.js" in text:
+        assert "function updateNip59BundleCapabilityDisplay()" in text
+        assert "window.HODLXXI_NIP59_CLIENT" in text
+        assert "client.cryptoReady === true" in text
+        assert "client.canFinalizeGiftWrap === true" in text
+        assert "client.canPostEnvelope === true" in text
+
+    assert (
+        "fetch('/api/messages/nip17/envelopes'"
+        not in text[
+            text.index("function updateNip59BundleCapabilityDisplay()") : text.index(
+                "function nip17Timeout(promise, ms, label)"
+            )
+        ]
+    )
+    assert 'id="nip17SendPlaceholderBtn" class="nip17-compose-btn" type="button" disabled' in text
 
 
 def test_no_lockfile_or_real_frontend_dependency_is_added_yet():
