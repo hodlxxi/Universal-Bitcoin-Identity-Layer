@@ -1,26 +1,33 @@
 {
-  "name": "hodlxxi-nip59-client-builder-skeleton",
-  "status": "builder-plan-only",
-  "productionInstallAllowed": false,
-  "lockfileRequiredBeforeCrypto": true,
-  "realCryptoImplemented": false,
-  "sendEnabled": false,
-  "postEnabled": false,
-  "relayPublishing": false,
+  "builderPackageTemplate": "frontend/nip59/package.builder.template.json",
   "candidateDependencies": [
     {
-      "name": "nostr-tools",
-      "role": "Nostr event construction and NIP-59/NIP-44 related client tooling",
-      "pinningRequired": true,
       "lockfileRequired": true,
-      "reviewRequired": true
+      "name": "nostr-tools",
+      "pinningRequired": true,
+      "reviewRequired": true,
+      "role": "Nostr event construction and NIP-59/NIP-44 related client tooling"
     }
   ],
+  "exactVersionSelected": false,
+  "lockfileRequiredBeforeCrypto": true,
+  "name": "hodlxxi-nip59-client-builder-skeleton",
+  "postEnabled": false,
+  "productionInstallAllowed": false,
+  "productionNpmRequired": false,
+  "realCryptoImplemented": false,
+  "relayPublishing": false,
   "requiredFutureArtifacts": [
     "package-lock.json",
     "documented build command",
     "reviewed local static bundle",
     "no CDN crypto contract test",
-    "send-disabled contract test"
-  ]
+    "send-disabled contract test",
+    "exact nostr-tools version selected outside production",
+    "builder-generated package-lock.json reviewed before crypto",
+    "dependency provenance notes"
+  ],
+  "rootPackageMutationAllowed": false,
+  "sendEnabled": false,
+  "status": "builder-plan-only"
 }
