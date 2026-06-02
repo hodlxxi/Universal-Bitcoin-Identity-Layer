@@ -1,0 +1,26 @@
+{
+  "name": "hodlxxi-nip59-client-builder-skeleton",
+  "status": "builder-plan-only",
+  "productionInstallAllowed": false,
+  "lockfileRequiredBeforeCrypto": true,
+  "realCryptoImplemented": false,
+  "sendEnabled": false,
+  "postEnabled": false,
+  "relayPublishing": false,
+  "candidateDependencies": [
+    {
+      "name": "nostr-tools",
+      "role": "Nostr event construction and NIP-59/NIP-44 related client tooling",
+      "pinningRequired": true,
+      "lockfileRequired": true,
+      "reviewRequired": true
+    }
+  ],
+  "requiredFutureArtifacts": [
+    "package-lock.json",
+    "documented build command",
+    "reviewed local static bundle",
+    "no CDN crypto contract test",
+    "send-disabled contract test"
+  ]
+}
