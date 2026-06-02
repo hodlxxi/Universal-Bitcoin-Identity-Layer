@@ -39,8 +39,9 @@ def test_frontend_toolchain_keeps_runtime_safety_invariants():
     assert "no production npm install is required" in text
 
 
-def test_p23_does_not_add_frontend_package_files_yet():
-    assert not Path("package.json").exists()
+def test_frontend_toolchain_does_not_add_lockfile_before_real_dependencies():
+    # P24 may introduce a zero-dependency package.json skeleton. Real dependency
+    # work still requires a committed lockfile when dependencies are added.
     assert not Path("package-lock.json").exists()
     assert not Path("pnpm-lock.yaml").exists()
     assert not Path("yarn.lock").exists()

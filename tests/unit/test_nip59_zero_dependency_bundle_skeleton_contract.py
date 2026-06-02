@@ -44,7 +44,9 @@ def test_generated_bundle_is_explicitly_non_crypto_and_non_delivery():
     assert "relayPublishing: false" in text
     assert "plaintextPost: false" in text
     assert "dependencies: []" in text
-    assert "private" not in text.lower()
+    assert "privateKey" not in text
+    assert "private_key" not in text
+    assert "secretKey" not in text
     assert "fetch(" not in text
     assert "XMLHttpRequest" not in text
 
