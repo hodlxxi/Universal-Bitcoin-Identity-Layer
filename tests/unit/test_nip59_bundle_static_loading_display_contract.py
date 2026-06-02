@@ -40,7 +40,9 @@ def test_bundle_display_is_rescheduled_after_load_to_avoid_race():
     assert "scheduleNip59BundleCapabilityDisplay();" in text
     assert "setTimeout(updateNip59BundleCapabilityDisplay, 0);" in text
     assert "setTimeout(updateNip59BundleCapabilityDisplay, 250);" in text
-    assert "window.addEventListener('load', updateNip59BundleCapabilityDisplay, { once: true });" in text
+    assert "window.addEventListener('load', () => {" in text
+    assert "ensureNip59BundleLoaded().then(() => {" in text
+    assert "updateNip59BundleCapabilityDisplay();" in text
 
 
 def test_bundle_display_still_does_not_enable_send_or_post():
