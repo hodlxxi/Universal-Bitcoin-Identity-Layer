@@ -1,5 +1,6 @@
 {
   "builderPackageTemplate": "frontend/nip59/package.builder.template.json",
+  "candidateApprovedForCrypto": false,
   "candidateDependencies": [
     {
       "lockfileRequired": true,
@@ -11,10 +12,12 @@
   ],
   "candidateEvidence": "frontend/nip59/nostr-tools-candidate-evidence.json",
   "candidateVersionObserved": "2.23.5",
+  "cryptoDependencySurfaceReview": "frontend/nip59/crypto-dependency-surface-review.json",
   "dependencyProvenanceChecklist": "frontend/nip59/dependency-provenance-checklist.json",
   "exactVersionSelected": false,
   "lockfileRequiredBeforeCrypto": true,
   "name": "hodlxxi-nip59-client-builder-skeleton",
+  "nostrWasmReviewStatus": "pending-blocker",
   "postEnabled": false,
   "productionInstallAllowed": false,
   "productionNpmRequired": false,
@@ -35,10 +38,13 @@
     "reviewed transitive crypto dependency list",
     "committed lockfile generated outside production",
     "transitive dependency review for nostr-tools 2.23.5",
-    "nostr-wasm role review"
+    "nostr-wasm role review",
+    "nostr-wasm source/provenance review",
+    "decision on whether final browser bundle can avoid nostr-wasm",
+    "crypto dependency surface approval before lockfile"
   ],
   "rootPackageMutationAllowed": false,
   "sendEnabled": false,
   "status": "builder-plan-only",
-  "versionSelectionStatus": "candidate-observed-not-pinned"
+  "versionSelectionStatus": "candidate-observed-not-approved"
 }

@@ -1,0 +1,103 @@
+{
+  "name": "nip59-crypto-dependency-surface-review",
+  "status": "review-record-only",
+  "candidatePackage": "nostr-tools",
+  "candidateVersion": "2.23.5",
+  "candidateApprovedForCrypto": false,
+  "lockfileGenerated": false,
+  "productionInstallAllowed": false,
+  "cryptoImplemented": false,
+  "sendEnabled": false,
+  "postEnabled": false,
+  "relayPublishing": false,
+  "sourceHost": "hodls-MacBook.local",
+  "sourceTool": "npm view",
+  "dependencySurface": [
+    {
+      "name": "@noble/ciphers",
+      "version": "2.1.1",
+      "license": "MIT",
+      "repositoryPresent": true,
+      "homepagePresent": true,
+      "dependencies": {},
+      "reviewStatus": "observed-needs-lockfile"
+    },
+    {
+      "name": "@noble/curves",
+      "version": "2.0.1",
+      "license": "MIT",
+      "repositoryPresent": true,
+      "homepagePresent": true,
+      "dependencies": {
+        "@noble/hashes": "2.0.1"
+      },
+      "reviewStatus": "observed-needs-lockfile"
+    },
+    {
+      "name": "@noble/hashes",
+      "version": "2.0.1",
+      "license": "MIT",
+      "repositoryPresent": true,
+      "homepagePresent": true,
+      "dependencies": {},
+      "reviewStatus": "observed-needs-lockfile"
+    },
+    {
+      "name": "@scure/base",
+      "version": "2.0.0",
+      "license": "MIT",
+      "repositoryPresent": true,
+      "homepagePresent": true,
+      "dependencies": {},
+      "reviewStatus": "observed-needs-lockfile"
+    },
+    {
+      "name": "@scure/bip32",
+      "version": "2.0.1",
+      "license": "MIT",
+      "repositoryPresent": true,
+      "homepagePresent": true,
+      "dependencies": {
+        "@scure/base": "2.0.0",
+        "@noble/curves": "2.0.1",
+        "@noble/hashes": "2.0.1"
+      },
+      "reviewStatus": "observed-needs-lockfile"
+    },
+    {
+      "name": "@scure/bip39",
+      "version": "2.0.1",
+      "license": "MIT",
+      "repositoryPresent": true,
+      "homepagePresent": true,
+      "dependencies": {
+        "@scure/base": "2.0.0",
+        "@noble/hashes": "2.0.1"
+      },
+      "reviewStatus": "observed-needs-lockfile"
+    },
+    {
+      "name": "nostr-wasm",
+      "version": "0.1.0",
+      "license": "MIT",
+      "repositoryPresent": false,
+      "homepagePresent": false,
+      "description": "nostr stuff in wasm",
+      "dependencies": {},
+      "reviewStatus": "pending-blocker"
+    }
+  ],
+  "blockers": [
+    "nostr-wasm has no repository metadata in npm view output",
+    "nostr-wasm has no homepage metadata in npm view output",
+    "nostr-wasm role in browser bundle is not reviewed",
+    "lockfile has not been generated outside production",
+    "transitive dependency tree has not been locked"
+  ],
+  "requiredBeforeLockfilePr": [
+    "decide whether nostr-wasm is required for browser NIP-59 finalization",
+    "review nostr-wasm source/provenance outside production",
+    "document whether bundle can avoid nostr-wasm",
+    "generate lockfile outside production only after blocker review"
+  ]
+}

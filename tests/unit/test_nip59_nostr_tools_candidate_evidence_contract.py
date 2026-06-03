@@ -63,7 +63,10 @@ def test_skeleton_tracks_candidate_without_enabling_crypto():
 
     assert payload["candidateEvidence"] == "frontend/nip59/nostr-tools-candidate-evidence.json"
     assert payload["candidateVersionObserved"] == "2.23.5"
-    assert payload["versionSelectionStatus"] == "candidate-observed-not-pinned"
+    assert payload["versionSelectionStatus"] in {
+        "candidate-observed-not-pinned",
+        "candidate-observed-not-approved",
+    }
     assert payload["exactVersionSelected"] is False
     assert payload["realCryptoImplemented"] is False
     assert payload["sendEnabled"] is False
