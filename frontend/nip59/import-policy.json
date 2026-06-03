@@ -1,0 +1,32 @@
+{
+  "name": "nip59-builder-import-policy",
+  "status": "policy-only",
+  "candidatePackage": "nostr-tools",
+  "candidateVersion": "2.23.5",
+  "productionInstallAllowed": false,
+  "lockfileGenerated": false,
+  "bundleGenerated": false,
+  "cryptoImplemented": false,
+  "sendEnabled": false,
+  "postEnabled": false,
+  "relayPublishing": false,
+  "candidateApprovedForCrypto": false,
+  "allowedIntent": "future non-wasm nostr-tools browser path only after separate bundle proof",
+  "forbiddenImports": [
+    "@nostr/tools/wasm",
+    "nostr-wasm"
+  ],
+  "forbiddenIdentifiers": [
+    "initNostrWasm",
+    "setNostrWasm",
+    "NostrWasm",
+    "WebAssembly"
+  ],
+  "requiredFutureProofs": [
+    "future builder source does not import @nostr/tools/wasm",
+    "future builder source does not import nostr-wasm",
+    "future generated bundle does not include nostr-wasm",
+    "future generated bundle does not include WebAssembly payload",
+    "send remains disabled until finalized gift-wrap validation passes"
+  ]
+}

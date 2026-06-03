@@ -1,4 +1,5 @@
 {
+  "builderImportPolicy": "frontend/nip59/import-policy.json",
   "builderPackageTemplate": "frontend/nip59/package.builder.template.json",
   "candidateApprovedForCrypto": false,
   "candidateDependencies": [
@@ -15,6 +16,7 @@
   "cryptoDependencySurfaceReview": "frontend/nip59/crypto-dependency-surface-review.json",
   "dependencyProvenanceChecklist": "frontend/nip59/dependency-provenance-checklist.json",
   "exactVersionSelected": false,
+  "forbidWasmImports": true,
   "lockfileRequiredBeforeCrypto": true,
   "name": "hodlxxi-nip59-client-builder-skeleton",
   "nostrWasmImportPathReview": "frontend/nip59/nostr-wasm-import-path-review.json",
@@ -45,7 +47,11 @@
     "crypto dependency surface approval before lockfile",
     "import contract forbidding @nostr/tools/wasm",
     "bundle inspection proving nostr-wasm absent",
-    "bundle inspection proving WebAssembly payload absent"
+    "bundle inspection proving WebAssembly payload absent",
+    "builder import policy enforced before bundle",
+    "source scan forbidding @nostr/tools/wasm",
+    "source scan forbidding nostr-wasm",
+    "source scan forbidding WebAssembly"
   ],
   "rootPackageMutationAllowed": false,
   "sendEnabled": false,
