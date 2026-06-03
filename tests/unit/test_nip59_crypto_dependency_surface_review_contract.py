@@ -67,7 +67,10 @@ def test_skeleton_tracks_review_without_approving_crypto():
     payload = json.loads(SKELETON.read_text(encoding="utf-8"))
 
     assert payload["cryptoDependencySurfaceReview"] == "frontend/nip59/crypto-dependency-surface-review.json"
-    assert payload["nostrWasmReviewStatus"] == "pending-blocker"
+    assert payload["nostrWasmReviewStatus"] in {
+        "pending-blocker",
+        "avoidable-if-wasm-export-not-imported-unproven",
+    }
     assert payload["candidateApprovedForCrypto"] is False
     assert payload["versionSelectionStatus"] == "candidate-observed-not-approved"
     assert payload["exactVersionSelected"] is False

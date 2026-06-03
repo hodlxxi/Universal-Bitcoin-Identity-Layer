@@ -17,7 +17,8 @@
   "exactVersionSelected": false,
   "lockfileRequiredBeforeCrypto": true,
   "name": "hodlxxi-nip59-client-builder-skeleton",
-  "nostrWasmReviewStatus": "pending-blocker",
+  "nostrWasmImportPathReview": "frontend/nip59/nostr-wasm-import-path-review.json",
+  "nostrWasmReviewStatus": "avoidable-if-wasm-export-not-imported-unproven",
   "postEnabled": false,
   "productionInstallAllowed": false,
   "productionNpmRequired": false,
@@ -41,7 +42,10 @@
     "nostr-wasm role review",
     "nostr-wasm source/provenance review",
     "decision on whether final browser bundle can avoid nostr-wasm",
-    "crypto dependency surface approval before lockfile"
+    "crypto dependency surface approval before lockfile",
+    "import contract forbidding @nostr/tools/wasm",
+    "bundle inspection proving nostr-wasm absent",
+    "bundle inspection proving WebAssembly payload absent"
   ],
   "rootPackageMutationAllowed": false,
   "sendEnabled": false,

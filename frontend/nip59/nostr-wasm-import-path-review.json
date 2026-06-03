@@ -1,0 +1,42 @@
+{
+  "name": "nip59-nostr-wasm-import-path-review",
+  "status": "review-record-only",
+  "candidatePackage": "nostr-tools",
+  "candidateVersion": "2.23.5",
+  "wasmPackage": "nostr-wasm",
+  "wasmVersion": "0.1.0",
+  "sourceHost": "hodls-MacBook.local",
+  "sourceTooling": {
+    "node": "v26.0.0",
+    "npm": "11.12.1"
+  },
+  "productionInstallAllowed": false,
+  "lockfileGenerated": false,
+  "bundleGenerated": false,
+  "cryptoImplemented": false,
+  "sendEnabled": false,
+  "postEnabled": false,
+  "relayPublishing": false,
+  "candidateApprovedForCrypto": false,
+  "observations": {
+    "nostrToolsInstallsNostrWasm": true,
+    "nostrToolsHasExplicitWasmExport": true,
+    "explicitWasmExport": "./wasm",
+    "wasmExportImportPath": "@nostr/tools/wasm",
+    "wasmExportImportsNostrWasm": true,
+    "readmeShowsExplicitNostrWasmSetup": true,
+    "defaultBundleAvoidanceLikelyButUnproven": true
+  },
+  "requiredFutureProofs": [
+    "prove final browser bundle does not import @nostr/tools/wasm",
+    "prove final browser bundle does not include nostr-wasm",
+    "prove final browser bundle does not include WebAssembly code from nostr-wasm",
+    "add contract test forbidding @nostr/tools/wasm import",
+    "add bundle-inspection test before cryptoReady can become true"
+  ],
+  "blockedUntil": [
+    "bundler dry-run proves nostr-wasm excluded from non-wasm path",
+    "import contract forbids @nostr/tools/wasm",
+    "bundle artifact review proves no nostr-wasm/WebAssembly payload"
+  ]
+}
