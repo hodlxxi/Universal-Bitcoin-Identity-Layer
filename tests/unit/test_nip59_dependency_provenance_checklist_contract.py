@@ -63,6 +63,7 @@ def test_dependency_skeleton_references_provenance_checklist():
     assert payload["versionSelectionStatus"] in {
         "pending",
         "candidate-observed-not-pinned",
+        "candidate-observed-not-approved",
     }
     assert payload["exactVersionSelected"] is False
     assert payload["realCryptoImplemented"] is False
