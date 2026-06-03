@@ -2,6 +2,9 @@
   "builderImportPolicy": "frontend/nip59/import-policy.json",
   "builderImportPolicyScanner": "scripts/verify_nip59_import_policy.py",
   "builderPackageTemplate": "frontend/nip59/package.builder.template.json",
+  "builderSourcePlaceholder": "frontend/nip59/src/client_placeholder.js",
+  "builderSourceRoot": "frontend/nip59/src",
+  "builderSourceUnderImportPolicyScanner": true,
   "candidateApprovedForCrypto": false,
   "candidateDependencies": [
     {
@@ -56,7 +59,10 @@
     "source scan forbidding WebAssembly",
     "import policy scanner passes before bundle",
     "builder source scanned before cryptoReady",
-    "generated bundle scanned before cryptoReady"
+    "generated bundle scanned before cryptoReady",
+    "builder source placeholder replaced by reviewed client source",
+    "builder source remains under import policy scanner",
+    "source placeholder removed only when real source tests exist"
   ],
   "rootPackageMutationAllowed": false,
   "sendEnabled": false,
