@@ -24,6 +24,8 @@
   "importPolicyScannerRequiredBeforeBundle": true,
   "lockfileRequiredBeforeCrypto": true,
   "name": "hodlxxi-nip59-client-builder-skeleton",
+  "nip59ReleaseGate": "scripts/verify_nip59_release_gate.py",
+  "nip59ReleaseGateRequiredBeforeCrypto": true,
   "nostrWasmImportPathReview": "frontend/nip59/nostr-wasm-import-path-review.json",
   "nostrWasmReviewStatus": "avoidable-if-wasm-export-not-imported-unproven",
   "postEnabled": false,
@@ -65,7 +67,10 @@
     "source placeholder removed only when real source tests exist",
     "static bundle inspection passes before cryptoReady",
     "generated bundle inspected before cryptoReady",
-    "static bundle inspection forbids wasm/send/private-key terms"
+    "static bundle inspection forbids wasm/send/private-key terms",
+    "NIP-59 release gate passes before cryptoReady",
+    "NIP-59 release gate passes before bundle replacement",
+    "NIP-59 release gate added to future CI/release workflow"
   ],
   "rootPackageMutationAllowed": false,
   "sendEnabled": false,
