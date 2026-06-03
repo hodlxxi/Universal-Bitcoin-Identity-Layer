@@ -62,10 +62,17 @@
     "generated bundle scanned before cryptoReady",
     "builder source placeholder replaced by reviewed client source",
     "builder source remains under import policy scanner",
-    "source placeholder removed only when real source tests exist"
+    "source placeholder removed only when real source tests exist",
+    "static bundle inspection passes before cryptoReady",
+    "generated bundle inspected before cryptoReady",
+    "static bundle inspection forbids wasm/send/private-key terms"
   ],
   "rootPackageMutationAllowed": false,
   "sendEnabled": false,
+  "staticBundleInspection": "scripts/verify_nip59_static_bundle.py",
+  "staticBundleInspectionRequiredBeforeCrypto": true,
+  "staticBundlePath": "app/static/js/nip59_client_bundle.js",
+  "staticBundleStatus": "skeleton-inspected",
   "status": "builder-plan-only",
   "versionSelectionStatus": "candidate-observed-not-approved"
 }
