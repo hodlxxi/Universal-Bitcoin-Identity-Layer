@@ -9,6 +9,8 @@
       "role": "Nostr event construction and NIP-59/NIP-44 related client tooling"
     }
   ],
+  "candidateEvidence": "frontend/nip59/nostr-tools-candidate-evidence.json",
+  "candidateVersionObserved": "2.23.5",
   "dependencyProvenanceChecklist": "frontend/nip59/dependency-provenance-checklist.json",
   "exactVersionSelected": false,
   "lockfileRequiredBeforeCrypto": true,
@@ -30,10 +32,13 @@
     "dependency provenance notes",
     "completed dependency provenance checklist",
     "exact package version with integrity evidence",
-    "reviewed transitive crypto dependency list"
+    "reviewed transitive crypto dependency list",
+    "committed lockfile generated outside production",
+    "transitive dependency review for nostr-tools 2.23.5",
+    "nostr-wasm role review"
   ],
   "rootPackageMutationAllowed": false,
   "sendEnabled": false,
   "status": "builder-plan-only",
-  "versionSelectionStatus": "pending"
+  "versionSelectionStatus": "candidate-observed-not-pinned"
 }

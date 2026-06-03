@@ -60,7 +60,10 @@ def test_dependency_skeleton_references_provenance_checklist():
 
     assert payload["dependencyProvenanceChecklist"] == "frontend/nip59/dependency-provenance-checklist.json"
     assert payload["provenanceReviewRequiredBeforeVersionPin"] is True
-    assert payload["versionSelectionStatus"] == "pending"
+    assert payload["versionSelectionStatus"] in {
+        "pending",
+        "candidate-observed-not-pinned",
+    }
     assert payload["exactVersionSelected"] is False
     assert payload["realCryptoImplemented"] is False
     assert payload["sendEnabled"] is False

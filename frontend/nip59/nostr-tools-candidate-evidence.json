@@ -1,0 +1,48 @@
+{
+  "name": "nostr-tools-candidate-evidence",
+  "status": "candidate-observed-not-pinned",
+  "sourceHost": "hodls-MacBook.local",
+  "sourceTool": "npm view",
+  "sourceNodeVersion": "v26.0.0",
+  "sourceNpmVersion": "11.12.1",
+  "candidatePackage": "nostr-tools",
+  "candidateVersion": "2.23.5",
+  "versionSelected": false,
+  "exactVersionPinned": false,
+  "lockfileGenerated": false,
+  "productionInstallAllowed": false,
+  "cryptoImplemented": false,
+  "sendEnabled": false,
+  "postEnabled": false,
+  "relayPublishing": false,
+  "license": "Unlicense",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nbd-wtf/nostr-tools.git"
+  },
+  "homepage": "https://github.com/nbd-wtf/nostr-tools#readme",
+  "dist": {
+    "tarball": "https://registry.npmjs.org/nostr-tools/-/nostr-tools-2.23.5.tgz",
+    "integrity": "sha512-Fa7ZlUdjfUW1P4E7H3yBexhOHYi18XNyvd2n7eNHkYR085xADX6Y8V8Vm7nT/XQajaFOBrptXmVIGkJ2E4vfVw=="
+  },
+  "directDependencies": {
+    "@noble/ciphers": "2.1.1",
+    "@noble/curves": "2.0.1",
+    "@noble/hashes": "2.0.1",
+    "@scure/base": "2.0.0",
+    "@scure/bip32": "2.0.1",
+    "@scure/bip39": "2.0.1",
+    "nostr-wasm": "0.1.0"
+  },
+  "reviewStillRequired": [
+    "verify npm registry integrity through committed lockfile generated outside production",
+    "review transitive dependency tree",
+    "review secp256k1/Schnorr implementation path",
+    "review SHA-256/event-hash implementation path",
+    "review NIP-44 implementation path",
+    "review NIP-59 support assumptions",
+    "review nostr-wasm role and whether it is required in browser bundle",
+    "review license compatibility",
+    "review advisories"
+  ]
+}
