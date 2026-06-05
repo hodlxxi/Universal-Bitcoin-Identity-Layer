@@ -15,6 +15,21 @@ This document promotes the existing green **v2.2 production smoke** flow into a 
 - Operator confirms maintenance/release window.
 - Optional: VPN / bastion / approved operator host.
 
+## Local/CI release helper
+
+The local/CI helper does **not** call staging or production endpoints.
+
+Run from the repository root:
+
+    bash scripts/release_gate_smoke_check.sh
+
+The helper currently runs:
+
+- `python scripts/verify_nip59_release_gate.py`
+- `python -m pytest -q tests/unit/test_release_gate_route_contract.py`
+
+This keeps NIP-59 browser-client safety gates tied to the standard local release gate without running live production smoke from CI.
+
 ## Commands
 
 ### Staging manual smoke
