@@ -1,0 +1,53 @@
+{
+  "allowedArtifactsToCapture": [
+    "npm view metadata",
+    "npm ls dependency tree",
+    "package-lock.json generated outside production",
+    "generated bundle inspection output",
+    "NIP-59 release gate output"
+  ],
+  "allowedHosts": [
+    "MacBook or other non-production builder host",
+    "temporary non-production build workspace"
+  ],
+  "bundleGenerated": false,
+  "candidateApprovedForCrypto": false,
+  "candidatePackage": "nostr-tools",
+  "candidateVersionObserved": "2.23.5",
+  "cryptoImplemented": false,
+  "exactVersionSelected": false,
+  "forbiddenArtifactsToCommitInThisPhase": [
+    "package-lock.json",
+    "node_modules",
+    "generated browser bundle",
+    "cryptoReady true",
+    "send-enabled client code"
+  ],
+  "forbiddenHosts": [
+    "production /srv/ubid",
+    "staging /srv/ubid-staging"
+  ],
+  "lockfileGenerated": false,
+  "name": "nip59-controlled-build-experiment-plan",
+  "nextStepAfterRunbook": "operator executes experiment outside production and reports evidence",
+  "phase": "controlled-build-experiment-outside-production",
+  "postEnabled": false,
+  "productionExecutionAllowed": false,
+  "productionInstallAllowed": false,
+  "productionNpmRequired": false,
+  "relayPublishing": false,
+  "requiredCommandsBeforeCommit": [
+    "bash scripts/release_gate_smoke_check.sh",
+    "python scripts/verify_nip59_release_gate.py"
+  ],
+  "requiredPollutionChecks": [
+    "no node_modules under repository",
+    "no package-lock.json under repository",
+    "no pnpm-lock.yaml under repository",
+    "no yarn.lock under repository",
+    "root package.json remains zero-dependency"
+  ],
+  "rootPackageMutationAllowed": false,
+  "sendEnabled": false,
+  "status": "plan-only"
+}
