@@ -1,0 +1,59 @@
+{
+  "name": "nip59-pre-build-readiness-checkpoint",
+  "status": "pre-build-safety-complete",
+  "checkpointPhase": "before-first-controlled-build-experiment",
+  "candidatePackage": "nostr-tools",
+  "candidateVersionObserved": "2.23.5",
+  "candidateApprovedForCrypto": false,
+  "exactVersionSelected": false,
+  "productionInstallAllowed": false,
+  "productionNpmRequired": false,
+  "rootPackageMutationAllowed": false,
+  "lockfileGenerated": false,
+  "bundleGenerated": false,
+  "cryptoImplemented": false,
+  "sendEnabled": false,
+  "postEnabled": false,
+  "relayPublishing": false,
+  "intakeEnabled": false,
+  "protectedBy": [
+    "scripts/verify_nip59_builder_safety.py",
+    "scripts/verify_nip59_import_policy.py",
+    "scripts/verify_nip59_static_bundle.py",
+    "scripts/verify_nip59_release_gate.py",
+    "scripts/release_gate_smoke_check.sh"
+  ],
+  "sourceState": {
+    "builderSourceRoot": "frontend/nip59/src",
+    "builderSourcePlaceholder": "frontend/nip59/src/client_placeholder.js",
+    "builderSourceUnderImportPolicyScanner": true
+  },
+  "bundleState": {
+    "staticBundlePath": "app/static/js/nip59_client_bundle.js",
+    "staticBundleStatus": "skeleton-inspected",
+    "cryptoReady": false,
+    "canFinalizeGiftWrap": false,
+    "canPostEnvelope": false
+  },
+  "forbiddenBeforeNextApproval": [
+    "npm install on production",
+    "committing package-lock.json before reviewed build experiment",
+    "committing node_modules",
+    "importing @nostr/tools/wasm",
+    "importing nostr-wasm",
+    "using WebAssembly",
+    "setting cryptoReady true",
+    "enabling send",
+    "posting to /api/messages/nip17/envelopes",
+    "enabling production intake",
+    "enabling relay publishing"
+  ],
+  "nextAllowedPhase": "controlled-build-experiment-outside-production",
+  "nextAllowedPhaseRequires": [
+    "Mac or non-production builder host",
+    "reviewed exact package version",
+    "reviewed package-lock.json generated outside production",
+    "bundle inspection proving forbidden terms absent",
+    "NIP-59 release gate passing before commit"
+  ]
+}
