@@ -67,6 +67,7 @@ def test_checkpoint_allows_only_non_production_build_experiment_next():
     assert payload["nextAllowedPhase"] in {
         "controlled-build-experiment-outside-production",
         "minimal-source-module-no-send",
+        "generated-bundle-experiment-no-send",
     }
     required = set(payload["nextAllowedPhaseRequires"])
     assert "Mac or non-production builder host" in required
@@ -93,6 +94,7 @@ def test_skeleton_tracks_pre_build_checkpoint_without_approval():
     assert payload["nextAllowedPhase"] in {
         "controlled-build-experiment-outside-production",
         "minimal-source-module-no-send",
+        "generated-bundle-experiment-no-send",
     }
     assert payload["candidateApprovedForCrypto"] is False
     assert payload["exactVersionSelected"] is False

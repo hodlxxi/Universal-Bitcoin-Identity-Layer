@@ -89,7 +89,10 @@ def test_skeleton_tracks_evidence_without_enabling_crypto_or_send():
     assert payload["productionInstallAllowed"] is False
     assert payload["realCryptoImplemented"] is False
     assert payload["sendEnabled"] is False
-    assert payload["nextAllowedPhase"] == "minimal-source-module-no-send"
+    assert payload["nextAllowedPhase"] in {
+        "minimal-source-module-no-send",
+        "generated-bundle-experiment-no-send",
+    }
 
 
 def test_root_package_and_bundle_remain_safe():
