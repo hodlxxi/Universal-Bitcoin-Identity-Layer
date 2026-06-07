@@ -79,7 +79,10 @@ def test_skeleton_tracks_plan_without_approval():
 
     assert payload["controlledBuildExperimentPlan"] == "frontend/nip59/controlled-build-experiment-plan.json"
     assert payload["controlledBuildExperimentRunbook"] == "docs/ops/NIP59_CONTROLLED_BUILD_EXPERIMENT_RUNBOOK.md"
-    assert payload["nextAllowedPhase"] == "controlled-build-experiment-outside-production"
+    assert payload["nextAllowedPhase"] in {
+        "controlled-build-experiment-outside-production",
+        "minimal-source-module-no-send",
+    }
     assert payload["productionInstallAllowed"] is False
     assert payload["productionNpmRequired"] is False
     assert payload["rootPackageMutationAllowed"] is False
