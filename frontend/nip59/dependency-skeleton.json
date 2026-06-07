@@ -17,6 +17,8 @@
   ],
   "candidateEvidence": "frontend/nip59/nostr-tools-candidate-evidence.json",
   "candidateVersionObserved": "2.23.5",
+  "controlledBuildExperimentPlan": "frontend/nip59/controlled-build-experiment-plan.json",
+  "controlledBuildExperimentRunbook": "docs/ops/NIP59_CONTROLLED_BUILD_EXPERIMENT_RUNBOOK.md",
   "cryptoDependencySurfaceReview": "frontend/nip59/crypto-dependency-surface-review.json",
   "dependencyProvenanceChecklist": "frontend/nip59/dependency-provenance-checklist.json",
   "exactVersionSelected": false,
@@ -77,7 +79,11 @@
     "pre-build readiness checkpoint reviewed",
     "controlled build experiment performed outside production",
     "generated bundle inspection passes before bundle replacement",
-    "NIP-59 release gate passes before first crypto PR"
+    "NIP-59 release gate passes before first crypto PR",
+    "controlled build experiment runbook reviewed",
+    "controlled build experiment evidence captured outside production",
+    "production pollution check remains clean after build experiment",
+    "lockfile reviewed before commit"
   ],
   "rootPackageMutationAllowed": false,
   "sendEnabled": false,
