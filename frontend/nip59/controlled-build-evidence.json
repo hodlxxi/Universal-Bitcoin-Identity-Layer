@@ -1,0 +1,72 @@
+{
+  "candidatePackage": "nostr-tools",
+  "candidateVersion": "2.23.5",
+  "dependencyTreeObserved": [
+    "nostr-tools@2.23.5",
+    "@noble/ciphers@2.1.1",
+    "@noble/curves@2.0.1",
+    "@noble/hashes@2.0.1",
+    "@scure/base@2.0.0",
+    "@scure/bip32@2.0.1",
+    "@scure/bip39@2.0.1",
+    "nostr-wasm@0.1.0",
+    "UNMET OPTIONAL DEPENDENCY typescript@>=5.0.0"
+  ],
+  "experimentHost": "hodls-MacBook.local",
+  "experimentPath": "/Users/xxi/workspace/hodlxxi-nip59-build-experiment-p42",
+  "localProbe": {
+    "cryptoReadyCandidate": true,
+    "eventKind": 1,
+    "eventVerified": true,
+    "networkPost": false,
+    "nip44Available": true,
+    "plaintextPost": false,
+    "publicKeyLength": 64,
+    "relayPublishing": false,
+    "status": "local-probe-only"
+  },
+  "lockfileGeneratedOutsideProduction": true,
+  "name": "nip59-controlled-build-evidence",
+  "nextAllowedPhase": "commit reviewed exact dependency evidence and prepare minimal source module without send",
+  "nodeModulesGeneratedOutsideProduction": true,
+  "nodeVersion": "v26.0.0",
+  "notCommittedFromExperiment": [
+    "package-lock.json",
+    "node_modules",
+    "generated browser bundle",
+    "Mac temporary probe files"
+  ],
+  "npmVersion": "11.12.1",
+  "productionInstallAllowed": false,
+  "productionNpmRequired": false,
+  "productionPollutionObserved": false,
+  "rootPackageMutationAllowed": false,
+  "safeImportCheck": {
+    "finalizeEvent": true,
+    "generateSecretKey": true,
+    "getPublicKey": true,
+    "importPath": "nostr-tools",
+    "nip44": true,
+    "verifyEvent": true
+  },
+  "sourceExperiment": "P42 MacBook controlled build experiment",
+  "status": "evidence-recorded",
+  "stillForbidden": [
+    "production npm install",
+    "committing node_modules",
+    "importing @nostr/tools/wasm",
+    "importing nostr-wasm",
+    "using WebAssembly",
+    "setting cryptoReady true in production bundle",
+    "enabling send",
+    "enabling production intake",
+    "enabling relay publishing"
+  ],
+  "wasmRiskObserved": {
+    "decision": "Do not import @nostr/tools/wasm or nostr-wasm in HODLXXI browser source.",
+    "nostrToolsExportsWasmPath": true,
+    "nostrWasmContainsWebAssemblyReferences": true,
+    "nostrWasmDependencyPresent": true,
+    "readmeDocumentsAtNostrToolsWasm": true
+  }
+}

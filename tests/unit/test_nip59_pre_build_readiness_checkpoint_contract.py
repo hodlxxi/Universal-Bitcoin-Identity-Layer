@@ -64,7 +64,10 @@ def test_checkpoint_forbids_production_install_and_wasm_send_paths():
 def test_checkpoint_allows_only_non_production_build_experiment_next():
     payload = json.loads(CHECKPOINT.read_text(encoding="utf-8"))
 
-    assert payload["nextAllowedPhase"] == "controlled-build-experiment-outside-production"
+    assert payload["nextAllowedPhase"] in {
+        "controlled-build-experiment-outside-production",
+        "minimal-source-module-no-send",
+    }
     required = set(payload["nextAllowedPhaseRequires"])
     assert "Mac or non-production builder host" in required
     assert "reviewed package-lock.json generated outside production" in required
@@ -87,7 +90,10 @@ def test_skeleton_tracks_pre_build_checkpoint_without_approval():
 
     assert payload["preBuildReadinessCheckpoint"] == "frontend/nip59/pre-build-readiness-checkpoint.json"
     assert payload["preBuildSafetyLadderComplete"] is True
-    assert payload["nextAllowedPhase"] == "controlled-build-experiment-outside-production"
+    assert payload["nextAllowedPhase"] in {
+        "controlled-build-experiment-outside-production",
+        "minimal-source-module-no-send",
+    }
     assert payload["candidateApprovedForCrypto"] is False
     assert payload["exactVersionSelected"] is False
     assert payload["productionInstallAllowed"] is False
