@@ -84,6 +84,7 @@ def test_skeleton_tracks_plan_without_approval():
         "minimal-source-module-no-send",
         "generated-bundle-experiment-no-send",
         "reviewed-generated-bundle-no-send",
+        "live-static-bundle-rollout-no-send",
     }
     assert payload["productionInstallAllowed"] is False
     assert payload["productionNpmRequired"] is False
