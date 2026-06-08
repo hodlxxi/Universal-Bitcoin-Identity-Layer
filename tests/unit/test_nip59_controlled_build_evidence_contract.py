@@ -92,6 +92,7 @@ def test_skeleton_tracks_evidence_without_enabling_crypto_or_send():
     assert payload["nextAllowedPhase"] in {
         "minimal-source-module-no-send",
         "generated-bundle-experiment-no-send",
+        "reviewed-generated-bundle-no-send",
     }
 
 

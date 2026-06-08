@@ -2,9 +2,10 @@ import {
   finalizeEvent,
   generateSecretKey,
   getPublicKey,
-  nip44,
   verifyEvent
-} from "nostr-tools";
+} from "nostr-tools/pure";
+
+import * as nip44 from "nostr-tools/nip44";
 
 export const HODLXXI_NIP59_SOURCE_STATUS = Object.freeze({
   name: "hodlxxi-nip59-client-source",

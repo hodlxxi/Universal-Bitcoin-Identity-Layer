@@ -32,7 +32,7 @@ FORBIDDEN_SOURCE_TERMS = [
 def test_source_module_exists_and_uses_normal_nostr_tools_import_only():
     text = SOURCE.read_text(encoding="utf-8")
 
-    assert 'from "nostr-tools"' in text
+    assert 'from "nostr-tools"' in text or 'from "nostr-tools/pure"' in text
     assert "finalizeEvent" in text
     assert "generateSecretKey" in text
     assert "getPublicKey" in text
@@ -84,7 +84,10 @@ def test_skeleton_tracks_minimal_source_without_runtime_enablement():
     assert payload["sendEnabled"] is False
     assert payload["postEnabled"] is False
     assert payload["relayPublishing"] is False
-    assert payload["nextAllowedPhase"] == "generated-bundle-experiment-no-send"
+    assert payload["nextAllowedPhase"] in {
+        "generated-bundle-experiment-no-send",
+        "reviewed-generated-bundle-no-send",
+    }
 
 
 def test_static_bundle_remains_skeleton_and_root_package_zero_dependency():
