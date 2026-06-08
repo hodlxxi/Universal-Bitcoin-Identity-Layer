@@ -93,6 +93,7 @@ def test_skeleton_tracks_evidence_without_enabling_crypto_or_send():
         "minimal-source-module-no-send",
         "generated-bundle-experiment-no-send",
         "reviewed-generated-bundle-no-send",
+        "live-static-bundle-rollout-no-send",
     }
 
 

@@ -23,6 +23,7 @@ def test_release_gate_script_exists_and_lists_expected_checks():
         "scripts/verify_nip59_builder_safety.py",
         "scripts/verify_nip59_import_policy.py",
         "scripts/verify_nip59_static_bundle.py",
+        "scripts/verify_nip59_generated_bundle.py",
     ]
 
 
