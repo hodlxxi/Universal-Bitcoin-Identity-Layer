@@ -83,6 +83,7 @@ def test_skeleton_tracks_plan_without_approval():
         "controlled-build-experiment-outside-production",
         "minimal-source-module-no-send",
         "generated-bundle-experiment-no-send",
+        "reviewed-generated-bundle-no-send",
     }
     assert payload["productionInstallAllowed"] is False
     assert payload["productionNpmRequired"] is False

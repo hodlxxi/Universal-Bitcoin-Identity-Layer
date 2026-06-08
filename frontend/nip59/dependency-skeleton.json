@@ -1,4 +1,8 @@
 {
+  "allowedNostrToolsImports": [
+    "nostr-tools/pure",
+    "nostr-tools/nip44"
+  ],
   "builderImportPolicy": "frontend/nip59/import-policy.json",
   "builderImportPolicyScanner": "scripts/verify_nip59_import_policy.py",
   "builderPackageTemplate": "frontend/nip59/package.builder.template.json",
@@ -26,13 +30,20 @@
   "dependencyProvenanceChecklist": "frontend/nip59/dependency-provenance-checklist.json",
   "exactVersionSelected": false,
   "forbidWasmImports": true,
+  "generatedBundleCommitted": false,
+  "generatedBundleExperimentCompletedOutsideProduction": true,
+  "generatedBundleHardForbiddenTermsObserved": false,
+  "generatedBundleRelaySurfaceObserved": false,
   "importPolicyScannerRequiredBeforeBundle": true,
   "lockfileRequiredBeforeCrypto": true,
+  "minimalSourceImportMode": "narrow-imports",
   "minimalSourceModule": "frontend/nip59/src/client.js",
   "minimalSourceModuleDoc": "docs/ops/NIP59_MINIMAL_SOURCE_MODULE.md",
   "minimalSourceModuleStatus": "source-only-no-send",
   "name": "hodlxxi-nip59-client-builder-skeleton",
-  "nextAllowedPhase": "generated-bundle-experiment-no-send",
+  "narrowImportBundleEvidence": "frontend/nip59/narrow-import-bundle-evidence.json",
+  "narrowImportBundleEvidenceDoc": "docs/ops/NIP59_NARROW_IMPORT_BUNDLE_EVIDENCE.md",
+  "nextAllowedPhase": "reviewed-generated-bundle-no-send",
   "nip59ReleaseGate": "scripts/verify_nip59_release_gate.py",
   "nip59ReleaseGateRequiredBeforeCrypto": true,
   "normalNostrToolsImportRequired": true,
@@ -100,7 +111,11 @@
     "minimal source module reviewed",
     "minimal source module imports normal nostr-tools path only",
     "minimal source module contains no network POST",
-    "generated bundle experiment still keeps send disabled"
+    "generated bundle experiment still keeps send disabled",
+    "reviewed generated bundle artifact",
+    "generated bundle committed only after static bundle inspection update",
+    "generated bundle remains send disabled",
+    "production feature flag remains disabled during first bundle rollout"
   ],
   "rootPackageMutationAllowed": false,
   "sendEnabled": false,
@@ -111,6 +126,7 @@
   "staticBundlePath": "app/static/js/nip59_client_bundle.js",
   "staticBundleStatus": "skeleton-inspected",
   "status": "builder-plan-only",
+  "topLevelNostrToolsImportAllowed": false,
   "versionSelectionStatus": "candidate-observed-not-approved",
   "wasmImportAllowed": false
 }

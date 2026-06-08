@@ -1,0 +1,66 @@
+{
+  "experimentHost": "hodls-MacBook.local",
+  "experimentPath": "/Users/xxi/workspace/hodlxxi-p45-bundle-experiment/Universal-Bitcoin-Identity-Layer",
+  "name": "nip59-narrow-import-bundle-evidence",
+  "narrowImportResult": {
+    "bundleBytes": 118978,
+    "directSourceForbiddenHardTermsObserved": false,
+    "forbiddenHardTermsObserved": false,
+    "relaySurfaceTermsObserved": false,
+    "status": "generated-experiment-no-send",
+    "statusMarkerFound": true
+  },
+  "nextAllowedPhase": "reviewed-generated-bundle-no-send",
+  "notCommittedFromExperiment": [
+    "package.json from Mac clone",
+    "package-lock.json",
+    "node_modules",
+    "frontend/nip59/build/entry.js",
+    "frontend/nip59/dist/nip59_client_bundle.generated.js",
+    "generated bundle smoke output"
+  ],
+  "productionState": {
+    "intakeEnabled": false,
+    "productionInstallAllowed": false,
+    "productionNpmRequired": false,
+    "productionPollutionObserved": false,
+    "relayPublishing": false,
+    "sendEnabled": false,
+    "staticBundleStillSkeleton": true
+  },
+  "smokeResult": {
+    "canFinalizeGiftWrap": false,
+    "canFinalizeLocalProbe": true,
+    "canPostEnvelope": false,
+    "cryptoReady": false,
+    "cryptoReadyCandidate": true,
+    "hasApi": true,
+    "hasCreateLocalProbeEvent": true,
+    "plaintextPost": false,
+    "probeEventVerified": true,
+    "probeNetworkPost": false,
+    "probePlaintextPost": false,
+    "probeRelayPublishing": false,
+    "relayPublishing": false,
+    "sendEnabled": false,
+    "status": "generated-experiment-no-send"
+  },
+  "sourceExperiment": "P45 MacBook generated bundle experiment",
+  "sourceImportAfter": [
+    "nostr-tools/pure",
+    "nostr-tools/nip44"
+  ],
+  "sourceImportBefore": "nostr-tools",
+  "status": "narrow-import-bundle-experiment-passed",
+  "topLevelImportResult": {
+    "bundleBytes": 210664,
+    "decision": "Reject top-level nostr-tools import for HODLXXI browser bundle.",
+    "forbiddenSurfaceObserved": true,
+    "observedForbiddenSurface": [
+      "RelayList",
+      "DirectMessageRelaysList",
+      "fetchRelayInformation",
+      "fetch("
+    ]
+  }
+}
