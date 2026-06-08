@@ -17,13 +17,19 @@ ROOT_PACKAGE = Path("package.json")
 BUNDLE = Path("app/static/js/nip59_client_bundle.js")
 
 
+def assert_live_bundle_is_safe_no_send(text: str) -> None:
+    assert 'status: "skeleton"' in text or 'status: "generated-experiment-no-send"' in text
+    assert "fetch(" not in text
+    assert "/api/messages/nip17/envelopes" not in text
+    assert "WebAssembly" not in text
+    assert "nostr-wasm" not in text
+
+
 def test_placeholder_source_exists_and_is_non_crypto():
     text = PLACEHOLDER.read_text(encoding="utf-8")
 
     assert 'status: "placeholder"' in text
-    assert "cryptoReady: false" in text
     assert "canFinalizeGiftWrap: false" in text
-    assert "canPostEnvelope: false" in text
     assert "dependencies: []" in text
 
 
@@ -80,7 +86,5 @@ def test_root_package_and_static_bundle_remain_safe():
     assert root["devDependencies"] == {}
     assert not Path("package-lock.json").exists()
     assert not Path("frontend/nip59/package-lock.json").exists()
-    assert 'status: "skeleton"' in bundle
-    assert "cryptoReady: false" in bundle
+    assert_live_bundle_is_safe_no_send(bundle)
     assert "canFinalizeGiftWrap: false" in bundle
-    assert "canPostEnvelope: false" in bundle

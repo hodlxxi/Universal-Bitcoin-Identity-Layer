@@ -15,6 +15,14 @@ ROOT_PACKAGE = Path("package.json")
 BUNDLE = Path("app/static/js/nip59_client_bundle.js")
 
 
+def assert_live_bundle_is_safe_no_send(text: str) -> None:
+    assert 'status: "skeleton"' in text or 'status: "generated-experiment-no-send"' in text
+    assert "fetch(" not in text
+    assert "/api/messages/nip17/envelopes" not in text
+    assert "WebAssembly" not in text
+    assert "nostr-wasm" not in text
+
+
 def test_checkpoint_records_pre_build_safety_complete_without_crypto_approval():
     payload = json.loads(CHECKPOINT.read_text(encoding="utf-8"))
 
@@ -70,6 +78,7 @@ def test_checkpoint_allows_only_non_production_build_experiment_next():
         "generated-bundle-experiment-no-send",
         "reviewed-generated-bundle-no-send",
         "live-static-bundle-rollout-no-send",
+        "browser-smoke-generated-bundle-no-send",
     }
     required = set(payload["nextAllowedPhaseRequires"])
     assert "Mac or non-production builder host" in required
@@ -99,6 +108,7 @@ def test_skeleton_tracks_pre_build_checkpoint_without_approval():
         "generated-bundle-experiment-no-send",
         "reviewed-generated-bundle-no-send",
         "live-static-bundle-rollout-no-send",
+        "browser-smoke-generated-bundle-no-send",
     }
     assert payload["candidateApprovedForCrypto"] is False
     assert payload["exactVersionSelected"] is False
@@ -117,7 +127,5 @@ def test_root_package_and_static_bundle_remain_safe():
     assert root["devDependencies"] == {}
     assert not Path("package-lock.json").exists()
     assert not Path("frontend/nip59/package-lock.json").exists()
-    assert 'status: "skeleton"' in bundle
-    assert "cryptoReady: false" in bundle
+    assert_live_bundle_is_safe_no_send(bundle)
     assert "canFinalizeGiftWrap: false" in bundle
-    assert "canPostEnvelope: false" in bundle

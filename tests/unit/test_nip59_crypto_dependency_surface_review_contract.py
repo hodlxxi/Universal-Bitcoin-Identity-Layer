@@ -14,6 +14,14 @@ ROOT_PACKAGE = Path("package.json")
 BUNDLE = Path("app/static/js/nip59_client_bundle.js")
 
 
+def assert_live_bundle_is_safe_no_send(text: str) -> None:
+    assert 'status: "skeleton"' in text or 'status: "generated-experiment-no-send"' in text
+    assert "fetch(" not in text
+    assert "/api/messages/nip17/envelopes" not in text
+    assert "WebAssembly" not in text
+    assert "nostr-wasm" not in text
+
+
 def test_review_record_does_not_approve_crypto_or_delivery():
     payload = json.loads(REVIEW.read_text(encoding="utf-8"))
 
@@ -86,9 +94,7 @@ def test_root_package_and_static_bundle_remain_safe():
     assert root["devDependencies"] == {}
     assert not Path("package-lock.json").exists()
     assert not Path("frontend/nip59/package-lock.json").exists()
-    assert 'status: "skeleton"' in bundle
-    assert "cryptoReady: false" in bundle
+    assert_live_bundle_is_safe_no_send(bundle)
     assert "canFinalizeGiftWrap: false" in bundle
-    assert "canPostEnvelope: false" in bundle
-    assert "finalizeEvent" not in bundle
+    # P47 live bundle may include local finalizeEvent probe code; delivery remains forbidden by shared helper.
     assert "fetch(" not in bundle

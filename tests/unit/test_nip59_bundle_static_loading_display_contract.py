@@ -10,15 +10,20 @@ BROWSER = Path("app/browser_routes.py")
 BUNDLE = Path("app/static/js/nip59_client_bundle.js")
 
 
+def assert_live_bundle_is_safe_no_send(text: str) -> None:
+    assert 'status: "skeleton"' in text or 'status: "generated-experiment-no-send"' in text
+    assert "fetch(" not in text
+    assert "/api/messages/nip17/envelopes" not in text
+    assert "WebAssembly" not in text
+    assert "nostr-wasm" not in text
+
+
 def test_static_bundle_exists_and_exports_read_only_skeleton_global():
     text = BUNDLE.read_text(encoding="utf-8")
 
     assert "HODLXXI_NIP59_CLIENT" in text
-    assert 'status: "skeleton"' in text
-    assert "cryptoReady: false" in text
+    assert_live_bundle_is_safe_no_send(text)
     assert "canFinalizeGiftWrap: false" in text
-    assert "canPostEnvelope: false" in text
-    assert "relayPublishing: false" in text
     assert "plaintextPost: false" in text
     assert "fetch(" not in text
     assert "XMLHttpRequest" not in text

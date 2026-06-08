@@ -13,6 +13,14 @@ BUNDLE = Path("app/static/js/nip59_client_bundle.js")
 BROWSER = Path("app/browser_routes.py")
 
 
+def assert_live_bundle_is_safe_no_send(text: str) -> None:
+    assert 'status: "skeleton"' in text or 'status: "generated-experiment-no-send"' in text
+    assert "fetch(" not in text
+    assert "/api/messages/nip17/envelopes" not in text
+    assert "WebAssembly" not in text
+    assert "nostr-wasm" not in text
+
+
 def test_package_json_exists_without_dependencies_or_install_requirement():
     payload = json.loads(PACKAGE.read_text(encoding="utf-8"))
 
@@ -37,16 +45,13 @@ def test_bundle_builder_is_zero_dependency_and_writes_local_static_asset():
 def test_generated_bundle_is_explicitly_non_crypto_and_non_delivery():
     text = BUNDLE.read_text(encoding="utf-8")
 
-    assert 'status: "skeleton"' in text
-    assert "cryptoReady: false" in text
+    assert_live_bundle_is_safe_no_send(text)
     assert "canFinalizeGiftWrap: false" in text
-    assert "canPostEnvelope: false" in text
-    assert "relayPublishing: false" in text
     assert "plaintextPost: false" in text
-    assert "dependencies: []" in text
+    assert "dependencies: []" in text or 'dependencies: ["nostr-tools@2.23.5"]' in text
     assert "privateKey" not in text
     assert "private_key" not in text
-    assert "secretKey" not in text
+    # P47 live generated no-send bundle may include local throwaway secretKey variable names.
     assert "fetch(" not in text
     assert "XMLHttpRequest" not in text
 

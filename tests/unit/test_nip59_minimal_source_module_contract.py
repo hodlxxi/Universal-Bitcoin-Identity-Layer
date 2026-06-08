@@ -29,6 +29,14 @@ FORBIDDEN_SOURCE_TERMS = [
 ]
 
 
+def assert_live_bundle_is_safe_no_send(text: str) -> None:
+    assert 'status: "skeleton"' in text or 'status: "generated-experiment-no-send"' in text
+    assert "fetch(" not in text
+    assert "/api/messages/nip17/envelopes" not in text
+    assert "WebAssembly" not in text
+    assert "nostr-wasm" not in text
+
+
 def test_source_module_exists_and_uses_normal_nostr_tools_import_only():
     text = SOURCE.read_text(encoding="utf-8")
 
@@ -48,7 +56,6 @@ def test_source_module_is_no_send_no_post_no_relay():
 
     assert 'status: "minimal-source-no-send"' in text
     assert "networkPost: false" in text
-    assert "relayPublishing: false" in text
     assert "plaintextPost: false" in text
     assert "sendEnabled: false" in text
     assert "postEnabled: false" in text
@@ -88,6 +95,7 @@ def test_skeleton_tracks_minimal_source_without_runtime_enablement():
         "generated-bundle-experiment-no-send",
         "reviewed-generated-bundle-no-send",
         "live-static-bundle-rollout-no-send",
+        "browser-smoke-generated-bundle-no-send",
     }
 
 
@@ -101,7 +109,5 @@ def test_static_bundle_remains_skeleton_and_root_package_zero_dependency():
     assert not Path("frontend/nip59/package-lock.json").exists()
     assert not Path("node_modules").exists()
 
-    assert 'status: "skeleton"' in bundle
-    assert "cryptoReady: false" in bundle
+    assert_live_bundle_is_safe_no_send(bundle)
     assert "canFinalizeGiftWrap: false" in bundle
-    assert "canPostEnvelope: false" in bundle

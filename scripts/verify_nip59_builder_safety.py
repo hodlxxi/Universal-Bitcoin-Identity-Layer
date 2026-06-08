@@ -2,7 +2,7 @@
 """Verify NIP-59 frontend builder safety invariants.
 
 This script intentionally does not install dependencies. It verifies that the
-current production-safe skeleton remains non-crypto and non-delivery.
+current production-safe generated bundle remains no-send and non-delivery.
 """
 
 from __future__ import annotations
@@ -45,22 +45,27 @@ def main() -> None:
     if skeleton.get("relayPublishing") is not False:
         fail("relay publishing must remain disabled in P27")
 
-    if 'status: "skeleton"' not in bundle:
-        fail("static bundle must remain skeleton")
+    if 'status: "generated-experiment-no-send"' not in bundle:
+        fail("static bundle must remain generated no-send")
 
     forbidden = [
-        "finalizeEvent",
-        "getEventHash",
         "fetch(",
         "XMLHttpRequest",
-        "privateKey",
-        "private_key",
-        "secretKey",
+        "/api/messages/nip17/envelopes",
+        "SimplePool",
+        "relayInit",
+        "publish(",
+        "@nostr/tools/wasm",
+        "nostr-wasm",
+        "WebAssembly",
+        "fetchRelayInformation",
+        "RelayList",
+        "DirectMessageRelaysList",
     ]
 
     for token in forbidden:
         if token in bundle:
-            fail(f"forbidden token in skeleton bundle: {token}")
+            fail(f"forbidden token in live static bundle: {token}")
 
     print("ok: NIP-59 builder safety invariants hold")
 

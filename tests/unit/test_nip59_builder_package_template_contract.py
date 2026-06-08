@@ -13,6 +13,14 @@ SKELETON = Path("frontend/nip59/dependency-skeleton.json")
 BUNDLE = Path("app/static/js/nip59_client_bundle.js")
 
 
+def assert_live_bundle_is_safe_no_send(text: str) -> None:
+    assert 'status: "skeleton"' in text or 'status: "generated-experiment-no-send"' in text
+    assert "fetch(" not in text
+    assert "/api/messages/nip17/envelopes" not in text
+    assert "WebAssembly" not in text
+    assert "nostr-wasm" not in text
+
+
 def test_builder_package_template_exists_but_is_not_root_package():
     payload = json.loads(TEMPLATE.read_text(encoding="utf-8"))
 
@@ -55,10 +63,8 @@ def test_dependency_skeleton_tracks_template_without_enabling_install_or_crypto(
 def test_static_bundle_still_skeleton_only():
     text = BUNDLE.read_text(encoding="utf-8")
 
-    assert 'status: "skeleton"' in text
-    assert "cryptoReady: false" in text
+    assert_live_bundle_is_safe_no_send(text)
     assert "canFinalizeGiftWrap: false" in text
-    assert "canPostEnvelope: false" in text
-    assert "nostr-tools" not in text
-    assert "finalizeEvent" not in text
+    # P47 live bundle may include reviewed narrow-import nostr-tools code.
+    # P47 live generated no-send bundle may include local finalizeEvent probe code.
     assert "fetch(" not in text
