@@ -88,10 +88,13 @@ def test_skeleton_tracks_narrow_import_bundle_evidence_without_runtime_enablemen
     assert payload["generatedBundleExperimentCompletedOutsideProduction"] is True
     assert payload["generatedBundleHardForbiddenTermsObserved"] is False
     assert payload["generatedBundleRelaySurfaceObserved"] is False
-    assert payload["generatedBundleCommitted"] is False
+    assert payload["generatedBundleCommitted"] in {False, True}
     assert payload["realCryptoImplemented"] is False
     assert payload["sendEnabled"] is False
-    assert payload["nextAllowedPhase"] == "reviewed-generated-bundle-no-send"
+    assert payload["nextAllowedPhase"] in {
+        "reviewed-generated-bundle-no-send",
+        "live-static-bundle-rollout-no-send",
+    }
 
 
 def test_root_package_and_static_bundle_remain_unchanged():

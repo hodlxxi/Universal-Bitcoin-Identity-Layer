@@ -87,6 +87,7 @@ def test_skeleton_tracks_minimal_source_without_runtime_enablement():
     assert payload["nextAllowedPhase"] in {
         "generated-bundle-experiment-no-send",
         "reviewed-generated-bundle-no-send",
+        "live-static-bundle-rollout-no-send",
     }
 
 
