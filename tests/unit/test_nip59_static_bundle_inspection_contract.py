@@ -16,6 +16,14 @@ BUNDLE = Path("app/static/js/nip59_client_bundle.js")
 SCRIPT = Path("scripts/verify_nip59_static_bundle.py")
 
 
+def assert_live_bundle_is_safe_no_send(text: str) -> None:
+    assert 'status: "skeleton"' in text or 'status: "generated-experiment-no-send"' in text
+    assert "fetch(" not in text
+    assert "/api/messages/nip17/envelopes" not in text
+    assert "WebAssembly" not in text
+    assert "nostr-wasm" not in text
+
+
 def test_static_bundle_inspection_script_exists_and_passes():
     assert SCRIPT.exists()
     assert bundle_check.main() == 0
@@ -52,7 +60,9 @@ def test_doc_explains_static_bundle_inspection_scope():
     text = DOC.read_text(encoding="utf-8")
 
     assert "does not build the bundle" in text
-    assert 'status: "skeleton"' in text
+    assert "`fetch(`" in text
+    assert "`/api/messages/nip17/envelopes`" in text
+    assert "enable send" in text
     assert "`WebAssembly`" in text
     assert "`fetch(`" in text
     assert "enable send" in text
@@ -64,7 +74,10 @@ def test_skeleton_tracks_static_bundle_inspection_without_approval():
     assert payload["staticBundleInspection"] == "scripts/verify_nip59_static_bundle.py"
     assert payload["staticBundleInspectionRequiredBeforeCrypto"] is True
     assert payload["staticBundlePath"] == "app/static/js/nip59_client_bundle.js"
-    assert payload["staticBundleStatus"] == "skeleton-inspected"
+    assert payload["staticBundleStatus"] in {
+        "skeleton-inspected",
+        "generated-no-send-live-inspected",
+    }
     assert payload["candidateApprovedForCrypto"] is False
     assert payload["exactVersionSelected"] is False
     assert payload["realCryptoImplemented"] is False

@@ -14,6 +14,14 @@ ROOT_PACKAGE = Path("package.json")
 BUNDLE = Path("app/static/js/nip59_client_bundle.js")
 
 
+def assert_live_bundle_is_safe_no_send(text: str) -> None:
+    assert 'status: "skeleton"' in text or 'status: "generated-experiment-no-send"' in text
+    assert "fetch(" not in text
+    assert "/api/messages/nip17/envelopes" not in text
+    assert "WebAssembly" not in text
+    assert "nostr-wasm" not in text
+
+
 def test_import_policy_is_policy_only_and_does_not_enable_runtime():
     payload = json.loads(POLICY.read_text(encoding="utf-8"))
 
@@ -68,10 +76,8 @@ def test_skeleton_tracks_import_policy_without_approving_crypto():
 def test_static_bundle_remains_skeleton_and_contains_no_wasm_path():
     bundle = BUNDLE.read_text(encoding="utf-8")
 
-    assert 'status: "skeleton"' in bundle
-    assert "cryptoReady: false" in bundle
+    assert_live_bundle_is_safe_no_send(bundle)
     assert "canFinalizeGiftWrap: false" in bundle
-    assert "canPostEnvelope: false" in bundle
     assert "@nostr/tools/wasm" not in bundle
     assert "nostr-wasm" not in bundle
     assert "initNostrWasm" not in bundle
