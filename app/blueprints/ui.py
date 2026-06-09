@@ -62,6 +62,66 @@ def sitemap_xml():
     return Response(xml, mimetype="application/xml")
 
 
+def _wants_markdown_response():
+    markdown_quality = request.accept_mimetypes["text/markdown"]
+    html_quality = request.accept_mimetypes["text/html"]
+    return markdown_quality > 0 and markdown_quality >= html_quality
+
+
+@ui_bp.before_request
+def serve_markdown_for_agents():
+    if request.path != "/":
+        return None
+
+    if not _wants_markdown_response():
+        return None
+
+    body = """# HODLXXI
+
+Bitcoin-native identity, agent discovery, Lightning-paid jobs, signed receipts, attestations, reputation, and staged private messaging.
+
+## Agent discovery
+
+- Agent descriptor: `/.well-known/agent.json`
+- API catalog: `/.well-known/api-catalog`
+- Capabilities: `/agent/capabilities`
+- Capability schema: `/agent/capabilities/schema`
+- Skills: `/agent/skills`
+- Reputation: `/agent/reputation`
+- Attestations: `/agent/attestations`
+- Chain health: `/agent/chain/health`
+- Public status: `/api/public/status`
+
+## Authentication and identity
+
+- OIDC metadata: `/.well-known/openid-configuration`
+- Nostr DM policy: `/.well-known/nostr-dm-policy.json`
+
+## Messaging status
+
+NIP-17 / NIP-59 messaging is visible for discovery and UI readiness, but sending, intake, and relay publishing remain disabled.
+
+## Documentation
+
+- Human docs: `/docs`
+- Robots: `/robots.txt`
+- Sitemap: `/sitemap.xml`
+"""
+
+    response = Response(body, mimetype="text/markdown")
+    response.headers["X-Markdown-Tokens"] = str(len(body.split()))
+    response.headers["Link"] = ", ".join(
+        [
+            '</.well-known/api-catalog>; rel="api-catalog"; type="application/linkset+json"',
+            '</.well-known/agent.json>; rel="service-desc"; type="application/json"',
+            '</agent/capabilities>; rel="service-desc"; type="application/json"',
+            '</docs>; rel="service-doc"; type="text/html"',
+            '</api/public/status>; rel="status"; type="application/json"',
+        ]
+    )
+    return response
+
+
 @ui_bp.after_request
 def add_agent_discovery_link_headers(response):
     if request.path == "/":
