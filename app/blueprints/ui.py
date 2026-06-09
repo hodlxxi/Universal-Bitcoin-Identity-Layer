@@ -6,6 +6,8 @@ Serves frontend HTML pages and handles user interface routes.
 
 import logging
 
+import json
+
 from flask import Blueprint, Response, redirect, render_template, render_template_string, request, session, url_for
 from app.browser_routes import call_browser_route_handler, render_browser_playground
 from app.browser_compat import (
@@ -28,6 +30,7 @@ def robots_txt():
         [
             "User-agent: *",
             "Allow: /",
+            "Content-Signal: ai-train=no, search=yes, ai-input=no",
             "Sitemap: https://hodlxxi.com/sitemap.xml",
         ]
     )
@@ -57,6 +60,85 @@ def sitemap_xml():
         f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>'
     )
     return Response(xml, mimetype="application/xml")
+
+
+@ui_bp.after_request
+def add_agent_discovery_link_headers(response):
+    if request.path == "/":
+        links = [
+            '</.well-known/api-catalog>; rel="api-catalog"; type="application/linkset+json"',
+            '</.well-known/agent.json>; rel="service-desc"; type="application/json"',
+            '</agent/capabilities>; rel="service-desc"; type="application/json"',
+            '</docs>; rel="service-doc"; type="text/html"',
+            '</api/public/status>; rel="status"; type="application/json"',
+        ]
+        response.headers["Link"] = ", ".join(links)
+    return response
+
+
+@ui_bp.get("/.well-known/api-catalog")
+def api_catalog():
+    base_url = "https://hodlxxi.com"
+    catalog = {
+        "linkset": [
+            {
+                "anchor": base_url,
+                "api-catalog": [
+                    {
+                        "href": f"{base_url}/.well-known/api-catalog",
+                        "type": "application/linkset+json",
+                    }
+                ],
+                "service-doc": [
+                    {
+                        "href": f"{base_url}/docs",
+                        "type": "text/html",
+                    }
+                ],
+                "status": [
+                    {
+                        "href": f"{base_url}/api/public/status",
+                        "type": "application/json",
+                    }
+                ],
+            },
+            {
+                "anchor": f"{base_url}/agent",
+                "service-desc": [
+                    {
+                        "href": f"{base_url}/agent/capabilities",
+                        "type": "application/json",
+                    },
+                    {
+                        "href": f"{base_url}/agent/capabilities/schema",
+                        "type": "application/schema+json",
+                    },
+                    {
+                        "href": f"{base_url}/.well-known/agent.json",
+                        "type": "application/json",
+                    },
+                ],
+                "service-doc": [
+                    {
+                        "href": f"{base_url}/docs",
+                        "type": "text/html",
+                    }
+                ],
+                "status": [
+                    {
+                        "href": f"{base_url}/agent/chain/health",
+                        "type": "application/json",
+                    },
+                    {
+                        "href": f"{base_url}/api/public/status",
+                        "type": "application/json",
+                    },
+                ],
+            },
+        ]
+    }
+    body = json.dumps(catalog, sort_keys=True, separators=(",", ":")) + "\n"
+    return Response(body, mimetype="application/linkset+json")
 
 
 @ui_bp.route("/")
