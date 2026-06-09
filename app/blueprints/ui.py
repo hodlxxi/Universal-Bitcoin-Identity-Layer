@@ -6,7 +6,7 @@ Serves frontend HTML pages and handles user interface routes.
 
 import logging
 
-from flask import Blueprint, redirect, render_template, render_template_string, request, session, url_for
+from flask import Blueprint, Response, redirect, render_template, render_template_string, request, session, url_for
 from app.browser_routes import call_browser_route_handler, render_browser_playground
 from app.browser_compat import (
     redirect_explorer,
@@ -20,6 +20,43 @@ from app.browser_shell_routes import render_browser_home_page
 logger = logging.getLogger(__name__)
 
 ui_bp = Blueprint("ui", __name__)
+
+
+@ui_bp.get("/robots.txt")
+def robots_txt():
+    body = "\n".join(
+        [
+            "User-agent: *",
+            "Allow: /",
+            "Sitemap: https://hodlxxi.com/sitemap.xml",
+        ]
+    )
+    return Response(body + "\n", mimetype="text/plain")
+
+
+@ui_bp.get("/sitemap.xml")
+def sitemap_xml():
+    base_url = "https://hodlxxi.com"
+    paths = [
+        "/",
+        "/chat-landing",
+        "/.well-known/agent.json",
+        "/.well-known/openid-configuration",
+        "/.well-known/nostr-dm-policy.json",
+        "/agent/capabilities",
+        "/agent/capabilities/schema",
+        "/agent/skills",
+        "/agent/reputation",
+        "/agent/attestations",
+        "/agent/chain/health",
+        "/api/public/status",
+    ]
+    urls = "".join(f"<url><loc>{base_url}{path}</loc></url>" for path in paths)
+    xml = (
+        f'<?xml version="1.0" encoding="UTF-8"?>'
+        f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>'
+    )
+    return Response(xml, mimetype="application/xml")
 
 
 @ui_bp.route("/")
