@@ -72,19 +72,33 @@ def oauth_authorization_server_metadata():
         ],
         "code_challenge_methods_supported": ["S256"],
         "agent_auth": {
+            "skill": f"{base}/auth.md",
             "register_uri": f"{base}/oauthx/docs",
-            "supported_identity_types": [
+            "identity_endpoint": f"{base}/oauthx/docs#agent-registration",
+            "claim_endpoint": f"{base}/oauthx/docs#agent-claim",
+            "events_endpoint": f"{base}/oauthx/docs#agent-events",
+            "metadata_uri": f"{base}/auth.md",
+            "protected_resource_metadata": f"{base}/.well-known/oauth-protected-resource",
+            "identity_types_supported": [
                 "public_key",
                 "operator_key",
                 "oauth_client",
+                "identity_assertion",
             ],
-            "supported_credential_types": [
+            "credential_types_supported": [
+                "access_token",
                 "client_secret_basic",
                 "client_secret_post",
                 "pkce_authorization_code",
             ],
-            "metadata_uri": f"{base}/auth.md",
-            "protected_resource_metadata": f"{base}/.well-known/oauth-protected-resource",
+            "identity_assertion": {
+                "assertion_types_supported": [
+                    "public_key",
+                    "operator_key",
+                    "oauth_client",
+                ]
+            },
+            "events_supported": ["https://schemas.workos.com/events/agent/auth/identity/assertion/revoked"],
         },
     }
     return jsonify(response)
@@ -160,6 +174,20 @@ HODLXXI exposes Bitcoin-native identity and agent runtime surfaces for public di
 
 Operator-approved agent registration is documented through `/oauthx/docs`.
 Automated agents should discover the protected resource metadata first, then use the authorization server metadata to determine supported scopes and token endpoints.
+
+## agent_auth metadata
+
+The OAuth Authorization Server Metadata at `/.well-known/oauth-authorization-server` includes an `agent_auth` block with:
+
+- `skill`
+- `register_uri`
+- `identity_endpoint`
+- `claim_endpoint`
+- `events_endpoint`
+- `identity_types_supported`
+- `credential_types_supported`
+- `identity_assertion`
+- `events_supported`
 
 ## Messaging safety
 
