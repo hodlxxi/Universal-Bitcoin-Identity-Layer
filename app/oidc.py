@@ -117,7 +117,9 @@ def oauth_protected_resource_metadata():
 def auth_md():
     cfg = _app_config()
     issuer = str(cfg.get("JWT_ISSUER") or request.url_root.rstrip("/")).rstrip("/")
-    body = f"""# HODLXXI Agent Authentication
+    body = f"""# Auth.md
+
+## HODLXXI Agent Authentication
 
 HODLXXI exposes Bitcoin-native identity and agent runtime surfaces for public discovery.
 

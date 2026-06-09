@@ -39,7 +39,8 @@ def test_auth_md_is_available_for_agent_registration(client):
 
     assert response.status_code == 200
     assert response.content_type.startswith("text/markdown")
-    assert body.startswith("# HODLXXI Agent Authentication")
+    assert body.startswith("# Auth.md")
+    assert "## HODLXXI Agent Authentication" in body
     assert "/.well-known/openid-configuration" in body
     assert "/.well-known/oauth-authorization-server" in body
     assert "/.well-known/oauth-protected-resource" in body
