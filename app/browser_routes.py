@@ -2670,6 +2670,9 @@ def register_browser_routes(
                 <p>NIP-44: <code id="nip17Nip44Support">checking...</code></p>
                 <p>NIP-04 fallback: <code id="nip17Nip04Support">checking...</code></p>
                 <p>NIP-59 bundle: <code id="nip59BundleStatus">checking...</code></p>
+                <p>NIP-59 send: <code id="nip59SendStatus">disabled</code></p>
+                <p>NIP-59 POST: <code id="nip59PostStatus">disabled</code></p>
+                <p>NIP-59 relay: <code id="nip59RelayStatus">disabled</code></p>
                 <p>NIP-59 crypto ready: <code id="nip59CryptoReady">false</code></p>
                 <p>NIP-59 can finalize gift-wrap: <code id="nip59CanFinalizeGiftWrap">false</code></p>
                 <p>NIP-59 can post envelope: <code id="nip59CanPostEnvelope">false</code></p>
@@ -3630,6 +3633,9 @@ def register_browser_routes(
         function updateNip59BundleCapabilityDisplay(){
           const client = window.HODLXXI_NIP59_CLIENT || {};
           nip17SetText('nip59BundleStatus', client.status || 'unavailable');
+          nip17SetText('nip59SendStatus', client.sendEnabled === false ? 'disabled' : 'unexpected-enabled');
+          nip17SetText('nip59PostStatus', client.canPostEnvelope === false ? 'disabled' : 'unexpected-enabled');
+          nip17SetText('nip59RelayStatus', client.relayPublishing === false ? 'disabled' : 'unexpected-enabled');
           nip17SetText('nip59CryptoReady', client.cryptoReady === true ? 'true' : 'false');
           nip17SetText('nip59CanFinalizeGiftWrap', client.canFinalizeGiftWrap === true ? 'true' : 'false');
           nip17SetText('nip59CanPostEnvelope', client.canPostEnvelope === true ? 'true' : 'false');
