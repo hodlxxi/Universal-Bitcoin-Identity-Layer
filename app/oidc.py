@@ -173,6 +173,159 @@ def agent_event_notify():
     return jsonify(response), 501
 
 
+def _public_base_url() -> str:
+    cfg = _app_config()
+    return str(cfg.get("JWT_ISSUER") or request.url_root.rstrip("/")).rstrip("/")
+
+
+def _agent_skill_docs(base: str) -> dict[str, str]:
+    return {
+        "mcp-server-card": (
+            "# HODLXXI MCP Server Card\n\n"
+            "HODLXXI publishes a discovery-only MCP Server Card for agent readiness.\n\n"
+            "Discovery:\n"
+            f"- `{base}/.well-known/mcp/server-card.json`\n"
+            f"- `{base}/.well-known/mcp.json`\n"
+            f"- `{base}/.well-known/mcp/server-cards.json`\n\n"
+            "Transport endpoint:\n"
+            f"- `{base}/agent/mcp`\n\n"
+            "Safety:\n"
+            "- The MCP transport endpoint is a disabled-by-default stub.\n"
+            "- No tool execution is enabled.\n"
+            "- No NIP-17/NIP-59 send, intake, or relay publishing is enabled.\n"
+        ),
+        "agent-skills": (
+            "# HODLXXI Agent Skills Discovery\n\n"
+            "HODLXXI publishes an Agent Skills index for machine-readable discovery.\n\n"
+            "Index:\n"
+            f"- `{base}/.well-known/agent-skills/index.json`\n\n"
+            "This index advertises public discovery, Auth.md registration metadata, and MCP server-card discovery.\n"
+        ),
+        "auth-md-agent-registration": (
+            "# HODLXXI Auth.md Agent Registration\n\n"
+            "HODLXXI exposes Auth.md-compatible agent registration metadata.\n\n"
+            "Discovery:\n"
+            f"- `{base}/auth.md`\n"
+            f"- `{base}/.well-known/oauth-authorization-server`\n"
+            f"- `{base}/.well-known/oauth-protected-resource`\n\n"
+            "Safety:\n"
+            "- Agent registration endpoints are advertised for discovery.\n"
+            "- Registration remains disabled until explicitly enabled by the operator.\n"
+        ),
+        "agent-discovery": (
+            "# HODLXXI Agent Discovery\n\n"
+            "HODLXXI exposes public agent discovery surfaces.\n\n"
+            "Discovery:\n"
+            f"- `{base}/.well-known/agent.json`\n"
+            f"- `{base}/agent/capabilities`\n"
+            f"- `{base}/agent/capabilities/schema`\n"
+            f"- `{base}/agent/skills`\n"
+            f"- `{base}/agent/reputation`\n"
+            f"- `{base}/agent/attestations`\n"
+            f"- `{base}/agent/chain/health`\n"
+        ),
+    }
+
+
+@oidc_bp.get("/.well-known/mcp/server-card.json")
+@oidc_bp.get("/.well-known/mcp/server-cards.json")
+@oidc_bp.get("/.well-known/mcp.json")
+def mcp_server_card_metadata():
+    base = _public_base_url()
+    response = {
+        "$schema": "https://modelcontextprotocol.io/schemas/server-card.v1.json",
+        "serverInfo": {"name": "HODLXXI", "version": "2.2"},
+        "name": "HODLXXI",
+        "version": "2.2",
+        "description": (
+            "Bitcoin-native identity and agent runtime discovery surface. "
+            "MCP transport is advertised for discovery only and remains disabled."
+        ),
+        "protocolVersion": "2025-06-18",
+        "endpoint": f"{base}/agent/mcp",
+        "transport": {
+            "type": "streamable_http",
+            "url": f"{base}/agent/mcp",
+            "endpoint": f"{base}/agent/mcp",
+        },
+        "transports": [
+            {
+                "type": "streamable_http",
+                "url": f"{base}/agent/mcp",
+                "endpoint": f"{base}/agent/mcp",
+            }
+        ],
+        "capabilities": {
+            "tools": {"listChanged": False},
+            "resources": {},
+            "prompts": {},
+        },
+        "authentication": {
+            "type": "oauth2",
+            "authorization_server": f"{base}/.well-known/oauth-authorization-server",
+            "protected_resource": f"{base}/.well-known/oauth-protected-resource",
+        },
+        "documentation": f"{base}/docs",
+        "status": f"{base}/api/public/status",
+    }
+    return jsonify(response)
+
+
+@oidc_bp.post("/agent/mcp")
+def agent_mcp_transport_stub():
+    response = {
+        "error": "not_implemented",
+        "error_description": (
+            "MCP transport is advertised for discovery but disabled until " "the operator enables MCP tool execution."
+        ),
+        "enabled": False,
+    }
+    return jsonify(response), 501
+
+
+@oidc_bp.get("/.well-known/agent-skills/index.json")
+def agent_skills_discovery_index():
+    import hashlib
+
+    base = _public_base_url()
+    docs = _agent_skill_docs(base)
+    skills = []
+
+    for slug, body in docs.items():
+        lines = body.splitlines()
+        description = lines[2] if len(lines) > 2 else slug
+        skills.append(
+            {
+                "name": slug,
+                "type": "documentation",
+                "description": description,
+                "url": f"{base}/.well-known/agent-skills/{slug}/SKILL.md",
+                "sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+            }
+        )
+
+    response = {
+        "$schema": "https://agentskills.io/schemas/agent-skills-v0.2.0.json",
+        "version": "0.2.0",
+        "issuer": base,
+        "skills": skills,
+    }
+    return jsonify(response)
+
+
+@oidc_bp.get("/.well-known/agent-skills/<skill_slug>/SKILL.md")
+def agent_skill_document(skill_slug: str):
+    from flask import Response
+
+    base = _public_base_url()
+    docs = _agent_skill_docs(base)
+
+    if skill_slug not in docs:
+        return jsonify({"error": "not_found"}), 404
+
+    return Response(docs[skill_slug], mimetype="text/markdown")
+
+
 @oidc_bp.get("/.well-known/oauth-protected-resource")
 def oauth_protected_resource_metadata():
     cfg = _app_config()
