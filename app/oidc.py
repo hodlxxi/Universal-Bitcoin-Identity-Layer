@@ -96,7 +96,13 @@ def oauth_authorization_server_metadata():
                     "public_key",
                     "operator_key",
                     "oauth_client",
-                ]
+                ],
+                "credential_types_supported": [
+                    "access_token",
+                    "client_secret_basic",
+                    "client_secret_post",
+                    "pkce_authorization_code",
+                ],
             },
             "events_supported": ["https://schemas.workos.com/events/agent/auth/identity/assertion/revoked"],
         },
@@ -187,7 +193,29 @@ The OAuth Authorization Server Metadata at `/.well-known/oauth-authorization-ser
 - `identity_types_supported`
 - `credential_types_supported`
 - `identity_assertion`
+- `identity_assertion.credential_types_supported`
 - `events_supported`
+
+## Standalone agent registration flow
+
+1. Discover protected resource metadata at `/.well-known/oauth-protected-resource`.
+2. Discover authorization server metadata at `/.well-known/oauth-authorization-server`.
+3. Read the `agent_auth` block.
+4. Register or review agent registration instructions at `/oauthx/docs`.
+5. Use `identity_endpoint` for agent identity registration instructions.
+6. Use `claim_endpoint` for agent identity claim instructions.
+7. Use `/oauth/authorize` and `/oauth/token` for OAuth authorization code or PKCE token flow.
+8. Use `events_endpoint` for revocation and identity assertion event instructions.
+
+## Required agent_auth fields
+
+- `register_uri`: `/oauthx/docs`
+- `identity_endpoint`: `/oauthx/docs#agent-registration`
+- `claim_endpoint`: `/oauthx/docs#agent-claim`
+- `events_endpoint`: `/oauthx/docs#agent-events`
+- `identity_types_supported`: `public_key`, `operator_key`, `oauth_client`, `identity_assertion`
+- `credential_types_supported`: `access_token`, `client_secret_basic`, `client_secret_post`, `pkce_authorization_code`
+- `identity_assertion.credential_types_supported`: `access_token`, `client_secret_basic`, `client_secret_post`, `pkce_authorization_code`
 
 ## Messaging safety
 
