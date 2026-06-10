@@ -86,6 +86,7 @@ def oauth_authorization_server_metadata():
             "register_uri": f"{base}/oauthx/docs",
             "identity_endpoint": f"{base}/agent/identity",
             "claim_endpoint": f"{base}/agent/identity/claim",
+            "claim_uri": f"{base}/agent/identity/claim",
             "events_endpoint": f"{base}/agent/event/notify",
             "metadata_uri": f"{base}/auth.md",
             "protected_resource_metadata": f"{base}/.well-known/oauth-protected-resource",
@@ -102,7 +103,17 @@ def oauth_authorization_server_metadata():
                 "client_secret_post",
                 "pkce_authorization_code",
             ],
+            "anonymous": {
+                "claim_uri": f"{base}/agent/identity/claim",
+                "credential_types_supported": [
+                    "access_token",
+                    "client_secret_basic",
+                    "client_secret_post",
+                    "pkce_authorization_code",
+                ],
+            },
             "identity_assertion": {
+                "claim_uri": f"{base}/agent/identity/claim",
                 "assertion_types_supported": [
                     "urn:ietf:params:oauth:token-type:id-jag",
                     "verified_email",
@@ -268,6 +279,10 @@ The OAuth Authorization Server Metadata at `/.well-known/oauth-authorization-ser
 - `events_endpoint`: `/agent/event/notify`
 - `identity_types_supported`: `anonymous`, `identity_assertion`, `public_key`, `operator_key`, `oauth_client`
 - `credential_types_supported`: `access_token`, `client_secret_basic`, `client_secret_post`, `pkce_authorization_code`
+- `claim_uri`: `/agent/identity/claim`
+- `anonymous.claim_uri`: `/agent/identity/claim`
+- `anonymous.credential_types_supported`: `access_token`, `client_secret_basic`, `client_secret_post`, `pkce_authorization_code`
+- `identity_assertion.claim_uri`: `/agent/identity/claim`
 - `identity_assertion.credential_types_supported`: `access_token`, `client_secret_basic`, `client_secret_post`, `pkce_authorization_code`
 
 ## Disabled-by-default safety
