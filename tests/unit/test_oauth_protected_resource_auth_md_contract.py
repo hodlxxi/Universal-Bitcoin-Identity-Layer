@@ -24,6 +24,8 @@ def test_oauth_authorization_server_metadata_is_available(client):
     assert "identity_assertion" in agent_auth["identity_types_supported"]
     assert "access_token" in agent_auth["credential_types_supported"]
     assert "identity_assertion" in agent_auth
+    assert "credential_types_supported" in agent_auth["identity_assertion"]
+    assert "access_token" in agent_auth["identity_assertion"]["credential_types_supported"]
     assert "events_supported" in agent_auth
 
 
@@ -59,4 +61,7 @@ def test_auth_md_is_available_for_agent_registration(client):
     assert "`agent_auth` block" in body
     assert "`identity_types_supported`" in body
     assert "`credential_types_supported`" in body
+    assert "`identity_assertion.credential_types_supported`" in body
+    assert "## Standalone agent registration flow" in body
+    assert "## Required agent_auth fields" in body
     assert "Sending, intake, and relay publishing are disabled" in body
