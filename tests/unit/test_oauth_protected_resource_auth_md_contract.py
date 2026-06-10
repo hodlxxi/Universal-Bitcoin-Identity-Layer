@@ -21,12 +21,18 @@ def test_oauth_authorization_server_metadata_is_available(client):
     assert agent_auth["register_uri"].endswith("/oauthx/docs")
     assert agent_auth["identity_endpoint"].endswith("/agent/identity")
     assert agent_auth["claim_endpoint"].endswith("/agent/identity/claim")
+    assert agent_auth["claim_uri"].endswith("/agent/identity/claim")
     assert agent_auth["events_endpoint"].endswith("/agent/event/notify")
     assert agent_auth["metadata_uri"].endswith("/auth.md")
     assert "anonymous" in agent_auth["identity_types_supported"]
     assert "identity_assertion" in agent_auth["identity_types_supported"]
     assert "access_token" in agent_auth["credential_types_supported"]
+    assert "anonymous" in agent_auth
+    assert agent_auth["anonymous"]["claim_uri"].endswith("/agent/identity/claim")
+    assert "credential_types_supported" in agent_auth["anonymous"]
+    assert "access_token" in agent_auth["anonymous"]["credential_types_supported"]
     assert "identity_assertion" in agent_auth
+    assert agent_auth["identity_assertion"]["claim_uri"].endswith("/agent/identity/claim")
     assert "credential_types_supported" in agent_auth["identity_assertion"]
     assert "urn:ietf:params:oauth:token-type:id-jag" in agent_auth["identity_assertion"]["assertion_types_supported"]
     assert "verified_email" in agent_auth["identity_assertion"]["assertion_types_supported"]
@@ -66,6 +72,10 @@ def test_auth_md_is_available_for_agent_registration(client):
     assert "`agent_auth` block" in body
     assert "`identity_types_supported`" in body
     assert "`credential_types_supported`" in body
+    assert "`claim_uri`" in body
+    assert "`anonymous.claim_uri`" in body
+    assert "`anonymous.credential_types_supported`" in body
+    assert "`identity_assertion.claim_uri`" in body
     assert "`identity_assertion.credential_types_supported`" in body
     assert "/agent/identity" in body
     assert "/agent/identity/claim" in body
