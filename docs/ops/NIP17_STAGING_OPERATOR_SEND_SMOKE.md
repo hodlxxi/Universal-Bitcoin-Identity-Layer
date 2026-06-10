@@ -172,3 +172,27 @@ intake_enabled=false
 relay_publishing=false
 
 Expected: no `NIP17_MESSAGES_ENABLED` line.
+
+## P63 recorded staging smoke evidence
+
+The staging smoke must fail closed if the receiver inbox count does not increase exactly by one.
+
+Recorded successful P63 staging evidence:
+
+```text
+baseline_total=0
+send status_code=202
+send ok=true
+plaintext_sent=false
+published=false
+relay_publishing=false
+after_total=1
+expected_total=1
+database=/srv/ubid-staging/runtime/staging.db
+```
+
+This evidence proves only the staging-only opaque envelope path:
+
+operator script -> staging HTTP intake -> opaque envelope storage -> receiver inbox metadata.
+
+It does not enable production intake, relay publishing, browser send, plaintext transport, decryption, or key custody.
