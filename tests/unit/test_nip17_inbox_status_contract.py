@@ -1,5 +1,9 @@
 """NIP-17 read-only inbox status contract tests."""
 
+import pytest
+
+from app.database import session_scope
+from app.models import NIP17Envelope
 from app.services.nip17_storage import store_opaque_nip17_envelope
 
 HEX32_A = "a" * 64
@@ -7,6 +11,21 @@ HEX32_B = "b" * 64
 HEX32_C = "c" * 64
 HEX32_D = "d" * 64
 SIG = "e" * 128
+
+
+@pytest.fixture(autouse=True)
+def clean_nip17_envelopes(app):
+    """Keep inbox-status tests independent from other NIP-17 storage tests."""
+
+    with app.app_context():
+        with session_scope() as session:
+            session.query(NIP17Envelope).delete()
+
+    yield
+
+    with app.app_context():
+        with session_scope() as session:
+            session.query(NIP17Envelope).delete()
 
 
 def _gift_wrap_event(event_id, receiver_pubkey=HEX32_C):
