@@ -14,8 +14,17 @@ def test_oauth_authorization_server_metadata_is_available(client):
     assert "authorization_code" in data["grant_types_supported"]
     assert "S256" in data["code_challenge_methods_supported"]
     assert "agent_auth" in data
-    assert data["agent_auth"]["register_uri"].endswith("/oauthx/docs")
-    assert data["agent_auth"]["metadata_uri"].endswith("/auth.md")
+    agent_auth = data["agent_auth"]
+    assert agent_auth["skill"].endswith("/auth.md")
+    assert agent_auth["register_uri"].endswith("/oauthx/docs")
+    assert agent_auth["identity_endpoint"].endswith("/oauthx/docs#agent-registration")
+    assert agent_auth["claim_endpoint"].endswith("/oauthx/docs#agent-claim")
+    assert agent_auth["events_endpoint"].endswith("/oauthx/docs#agent-events")
+    assert agent_auth["metadata_uri"].endswith("/auth.md")
+    assert "identity_assertion" in agent_auth["identity_types_supported"]
+    assert "access_token" in agent_auth["credential_types_supported"]
+    assert "identity_assertion" in agent_auth
+    assert "events_supported" in agent_auth
 
 
 def test_oauth_protected_resource_metadata_is_available(client):
@@ -46,4 +55,8 @@ def test_auth_md_is_available_for_agent_registration(client):
     assert "/.well-known/oauth-protected-resource" in body
     assert "/oauth/authorize" in body
     assert "/oauth/token" in body
+    assert "## agent_auth metadata" in body
+    assert "`agent_auth` block" in body
+    assert "`identity_types_supported`" in body
+    assert "`credential_types_supported`" in body
     assert "Sending, intake, and relay publishing are disabled" in body
