@@ -31,7 +31,12 @@ def well_known_configuration():
         "token_endpoint": f"{base}/oauth/token",
         "jwks_uri": f"{base}/oauth/jwks.json",
         "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "grant_types_supported": [
+            "authorization_code",
+            "refresh_token",
+            "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            "urn:workos:agent-auth:grant-type:claim",
+        ],
         "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
         "scopes_supported": [
             "read",
@@ -58,7 +63,12 @@ def oauth_authorization_server_metadata():
         "token_endpoint": f"{base}/oauth/token",
         "jwks_uri": f"{base}/oauth/jwks.json",
         "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "grant_types_supported": [
+            "authorization_code",
+            "refresh_token",
+            "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            "urn:workos:agent-auth:grant-type:claim",
+        ],
         "token_endpoint_auth_methods_supported": [
             "client_secret_post",
             "client_secret_basic",
@@ -74,16 +84,17 @@ def oauth_authorization_server_metadata():
         "agent_auth": {
             "skill": f"{base}/auth.md",
             "register_uri": f"{base}/oauthx/docs",
-            "identity_endpoint": f"{base}/oauthx/docs#agent-registration",
-            "claim_endpoint": f"{base}/oauthx/docs#agent-claim",
-            "events_endpoint": f"{base}/oauthx/docs#agent-events",
+            "identity_endpoint": f"{base}/agent/identity",
+            "claim_endpoint": f"{base}/agent/identity/claim",
+            "events_endpoint": f"{base}/agent/event/notify",
             "metadata_uri": f"{base}/auth.md",
             "protected_resource_metadata": f"{base}/.well-known/oauth-protected-resource",
             "identity_types_supported": [
+                "anonymous",
+                "identity_assertion",
                 "public_key",
                 "operator_key",
                 "oauth_client",
-                "identity_assertion",
             ],
             "credential_types_supported": [
                 "access_token",
@@ -93,6 +104,8 @@ def oauth_authorization_server_metadata():
             ],
             "identity_assertion": {
                 "assertion_types_supported": [
+                    "urn:ietf:params:oauth:token-type:id-jag",
+                    "verified_email",
                     "public_key",
                     "operator_key",
                     "oauth_client",
@@ -108,6 +121,45 @@ def oauth_authorization_server_metadata():
         },
     }
     return jsonify(response)
+
+
+@oidc_bp.post("/agent/identity")
+def agent_identity_registration():
+    response = {
+        "error": "not_implemented",
+        "error_description": (
+            "Auth.md agent identity registration is advertised for discovery "
+            "but disabled until the operator enables agent registration."
+        ),
+        "enabled": False,
+    }
+    return jsonify(response), 501
+
+
+@oidc_bp.post("/agent/identity/claim")
+def agent_identity_claim():
+    response = {
+        "error": "not_implemented",
+        "error_description": (
+            "Auth.md agent identity claim flow is advertised for discovery "
+            "but disabled until the operator enables agent registration."
+        ),
+        "enabled": False,
+    }
+    return jsonify(response), 501
+
+
+@oidc_bp.post("/agent/event/notify")
+def agent_event_notify():
+    response = {
+        "error": "not_implemented",
+        "error_description": (
+            "Auth.md agent event notifications are advertised for discovery "
+            "but disabled until the operator enables agent registration."
+        ),
+        "enabled": False,
+    }
+    return jsonify(response), 501
 
 
 @oidc_bp.get("/.well-known/oauth-protected-resource")
@@ -204,18 +256,23 @@ The OAuth Authorization Server Metadata at `/.well-known/oauth-authorization-ser
 4. Register or review agent registration instructions at `/oauthx/docs`.
 5. Use `identity_endpoint` for agent identity registration instructions.
 6. Use `claim_endpoint` for agent identity claim instructions.
-7. Use `/oauth/authorize` and `/oauth/token` for OAuth authorization code or PKCE token flow.
-8. Use `events_endpoint` for revocation and identity assertion event instructions.
+7. Exchange a service-issued identity assertion at `/oauth/token` using `urn:ietf:params:oauth:grant-type:jwt-bearer`.
+8. Exchange a claim token at `/oauth/token` using `urn:workos:agent-auth:grant-type:claim`.
+9. Use `events_endpoint` for revocation and identity assertion event instructions.
 
 ## Required agent_auth fields
 
 - `register_uri`: `/oauthx/docs`
-- `identity_endpoint`: `/oauthx/docs#agent-registration`
-- `claim_endpoint`: `/oauthx/docs#agent-claim`
-- `events_endpoint`: `/oauthx/docs#agent-events`
-- `identity_types_supported`: `public_key`, `operator_key`, `oauth_client`, `identity_assertion`
+- `identity_endpoint`: `/agent/identity`
+- `claim_endpoint`: `/agent/identity/claim`
+- `events_endpoint`: `/agent/event/notify`
+- `identity_types_supported`: `anonymous`, `identity_assertion`, `public_key`, `operator_key`, `oauth_client`
 - `credential_types_supported`: `access_token`, `client_secret_basic`, `client_secret_post`, `pkce_authorization_code`
 - `identity_assertion.credential_types_supported`: `access_token`, `client_secret_basic`, `client_secret_post`, `pkce_authorization_code`
+
+## Disabled-by-default safety
+
+The Auth.md registration endpoints are published for machine discovery, but currently return `501 not_implemented` until the operator explicitly enables agent registration.
 
 ## Messaging safety
 
