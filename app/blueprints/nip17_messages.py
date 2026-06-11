@@ -174,6 +174,13 @@ def get_nip17_inbox_envelopes():
     except ValueError:
         return jsonify({"error": "bad_request", "message": "limit and offset must be integers"}), 400
 
+    include_envelope = str(request.args.get("include_envelope") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
     try:
         from app.services.nip17_storage import list_opaque_nip17_envelopes_for_receiver
 
@@ -181,6 +188,7 @@ def get_nip17_inbox_envelopes():
             receiver_pubkey,
             limit=limit,
             offset=offset,
+            include_envelope=include_envelope,
         )
     except ValueError as exc:
         return jsonify({"error": "bad_request", "message": str(exc)}), 400

@@ -223,11 +223,14 @@ def list_opaque_nip17_envelopes_for_receiver(
     *,
     limit: int = 50,
     offset: int = 0,
+    include_envelope: bool = False,
 ) -> dict[str, Any]:
-    """List metadata-only NIP-17 envelopes for a receiver pubkey.
+    """List NIP-17 envelopes for a receiver pubkey.
 
-    This intentionally does not return envelope_json, content, ciphertext,
-    plaintext, or signatures. It is safe for authenticated inbox metadata UI.
+    By default this returns metadata only. When include_envelope=True, the
+    authenticated receiver can retrieve the opaque encrypted NIP-59 gift-wrap
+    envelope for browser-side decryption. The server still never decrypts,
+    stores plaintext, signs messages, or takes custody of keys.
     """
 
     normalized_receiver = (receiver_pubkey or "").strip().lower()
@@ -250,20 +253,21 @@ def list_opaque_nip17_envelopes_for_receiver(
 
         items = []
         for row in rows:
-            items.append(
-                {
-                    "event_id": row.event_id,
-                    "envelope_hash": row.envelope_hash,
-                    "wrapper_pubkey": row.wrapper_pubkey,
-                    "receiver_pubkey": row.receiver_pubkey,
-                    "kind": row.kind,
-                    "event_created_at": row.event_created_at,
-                    "source": row.source,
-                    "status": row.status,
-                    "received_at": row.received_at.isoformat() if row.received_at else None,
-                    "metadata": row.metadata_json or {},
-                }
-            )
+            item = {
+                "event_id": row.event_id,
+                "envelope_hash": row.envelope_hash,
+                "wrapper_pubkey": row.wrapper_pubkey,
+                "receiver_pubkey": row.receiver_pubkey,
+                "kind": row.kind,
+                "event_created_at": row.event_created_at,
+                "source": row.source,
+                "status": row.status,
+                "received_at": row.received_at.isoformat() if row.received_at else None,
+                "metadata": row.metadata_json or {},
+            }
+            if include_envelope:
+                item["envelope"] = row.envelope_json
+            items.append(item)
 
         return {
             "ok": True,
