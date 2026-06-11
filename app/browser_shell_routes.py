@@ -1385,15 +1385,80 @@ window.handlePubKeyClick = function(pubKey) {
         // must not publish to relays, must not decrypt, and must not take key custody.
         window.HODLXXI_NIP17_SEND_ENABLED = false;
 
+        function normalizeNip17Recipient(raw) {
+            return String(raw || '').trim();
+        }
+
+        function validateNip17MessageDraft(recipient, message) {
+            const normalizedRecipient = normalizeNip17Recipient(recipient);
+            const body = String(message || '');
+
+            if (!normalizedRecipient) {
+                return {ok: false, error: 'recipient_required'};
+            }
+
+            const isNpub = normalizedRecipient.startsWith('npub') && normalizedRecipient.length >= 10;
+            const isHex64 = /^[0-9a-fA-F]{64}$/.test(normalizedRecipient);
+            const isHex66 = /^(02|03)[0-9a-fA-F]{64}$/.test(normalizedRecipient);
+
+            if (!isNpub && !isHex64 && !isHex66) {
+                return {ok: false, error: 'recipient_must_be_npub_or_hex_pubkey'};
+            }
+
+            if (!body.trim()) {
+                return {ok: false, error: 'message_required'};
+            }
+
+            if (body.length > 4000) {
+                return {ok: false, error: 'message_too_large'};
+            }
+
+            return {
+                ok: true,
+                recipient: normalizedRecipient,
+                message_length: body.length,
+            };
+        }
+
+        function buildNip17SendDraft() {
+            const recipient = document.getElementById('nip17Recipient')?.value || '';
+            const message = document.getElementById('nip17Message')?.value || '';
+            const validation = validateNip17MessageDraft(recipient, message);
+
+            if (!validation.ok) {
+                return validation;
+            }
+
+            return {
+                ok: true,
+                no_send: true,
+                send_enabled: false,
+                recipient: validation.recipient,
+                message_length: validation.message_length,
+                plaintext_local_only: true,
+                will_post_to_server: false,
+                relay_publishing: false,
+                server_decrypts: false,
+                key_custody: false,
+            };
+        }
+
         function renderNip17NoSendStatus() {
             const status = document.getElementById('nip17MessageStatus');
-            const recipient = document.getElementById('nip17Recipient')?.value?.trim() || '';
-            const message = document.getElementById('nip17Message')?.value || '';
+            const draft = buildNip17SendDraft();
 
             if (!status) return false;
 
+            if (!draft.ok) {
+                status.textContent = 'NO-SEND validation error: ' + draft.error;
+                return false;
+            }
+
             status.textContent = [
                 'NO-SEND: encrypted message sending is not enabled in this release.',
+                '',
+                'Validated local draft:',
+                JSON.stringify(draft, null, 2),
                 '',
                 'Next release will build a NIP-17/NIP-59 encrypted envelope locally in the browser.',
                 'This release does not POST to /api/messages/nip17/envelopes.',
@@ -1401,9 +1466,6 @@ window.handlePubKeyClick = function(pubKey) {
                 'This release does not send plaintext.',
                 'This release does not decrypt.',
                 'This release does not take key custody.',
-                '',
-                `Recipient field length: ${recipient.length}`,
-                `Message field length: ${message.length}`,
             ].join('\n');
 
             return false;
