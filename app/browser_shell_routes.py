@@ -477,6 +477,7 @@ textarea{
                     <button id="btnExplorer" class="btn-icon">🔍 Explorer</button>
                     <button id="btnOnboard"  class="btn-icon">🔧 Onboard</button>
                     <button id="btnChat"     class="btn-icon">💬 Chat</button>
+                    <button id="btnMessages" class="btn-icon">✉️ Messages</button>
                     <button id="btnScreensaver" class="btn-icon">🖥️ Screensaver</button>
                     <button id="btnExit"     class="btn-icon exit">🚪 Exit</button>
                 </div>
@@ -529,6 +530,42 @@ textarea{
             </div>
 
             <div id="contracts-container" class="contracts-container"></div>
+        </div>
+
+        <!-- NIP-17 Messages Panel: UI-only / no-send skeleton -->
+        <div class="panel hidden" id="messagesPanel" data-nip17-send-enabled="false">
+            <h2>✉️ NIP-17 Messages</h2>
+            <p style="font-size:0.9rem;color:var(--muted);margin-top:0.2rem;text-align:center;">
+                Browser-side encrypted messaging UI skeleton. Sending is intentionally disabled in this release.
+            </p>
+
+            <div class="form-group">
+                <label for="nip17Recipient">Recipient pubkey / npub</label>
+                <input
+                    type="text"
+                    id="nip17Recipient"
+                    placeholder="npub... or 64/66 hex pubkey"
+                    autocomplete="off"
+                    autocorrect="off"
+                    autocapitalize="off"
+                    spellcheck="false"
+                />
+            </div>
+
+            <div class="form-group">
+                <label for="nip17Message">Message</label>
+                <textarea
+                    id="nip17Message"
+                    placeholder="Write a message. It will not be sent in this release."
+                    autocomplete="off"
+                    autocorrect="off"
+                    autocapitalize="off"
+                    spellcheck="false"
+                ></textarea>
+            </div>
+
+            <button class="btn" type="button" id="nip17SendButton">Send encrypted message</button>
+            <pre id="nip17MessageStatus" class="rpc-response" style="margin-top:1rem;"></pre>
         </div>
 
         <!-- Onboard Panel -->
@@ -1155,7 +1192,7 @@ window.handlePubKeyClick = function(pubKey) {
 
         function jumpOnboard(rawHex) {
             try {
-                ['homePanel','explorerPanel','onboardPanel'].forEach(id => {
+                ['homePanel','explorerPanel','onboardPanel','messagesPanel'].forEach(id => {
                     const el = document.getElementById(id);
                     if (!el) return;
                     el.classList.toggle('hidden', id !== 'onboardPanel');
@@ -1342,6 +1379,48 @@ window.handlePubKeyClick = function(pubKey) {
             window.location.href = '/export_wallet';
         }
 
+
+        // NIP17_MESSAGES_UI_SKELETON_V1:
+        // UI-only no-send placeholder. This release must not POST messages,
+        // must not publish to relays, must not decrypt, and must not take key custody.
+        window.HODLXXI_NIP17_SEND_ENABLED = false;
+
+        function renderNip17NoSendStatus() {
+            const status = document.getElementById('nip17MessageStatus');
+            const recipient = document.getElementById('nip17Recipient')?.value?.trim() || '';
+            const message = document.getElementById('nip17Message')?.value || '';
+
+            if (!status) return false;
+
+            status.textContent = [
+                'NO-SEND: encrypted message sending is not enabled in this release.',
+                '',
+                'Next release will build a NIP-17/NIP-59 encrypted envelope locally in the browser.',
+                'This release does not POST to /api/messages/nip17/envelopes.',
+                'This release does not publish to relays.',
+                'This release does not send plaintext.',
+                'This release does not decrypt.',
+                'This release does not take key custody.',
+                '',
+                `Recipient field length: ${recipient.length}`,
+                `Message field length: ${message.length}`,
+            ].join('\n');
+
+            return false;
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const btn = document.getElementById('nip17SendButton');
+            if (btn) {
+                btn.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    renderNip17NoSendStatus();
+                    return false;
+                });
+            }
+        });
+
+
         // Initial pubkey from URL
         document.addEventListener('DOMContentLoaded', () => {
             const initialPk = "{{ initial_pubkey }}";
@@ -1496,12 +1575,14 @@ if (sessionStorage.getItem('playLoginSound') === '1') {
       const btnExplorer    = document.getElementById('btnExplorer');
       const btnOnboard     = document.getElementById('btnOnboard');
       const btnChat        = document.getElementById('btnChat');
+      const btnMessages    = document.getElementById('btnMessages');
       const btnExit        = document.getElementById('btnExit');
       const btnScreensaver = document.getElementById('btnScreensaver');
 
       btnExplorer?.addEventListener('click', () => window.openPanel('explorer'));
       btnOnboard?.addEventListener('click', () => window.openPanel('onboard'));
       btnChat?.addEventListener('click', () => { window.location.href = "/app"; });
+      btnMessages?.addEventListener('click', () => window.openPanel('messages'));
       btnExit?.addEventListener('click', () => { window.location.href = "/logout"; });
       btnScreensaver?.addEventListener('click', () => { window.location.href = "/screensaver"; });
 
