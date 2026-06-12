@@ -1880,9 +1880,10 @@ const origFetch = window.fetch;
             const showId =
                   h === 'explorer' ? 'explorerPanel'
                 : h === 'onboard'  ? 'onboardPanel'
+                : h === 'messages' ? 'messagesPanel'
                 : 'homePanel';
 
-            ['homePanel','explorerPanel','onboardPanel'].forEach(id => {
+            ['homePanel','explorerPanel','onboardPanel','messagesPanel'].forEach(id => {
                 const el = document.getElementById(id);
                 if (!el) return;
                 el.classList.toggle('hidden', id !== showId);
