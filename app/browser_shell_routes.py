@@ -1420,6 +1420,88 @@ window.handlePubKeyClick = function(pubKey) {
             };
         }
 
+        function nip17Bech32Polymod(values) {
+            const generator = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+            let chk = 1;
+            for (const value of values) {
+                const top = chk >> 25;
+                chk = ((chk & 0x1ffffff) << 5) ^ value;
+                for (let i = 0; i < 5; i++) {
+                    if ((top >> i) & 1) chk ^= generator[i];
+                }
+            }
+            return chk;
+        }
+
+        function nip17Bech32HrpExpand(hrp) {
+            const out = [];
+            for (let i = 0; i < hrp.length; i++) out.push(hrp.charCodeAt(i) >> 5);
+            out.push(0);
+            for (let i = 0; i < hrp.length; i++) out.push(hrp.charCodeAt(i) & 31);
+            return out;
+        }
+
+        function nip17ConvertBits(data, fromBits, toBits, pad) {
+            let acc = 0;
+            let bits = 0;
+            const ret = [];
+            const maxv = (1 << toBits) - 1;
+            for (const value of data) {
+                if (value < 0 || value >> fromBits) throw new Error('invalid_bech32_value');
+                acc = (acc << fromBits) | value;
+                bits += fromBits;
+                while (bits >= toBits) {
+                    bits -= toBits;
+                    ret.push((acc >> bits) & maxv);
+                }
+            }
+            if (pad) {
+                if (bits > 0) ret.push((acc << (toBits - bits)) & maxv);
+            } else if (bits >= fromBits || ((acc << (toBits - bits)) & maxv)) {
+                throw new Error('invalid_bech32_padding');
+            }
+            return ret;
+        }
+
+        function decodeNpubToXOnlyHex(npub) {
+            const input = String(npub || '').trim().toLowerCase();
+            const charset = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+            const pos = input.lastIndexOf('1');
+            if (!input.startsWith('npub') || pos < 1) throw new Error('invalid_npub');
+            const hrp = input.slice(0, pos);
+            const data = input.slice(pos + 1).split('').map((char) => charset.indexOf(char));
+            if (data.some((value) => value < 0)) throw new Error('invalid_npub_charset');
+            if (nip17Bech32Polymod(nip17Bech32HrpExpand(hrp).concat(data)) !== 1) {
+                throw new Error('invalid_npub_checksum');
+            }
+            const payload = nip17ConvertBits(data.slice(0, -6), 5, 8, false);
+            if (payload.length !== 32) throw new Error('invalid_npub_payload');
+            return payload.map((byte) => byte.toString(16).padStart(2, '0')).join('');
+        }
+
+        function normalizeNip17RecipientToXOnly(recipient) {
+            const value = normalizeNip17Recipient(recipient);
+            if (value.startsWith('npub')) return decodeNpubToXOnlyHex(value);
+            if (/^(02|03)[0-9a-fA-F]{64}$/.test(value)) return value.slice(2).toLowerCase();
+            if (/^[0-9a-fA-F]{64}$/.test(value)) return value.toLowerCase();
+            throw new Error('recipient_must_be_npub_or_hex_pubkey');
+        }
+
+        async function fetchNip17Policy() {
+            const response = await fetch('/.well-known/nostr-dm-policy.json', {
+                credentials: 'same-origin',
+                headers: {'Accept': 'application/json'},
+            });
+            const payload = await response.json();
+            return {
+                ok: response.ok,
+                enabled: !!payload.enabled,
+                intake_enabled: !!payload.intake_enabled,
+                relay_publishing: !!payload.relay_publishing,
+                raw: payload,
+            };
+        }
+
         function buildNip17SendDraft() {
             const recipient = document.getElementById('nip17Recipient')?.value || '';
             const message = document.getElementById('nip17Message')?.value || '';
@@ -1429,11 +1511,21 @@ window.handlePubKeyClick = function(pubKey) {
                 return validation;
             }
 
+            let receiverXOnly = null;
+            try {
+                receiverXOnly = normalizeNip17RecipientToXOnly(validation.recipient);
+            } catch (e) {
+                return {ok: false, error: e.message || 'recipient_normalization_failed'};
+            }
+
             return {
                 ok: true,
                 no_send: true,
                 send_enabled: false,
+                site_local_encrypted_send_available: true,
+                mode: 'hodlxxi-site-local-v1',
                 recipient: validation.recipient,
+                receiver_pubkey: receiverXOnly,
                 message_length: validation.message_length,
                 plaintext_local_only: true,
                 will_post_to_server: false,
@@ -1443,7 +1535,72 @@ window.handlePubKeyClick = function(pubKey) {
             };
         }
 
-        function renderNip17NoSendStatus() {
+        async function buildHodlxxiSiteLocalEnvelope(draft) {
+            if (!window.nostr || typeof window.nostr.getPublicKey !== 'function') {
+                throw new Error('nostr_signer_required');
+            }
+            if (!window.nostr.nip44 || typeof window.nostr.nip44.encrypt !== 'function') {
+                throw new Error('nip44_encrypt_required');
+            }
+            if (typeof window.nostr.signEvent !== 'function') {
+                throw new Error('nostr_sign_event_required');
+            }
+
+            const senderPubkey = await window.nostr.getPublicKey();
+            const message = document.getElementById('nip17Message')?.value || '';
+            const ciphertext = await window.nostr.nip44.encrypt(draft.receiver_pubkey, message);
+
+            const unsignedEnvelope = {
+                kind: 1059,
+                pubkey: senderPubkey,
+                created_at: Math.floor(Date.now() / 1000),
+                tags: [
+                    ['p', draft.receiver_pubkey],
+                    ['client', 'hodlxxi-site-local-v1'],
+                    ['encryption', 'nip44-direct'],
+                ],
+                content: ciphertext,
+            };
+
+            const signedEnvelope = await window.nostr.signEvent(unsignedEnvelope);
+
+            return {
+                ok: true,
+                envelope: signedEnvelope,
+                mode: 'hodlxxi-site-local-v1',
+                receiver_pubkey: draft.receiver_pubkey,
+                relay_publishing: false,
+                plaintext_sent_to_server: false,
+                server_decrypts: false,
+                key_custody: false,
+            };
+        }
+
+        async function postHodlxxiSiteLocalEnvelope(envelope) {
+            const response = await fetch('/api/messages/nip17/envelopes', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({envelope}),
+            });
+            const text = await response.text();
+            let payload = null;
+            try {
+                payload = JSON.parse(text);
+            } catch (e) {
+                payload = {raw: text};
+            }
+            return {
+                ok: response.ok,
+                status: response.status,
+                payload,
+            };
+        }
+
+        async function renderNip17NoSendStatus() {
             const status = document.getElementById('nip17MessageStatus');
             const draft = buildNip17SendDraft();
 
@@ -1454,19 +1611,63 @@ window.handlePubKeyClick = function(pubKey) {
                 return false;
             }
 
-            status.textContent = [
-                'NO-SEND: encrypted message sending is not enabled in this release.',
-                '',
-                'Validated local draft:',
-                JSON.stringify(draft, null, 2),
-                '',
-                'Next release will build a NIP-17/NIP-59 encrypted envelope locally in the browser.',
-                'This release does not POST to /api/messages/nip17/envelopes.',
-                'This release does not publish to relays.',
-                'This release does not send plaintext.',
-                'This release does not decrypt.',
-                'This release does not take key custody.',
-            ].join('\n');
+            let policy = null;
+            try {
+                policy = await fetchNip17Policy();
+            } catch (e) {
+                status.textContent = 'NO-SEND policy check failed: ' + (e.message || String(e));
+                return false;
+            }
+
+            if (!policy.enabled || !policy.intake_enabled) {
+                status.textContent = [
+                    'NO-SEND: encrypted site-local intake is disabled by server policy.',
+                    '',
+                    'Validated local draft:',
+                    JSON.stringify(draft, null, 2),
+                    '',
+                    'Policy:',
+                    JSON.stringify(policy.raw || policy, null, 2),
+                    '',
+                    'No POST was made.',
+                    'No relay publish was attempted.',
+                    'No plaintext was sent to the server.',
+                ].join('\n');
+                return false;
+            }
+
+            try {
+                status.textContent = 'Building encrypted site-local envelope in browser…';
+                const built = await buildHodlxxiSiteLocalEnvelope(draft);
+
+                status.textContent = 'Posting encrypted opaque envelope to HODLXXI inbox…';
+                const posted = await postHodlxxiSiteLocalEnvelope(built.envelope);
+
+                status.textContent = [
+                    posted.ok ? 'SENT: encrypted opaque envelope accepted by HODLXXI inbox.' : 'SEND FAILED.',
+                    '',
+                    'Mode: hodlxxi-site-local-v1',
+                    '',
+                    'Post result:',
+                    JSON.stringify(posted, null, 2),
+                    '',
+                    'Safety:',
+                    JSON.stringify({
+                        plaintext_sent_to_server: false,
+                        relay_publishing: false,
+                        server_decrypts: false,
+                        key_custody: false,
+                    }, null, 2),
+                ].join('\n');
+            } catch (e) {
+                status.textContent = [
+                    'SEND FAILED before server plaintext transport.',
+                    '',
+                    String(e && e.message ? e.message : e),
+                    '',
+                    'No plaintext fallback is allowed.',
+                ].join('\n');
+            }
 
             return false;
         }
