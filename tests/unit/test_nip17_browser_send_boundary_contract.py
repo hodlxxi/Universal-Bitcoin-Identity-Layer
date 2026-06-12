@@ -53,17 +53,18 @@ def test_nip17_browser_send_boundary_preserves_security_claims():
     text = _boundary_source()
 
     assert "plaintext_local_only: true" in text
+    assert "plaintext_sent_to_server: false" in text
     assert "server_decrypts: false" in text
     assert "key_custody: false" in text
-    assert "does not send plaintext" in text
-    assert "does not decrypt" in text
-    assert "does not take key custody" in text
+    assert "No plaintext fallback is allowed." in text
 
 
-def test_nip17_browser_send_boundary_does_not_perform_network_send():
+def test_nip17_browser_send_boundary_performs_only_policy_gated_envelope_post():
     text = _boundary_source()
 
-    assert "fetch('/api/messages/nip17/envelopes'" not in text
-    assert 'fetch("/api/messages/nip17/envelopes"' not in text
-    assert "method: 'POST'" not in text
-    assert 'method: "POST"' not in text
+    assert "function fetchNip17Policy" in text
+    assert "!policy.enabled || !policy.intake_enabled" in text
+    assert "fetch('/api/messages/nip17/envelopes'" in text
+    assert "method: 'POST'" in text
+    assert "body: JSON.stringify({envelope})" in text
+    assert "No POST was made." in text
