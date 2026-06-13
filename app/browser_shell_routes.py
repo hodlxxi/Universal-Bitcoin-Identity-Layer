@@ -566,6 +566,22 @@ textarea{
 
             <button class="btn" type="button" id="nip17SendButton">Send encrypted message</button>
             <pre id="nip17MessageStatus" class="rpc-response" style="margin-top:1rem;"></pre>
+
+            <hr style="border:0;border-top:1px solid rgba(0,255,136,0.2);margin:1.4rem 0;" />
+
+            <h3 style="color:var(--accent);text-transform:uppercase;letter-spacing:0.08em;">
+                Encrypted Inbox
+            </h3>
+            <p style="font-size:0.85rem;color:var(--muted);margin-top:0.2rem;">
+                Loads opaque envelopes for your logged-in receiver key. Decryption happens only in this browser.
+            </p>
+
+            <button class="btn" type="button" id="nip17LoadInboxButton" onclick="return loadNip17Inbox();">
+                Load encrypted inbox
+            </button>
+
+            <pre id="nip17InboxStatus" class="rpc-response" style="margin-top:1rem;"></pre>
+            <div id="nip17InboxList" style="display:grid;gap:0.75rem;margin-top:1rem;"></div>
         </div>
 
         <!-- Onboard Panel -->
@@ -1599,6 +1615,154 @@ window.handlePubKeyClick = function(pubKey) {
                 status: response.status,
                 payload,
             };
+        }
+
+        window.HODLXXI_NIP17_INBOX_ITEMS = [];
+
+        function nip17EscapeHtml(value) {
+            return String(value || '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#39;');
+        }
+
+        function nip17EnvelopeSenderPubkey(item) {
+            const envelope = item && item.envelope ? item.envelope : {};
+            return String(envelope.pubkey || item.wrapper_pubkey || '').toLowerCase();
+        }
+
+        function renderNip17InboxItems(payload) {
+            const list = document.getElementById('nip17InboxList');
+            const status = document.getElementById('nip17InboxStatus');
+
+            if (!list || !status) return false;
+
+            const items = Array.isArray(payload.items) ? payload.items : [];
+            window.HODLXXI_NIP17_INBOX_ITEMS = items;
+
+            if (!items.length) {
+                list.innerHTML = '';
+                status.textContent = [
+                    'Inbox loaded.',
+                    'count: 0',
+                    'No encrypted envelopes for this logged-in receiver key.',
+                ].join('\n');
+                return false;
+            }
+
+            status.textContent = [
+                'Inbox loaded.',
+                `count: ${items.length}`,
+                'Click Decrypt to decrypt locally in this browser.',
+                'Server plaintext storage: false.',
+                'Server decrypts: false.',
+            ].join('\n');
+
+            list.innerHTML = items.map((item, index) => {
+                const eventId = nip17EscapeHtml(item.event_id || '');
+                const sender = nip17EscapeHtml(nip17EnvelopeSenderPubkey(item));
+                const receivedAt = nip17EscapeHtml(item.received_at || '');
+                const outputId = `nip17InboxPlaintext_${index}`;
+                return `
+                    <article class="card" style="padding:1rem;border:1px solid rgba(0,255,136,0.18);">
+                        <div style="font-size:0.78rem;color:var(--muted);word-break:break-all;">
+                            <strong>event:</strong> ${eventId}<br/>
+                            <strong>sender:</strong> ${sender}<br/>
+                            <strong>received:</strong> ${receivedAt}
+                        </div>
+                        <button class="btn" type="button" style="margin-top:0.75rem;"
+                            onclick="return decryptNip17InboxEnvelope(${index});">
+                            Decrypt locally
+                        </button>
+                        <pre id="${outputId}" class="rpc-response" style="margin-top:0.75rem;"></pre>
+                    </article>
+                `;
+            }).join('');
+
+            return false;
+        }
+
+        async function loadNip17Inbox() {
+            const status = document.getElementById('nip17InboxStatus');
+            const list = document.getElementById('nip17InboxList');
+
+            if (status) status.textContent = 'Loading encrypted inbox…';
+            if (list) list.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/messages/nip17/inbox/envelopes?limit=20&include_envelope=1', {
+                    credentials: 'same-origin',
+                    headers: {'Accept': 'application/json'},
+                });
+                const payload = await response.json();
+
+                if (!response.ok) {
+                    if (status) status.textContent = [
+                        'Inbox load failed.',
+                        JSON.stringify(payload, null, 2),
+                    ].join('\n');
+                    return false;
+                }
+
+                renderNip17InboxItems(payload);
+            } catch (e) {
+                if (status) status.textContent = 'Inbox load failed: ' + (e.message || String(e));
+            }
+
+            return false;
+        }
+
+        async function decryptNip17InboxEnvelope(index) {
+            const item = window.HODLXXI_NIP17_INBOX_ITEMS[index];
+            const output = document.getElementById(`nip17InboxPlaintext_${index}`);
+
+            if (!output) return false;
+
+            try {
+                if (!item || !item.envelope) throw new Error('envelope_not_loaded');
+                if (!window.nostr || !window.nostr.nip44 || typeof window.nostr.nip44.decrypt !== 'function') {
+                    throw new Error('nip44_decrypt_required');
+                }
+
+                const envelope = item.envelope;
+                const senderPubkey = nip17EnvelopeSenderPubkey(item);
+
+                if (!senderPubkey || !/^[0-9a-f]{64}$/.test(senderPubkey)) {
+                    throw new Error('sender_pubkey_required');
+                }
+
+                if (!envelope.content) {
+                    throw new Error('envelope_content_required');
+                }
+
+                const plaintext = await window.nostr.nip44.decrypt(senderPubkey, envelope.content);
+
+                output.textContent = [
+                    'DECRYPTED LOCALLY:',
+                    '',
+                    plaintext,
+                    '',
+                    'Safety:',
+                    JSON.stringify({
+                        plaintext_fetched_from_server: false,
+                        plaintext_sent_to_server: false,
+                        server_decrypts: false,
+                        key_custody: false,
+                    }, null, 2),
+                ].join('\n');
+            } catch (e) {
+                output.textContent = [
+                    'DECRYPT FAILED.',
+                    '',
+                    String(e && e.message ? e.message : e),
+                    '',
+                    'No plaintext fallback is allowed.',
+                ].join('\n');
+            }
+
+            return false;
         }
 
         async function renderNip17NoSendStatus() {
