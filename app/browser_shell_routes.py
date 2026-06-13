@@ -1493,11 +1493,12 @@ window.handlePubKeyClick = function(pubKey) {
                 headers: {'Accept': 'application/json'},
             });
             const payload = await response.json();
+            const nip17 = payload && typeof payload.nip17 === 'object' ? payload.nip17 : payload;
             return {
                 ok: response.ok,
-                enabled: !!payload.enabled,
-                intake_enabled: !!payload.intake_enabled,
-                relay_publishing: !!payload.relay_publishing,
+                enabled: !!nip17.enabled,
+                intake_enabled: !!nip17.intake_enabled,
+                relay_publishing: !!nip17.relay_publishing,
                 raw: payload,
             };
         }
