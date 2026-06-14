@@ -10,7 +10,7 @@ from pathlib import Path
 def test_nip17_compose_capability_panel_is_rendered():
     text = Path("app/browser_routes.py").read_text(encoding="utf-8")
 
-    assert "Compose sealed message" in text
+    assert "Signer diagnostics" in text
     assert 'id="nip17SignerStatus"' in text
     assert 'id="nip17SignerPubkey"' in text
     assert 'id="nip17RecipientInput"' in text
