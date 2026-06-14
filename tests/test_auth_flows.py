@@ -291,30 +291,32 @@ class TestAccessControl:
     """Test access level assignment and enforcement."""
 
     def test_special_user_gets_full_access(self, client, mock_rpc):
-        """Test that special users receive full access."""
+        """Special users receive full access only when balance ratio qualifies."""
         special_pubkey = "02" + "b" * 64
         test_challenge = generate_challenge()
 
         mock_rpc.verifymessage.return_value = True
 
         with patch.dict("os.environ", {"SPECIAL_USERS": special_pubkey}):
-            with client.session_transaction() as sess:
-                sess["challenge"] = test_challenge
-                sess["challenge_timestamp"] = time.time()
+            with patch("app.app.get_save_and_check_balances_for_pubkey", return_value=(1, 1)):
+                with client.session_transaction() as sess:
+                    sess["challenge"] = test_challenge
+                    sess["challenge_timestamp"] = time.time()
 
-            response = client.post(
-                "/verify_signature",
-                json={
-                    "signature": "sig",
-                    "challenge": test_challenge,
-                    # No pubkey - should try special users
-                },
-            )
+                response = client.post(
+                    "/verify_signature",
+                    json={
+                        "signature": "sig",
+                        "challenge": test_challenge,
+                        # No pubkey - should try special users
+                    },
+                )
 
-            assert response.status_code == 200
-            data = json.loads(response.data)
-            assert data["verified"] is True
-            assert data["access_level"] == "full"
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["verified"] is True
+        assert data["access_level"] == "full"
+        assert data["pubkey"] == special_pubkey
 
 
 class TestRateLimiting:
