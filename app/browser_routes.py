@@ -2639,67 +2639,83 @@ def register_browser_routes(
           </div>
         </header>
 
-        <section id="hybridMessagingStatus" class="panel hybrid-messaging-status" aria-label="Hybrid messaging status">
+        <section id="hybridMessagingStatus" class="panel hybrid-messaging-status" aria-label="Hybrid Messaging advanced status">
           <div class="panel-header">
-            <div class="panel-title">Hybrid Messaging</div>
-            <div class="panel-badge">Private messages · site-local encrypted</div>
+            <div class="panel-title">Global Chat</div>
+            <div class="panel-badge">chat-first · live room</div>
           </div>
           <div class="panel-body">
-            <div class="hybrid-messaging-grid">
-              <div class="hybrid-messaging-card">
-                <h3>Live chat / calls</h3>
-                <p><code>Socket.IO</code> realtime channel remains active.</p>
-                <p>Messages are ephemeral and self-erase after 45 seconds by default.</p>
-                <p>Voice/video signaling stays on the existing <code>rtc:*</code> path.</p>
-              </div>
-              <div class="hybrid-messaging-card">
-                <h3>Encrypted inbox</h3>
-                <p><code>Private encrypted messages</code> are available in the Messages panel.</p>
-                <p>Stored envelopes: <code id="nip17InboxCount">checking...</code></p>
-                <p>Receiver key supported: <code id="nip17ReceiverSupported">checking...</code></p>
-                <p class="small" id="nip17InboxSummary">Encrypted inbox metadata is read-only here. Use Messages to send and decrypt locally.</p>
-                <div class="nip17-inbox-list" id="nip17InboxRows" aria-live="polite"></div>
-                <p>Server plaintext storage: <code>false</code>.</p>
-                <p>Server key custody: <code>false</code>.</p>
-              </div>
-              <div class="hybrid-messaging-card" id="nip17ComposeCard">
-                <h3>Compose sealed message</h3>
-                <p>Nostr signer: <code id="nip17SignerStatus">checking...</code></p>
-                <p>Signer pubkey: <code id="nip17SignerPubkey">not requested</code></p>
-                <p>signEvent: <code id="nip17SignEventSupport">checking...</code></p>
-                <p>NIP-44: <code id="nip17Nip44Support">checking...</code></p>
-                <p>NIP-04 fallback: <code id="nip17Nip04Support">checking...</code></p>
-                <p>NIP-59 bundle: <code id="nip59BundleStatus">checking...</code></p>
-                <p>NIP-59 send: <code id="nip59SendStatus">disabled</code></p>
-                <p>NIP-59 POST: <code id="nip59PostStatus">disabled</code></p>
-                <p>NIP-59 relay: <code id="nip59RelayStatus">disabled</code></p>
-                <p>NIP-59 crypto ready: <code id="nip59CryptoReady">false</code></p>
-                <p>NIP-59 can finalize gift-wrap: <code id="nip59CanFinalizeGiftWrap">false</code></p>
-                <p>NIP-59 can post envelope: <code id="nip59CanPostEnvelope">false</code></p>
-                <p>Preflight ready: <code id="nip17PreflightReady">false</code></p>
-                <p>Recipient valid: <code id="nip17RecipientValid">false</code></p>
-                <p>Message present: <code id="nip17MessagePresent">false</code></p>
-                <p>Local build ready: <code id="nip17LocalBuildReady">false</code></p>
-                <div class="nip17-compose-field">
-                  <label for="nip17RecipientInput">Recipient x-only pubkey</label>
-                  <input id="nip17RecipientInput" class="nip17-compose-input" type="text" autocomplete="off" placeholder="64-hex recipient pubkey" disabled />
-                </div>
-                <div class="nip17-compose-field">
-                  <label for="nip17MessageInput">Message</label>
-                  <textarea id="nip17MessageInput" class="nip17-compose-textarea" rows="3" placeholder="Use Messages for private encrypted messages" disabled></textarea>
-                </div>
-                <div class="nip17-compose-actions">
-                  <button id="nip17CheckSignerBtn" class="nip17-compose-btn" type="button">Check signer</button>
-                  <button id="nip17BuildLocalBtn" class="nip17-compose-btn" type="button" disabled>Build local envelope</button>
-                  <button id="nip17SendPlaceholderBtn" class="nip17-compose-btn" type="button" disabled>Open Messages</button>
-                </div>
-                <p class="small" id="nip17ComposeSummary">No plaintext is sent to the server. Private encrypted send/decrypt now lives in Messages. Relay publication remains disabled.</p>
-                <p class="small"><a href="/home#messages">Open Private Messages</a></p>
-              </div>
+            <div class="hybrid-messaging-card">
+              <h3>Private messages</h3>
+              <p>No plaintext is sent to the server. Private encrypted send/decrypt now lives in Messages. Relay publication remains disabled.</p>
+              <p class="small">
+                <a href="/home#messages">Open Private Messages</a>
+              </p>
             </div>
-            <div class="hybrid-messaging-note">
-              Current mode is hybrid: fast live chat stays ephemeral; encrypted persistent inbox will be added separately after client-side encryption and inbox UX are ready.
-            </div>
+
+            <details class="hybrid-messaging-card" style="margin-top:0.75rem;">
+              <summary style="cursor:pointer;color:var(--muted);font-family:var(--mono);font-size:0.78rem;">
+                Advanced messaging diagnostics
+              </summary>
+
+              <div class="hybrid-messaging-grid" style="margin-top:0.75rem;">
+                <div class="hybrid-messaging-card">
+                  <h3>Live chat / calls</h3>
+                  <p><code>Socket.IO</code> realtime channel remains active.</p>
+                  <p>Messages are ephemeral and self-erase after 45 seconds by default.</p>
+                  <p>Voice/video signaling stays on the existing <code>rtc:*</code> path.</p>
+                </div>
+
+                <div class="hybrid-messaging-card">
+                  <h3>Encrypted inbox</h3>
+                  <p><code>Private encrypted messages</code> are available in the Messages panel.</p>
+                  <p>Stored envelopes: <code id="nip17InboxCount">checking...</code></p>
+                  <p>Receiver key supported: <code id="nip17ReceiverSupported">checking...</code></p>
+                  <p class="small" id="nip17InboxSummary">Encrypted inbox metadata is read-only here. Use Messages to send and decrypt locally.</p>
+                  <div class="nip17-inbox-list" id="nip17InboxRows" aria-live="polite"></div>
+                  <p>Server plaintext storage: <code>false</code>.</p>
+                  <p>Server key custody: <code>false</code>.</p>
+                </div>
+
+                <div class="hybrid-messaging-card" id="nip17ComposeCard">
+                  <h3>Signer diagnostics</h3>
+                  <p>Nostr signer: <code id="nip17SignerStatus">checking...</code></p>
+                  <p>Signer pubkey: <code id="nip17SignerPubkey">not requested</code></p>
+                  <p>signEvent: <code id="nip17SignEventSupport">checking...</code></p>
+                  <p>NIP-44: <code id="nip17Nip44Support">checking...</code></p>
+                  <p>NIP-04 fallback: <code id="nip17Nip04Support">checking...</code></p>
+                  <p>NIP-59 bundle: <code id="nip59BundleStatus">checking...</code></p>
+                  <p>NIP-59 send: <code id="nip59SendStatus">disabled</code></p>
+                  <p>NIP-59 POST: <code id="nip59PostStatus">disabled</code></p>
+                  <p>NIP-59 relay: <code id="nip59RelayStatus">disabled</code></p>
+                  <p>NIP-59 crypto ready: <code id="nip59CryptoReady">false</code></p>
+                  <p>NIP-59 can finalize gift-wrap: <code id="nip59CanFinalizeGiftWrap">false</code></p>
+                  <p>NIP-59 can post envelope: <code id="nip59CanPostEnvelope">false</code></p>
+                  <p>Preflight ready: <code id="nip17PreflightReady">false</code></p>
+                  <p>Recipient valid: <code id="nip17RecipientValid">false</code></p>
+                  <p>Message present: <code id="nip17MessagePresent">false</code></p>
+                  <p>Local build ready: <code id="nip17LocalBuildReady">false</code></p>
+
+                  <div class="nip17-compose-field">
+                    <label for="nip17RecipientInput">Recipient x-only pubkey</label>
+                    <input id="nip17RecipientInput" class="nip17-compose-input" type="text" autocomplete="off" placeholder="64-hex recipient pubkey" disabled />
+                  </div>
+
+                  <div class="nip17-compose-field">
+                    <label for="nip17MessageInput">Message</label>
+                    <textarea id="nip17MessageInput" class="nip17-compose-textarea" rows="3" placeholder="Use Messages for private encrypted messages" disabled></textarea>
+                  </div>
+
+                  <div class="nip17-compose-actions">
+                    <button id="nip17CheckSignerBtn" class="nip17-compose-btn" type="button">Check signer</button>
+                    <button id="nip17BuildLocalBtn" class="nip17-compose-btn" type="button" disabled>Build local envelope</button>
+                    <button id="nip17SendPlaceholderBtn" class="nip17-compose-btn" type="button" disabled>Open Messages</button>
+                  </div>
+
+                  <p class="small" id="nip17ComposeSummary">No plaintext is sent to the server. Private encrypted send/decrypt now lives in Messages. Relay publication remains disabled.</p>
+                </div>
+              </div>
+            </details>
           </div>
         </section>
 
