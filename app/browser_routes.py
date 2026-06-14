@@ -2646,7 +2646,7 @@ def register_browser_routes(
           </div>
           <div class="panel-body">
             <div class="hybrid-messaging-card">
-              <h3>Private messages</h3>
+              <h3>Private messages · site-local encrypted</h3>
               <p>No plaintext is sent to the server. Private encrypted send/decrypt now lives in Messages. Relay publication remains disabled.</p>
               <p class="small">
                 <a href="/home#messages">Open Private Messages</a>
