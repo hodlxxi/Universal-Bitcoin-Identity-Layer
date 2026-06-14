@@ -16,8 +16,10 @@ def test_legacy_verify_signature_clears_guest_label():
 def test_nostr_verify_clears_guest_label():
     text = Path("app/blueprints/api_auth.py").read_text(encoding="utf-8")
 
+    assert 'get_save_and_check_balances_for_pubkey(rec["pubkey"])' in text
+    assert 'access = "full" if ratio >= 1 else "limited"' in text
     assert 'session["logged_in_pubkey"] = rec["pubkey"]' in text
-    assert 'session["access_level"] = "full"' in text
+    assert 'session["access_level"] = access' in text
     assert 'session["login_method"] = "nostr"' in text
     assert 'session.pop("guest_label", None)' in text
     assert 'session.pop("guestLabel", None)' in text

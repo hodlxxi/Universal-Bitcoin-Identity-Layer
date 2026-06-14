@@ -139,9 +139,17 @@ def api_verify():
         if not ok:
             return jsonify(error=error or "Nostr verification failed"), 403
 
-        logger.warning("NOSTR_STEP=before_session_set cid=%r", cid)
+        try:
+            in_total, out_total = get_save_and_check_balances_for_pubkey(rec["pubkey"])
+            ratio = (out_total / in_total) if in_total > 0 else 0
+            access = "full" if ratio >= 1 else "limited"
+        except Exception:
+            logger.exception("Nostr balance-based access check failed; defaulting to limited")
+            access = "limited"
+
+        logger.warning("NOSTR_STEP=before_session_set cid=%r access=%r", cid, access)
         session["logged_in_pubkey"] = rec["pubkey"]
-        session["access_level"] = "full"
+        session["access_level"] = access
         session["login_method"] = "nostr"
         session.pop("guest_label", None)
         session.pop("guestLabel", None)
@@ -150,7 +158,7 @@ def api_verify():
         ACTIVE_CHALLENGES.pop(cid, None)
 
         logger.warning("NOSTR_STEP=before_success_return cid=%r", cid)
-        return jsonify(ok=True, verified=True, method="nostr", pubkey=rec["pubkey"], access_level="full")
+        return jsonify(ok=True, verified=True, method="nostr", pubkey=rec["pubkey"], access_level=access)
 
     elif method == "lightning":
         return jsonify(error=f"Verification method '{method}' not yet supported"), 501

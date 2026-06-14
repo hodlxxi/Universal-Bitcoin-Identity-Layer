@@ -123,12 +123,18 @@ def verify_signature():
             audit_logger.log_event("auth.verify_failed", reason="no_matching_special_user", ip=request.remote_addr)
             return jsonify({"verified": False, "error": "Invalid signature"}), 403
 
-    # Determine access level
-    if not pubkey_hex:  # Matched a special user
-        access_level = "full"
-    else:
-        # TEMP: keep login fast; do not block on heavy ratio/RPC work here
-        access_level = "full"
+    # Determine access level from covenant/balance state.
+    # A valid signature proves key control only. RPC/descriptors require
+    # the existing covenant balance relation.
+    try:
+        import app.app as legacy_runtime
+
+        in_total, out_total = legacy_runtime.get_save_and_check_balances_for_pubkey(matched_pubkey)
+        ratio = (out_total / in_total) if in_total > 0 else 0
+        access_level = "full" if ratio >= 1 else "limited"
+    except Exception:
+        logger.exception("Balance-based access check failed; defaulting to limited")
+        access_level = "limited"
 
     # Set session
     session["logged_in_pubkey"] = matched_pubkey
