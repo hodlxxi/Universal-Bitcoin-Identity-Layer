@@ -9,6 +9,7 @@ This blueprint is intentionally conservative:
 
 from __future__ import annotations
 
+import json
 import os
 
 from flask import Blueprint, current_app, jsonify, request, session
@@ -23,6 +24,21 @@ def _nip17_messages_enabled() -> bool:
     if configured is not None:
         return bool(configured)
     return (os.getenv("NIP17_MESSAGES_ENABLED") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _nip17_max_envelope_bytes() -> int:
+    raw = current_app.config.get("NIP17_MAX_ENVELOPE_BYTES")
+    if raw is None:
+        raw = os.getenv("NIP17_MAX_ENVELOPE_BYTES", "65536")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        value = 65536
+    return max(1024, min(value, 1024 * 1024))
+
+
+def _json_size_bytes(value: object) -> int:
+    return len(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
 
 
 def get_nip17_metadata() -> dict:
@@ -45,6 +61,8 @@ def get_nip17_metadata() -> dict:
         "supported_kinds": [14, 15],
         "accepted_transport_kind": 1059,
         "relay_publishing": False,
+        "auth_required": True,
+        "max_envelope_bytes": _nip17_max_envelope_bytes(),
     }
 
 
@@ -112,6 +130,10 @@ def post_nip17_envelope():
     if not _nip17_messages_enabled():
         return jsonify({"error": "not_found", "message": "NIP-17 message intake disabled"}), 404
 
+    logged_in_pubkey = str(session.get("logged_in_pubkey") or "").strip()
+    if not logged_in_pubkey:
+        return jsonify({"error": "unauthorized", "message": "login required"}), 401
+
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({"error": "invalid_json", "message": "JSON object required"}), 400
@@ -120,10 +142,29 @@ def post_nip17_envelope():
     if not isinstance(envelope, dict):
         return jsonify({"error": "invalid_envelope", "message": "envelope object required"}), 400
 
+    envelope_size = _json_size_bytes(envelope)
+    max_envelope_bytes = _nip17_max_envelope_bytes()
+    if envelope_size > max_envelope_bytes:
+        return (
+            jsonify(
+                {
+                    "error": "envelope_too_large",
+                    "message": "encrypted envelope exceeds configured size limit",
+                    "max_envelope_bytes": max_envelope_bytes,
+                }
+            ),
+            413,
+        )
+
     stored = store_opaque_nip17_envelope(
         envelope,
         source="api",
-        metadata={"route": "/api/messages/nip17/envelopes"},
+        metadata={
+            "route": "/api/messages/nip17/envelopes",
+            "authenticated": True,
+            "sender_session_pubkey_tail": logged_in_pubkey[-8:],
+            "envelope_size_bytes": envelope_size,
+        },
     )
     if not stored["ok"]:
         return (
