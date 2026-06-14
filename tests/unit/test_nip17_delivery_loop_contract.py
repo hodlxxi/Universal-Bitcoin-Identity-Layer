@@ -59,6 +59,8 @@ def test_nip17_api_delivery_loop_receiver_sees_metadata_only(app, client):
         assert disabled.get_json()["error"] == "not_found"
 
         app.config["NIP17_MESSAGES_ENABLED"] = True
+        with client.session_transaction() as sess:
+            sess["logged_in_pubkey"] = _hex64()
 
         posted = client.post("/api/messages/nip17/envelopes", json={"envelope": envelope})
         assert posted.status_code == 202

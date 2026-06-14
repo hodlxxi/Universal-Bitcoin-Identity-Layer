@@ -44,6 +44,8 @@ def test_nip17_envelope_route_is_disabled_by_default(client):
 
 def test_nip17_envelope_route_stores_gift_wrap_when_enabled(app, client):
     app.config["NIP17_MESSAGES_ENABLED"] = True
+    with client.session_transaction() as sess:
+        sess["logged_in_pubkey"] = HEX32_A
     event_id = _event_id("stores-gift-wrap-enabled")
 
     response = client.post("/api/messages/nip17/envelopes", json={"envelope": _gift_wrap_event(event_id)})
@@ -70,6 +72,8 @@ def test_nip17_envelope_route_stores_gift_wrap_when_enabled(app, client):
 
 def test_nip17_envelope_route_is_idempotent_by_event_id(app, client):
     app.config["NIP17_MESSAGES_ENABLED"] = True
+    with client.session_transaction() as sess:
+        sess["logged_in_pubkey"] = HEX32_A
     event_id = _event_id("rejects-invalid-envelope")
     envelope = _gift_wrap_event(event_id)
 
@@ -86,6 +90,8 @@ def test_nip17_envelope_route_is_idempotent_by_event_id(app, client):
 
 def test_nip17_envelope_route_rejects_plaintext_kind14_transport(app, client):
     app.config["NIP17_MESSAGES_ENABLED"] = True
+    with client.session_transaction() as sess:
+        sess["logged_in_pubkey"] = HEX32_A
     event_id = _event_id("rejects-plaintext-kind14")
     plaintext_event = {
         "id": event_id,
@@ -110,6 +116,8 @@ def test_nip17_envelope_route_rejects_plaintext_kind14_transport(app, client):
 
 def test_nip17_envelope_route_rejects_missing_envelope_object(app, client):
     app.config["NIP17_MESSAGES_ENABLED"] = True
+    with client.session_transaction() as sess:
+        sess["logged_in_pubkey"] = HEX32_A
 
     response = client.post("/api/messages/nip17/envelopes", json={"kind": 1059})
 

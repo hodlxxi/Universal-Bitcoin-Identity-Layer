@@ -10,7 +10,7 @@ def test_app_chat_surface_documents_hybrid_messaging_status():
         "Hybrid Messaging",
         "Live chat / calls",
         "Encrypted inbox",
-        "NIP-17 / NIP-59",
+        "Private encrypted messages",
         "Socket.IO",
         "self-erase after 45 seconds",
         "Server plaintext storage: <code>false</code>",
@@ -19,7 +19,7 @@ def test_app_chat_surface_documents_hybrid_messaging_status():
         'Receiver key supported: <code id="nip17ReceiverSupported">checking...</code>',
         "function refreshNip17InboxStatus",
         "/api/messages/nip17/inbox/status",
-        "intake disabled",
+        "site-local encrypted",
     ]
 
     for needle in required:

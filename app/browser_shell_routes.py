@@ -532,11 +532,11 @@ textarea{
             <div id="contracts-container" class="contracts-container"></div>
         </div>
 
-        <!-- NIP-17 Messages Panel: UI-only / no-send skeleton -->
+        <!-- NIP-17 Messages Panel: site-local encrypted private messages -->
         <div class="panel hidden" id="messagesPanel" data-nip17-send-enabled="false">
             <h2>✉️ NIP-17 Messages</h2>
             <p style="font-size:0.9rem;color:var(--muted);margin-top:0.2rem;text-align:center;">
-                Browser-side encrypted messaging UI skeleton. Sending is intentionally disabled in this release.
+                Browser-side encrypted private messages. Sending is policy-gated; plaintext never leaves this browser.
             </p>
 
             <div class="form-group">
@@ -556,7 +556,7 @@ textarea{
                 <label for="nip17Message">Message</label>
                 <textarea
                     id="nip17Message"
-                    placeholder="Write a message. It will not be sent in this release."
+                    placeholder="Write a private message. It is encrypted locally before upload."
                     autocomplete="off"
                     autocorrect="off"
                     autocapitalize="off"

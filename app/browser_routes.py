@@ -2642,7 +2642,7 @@ def register_browser_routes(
         <section id="hybridMessagingStatus" class="panel hybrid-messaging-status" aria-label="Hybrid messaging status">
           <div class="panel-header">
             <div class="panel-title">Hybrid Messaging</div>
-            <div class="panel-badge">NIP-17 planned · intake disabled</div>
+            <div class="panel-badge">Private messages · site-local encrypted</div>
           </div>
           <div class="panel-body">
             <div class="hybrid-messaging-grid">
@@ -2654,10 +2654,10 @@ def register_browser_routes(
               </div>
               <div class="hybrid-messaging-card">
                 <h3>Encrypted inbox</h3>
-                <p><code>NIP-17 / NIP-59</code> support is staged but disabled.</p>
+                <p><code>Private encrypted messages</code> are available in the Messages panel.</p>
                 <p>Stored envelopes: <code id="nip17InboxCount">checking...</code></p>
                 <p>Receiver key supported: <code id="nip17ReceiverSupported">checking...</code></p>
-                <p class="small" id="nip17InboxSummary">Encrypted inbox metadata is read-only.</p>
+                <p class="small" id="nip17InboxSummary">Encrypted inbox metadata is read-only here. Use Messages to send and decrypt locally.</p>
                 <div class="nip17-inbox-list" id="nip17InboxRows" aria-live="polite"></div>
                 <p>Server plaintext storage: <code>false</code>.</p>
                 <p>Server key custody: <code>false</code>.</p>
@@ -2686,14 +2686,15 @@ def register_browser_routes(
                 </div>
                 <div class="nip17-compose-field">
                   <label for="nip17MessageInput">Message</label>
-                  <textarea id="nip17MessageInput" class="nip17-compose-textarea" rows="3" placeholder="Client-side encryption required before sending" disabled></textarea>
+                  <textarea id="nip17MessageInput" class="nip17-compose-textarea" rows="3" placeholder="Use Messages for private encrypted messages" disabled></textarea>
                 </div>
                 <div class="nip17-compose-actions">
                   <button id="nip17CheckSignerBtn" class="nip17-compose-btn" type="button">Check signer</button>
                   <button id="nip17BuildLocalBtn" class="nip17-compose-btn" type="button" disabled>Build local envelope</button>
-                  <button id="nip17SendPlaceholderBtn" class="nip17-compose-btn" type="button" disabled>Send sealed envelope</button>
+                  <button id="nip17SendPlaceholderBtn" class="nip17-compose-btn" type="button" disabled>Open Messages</button>
                 </div>
-                <p class="small" id="nip17ComposeSummary">No plaintext is sent to the server. Real sending waits for client-side NIP-17/NIP-59 envelope generation.</p>
+                <p class="small" id="nip17ComposeSummary">No plaintext is sent to the server. Private encrypted send/decrypt now lives in Messages. Relay publication remains disabled.</p>
+                <p class="small"><a href="/home#messages">Open Private Messages</a></p>
               </div>
             </div>
             <div class="hybrid-messaging-note">
@@ -3737,8 +3738,8 @@ def register_browser_routes(
 
           if (summaryEl) {
             summaryEl.textContent = effectiveCaps.ready
-              ? 'Signer preflight is ready. Recipient/message can be checked locally. Send remains disabled until real NIP-17/NIP-59 envelope generation is implemented.'
-              : 'No plaintext is sent to the server. Real sending waits for client-side NIP-17/NIP-59 envelope generation.';
+              ? 'Signer preflight is ready. Use Messages for site-local encrypted send/decrypt.'
+              : 'Private encrypted send/decrypt now lives in Messages. Relay publication remains disabled.';
           }
         }
 
