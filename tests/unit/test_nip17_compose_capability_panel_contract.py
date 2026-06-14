@@ -25,7 +25,7 @@ def test_nip17_compose_capability_panel_is_safe_by_default():
     assert "No plaintext is sent to the server" in text
     assert 'id="nip17SendPlaceholderBtn" class="nip17-compose-btn" type="button" disabled' in text
     assert (
-        'class="nip17-compose-textarea" rows="3" placeholder="Client-side encryption required before sending" disabled'
+        'class="nip17-compose-textarea" rows="3" placeholder="Use Messages for private encrypted messages" disabled'
         in text
     )
     assert (

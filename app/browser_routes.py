@@ -2693,7 +2693,7 @@ def register_browser_routes(
                   <button id="nip17BuildLocalBtn" class="nip17-compose-btn" type="button" disabled>Build local envelope</button>
                   <button id="nip17SendPlaceholderBtn" class="nip17-compose-btn" type="button" disabled>Open Messages</button>
                 </div>
-                <p class="small" id="nip17ComposeSummary">Private encrypted send/decrypt now lives in Messages. Relay publication remains disabled.</p>
+                <p class="small" id="nip17ComposeSummary">No plaintext is sent to the server. Private encrypted send/decrypt now lives in Messages. Relay publication remains disabled.</p>
                 <p class="small"><a href="/home#messages">Open Private Messages</a></p>
               </div>
             </div>
