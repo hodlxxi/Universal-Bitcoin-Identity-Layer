@@ -109,6 +109,10 @@ Unit tests cover configuration parsing/validation along with storage adapters. I
 
 ---
 
+## Developer Quickstarts
+
+- [Agent Receipt Quickstart](docs/AGENT_RECEIPT_QUICKSTART.md) — external developer flow: discovery, paid job request, polling, receipt verification, attestations, and reputation.
+
 ## 🤖 Agent, Skills, and Marketplace Discovery
 
 The repository now exposes a coherent machine-readable agent surface:
