@@ -11,7 +11,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, current_app, jsonify, render_template, request
 
 from app.audit_logger import get_audit_logger
 
@@ -21,6 +21,7 @@ from app.models import AgentEvent, AgentJob
 from app.payments.ln import check_invoice_paid, create_invoice
 from app.structured_logging import log_event
 from app.services.covenant_visualizer import CovenantInputError, visualize_covenant
+from app.services.agent_readiness_report import build_self_readiness_report
 from app.services.nostr_reports import configured_relays_from_env
 from app.services.trust_surface import (
     DEFAULT_AGENT_ID,
@@ -118,6 +119,7 @@ def _agent_endpoints() -> dict:
         "well_known": "/.well-known/agent.json",
         "capabilities": "/agent/capabilities",
         "capabilities_schema": "/agent/capabilities/schema",
+        "readiness_self_scan": "/agent/readiness/self-scan",
         "request": "/agent/request",
         "message": "/agent/message",
         "nostr_dm_policy": "/.well-known/nostr-dm-policy.json",
@@ -922,6 +924,13 @@ def capabilities():
 @agent_bp.get("/agent/capabilities/schema")
 def capabilities_schema():
     return jsonify(_capabilities_schema_document())
+
+
+@agent_bp.get("/agent/readiness/self-scan")
+def readiness_self_scan():
+    base_url = (request.url_root or "https://hodlxxi.com").rstrip("/")
+    app = current_app._get_current_object()
+    return jsonify(build_self_readiness_report(app, base_url=base_url))
 
 
 @agent_bp.get("/agent/skills")
