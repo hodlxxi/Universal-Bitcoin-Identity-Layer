@@ -21,6 +21,10 @@ Canonical protocol and trust details remain in:
 
 - [Runtime Product Positioning](RUNTIME_PRODUCT_POSITIONING.md) - current product framing and near-term product boundaries.
 
+## Agent Readiness
+
+- [Agent Readiness Report v1](AGENT_READINESS_REPORT_V1.md) - report contract for scanning public agent surfaces and linking results to receipts.
+
 ## Developer Quickstarts
 
 - [Agent Receipt Quickstart](AGENT_RECEIPT_QUICKSTART.md) — external developer flow from discovery to paid job to signed receipt verification.
