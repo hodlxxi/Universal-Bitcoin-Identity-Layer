@@ -113,6 +113,10 @@ Unit tests cover configuration parsing/validation along with storage adapters. I
 
 - [Runtime Product Positioning](docs/RUNTIME_PRODUCT_POSITIONING.md) - current product framing: HODLXXI as a Bitcoin-native trust runtime for public-key agents and services.
 
+## Agent Readiness
+
+- [Agent Readiness Report v1](docs/AGENT_READINESS_REPORT_V1.md) - contract for public agent/service readiness reports backed by receipts and attestations.
+
 ## Developer Quickstarts
 
 - [Agent Receipt Quickstart](docs/AGENT_RECEIPT_QUICKSTART.md) — external developer flow: discovery, paid job request, polling, receipt verification, attestations, and reputation.
