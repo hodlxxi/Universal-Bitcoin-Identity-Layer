@@ -4,7 +4,6 @@ from pathlib import Path
 
 from app.factory import create_app
 
-
 ROOT = Path(__file__).resolve().parents[2]
 DOC = ROOT / "docs" / "AGENT_READINESS_REPORT_V1.md"
 
@@ -15,7 +14,9 @@ def test_agent_readiness_report_v1_doc_exists_and_has_markers():
     assert "<!-- HODLXXI_AGENT_READINESS_REPORT_V1 -->" in text
     assert "<!-- END_HODLXXI_AGENT_READINESS_REPORT_V1 -->" in text
     assert "hodlxxi.agent_readiness_report.v1" in text
-    assert "scan target -> evaluate public agent surfaces -> produce report -> issue receipt -> expose attestation" in text
+    assert (
+        "scan target -> evaluate public agent surfaces -> produce report -> issue receipt -> expose attestation" in text
+    )
 
 
 def test_agent_readiness_report_v1_reuses_existing_runtime_surfaces():
