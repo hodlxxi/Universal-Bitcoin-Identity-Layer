@@ -17,6 +17,10 @@ Canonical protocol and trust details remain in:
 - `/agent/marketplace/listing`
 - `/agent/nostr/announcement`
 
+## Developer Quickstarts
+
+- [Agent Receipt Quickstart](AGENT_RECEIPT_QUICKSTART.md) — external developer flow from discovery to paid job to signed receipt verification.
+
 ## Paid Work
 
 - `POST /agent/request`
