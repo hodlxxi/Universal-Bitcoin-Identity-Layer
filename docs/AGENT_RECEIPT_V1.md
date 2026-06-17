@@ -81,7 +81,7 @@ An unpaid job may exist while no receipt exists yet:
 - `/agent/jobs/<job_id>` remains the lifecycle/status endpoint.
 - The job can return `status=invoice_pending`, `result=null`, and `receipt=null`.
 - `/agent/verify/<job_id>` verifies receipts only after issuance.
-- Before receipt issuance, `/agent/verify/<job_id>` may return `404` with `verification=unavailable`, even when the job exists and is `invoice_pending`.
+- Before receipt issuance for an existing job, `/agent/verify/<job_id>` returns `409 Conflict` with `status=no_receipt`, `valid=false`, `verification=unavailable`, the current `job_status`, `receipt=null`, and `reason=receipt_not_issued`. A job id that does not exist still returns `404 not_found`.
 - `/agent/attestations` should not contain a `job_receipt` event for an unpaid job.
 
 ## Attestation chain behavior

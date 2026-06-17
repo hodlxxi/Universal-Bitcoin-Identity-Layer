@@ -1518,9 +1518,25 @@ def attestations():
 def verify_job_receipt(job_id: str):
     with session_scope() as session:
         job = session.query(AgentJob).filter_by(id=job_id).first()
+        if not job:
+            return jsonify({"error": "not_found", "job_id": job_id, "verification": "unavailable"}), 404
+
         event = session.query(AgentEvent).filter_by(job_id=job_id).order_by(AgentEvent.created_at.desc()).first()
         if not event:
-            return jsonify({"error": "not_found", "job_id": job_id, "verification": "unavailable"}), 404
+            return (
+                jsonify(
+                    {
+                        "job_id": job_id,
+                        "status": "no_receipt",
+                        "valid": False,
+                        "verification": "unavailable",
+                        "job_status": job.status,
+                        "receipt": None,
+                        "reason": "receipt_not_issued",
+                    }
+                ),
+                409,
+            )
 
         receipt = event.event_json
         payload = dict(receipt)
