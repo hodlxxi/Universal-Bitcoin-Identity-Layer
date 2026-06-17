@@ -134,6 +134,7 @@ The repository now exposes a coherent machine-readable agent surface:
 
 For the protocol and trust model, see:
 
+- [`docs/DOCUMENTATION_MAP.md`](docs/DOCUMENTATION_MAP.md) explains which docs are current, historical, experimental, or archive candidates.
 - [`AGENT_PROTOCOL.md`](AGENT_PROTOCOL.md) for the signed discovery and job protocol
 - [`TRUST_MODEL.md`](TRUST_MODEL.md) for the normative trust language and verification boundaries
 - [`docs/AGENT_SURFACES.md`](docs/AGENT_SURFACES.md) for how the runtime discovery endpoints expose those claims

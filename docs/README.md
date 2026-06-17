@@ -1,11 +1,13 @@
 # HODLXXI Documentation
 
-**Last Updated:** December 12, 2025  
+**Last Updated:** June 17, 2026  
 **Status:** Production-ready, documented, stabilized
 
 ---
 
 ## 📚 Documentation Index
+
+0. **[DOCUMENTATION_MAP.md](DOCUMENTATION_MAP.md)** - Start here for the docs status map: current, historical, experimental, and archive-candidate documentation.
 
 ### Core Documentation
 1. **[SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md)** - Complete system overview
