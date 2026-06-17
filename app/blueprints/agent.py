@@ -64,6 +64,11 @@ AGENT_MAX_NESTED_DEPTH = 12
 _ip_requests = defaultdict(list)
 
 COVENANT_COUNTDOWN_SCHEMA = "hodlxxi.agent.covenant_countdown.v1"
+OPERATOR_CONTINUITY_ENDPOINT = "/.well-known/hodlxxi-operator.json"
+OPERATOR_CONTINUITY_SCHEMA = "hodlxxi.operator_continuity.v1"
+OPERATOR_ID = "E923"
+OPERATOR_PUBKEY = "023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923"
+PUBLIC_AGENT_PUBKEY = "02019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f92"
 
 
 def _check_ip_rate_limit() -> bool:
@@ -124,6 +129,7 @@ def _agent_endpoints() -> dict:
         "well_known": "/.well-known/agent.json",
         "capabilities": "/agent/capabilities",
         "capabilities_schema": "/agent/capabilities/schema",
+        "operator_continuity": OPERATOR_CONTINUITY_ENDPOINT,
         "readiness_self_scan": "/agent/readiness/self-scan",
         "request": "/agent/request",
         "message": "/agent/message",
@@ -603,6 +609,45 @@ def _capabilities_schema_document() -> dict:
     }
 
 
+def _operator_continuity_payload() -> dict:
+    return {
+        "schema": OPERATOR_CONTINUITY_SCHEMA,
+        "service": "HODLXXI",
+        "domain": "hodlxxi.com",
+        "operator_id": OPERATOR_ID,
+        "operator_pubkey": OPERATOR_PUBKEY,
+        "agent_pubkey": PUBLIC_AGENT_PUBKEY,
+        "repository": "https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer",
+        "runtime": "https://hodlxxi.com",
+        "continuity_statement": "https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/blob/main/docs/OPERATOR_CONTINUITY_E923.md",
+        "key_status": "active",
+        "covenant": {
+            "status": "declared_unfunded",
+            "verified_on_chain": False,
+            "time_locked_capital_proof_exposed": False,
+            "relationship": "operator-agent",
+            "funding_policy": "Do not treat this declaration as proof of locked capital. A small public covenant UTXO may be funded after external review confirms usefulness and safety.",
+        },
+        "rotation_policy": {
+            "status": "documented",
+            "summary": "Operator key rotation requires a public transition statement. Normal rotation should be signed by the previous key. Emergency rotation must be documented as compromised_or_lost_key recovery.",
+        },
+        "verification": {
+            "runtime_surfaces": [
+                "/.well-known/agent.json",
+                "/agent/capabilities",
+                "/agent/discovery",
+                "/agent/reputation",
+                "/agent/attestations",
+                "/agent/chain/health",
+                "/api/public/status",
+            ],
+            "verification_script": "scripts/verify_operator_continuity.sh",
+        },
+        "last_updated": "2026-06-17",
+    }
+
+
 def _capabilities_payload() -> dict:
     skills = _skills_catalog()
     endpoints = _agent_endpoints()
@@ -662,6 +707,7 @@ def _agent_identity_document() -> dict:
             "well_known_agent": endpoints["well_known"],
             "capabilities": endpoints["capabilities"],
             "capabilities_schema": endpoints["capabilities_schema"],
+            "operator_continuity": endpoints["operator_continuity"],
             "skills": endpoints["skills"],
             "marketplace_listing": endpoints["marketplace_listing"],
         },
@@ -803,6 +849,7 @@ def agent_discovery():
             "well_known_agent": endpoints["well_known"],
             "capabilities": endpoints["capabilities"],
             "capabilities_schema": endpoints["capabilities_schema"],
+            "operator_continuity": endpoints["operator_continuity"],
             "skills": endpoints["skills"],
             "marketplace_listing": endpoints["marketplace_listing"],
             "nostr_announcement": endpoints["nostr_announcement"],
@@ -949,6 +996,11 @@ def skills_listing():
             "items": items,
         }
     )
+
+
+@agent_bp.get(OPERATOR_CONTINUITY_ENDPOINT)
+def operator_continuity():
+    return jsonify(_operator_continuity_payload())
 
 
 @agent_bp.get("/.well-known/agent.json")
