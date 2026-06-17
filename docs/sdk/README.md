@@ -26,6 +26,28 @@ job = client.create_job("ping", {"hello": "world"})
 print(job)
 ```
 
+
+## Job verification
+
+Use `verify_job(job_id)` to read the normalized verifier result for a job:
+
+```python
+verification = client.verify_job(job["job_id"])
+
+if verification.get("status") == "no_receipt":
+    # The job exists, but the Lightning invoice has not been paid yet.
+    # The API returns HTTP 409 with reason=receipt_not_issued, and the SDK
+    # returns that JSON body instead of raising.
+    print("receipt unavailable until payment confirms")
+elif verification.get("status") == "verified":
+    print(verification["receipt"])
+```
+
+`verify_job()` returns the JSON body for HTTP 200 verified receipts and for the
+normalized HTTP 409 `status=no_receipt`, `reason=receipt_not_issued` state. It
+raises `HODLXXIHTTPError` for missing jobs such as HTTP 404 `error=not_found` and
+for other non-success responses.
+
 ## Auth challenge flow
 
 Default Bitcoin-message flow:

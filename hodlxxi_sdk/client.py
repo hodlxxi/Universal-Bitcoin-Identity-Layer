@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Collection, Dict, Optional, Tuple
 from urllib.parse import urljoin
 
 import requests
@@ -47,15 +47,27 @@ class HODLXXIClient:
         path: str,
         *,
         json: Optional[Dict[str, Any]] = None,
+        allowed_statuses: Optional[Collection[int]] = None,
     ) -> Dict[str, Any]:
+        return self._request_with_status(method, path, json=json, allowed_statuses=allowed_statuses)[1]
+
+    def _request_with_status(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: Optional[Dict[str, Any]] = None,
+        allowed_statuses: Optional[Collection[int]] = None,
+    ) -> Tuple[int, Dict[str, Any]]:
         url = self._url(path)
         resp = requests.request(method, url, json=json, timeout=self.timeout)
+        allowed_statuses = allowed_statuses or ()
 
-        if not 200 <= resp.status_code < 300:
+        if not 200 <= resp.status_code < 300 and resp.status_code not in allowed_statuses:
             raise HODLXXIHTTPError(method, url, resp.status_code, resp.text)
 
         try:
-            return resp.json()
+            return resp.status_code, resp.json()
         except ValueError as exc:
             raise HODLXXIError(f"{method} {url} did not return JSON") from exc
 
@@ -139,3 +151,21 @@ class HODLXXIClient:
         if not job_id:
             raise ValueError("job_id is required")
         return self._request("GET", f"/agent/jobs/{job_id}")
+
+    def verify_job(self, job_id: str) -> Dict[str, Any]:
+        if not job_id:
+            raise ValueError("job_id is required")
+
+        status_code, result = self._request_with_status("GET", f"/agent/verify/{job_id}", allowed_statuses={409})
+        if status_code != 409:
+            return result
+
+        if result.get("status") == "no_receipt" and result.get("reason") == "receipt_not_issued":
+            return result
+
+        raise HODLXXIHTTPError(
+            "GET",
+            self._url(f"/agent/verify/{job_id}"),
+            status_code,
+            "unexpected verifier conflict response",
+        )

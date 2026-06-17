@@ -193,3 +193,105 @@ def test_verify_challenge_requires_signature_or_nostr_event():
 
     with pytest.raises(ValueError, match="signature or nostr_event is required"):
         client.verify_challenge("challenge-123", pubkey="02" + "a" * 64)
+
+
+def test_verify_job_gets_agent_verify(monkeypatch):
+    calls = []
+
+    def fake_request(method, url, json=None, timeout=None):
+        calls.append((method, url, json, timeout))
+        return FakeResponse(data={"status": "verified", "valid": True})
+
+    monkeypatch.setattr(requests, "request", fake_request)
+
+    client = HODLXXIClient("https://hodlxxi.com", timeout=9)
+    assert client.verify_job("job_123") == {"status": "verified", "valid": True}
+    assert calls == [("GET", "https://hodlxxi.com/agent/verify/job_123", None, 9)]
+
+
+def test_verify_job_requires_job_id():
+    client = HODLXXIClient("https://hodlxxi.com")
+
+    with pytest.raises(ValueError, match="job_id is required"):
+        client.verify_job("")
+
+
+def test_verify_job_returns_verified_receipt(monkeypatch):
+    verified = {
+        "status": "verified",
+        "valid": True,
+        "receipt": {"job_id": "job_paid"},
+        "attestation": {"type": "agent_receipt"},
+        "event_hash": "abc123",
+        "agent_pubkey": "02" + "a" * 64,
+    }
+
+    def fake_request(method, url, json=None, timeout=None):
+        return FakeResponse(status_code=200, data=verified)
+
+    monkeypatch.setattr(requests, "request", fake_request)
+
+    client = HODLXXIClient("https://hodlxxi.com")
+    assert client.verify_job("job_paid") == verified
+
+
+def test_verify_job_returns_no_receipt_conflict(monkeypatch):
+    no_receipt = {
+        "status": "no_receipt",
+        "valid": False,
+        "verification": "unavailable",
+        "job_status": "invoice_pending",
+        "receipt": None,
+        "reason": "receipt_not_issued",
+    }
+
+    def fake_request(method, url, json=None, timeout=None):
+        return FakeResponse(status_code=409, data=no_receipt, text="conflict")
+
+    monkeypatch.setattr(requests, "request", fake_request)
+
+    client = HODLXXIClient("https://hodlxxi.com")
+    assert client.verify_job("job_unpaid") == no_receipt
+
+
+def test_verify_job_raises_for_missing_job(monkeypatch):
+    def fake_request(method, url, json=None, timeout=None):
+        return FakeResponse(
+            status_code=404,
+            data={"error": "not_found", "verification": "unavailable"},
+            text="not found",
+        )
+
+    monkeypatch.setattr(requests, "request", fake_request)
+
+    client = HODLXXIClient("https://hodlxxi.com")
+    with pytest.raises(HODLXXIHTTPError) as exc:
+        client.verify_job("missing")
+
+    assert exc.value.status_code == 404
+
+
+def test_verify_job_raises_for_malformed_no_receipt_conflict(monkeypatch):
+    def fake_request(method, url, json=None, timeout=None):
+        return FakeResponse(status_code=409, data={"status": "conflict"}, text="conflict")
+
+    monkeypatch.setattr(requests, "request", fake_request)
+
+    client = HODLXXIClient("https://hodlxxi.com")
+    with pytest.raises(HODLXXIHTTPError) as exc:
+        client.verify_job("job_123")
+
+    assert exc.value.status_code == 409
+
+
+def test_generic_409_still_raises_for_other_methods(monkeypatch):
+    def fake_request(method, url, json=None, timeout=None):
+        return FakeResponse(status_code=409, data={"status": "conflict"}, text="conflict")
+
+    monkeypatch.setattr(requests, "request", fake_request)
+
+    client = HODLXXIClient("https://hodlxxi.com")
+    with pytest.raises(HODLXXIHTTPError) as exc:
+        client.get_job("job_123")
+
+    assert exc.value.status_code == 409
