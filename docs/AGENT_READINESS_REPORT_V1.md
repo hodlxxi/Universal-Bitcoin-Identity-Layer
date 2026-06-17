@@ -169,3 +169,33 @@ Recommended PR sequence:
 7. Human report page polish.
 
 <!-- END_HODLXXI_AGENT_READINESS_REPORT_V1 -->
+
+## Production artifact storage
+
+The self-scan endpoint persists each generated report so these verification URLs are stable:
+
+- `/reports/<report_id>.json`
+- `/reports/<report_id>`
+- `/verify/report/<report_id>`
+
+In hardened production, persisted readiness reports must be written outside the read-only source tree.
+
+```text
+AGENT_READINESS_REPORT_DIR=/srv/ubid/runtime/agent_readiness_reports
+```
+
+Create the production directory with service-user ownership:
+
+```bash
+install -d -m 0750 -o hodlxxi -g hodlxxi /srv/ubid/runtime/agent_readiness_reports
+```
+
+Set the same path through a systemd drop-in:
+
+```ini
+[Service]
+Environment=AGENT_READINESS_REPORT_DIR=/srv/ubid/runtime/agent_readiness_reports
+```
+
+This keeps generated readiness artifacts under the writable runtime area.
+The repository-level `data/agent_readiness_reports/` path is ignored and should not be committed.
