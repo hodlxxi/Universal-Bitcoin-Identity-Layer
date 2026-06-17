@@ -78,3 +78,23 @@ See `docs/EXTERNAL_AGENT_REGISTRY.md` for the future external-agent registry pro
 ## Inter-Agent Dry Run
 
 See `docs/INTER_AGENT_DRY_RUN.md` for a no-network dry-run profile for the existing inter-agent demo harness.
+
+### Production readiness artifact storage
+
+Persisted readiness self-scan reports are runtime artifacts, not source files.
+In production, `hodlxxi.service` runs with systemd hardening and a read-only source tree.
+The readiness report writer must therefore use a writable runtime directory.
+
+```text
+AGENT_READINESS_REPORT_DIR=/srv/ubid/runtime/agent_readiness_reports
+```
+
+Recommended systemd drop-in:
+
+```ini
+[Service]
+Environment=AGENT_READINESS_REPORT_DIR=/srv/ubid/runtime/agent_readiness_reports
+```
+
+The directory should be owned by the service user and writable under `ReadWritePaths=/srv/ubid/runtime`.
+The default `data/agent_readiness_reports/` path is for local development only and is intentionally gitignored.

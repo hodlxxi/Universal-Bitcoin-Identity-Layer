@@ -179,3 +179,14 @@ Bug reports and feature proposals are welcome via [GitHub Issues](https://github
 ## 📄 License
 
 Released under the [MIT License](LICENSE).
+
+### Production readiness artifact storage
+
+Persisted readiness self-scan reports are runtime artifacts, not source files.
+For hardened production deployments, set:
+
+```text
+AGENT_READINESS_REPORT_DIR=/srv/ubid/runtime/agent_readiness_reports
+```
+
+For `hodlxxi.service`, this path should live under the writable runtime area and be owned by the service user.
