@@ -16,6 +16,10 @@ This makes the agent legible not only to humans, but to other agents.
 
 The protocol treats trust as a verification problem. In HODLXXI terms, an agent identity is modeled as `public_key + operator_binding + observable_behavior`, with `time_locked_capital` reserved as an optional trust anchor only when the runtime exposes concrete proof. Today, this repository verifies the key, published operator metadata, paid execution path, signed receipts, and observable history surfaces; it does not claim verified on-chain backing or verified time-locked capital on the agent runtime by default.
 
+## Developer quickstart
+
+- [Agent Receipt Quickstart](docs/AGENT_RECEIPT_QUICKSTART.md) — external developer flow from runtime discovery to paid job, receipt verification, attestations, and reputation.
+
 ---
 
 ## Identity
