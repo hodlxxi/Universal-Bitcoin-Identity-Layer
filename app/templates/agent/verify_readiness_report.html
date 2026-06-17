@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Verify Readiness Report {{ report.report_id }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body{font-family:ui-monospace,monospace;background:#06110b;color:#d9ffe7;margin:0}
+    .wrap{max-width:950px;margin:0 auto;padding:24px}
+    .card{background:#0b1b12;border:1px solid #1f5a39;border-radius:14px;padding:16px;margin-bottom:12px}
+    a{color:#49ff93}
+    code{display:block;overflow-wrap:anywhere;background:#08140d;border:1px solid #163924;padding:8px;border-radius:8px}
+    .inline-code{display:inline}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Readiness Report Verification Surface</h1>
+      <p>Schema: <code>{{ report.schema }}</code></p>
+      <p>Report id: <code>{{ report.report_id }}</code></p>
+      <p>Target: <code>{{ report.target.base_url }}</code></p>
+      <p>Summary status: <code>{{ report.summary.status }}</code></p>
+      <p>Score: <code>{{ report.summary.score }}</code></p>
+      <p>Canonical hash: <code>{{ canonical_hash }}</code></p>
+      <p>Declared report hash: <code>{{ report.report_sha256 }}</code></p>
+      <p><strong>Local hash match:</strong> {{ 'yes' if hash_matches else 'no' }}</p>
+    </div>
+
+    <div class="card">
+      <h2>Artifact URLs</h2>
+      <ul>
+        <li><a href="/reports/{{ report.report_id }}.json">Machine-readable JSON</a></li>
+        <li><a href="/reports/{{ report.report_id }}">Human report page</a></li>
+        <li><a href="/verify/report/{{ report.report_id }}">Verification page</a></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Receipt and attestation status</h2>
+      <p>Receipt status: <code>{{ report.receipt.status }}</code></p>
+      <p>Attestation status: <code>{{ report.attestation.status }}</code></p>
+      <p>This self-scan artifact does not create a paid runtime job, receipt, or attestation.</p>
+    </div>
+
+    <div class="card">
+      <h2>Verifier flow</h2>
+      <ol>
+        <li>Fetch <span class="inline-code">/reports/{{ report.report_id }}.json</span>.</li>
+        <li>Remove the <span class="inline-code">report_sha256</span> field.</li>
+        <li>Serialize with canonical JSON: sorted keys and compact separators.</li>
+        <li>Compute SHA-256 and compare it to the declared report hash.</li>
+      </ol>
+    </div>
+  </div>
+</body>
+</html>

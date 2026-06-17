@@ -114,3 +114,6 @@ venv-staging/
 
 __pycache__/
 *.pyc
+
+# Generated Agent Readiness self-scan artifacts
+data/agent_readiness_reports/

@@ -4,7 +4,9 @@ from app.factory import create_app
 from app.services.agent_readiness_report import SCHEMA
 
 
-def test_agent_readiness_self_scan_endpoint_returns_report_json():
+def test_agent_readiness_self_scan_endpoint_returns_report_json(monkeypatch, tmp_path):
+    monkeypatch.setenv("AGENT_READINESS_REPORT_DIR", str(tmp_path))
+
     app = create_app()
     client = app.test_client()
 
