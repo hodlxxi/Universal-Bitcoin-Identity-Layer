@@ -71,6 +71,9 @@ def test_unpaid_verify_semantics_are_documented():
     text = _all_docs_text()
 
     assert "verification=unavailable" in text or "verification unavailable" in text
-    assert "404" in text
+    assert "409" in text
+    assert "no_receipt" in text
+    assert "receipt_not_issued" in text
+    assert "404 not_found" in text
     assert "receipt verifier" in text
     assert "lifecycle/status endpoint" in text

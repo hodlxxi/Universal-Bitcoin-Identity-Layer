@@ -64,7 +64,7 @@ Expected unpaid state:
 - `result=null`
 - `receipt=null`
 
-The verifier is a receipt verifier, not the lifecycle source. Before a receipt exists, it may return `404` and `verification=unavailable`:
+The verifier is a receipt verifier, not the lifecycle source. Before a receipt exists for an existing job, it returns `409 Conflict` and `verification=unavailable`:
 
 ```bash
 curl -sS -i "$BASE_URL/agent/verify/$JOB_ID"
@@ -73,7 +73,7 @@ curl -sS -i "$BASE_URL/agent/verify/$JOB_ID"
 Expected unpaid verifier behavior:
 
 ```json
-{"error":"not_found","job_id":"...","verification":"unavailable"}
+{"job_id":"...","status":"no_receipt","valid":false,"verification":"unavailable","job_status":"invoice_pending","receipt":null,"reason":"receipt_not_issued"}
 ```
 
 `/agent/attestations` should not contain a `job_receipt` for the unpaid job:
@@ -142,11 +142,11 @@ verify_valid: true
 attestation_match: true
 ```
 
-Live unpaid smoke evidence:
+Expected unpaid smoke behavior after verifier normalization:
 
 ```text
 POST /agent/request -> invoice_pending
 GET /agent/jobs/<job_id> -> 200 with status=invoice_pending, result=null, receipt=null
-GET /agent/verify/<unpaid_job_id> -> 404 with verification=unavailable
+GET /agent/verify/<unpaid_job_id> -> 409 with status=no_receipt, verification=unavailable, and reason=receipt_not_issued
 GET /agent/attestations -> no event for unpaid job
 ```

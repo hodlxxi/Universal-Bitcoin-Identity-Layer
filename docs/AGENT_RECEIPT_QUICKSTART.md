@@ -90,7 +90,7 @@ For a completed paid job with an issued receipt, expected verifier fields includ
 - `attestation`
 - `agent_pubkey`
 
-Unpaid/no-receipt semantics are intentionally different from lifecycle/status semantics. An unpaid job may exist while `/agent/verify/<job_id>` returns `404` with `verification=unavailable` because no receipt has been issued yet. Use `/agent/jobs/<job_id>` for lifecycle state before receipt issuance.
+Unpaid/no-receipt semantics are intentionally different from lifecycle/status semantics. An unpaid job may exist while `/agent/verify/<job_id>` returns `409 Conflict` with `status=no_receipt`, `valid=false`, `verification=unavailable`, the current `job_status`, `receipt=null`, and `reason=receipt_not_issued` because no receipt has been issued yet. A job id that does not exist still returns `404 not_found`. Use `/agent/jobs/<job_id>` for lifecycle state before receipt issuance.
 
 ## 7. Inspect attestations and reputation
 

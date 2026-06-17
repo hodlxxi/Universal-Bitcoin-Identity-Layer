@@ -105,15 +105,6 @@ This PR adds docs-only marker tests in `tests/unit/test_agent_commerce_docs_cont
 - `/agent/attestations` exposes signed `job_receipt` events.
 - Documentation surfaces now include the quickstart, receipt v1 contract, and paid execution receipt smoke runbook.
 
-## Known semantic gap
+## Normalized unpaid verifier semantics after this PR
 
-`/agent/verify/<unpaid_job_id>` currently returns `404 not_found` / `verification unavailable` even when the job exists and is `invoice_pending`. This is acceptable as current receipt-verifier semantics, but external developers must use `/agent/jobs/<job_id>` for lifecycle state before receipt issuance. A future PR may normalize this into a more explicit pending/no_receipt response.
-
-## What should the next PR be?
-
-The next PR should be a behavior-normalization PR, not bundled with this docs-and-tests audit. Recommended scope:
-
-- Keep `/agent/jobs/<job_id>` as the lifecycle/status endpoint.
-- Consider making `/agent/verify/<unpaid_job_id>` return an explicit pending/no-receipt response while preserving backwards compatibility.
-- Add runtime tests for unpaid verifier semantics if behavior changes.
-- Update SDK helpers to expose pending/no-receipt as a first-class state if the API contract changes.
+After this behavior-normalization PR, `/agent/verify/<unpaid_job_id>` distinguishes an existing job with no issued receipt from a missing job. Existing unpaid jobs return `409 Conflict` with `status=no_receipt`, `valid=false`, `verification=unavailable`, `job_status=<current job status>`, `receipt=null`, and `reason=receipt_not_issued`. Missing job ids still return `404 not_found`. `/agent/jobs/<job_id>` remains the lifecycle/status endpoint before receipt issuance.

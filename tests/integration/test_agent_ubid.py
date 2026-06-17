@@ -464,6 +464,32 @@ def test_verify_endpoint_returns_valid_true_for_existing_receipt(client, monkeyp
     assert "receipt" in body
 
 
+def test_verify_endpoint_returns_409_for_existing_unpaid_job_without_receipt(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.blueprints.agent.create_invoice",
+        lambda amount_sats, memo, user_pubkey, expiry_seconds=3600: ("ln-invoice", "lookup-id-unpaid-verify"),
+    )
+
+    req = client.post(
+        "/agent/request",
+        json={"job_type": "ping", "payload": {"message": "unpaid verifier no receipt"}},
+    ).get_json()
+
+    res = client.get(f"/agent/verify/{req['job_id']}")
+    assert res.status_code == 409
+
+    body = res.get_json()
+    assert body == {
+        "job_id": req["job_id"],
+        "status": "no_receipt",
+        "valid": False,
+        "verification": "unavailable",
+        "job_status": "invoice_pending",
+        "receipt": None,
+        "reason": "receipt_not_issued",
+    }
+
+
 def test_verify_endpoint_returns_404_for_missing_job(client):
     res = client.get("/agent/verify/00000000-0000-0000-0000-000000000000")
     assert res.status_code == 404
