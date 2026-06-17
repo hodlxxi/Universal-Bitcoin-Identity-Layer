@@ -2,6 +2,7 @@
 set -euo pipefail
 
 BASE="${BASE:-https://hodlxxi.com}"
+BASE="${BASE%/}"
 OPERATOR_ENDPOINT="/.well-known/hodlxxi-operator.json"
 OPERATOR_PUBKEY="023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923"
 AGENT_PUBKEY="02019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f92"
