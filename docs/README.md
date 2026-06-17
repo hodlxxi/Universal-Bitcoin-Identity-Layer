@@ -38,6 +38,9 @@
    - `/agent/capabilities` + `/agent/capabilities/schema`
    - `/agent/skills`
    - `/agent/marketplace/listing`
+   - [AGENT_RECEIPT_V1.md](AGENT_RECEIPT_V1.md)
+   - [ops/PAID_EXECUTION_RECEIPT_SMOKE.md](ops/PAID_EXECUTION_RECEIPT_SMOKE.md)
+   - [ops/COMMERCE_RUNTIME_STATE_2026-06-17.md](ops/COMMERCE_RUNTIME_STATE_2026-06-17.md)
 
 6. **Python SDK**
    - `docs/sdk/README.md`

@@ -1,74 +1,108 @@
-<!-- HODLXXI_AGENT_RECEIPT_QUICKSTART_V1 -->
-# HODLXXI Agent Receipt Quickstart
+# Agent Receipt Quickstart
 
-HODLXXI is a Bitcoin-native trust runtime for public-key agents and services.
+This quickstart shows how an external developer uses the current HODLXXI paid agent runtime:
 
-Core external flow:
+```text
+discover -> inspect capabilities -> create paid job -> manual payment -> poll lifecycle/status -> verify signed receipt -> inspect attestations and reputation
+```
 
-1. discover the runtime
-2. inspect capabilities
-3. create a paid agent job
-4. poll the job
-5. verify the signed receipt
-6. inspect attestations and reputation
+The commerce runtime is invoice-backed. Smoke tests and external examples must use manual payment only; they must never auto-pay invoices.
 
-Primitive:
+## 1. Discover the agent
 
-`public key -> capability -> paid job -> result -> signed receipt -> attestation -> reputation`
+Start with the public discovery documents:
 
-## 1. Discover the runtime
+```bash
+curl -sS https://hodlxxi.com/.well-known/agent.json | jq .
+curl -sS https://hodlxxi.com/agent/marketplace/listing | jq .
+```
 
-`GET /.well-known/agent.json`
-
-Use this document to find the agent identity, advertised capabilities, endpoints, pricing, skills, and trust model.
+Use these documents to find the agent identity, advertised capabilities, endpoints, pricing, skills, and trust model.
 
 ## 2. Inspect capabilities
 
-`GET /agent/capabilities`
+```bash
+curl -sS https://hodlxxi.com/agent/capabilities | jq .
+curl -sS https://hodlxxi.com/agent/capabilities/schema | jq .
+```
 
-This is the main machine-readable capability surface. It should tell an external app which job types are available, how they are priced, and which endpoints are used for request, polling, verification, attestations, and reputation.
-
-Optional schema:
-
-`GET /agent/capabilities/schema`
+`GET /agent/capabilities` is the main machine-readable capability surface. It advertises supported job types, pricing, and endpoints such as `/agent/request`, `/agent/jobs/<job_id>`, `/agent/verify/<job_id>`, `/agent/attestations`, and `/agent/reputation`.
 
 ## 3. Create a paid job
 
-`POST /agent/request`
+```bash
+curl -sS -X POST "https://hodlxxi.com/agent/request" \
+  -H 'Content-Type: application/json' \
+  -d '{"job_type":"ping","payload":{"message":"hello from external developer"}}' \
+  | tee /tmp/hodlxxi-agent-request.json | jq .
+```
 
-Minimal request shape:
+Expected response:
 
-`{"job_type":"ping","payload":{"message":"hello"}}`
+- `job_id`
+- `invoice`
+- `payment_hash`
+- `status=invoice_pending`
 
-Expected response shape includes a job id, status, invoice or payment reference, payment hash, and amount in sats.
+Production invoice creation is selected by `LN_BACKEND`; the live production paid smoke used `LN_BACKEND=lnd_cli`. Do not publish invoice strings from live runs.
 
-## 4. Poll the job
+## 4. Pay manually
 
-`GET /agent/jobs/<job_id>`
+Copy the returned Lightning invoice into a wallet and perform manual payment. The quickstart does not auto-pay and must never be changed to auto-pay invoices.
 
-Before settlement, the job may remain invoice-pending or unpaid. After settlement, the runtime can produce the result and receipt metadata.
+## 5. Poll lifecycle/status
 
-## 5. Verify the receipt
+`GET /agent/jobs/<job_id>` is the lifecycle/status endpoint:
 
-`GET /agent/verify/<job_id>`
+```bash
+export JOB_ID="$(jq -r .job_id /tmp/hodlxxi-agent-request.json)"
+curl -sS "https://hodlxxi.com/agent/jobs/$JOB_ID" | jq .
+```
 
-The verifier path is the core trust primitive for external apps. It should expose enough information to check the job id, job type, payment hash, result hash, agent public key, receipt payload, and signature status.
+Before settlement, unpaid jobs are expected to return:
 
-## 6. Inspect attestations and reputation
+- `status=invoice_pending`
+- `result=null`
+- `receipt=null`
 
-`GET /agent/attestations`
+After settlement is observed, completed jobs are expected to return:
 
-`GET /agent/reputation`
+- `status=done`
+- `result` present
+- `receipt` present
+- receipt fields such as `job_receipt`, `payment_hash`, `request_hash`, `result_hash`, `signature`, and `agent_pubkey`
 
-These surfaces let external apps build trust views, audit trails, public-key history, and marketplace reputation without owning the identity layer.
+## 6. Verify the signed receipt
 
-## Stub vs real payment warning
+`GET /agent/verify/<job_id>` is the receipt verifier after receipt issuance:
 
-Development or test environments may use stub invoices. Stub invoices are not real payments. Production integrations must use a real Lightning backend and must not treat stub settlement as real money movement.
+```bash
+curl -sS "https://hodlxxi.com/agent/verify/$JOB_ID" | jq .
+```
 
-## Product framing
+For a completed paid job with an issued receipt, expected verifier fields include:
 
-HODLXXI is a Bitcoin-native trust runtime for public-key agents and services.
+- `job_id`
+- `status=verified`
+- `valid=true`
+- `event_hash`
+- `receipt`
+- `attestation`
+- `agent_pubkey`
 
-Short framing: Trust infrastructure for public keys.
-<!-- END_HODLXXI_AGENT_RECEIPT_QUICKSTART_V1 -->
+Unpaid/no-receipt semantics are intentionally different from lifecycle/status semantics. An unpaid job may exist while `/agent/verify/<job_id>` returns `404` with `verification=unavailable` because no receipt has been issued yet. Use `/agent/jobs/<job_id>` for lifecycle state before receipt issuance.
+
+## 7. Inspect attestations and reputation
+
+```bash
+curl -sS "https://hodlxxi.com/agent/attestations?limit=30" | jq .
+curl -sS "https://hodlxxi.com/agent/reputation" | jq .
+```
+
+`GET /agent/attestations` returns signed receipt events for completed jobs. A completed job should have a matching `job_receipt` attestation. Unpaid jobs should not have a receipt attestation.
+
+`GET /agent/reputation` exposes aggregate operating history that external apps can use as a trust signal alongside receipt verification.
+
+## Receipt contract
+
+See [`AGENT_RECEIPT_V1.md`](AGENT_RECEIPT_V1.md) for the formal public receipt v1 contract, including field definitions for `payment_hash`, `request_hash`, `result_hash`, `signature`, `agent_pubkey`, and unpaid verification semantics.
