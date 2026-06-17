@@ -8,11 +8,16 @@ does not create paid jobs, and does not issue receipts or attestations.
 from __future__ import annotations
 
 import json
+import os
+import re
 from datetime import datetime, timezone
 from hashlib import sha256
+from pathlib import Path
 from typing import Any
 
 SCHEMA = "hodlxxi.agent_readiness_report.v1"
+REPORT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+DEFAULT_REPORT_DIR = Path("data") / "agent_readiness_reports"
 
 REQUIRED_CHECKS: tuple[dict[str, str], ...] = (
     {
@@ -147,6 +152,70 @@ def compute_report_hash(report: dict[str, Any]) -> str:
     body = dict(report)
     body.pop("report_sha256", None)
     return sha256(canonical_report_json(body).encode("utf-8")).hexdigest()
+
+
+def _validate_report_id(report_id: str) -> str:
+    rid = str(report_id or "").strip()
+    if not REPORT_ID_RE.fullmatch(rid):
+        raise ValueError("invalid readiness report_id")
+    return rid
+
+
+def readiness_report_dir(storage_dir: str | Path | None = None) -> Path:
+    """Return the local artifact directory for readiness self-scan reports."""
+
+    if storage_dir is not None:
+        return Path(storage_dir)
+
+    configured = os.getenv("AGENT_READINESS_REPORT_DIR")
+    if configured:
+        return Path(configured)
+
+    return DEFAULT_REPORT_DIR
+
+
+def readiness_report_path(report_id: str, storage_dir: str | Path | None = None) -> Path:
+    """Return the safe JSON artifact path for a readiness self-scan report."""
+
+    rid = _validate_report_id(report_id)
+    return readiness_report_dir(storage_dir) / f"{rid}.json"
+
+
+def save_self_readiness_report(report: dict[str, Any], storage_dir: str | Path | None = None) -> Path:
+    """Persist a readiness self-scan report as a local public artifact."""
+
+    if report.get("schema") != SCHEMA:
+        raise ValueError("unsupported readiness report schema")
+
+    path = readiness_report_path(str(report.get("report_id") or ""), storage_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(canonical_report_json(report) + "\n", encoding="utf-8")
+    return path
+
+
+def load_self_readiness_report(
+    report_id: str,
+    storage_dir: str | Path | None = None,
+) -> dict[str, Any] | None:
+    """Load a persisted readiness self-scan report, if present."""
+
+    try:
+        path = readiness_report_path(report_id, storage_dir)
+    except ValueError:
+        return None
+
+    if not path.is_file():
+        return None
+
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(report, dict) or report.get("schema") != SCHEMA:
+        return None
+
+    return report
 
 
 def build_self_readiness_report(

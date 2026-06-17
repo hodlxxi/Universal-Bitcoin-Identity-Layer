@@ -21,7 +21,12 @@ from app.models import AgentEvent, AgentJob
 from app.payments.ln import check_invoice_paid, create_invoice
 from app.structured_logging import log_event
 from app.services.covenant_visualizer import CovenantInputError, visualize_covenant
-from app.services.agent_readiness_report import build_self_readiness_report
+from app.services.agent_readiness_report import (
+    build_self_readiness_report,
+    compute_report_hash as compute_readiness_report_hash,
+    load_self_readiness_report,
+    save_self_readiness_report,
+)
 from app.services.nostr_reports import configured_relays_from_env
 from app.services.trust_surface import (
     DEFAULT_AGENT_ID,
@@ -930,7 +935,9 @@ def capabilities_schema():
 def readiness_self_scan():
     base_url = (request.url_root or "https://hodlxxi.com").rstrip("/")
     app = current_app._get_current_object()
-    return jsonify(build_self_readiness_report(app, base_url=base_url))
+    report = build_self_readiness_report(app, base_url=base_url)
+    save_self_readiness_report(report)
+    return jsonify(report)
 
 
 @agent_bp.get("/agent/skills")
@@ -1751,12 +1758,27 @@ def covenant_json(covenant_id: str):
 
 @agent_bp.get("/reports/<report_id>.json")
 def report_json(report_id: str):
+    readiness_report = load_self_readiness_report(report_id)
+    if readiness_report is not None:
+        return jsonify(readiness_report)
+
     report = build_trust_report(DEFAULT_AGENT_ID, report_id=report_id)
     return jsonify(report)
 
 
 @agent_bp.get("/reports/<report_id>")
 def report_page(report_id: str):
+    readiness_report = load_self_readiness_report(report_id)
+    if readiness_report is not None:
+        expected_hash = compute_readiness_report_hash(readiness_report)
+        hash_matches = expected_hash == readiness_report.get("report_sha256")
+        return render_template(
+            "agent/verify_readiness_report.html",
+            report=readiness_report,
+            canonical_hash=expected_hash,
+            hash_matches=hash_matches,
+        )
+
     report = build_trust_report(DEFAULT_AGENT_ID, report_id=report_id)
     covenant = load_covenant(report["covenant"].get("covenant_id", DEFAULT_COVENANT_ID))
     return render_template("agent/report_page.html", report=report, covenant=covenant, agent_id=DEFAULT_AGENT_ID)
@@ -1764,6 +1786,17 @@ def report_page(report_id: str):
 
 @agent_bp.get("/verify/report/<report_id>")
 def verify_report_page(report_id: str):
+    readiness_report = load_self_readiness_report(report_id)
+    if readiness_report is not None:
+        expected_hash = compute_readiness_report_hash(readiness_report)
+        hash_matches = expected_hash == readiness_report.get("report_sha256")
+        return render_template(
+            "agent/verify_readiness_report.html",
+            report=readiness_report,
+            canonical_hash=expected_hash,
+            hash_matches=hash_matches,
+        )
+
     report = build_trust_report(DEFAULT_AGENT_ID, report_id=report_id)
     expected_hash = compute_report_hash(report)
     hash_matches = expected_hash == report.get("report_sha256")
