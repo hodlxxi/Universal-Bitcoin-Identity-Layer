@@ -116,6 +116,7 @@ Unit tests cover configuration parsing/validation along with storage adapters. I
 ## Agent Readiness
 
 - [Agent Readiness Report v1](docs/AGENT_READINESS_REPORT_V1.md) - contract for public agent/service readiness reports backed by receipts and attestations.
+- `GET /agent/readiness/self-scan` - public machine-readable self-scan report for the current HODLXXI runtime. It returns `schema`, `summary`, `checks`, `verification`, `report_sha256`, and current `receipt` / `attestation` status.
 
 ## Developer Quickstarts
 

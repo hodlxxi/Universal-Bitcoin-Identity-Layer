@@ -13,6 +13,7 @@ Canonical protocol and trust details remain in:
 - `/agent/discovery`
 - `/agent/capabilities`
 - `/agent/capabilities/schema`
+- `/agent/readiness/self-scan`
 - `/agent/skills`
 - `/agent/marketplace/listing`
 - `/agent/nostr/announcement`
@@ -24,6 +25,7 @@ Canonical protocol and trust details remain in:
 ## Agent Readiness
 
 - [Agent Readiness Report v1](AGENT_READINESS_REPORT_V1.md) - report contract for scanning public agent surfaces and linking results to receipts.
+- `GET /agent/readiness/self-scan` - live public JSON self-scan for the current runtime. This endpoint does not create a paid job; until paid report generation is added, `receipt.status` and `attestation.status` remain `not_issued`.
 
 ## Developer Quickstarts
 

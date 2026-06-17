@@ -7,6 +7,8 @@ It turns the runtime positioning into a concrete external workflow:
 
 `scan target -> evaluate public agent surfaces -> produce report -> issue receipt -> expose attestation`
 
+The public HODLXXI self-scan endpoint is an intermediate runtime surface: it produces a live report for the current runtime, but does not create a paid job, issue a receipt, or publish an attestation.
+
 The report is not a marketplace, exchange, wallet, custody system, or legal certification. It is a machine-readable operational readiness artifact for public-key agents and services.
 
 ## 1. Product role
@@ -48,6 +50,23 @@ Optional supporting surfaces:
 - `/agent/marketplace/listing`
 - `/agent/nostr/announcement`
 
+### Public HODLXXI self-scan endpoint
+
+HODLXXI exposes a public runtime self-scan endpoint:
+
+`GET /agent/readiness/self-scan`
+
+This endpoint returns a live JSON report for the current HODLXXI runtime using schema:
+
+`hodlxxi.agent_readiness_report.v1`
+
+The self-scan report includes `summary.status`, `summary.score`, `checks`, `verification`, and `report_sha256`.
+
+The self-scan endpoint is not a paid job endpoint. It must not claim receipt or attestation issuance. Until paid report generation is added, the report should expose:
+
+- `receipt.status = not_issued`
+- `attestation.status = not_issued`
+
 ## 3. Required JSON shape
 
 A v1 report must be JSON and must contain these top-level fields:
@@ -62,6 +81,7 @@ A v1 report must be JSON and must contain these top-level fields:
 - `attestation`
 - `verification`
 - `generated_at`
+- `report_sha256`
 
 The schema value must be:
 
@@ -142,9 +162,10 @@ Recommended PR sequence:
 
 1. Contract document and tests.
 2. Static report builder for local HODLXXI self-scan.
-3. Runtime endpoint or paid job type for report generation.
-4. Receipt verification integration.
-5. Public attestation export.
-6. Human report page polish.
+3. Public runtime endpoint for local HODLXXI self-scan.
+4. Paid job type for external report generation.
+5. Receipt verification integration.
+6. Public attestation export.
+7. Human report page polish.
 
 <!-- END_HODLXXI_AGENT_READINESS_REPORT_V1 -->
