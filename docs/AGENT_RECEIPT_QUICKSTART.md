@@ -37,14 +37,14 @@ curl -sS -X POST "https://hodlxxi.com/agent/request" \
   | tee /tmp/hodlxxi-agent-request.json | jq .
 ```
 
-Expected response:
+Expected successful creation may return `HTTP 200 or HTTP 201`, depending on the current endpoint behavior. Treat the JSON lifecycle fields as the success contract:
 
 - `job_id`
-- `invoice`
-- `payment_hash`
 - `status=invoice_pending`
+- `invoice` present
+- `payment_hash` present
 
-Production invoice creation is selected by `LN_BACKEND`; the live production paid smoke used `LN_BACKEND=lnd_cli`. Do not publish invoice strings from live runs.
+Production invoice creation is selected by `LN_BACKEND`; the live production paid smoke used `LN_BACKEND=lnd_cli`. Do not publish invoice strings from live runs. A live production paid smoke on 2026-06-18 produced a verified receipt and attestation; see [`ops/PAID_EXECUTION_RECEIPT_SMOKE.md`](ops/PAID_EXECUTION_RECEIPT_SMOKE.md) for safe evidence fields only.
 
 ## 4. Pay manually
 

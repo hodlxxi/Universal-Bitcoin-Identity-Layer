@@ -77,3 +77,23 @@ def test_unpaid_verify_semantics_are_documented():
     assert "404 not_found" in text
     assert "receipt verifier" in text
     assert "lifecycle/status endpoint" in text
+
+
+def test_latest_paid_receipt_evidence_is_documented_safely():
+    text = _all_docs_text()
+
+    for marker in [
+        "1013ca86-f09e-40d3-b6ea-862620890b36",
+        "529245bed836a0adf9fdd57ac46d2276e7ab85ce3e52ab8dcbb6f8ac9f9bdd44",
+        "f6530836330ca1047f8d92a638c70d64597a34f299b49ef94c3aac621e1b82c1",
+        "http 200 or http 201",
+        "manual payment",
+        "invoice strings are intentionally omitted",
+        "chain_ok=true",
+        "verified",
+        "valid=true",
+        "attestation",
+        "does not prove locked capital",
+        "does not prove legal identity",
+    ]:
+        assert marker in text
