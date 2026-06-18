@@ -991,6 +991,19 @@ def readiness_page():
     )
 
 
+@agent_bp.get("/agent/receipt-proof")
+def receipt_proof_page():
+    proof = {
+        "job_id": "1013ca86-f09e-40d3-b6ea-862620890b36",
+        "operator_label": OPERATOR_ID,
+        "payment_hash": "f6530836330ca1047f8d92a638c70d64597a34f299b49ef94c3aac621e1b82c1",
+        "request_hash": "d666c1696c7b7d03e80c762aecfedfcfbd6686334045ec2b84f94f691a646c0a",
+        "result_hash": "d7fc571c7e5c5c98146fd1f6f94eda75717d04de7438713b24a3423d204d9e9b",
+        "event_hash": "529245bed836a0adf9fdd57ac46d2276e7ab85ce3e52ab8dcbb6f8ac9f9bdd44",
+    }
+    return render_template("agent/receipt_proof.html", proof=proof)
+
+
 @agent_bp.get("/agent/readiness/self-scan")
 def readiness_self_scan():
     base_url = (request.url_root or "https://hodlxxi.com").rstrip("/")
