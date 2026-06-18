@@ -163,6 +163,20 @@ reputation_evidenced_completed_jobs: 20
 reputation_total_jobs: 243
 ```
 
+## Public verifier command
+
+```bash
+BASE=https://hodlxxi.com \
+JOB_ID=1013ca86-f09e-40d3-b6ea-862620890b36 \
+bash scripts/verify_paid_receipt_evidence.sh
+```
+
+This public-only command verifies the already-completed paid receipt evidence above
+using only public endpoints. It does not create a job. It does not pay an invoice.
+It does not require secrets. It does not print invoice strings. It does not prove
+locked capital, legal identity, global consensus, or independent Lightning
+settlement beyond the runtime evidence unless separately checked.
+
 ### Earlier manual paid smoke
 
 A manual production smoke proved the paid path without publishing a reusable invoice string:
