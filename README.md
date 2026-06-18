@@ -119,6 +119,7 @@ Unit tests cover configuration parsing/validation along with storage adapters. I
 ## Agent Readiness
 
 - [HODLXXI Readiness Evaluation](docs/READINESS_EVALUATION.md) - current external evaluation path for public agent/runtime readiness.
+- [HODLXXI External Reviewer Packet](docs/EXTERNAL_REVIEWER_PACKET.md) - canonical public review packet for live reviewers, developers, investors, agent marketplace reviewers, and technical evaluators.
 - [Agent Readiness Report v1](docs/AGENT_READINESS_REPORT_V1.md) - contract for public agent/service readiness reports backed by receipts and attestations.
 - `GET /agent/readiness/self-scan` - public machine-readable self-scan report for the current HODLXXI runtime. It returns `schema`, `summary`, `checks`, `verification`, `report_sha256`, and current `receipt` / `attestation` status.
 

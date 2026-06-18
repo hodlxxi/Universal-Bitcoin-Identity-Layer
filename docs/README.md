@@ -9,6 +9,7 @@
 
 0. **[DOCUMENTATION_MAP.md](DOCUMENTATION_MAP.md)** - Start here for the docs status map: current, historical, experimental, and archive-candidate documentation.
 1. **[READINESS_EVALUATION.md](READINESS_EVALUATION.md)** - Current external evaluation path for public HODLXXI agent/runtime readiness.
+2. **[EXTERNAL_REVIEWER_PACKET.md](EXTERNAL_REVIEWER_PACKET.md)** - Canonical human-readable packet for external reviewers, developers, investors, agent marketplace reviewers, and technical evaluators.
 
 ### Core Documentation
 1. **[SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md)** - Complete system overview
