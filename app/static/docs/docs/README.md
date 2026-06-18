@@ -4,6 +4,15 @@
 HODLXXI is a Bitcoin-native research framework for studying long-term coordination with cryptographic identity, time-locked commitments, and voluntary participation.  
 This repository is document-first: it collects research notes, constraints, and reference materials so implementations can be inspected and challenged.
 
+## Runtime/readiness boundary
+
+These static website docs are conceptual and public-facing reference material. They are not the authoritative source for current runtime behavior, API semantics, production readiness, operator continuity, or verifier semantics.
+
+For current implementation truth and external verification, use:
+
+- [`docs/READINESS_EVALUATION.md`](../../../docs/READINESS_EVALUATION.md)
+- [`docs/DOCUMENTATION_MAP.md`](../../../docs/DOCUMENTATION_MAP.md)
+
 ## What this is not
 - Not a token or investment vehicle
 - Not a finished product or hosted service
