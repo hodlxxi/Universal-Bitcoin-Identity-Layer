@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HODLXXI Readiness</title>
+  <style>
+    :root { color-scheme: dark; --bg: #07110d; --panel: #0d1b14; --line: #1f3d2d; --text: #e7fff0; --muted: #a6cdb6; --accent: #35f08f; --warn: #ffd166; --fail: #ff6b6b; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at top, #10291b 0, var(--bg) 48rem); color: var(--text); }
+    main { width: min(1120px, calc(100% - 2rem)); margin: 0 auto; padding: 3rem 0; }
+    a { color: var(--accent); }
+    .hero, .card { border: 1px solid var(--line); background: rgba(13, 27, 20, 0.88); border-radius: 18px; box-shadow: 0 0 30px rgba(53, 240, 143, 0.08); }
+    .hero { padding: 2rem; margin-bottom: 1.5rem; }
+    h1 { margin: 0 0 1rem; font-size: clamp(2rem, 5vw, 4rem); letter-spacing: -0.04em; }
+    h2 { margin: 0 0 1rem; }
+    p { color: var(--muted); line-height: 1.65; }
+    .actions, .summary { display: flex; gap: 0.8rem; flex-wrap: wrap; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.8rem 1rem; border-radius: 999px; border: 1px solid var(--accent); text-decoration: none; font-weight: 700; background: rgba(53, 240, 143, 0.08); }
+    .summary { margin: 1.5rem 0; }
+    .metric { flex: 1 1 145px; padding: 1rem; border: 1px solid var(--line); border-radius: 14px; background: rgba(255, 255, 255, 0.03); }
+    .metric span { display: block; color: var(--muted); font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.08em; }
+    .metric strong { display: block; margin-top: 0.35rem; font-size: 1.35rem; overflow-wrap: anywhere; }
+    .grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 1rem; }
+    .card { padding: 1.35rem; }
+    ul { padding-left: 1.25rem; color: var(--muted); line-height: 1.65; }
+    .checks { list-style: none; padding: 0; margin: 0; }
+    .check { padding: 0.9rem 0; border-top: 1px solid var(--line); }
+    .check:first-child { border-top: 0; }
+    .status { display: inline-block; min-width: 4rem; margin-right: 0.5rem; font-weight: 800; text-transform: uppercase; }
+    .status-pass { color: var(--accent); }
+    .status-fail { color: var(--fail); }
+    .status-warn { color: var(--warn); }
+    code { color: var(--text); background: rgba(255, 255, 255, 0.06); padding: 0.1rem 0.3rem; border-radius: 0.35rem; }
+    @media (max-width: 780px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <h1>HODLXXI Readiness</h1>
+      <p>This is a public human-readable wrapper around the machine-readable readiness self-scan.</p>
+      <p>Reviewers can use it to understand the current public runtime status. Agents and scripts should use <a href="/agent/readiness/self-scan">/agent/readiness/self-scan</a>.</p>
+      <div class="actions">
+        <a class="btn" href="/agent/readiness/self-scan">View machine-readable JSON</a>
+        <a class="btn" href="https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/blob/main/docs/EXTERNAL_REVIEWER_PACKET.md">Open reviewer packet</a>
+        <a class="btn" href="/.well-known/hodlxxi-operator.json">Operator continuity</a>
+        <a class="btn" href="/agent/reputation">Reputation</a>
+        <a class="btn" href="/agent/attestations">Attestations</a>
+        <a class="btn" href="/agent/chain/health">Chain health</a>
+      </div>
+    </section>
+
+    <section class="summary" aria-label="Readiness summary">
+      <div class="metric"><span>status</span><strong>{{ summary.status | default("unknown") }}</strong></div>
+      <div class="metric"><span>score</span><strong>{{ summary.score | default(0) }}</strong></div>
+      <div class="metric"><span>passed</span><strong>{{ summary.passed | default(0) }}</strong></div>
+      <div class="metric"><span>failed</span><strong>{{ summary.failed | default(0) }}</strong></div>
+      <div class="metric"><span>warnings</span><strong>{{ summary.warnings | default(0) }}</strong></div>
+      <div class="metric"><span>checks count</span><strong>{{ checks | length }}</strong></div>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>Readiness checks</h2>
+        {% if checks %}
+          <ul class="checks">
+            {% for check in checks %}
+              <li class="check">
+                <span class="status status-{{ check.status | default('unknown') }}">{{ check.status | default('unknown') }}</span>
+                <strong>{{ check.title | default(check.id) }}</strong>
+                <p><code>{{ check.id }}</code>{% if check.path %} · <code>{{ check.path }}</code>{% endif %}</p>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p>No readiness checks are available in the current report.</p>
+        {% endif %}
+      </article>
+
+      <aside class="card">
+        <h2>Non-claims</h2>
+        <p>This readiness wrapper is intentionally narrow. It:</p>
+        <ul>
+          <li>does not prove legal identity</li>
+          <li>does not prove KYC</li>
+          <li>does not prove custody of funds</li>
+          <li>does not prove locked capital</li>
+          <li>does not prove all future jobs will succeed</li>
+          <li>does not replace application-specific risk checks</li>
+        </ul>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>

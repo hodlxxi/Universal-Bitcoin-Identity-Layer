@@ -978,6 +978,19 @@ def capabilities_schema():
     return jsonify(_capabilities_schema_document())
 
 
+@agent_bp.get("/agent/readiness")
+def readiness_page():
+    base_url = (request.url_root or "https://hodlxxi.com").rstrip("/")
+    app = current_app._get_current_object()
+    report = build_self_readiness_report(app, base_url=base_url)
+    return render_template(
+        "agent/readiness.html",
+        report=report,
+        summary=report.get("summary", {}),
+        checks=report.get("checks", []),
+    )
+
+
 @agent_bp.get("/agent/readiness/self-scan")
 def readiness_self_scan():
     base_url = (request.url_root or "https://hodlxxi.com").rstrip("/")
