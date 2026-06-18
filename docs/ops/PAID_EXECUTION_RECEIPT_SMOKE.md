@@ -37,7 +37,7 @@ curl -sS -X POST "$BASE_URL/agent/request" \
   | tee /tmp/hodlxxi-agent-request.json | jq .
 ```
 
-Expected initial response:
+Expected initial response: successful invoice-backed job creation may return `HTTP 200 or HTTP 201`, depending on the current endpoint behavior. The contract is the JSON creation fields, not a single success status code.
 
 - `job_id` present.
 - `invoice` present. Display it for manual payment, but do not commit or publish it.
@@ -127,6 +127,43 @@ Expected attestation state:
 - `payment_hash`, `request_hash`, `result_hash`, `signature`, and `agent_pubkey` match the receipt context
 
 ## Live paid smoke evidence
+
+Invoice strings are intentionally omitted from all evidence entries. Paid smokes use manual payment. This evidence does not prove locked capital, does not prove legal identity, and does not prove autonomous spending or custody, global consensus, external anchoring, Nostr private DM production delivery, or that every future paid job will succeed.
+
+### 2026-06-18 real production paid receipt smoke
+
+A real production paid receipt smoke was run against `https://hodlxxi.com` on 2026-06-18. The invoice was paid by manual payment. The safe evidence chain is: manual payment -> job done -> signed receipt -> verifier `valid=true` -> attestation included -> chain health latest hash updated -> reputation updated.
+
+```text
+base_url: https://hodlxxi.com
+job_id: 1013ca86-f09e-40d3-b6ea-862620890b36
+job_type: ping
+job_final_status: done
+payment_hash: f6530836330ca1047f8d92a638c70d64597a34f299b49ef94c3aac621e1b82c1
+receipt_event_type: job_receipt
+receipt_version: 1.0
+receipt_agent_pubkey: 02019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f92
+receipt_request_hash: d666c1696c7b7d03e80c762aecfedfcfbd6686334045ec2b84f94f691a646c0a
+receipt_result_hash: d7fc571c7e5c5c98146fd1f6f94eda75717d04de7438713b24a3423d204d9e9b
+receipt_previous_event_hash: 68d8123685788df1dba5b3ed0dfc965119771faf36961ce15fe2ce2ec2719ca0
+receipt_signature_present: true
+verifier_http_status: 200
+verifier_status: verified
+verifier_valid: true
+verifier_event_hash: 529245bed836a0adf9fdd57ac46d2276e7ab85ce3e52ab8dcbb6f8ac9f9bdd44
+verifier_receipt_present: true
+verifier_attestation_present: true
+attestations_contain_paid_job: true
+attestation_count: 20
+chain_health: chain_ok=true
+chain_latest_event_hash: 529245bed836a0adf9fdd57ac46d2276e7ab85ce3e52ab8dcbb6f8ac9f9bdd44
+chain_latest_previous_event_hash: 68d8123685788df1dba5b3ed0dfc965119771faf36961ce15fe2ce2ec2719ca0
+reputation_completed_jobs: 20
+reputation_evidenced_completed_jobs: 20
+reputation_total_jobs: 243
+```
+
+### Earlier manual paid smoke
 
 A manual production smoke proved the paid path without publishing a reusable invoice string:
 
