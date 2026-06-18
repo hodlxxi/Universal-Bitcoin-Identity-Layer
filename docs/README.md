@@ -8,6 +8,7 @@
 ## 📚 Documentation Index
 
 0. **[DOCUMENTATION_MAP.md](DOCUMENTATION_MAP.md)** - Start here for the docs status map: current, historical, experimental, and archive-candidate documentation.
+1. **[READINESS_EVALUATION.md](READINESS_EVALUATION.md)** - Current external evaluation path for public HODLXXI agent/runtime readiness.
 
 ### Core Documentation
 1. **[SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md)** - Complete system overview

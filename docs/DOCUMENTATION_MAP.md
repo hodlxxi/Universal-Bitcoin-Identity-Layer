@@ -7,6 +7,7 @@ This file is the operator/developer map for navigating the repository's many doc
 Primary entry points:
 
 - `README.md` — top-level product/runtime overview
+- `docs/READINESS_EVALUATION.md` — current external evaluation path for public agent/runtime readiness
 - `AGENT_PROTOCOL.md` — public agent protocol and machine-readable surfaces
 - `docs/README.md` — docs index
 - `docs/AGENT_RUNTIME.md` — current runtime index
@@ -37,6 +38,7 @@ Current verifier semantics:
 
 Current or recent operational verification references:
 
+- `docs/READINESS_EVALUATION.md`
 - `docs/ops/PUBLIC_AGENT_CONTRACT_SMOKE.md`
 - `scripts/smoke_public_agent_contract.sh`
 - `docs/ops/PAID_EXECUTION_RECEIPT_SMOKE.md`
