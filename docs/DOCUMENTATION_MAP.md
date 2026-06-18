@@ -24,6 +24,7 @@ Use these documents as the current implementation/runtime reference before relyi
 - `docs/AGENT_SURFACES.md` — current public agent discovery, capabilities, receipts, attestations, and marketplace surfaces.
 - `docs/API_REFERENCE.md` — API endpoint reference.
 - `docs/AGENT_RECEIPT_V1.md` — signed receipt schema and verification boundaries.
+- `docs/RECEIPT_VERIFICATION.md` — external local receipt verification algorithm and deterministic canonical JSON/hash fixtures.
 - `docs/AGENT_RECEIPT_QUICKSTART.md` — developer quickstart for requesting jobs and verifying receipts.
 - `docs/OPERATOR_CONTINUITY_E923.md` — current operator continuity declaration for runtime identity continuity.
 - `TRUST_MODEL.md` — normative trust language and verification boundaries.

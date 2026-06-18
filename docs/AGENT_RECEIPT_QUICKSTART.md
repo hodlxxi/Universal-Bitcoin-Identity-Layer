@@ -105,4 +105,4 @@ curl -sS "https://hodlxxi.com/agent/reputation" | jq .
 
 ## Receipt contract
 
-See [`AGENT_RECEIPT_V1.md`](AGENT_RECEIPT_V1.md) for the formal public receipt v1 contract, including field definitions for `payment_hash`, `request_hash`, `result_hash`, `signature`, `agent_pubkey`, and unpaid verification semantics.
+See [`AGENT_RECEIPT_V1.md`](AGENT_RECEIPT_V1.md) for the formal public receipt v1 contract, including field definitions for `payment_hash`, `request_hash`, `result_hash`, `signature`, `agent_pubkey`, and unpaid verification semantics. See [`RECEIPT_VERIFICATION.md`](RECEIPT_VERIFICATION.md) for local verification steps and deterministic canonical JSON/hash fixtures.

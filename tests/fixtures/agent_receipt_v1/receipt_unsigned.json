@@ -1,0 +1,12 @@
+{
+  "version": "1.0",
+  "event_type": "job_receipt",
+  "job_id": "00000000-0000-4000-8000-000000000001",
+  "job_type": "ping",
+  "payment_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "request_hash": "c45c13984520e58ec38cbb619609618b8ce00eefaff3d6d49e614a1a4f1fac84",
+  "result_hash": "d314e9c6ffc6b7d6d290d1055cec861ecefc2fbb0337e8f2a1c9f5cbd1af498c",
+  "prev_event_hash": null,
+  "timestamp": "2026-06-18T00:00:00Z",
+  "agent_pubkey": "02f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+}

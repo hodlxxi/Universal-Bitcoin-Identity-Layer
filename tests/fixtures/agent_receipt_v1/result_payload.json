@@ -1,0 +1,7 @@
+{
+  "echo": {
+    "message": "hello external verifier"
+  },
+  "job_type": "ping",
+  "ok": true
+}
