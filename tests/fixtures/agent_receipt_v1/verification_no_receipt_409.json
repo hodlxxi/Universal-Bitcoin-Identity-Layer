@@ -1,0 +1,9 @@
+{
+  "job_id": "00000000-0000-4000-8000-000000000002",
+  "status": "no_receipt",
+  "valid": false,
+  "verification": "unavailable",
+  "job_status": "invoice_pending",
+  "receipt": null,
+  "reason": "receipt_not_issued"
+}

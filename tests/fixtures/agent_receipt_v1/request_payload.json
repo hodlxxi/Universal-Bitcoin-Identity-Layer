@@ -1,0 +1,6 @@
+{
+  "job_type": "ping",
+  "payload": {
+    "message": "hello external verifier"
+  }
+}

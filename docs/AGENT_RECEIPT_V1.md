@@ -12,7 +12,7 @@ A receipt binds one completed agent job to:
 - the HODLXXI agent public key, and
 - the agent signature over the receipt payload.
 
-External clients should treat `/agent/jobs/<job_id>` as the lifecycle/status endpoint and `/agent/verify/<job_id>` as the receipt verifier after a receipt exists.
+External clients should treat `/agent/jobs/<job_id>` as the lifecycle/status endpoint and `/agent/verify/<job_id>` as the receipt verifier after a receipt exists. See [`RECEIPT_VERIFICATION.md`](RECEIPT_VERIFICATION.md) for the external local verification algorithm and canonical JSON fixtures.
 
 ## Lifecycle
 
