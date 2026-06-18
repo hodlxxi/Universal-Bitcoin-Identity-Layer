@@ -1,5 +1,8 @@
 # HODLXXI LND Drop-in Cleanup Rollback — 2026-05-07
 
+> **Status:** Historical checkpoint. This document records deployment, cleanup, planning, or protocol state at the time it was written. Do not treat it as the current runbook or current implementation truth unless it is explicitly linked from `docs/DOCUMENTATION_MAP.md` or `docs/READINESS_EVALUATION.md`.
+
+
 ## Summary
 
 A cleanup attempt disabled `21-lnd-rpcserver.conf` because `LND_RPCSERVER` appeared redundant by hash comparison.

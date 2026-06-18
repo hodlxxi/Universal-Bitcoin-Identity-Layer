@@ -1,5 +1,8 @@
 # HODLXXI Agent Protocol v0.2
 
+> **Status:** Historical checkpoint. This document records deployment, cleanup, planning, or protocol state at the time it was written. Do not treat it as the current runbook or current implementation truth unless it is explicitly linked from `docs/DOCUMENTATION_MAP.md` or `docs/READINESS_EVALUATION.md`.
+
+
 ## 1. Overview
 
 This specification extends HODLXXI from a client → agent interaction model to an agent ↔ agent interaction model.

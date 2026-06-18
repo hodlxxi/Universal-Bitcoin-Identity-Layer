@@ -1,5 +1,8 @@
 # HODLXXI Secret Key Drop-In Cleanup — 2026-05-06
 
+> **Status:** Historical checkpoint. This document records deployment, cleanup, planning, or protocol state at the time it was written. Do not treat it as the current runbook or current implementation truth unless it is explicitly linked from `docs/DOCUMENTATION_MAP.md` or `docs/READINESS_EVALUATION.md`.
+
+
 ## Current state
 
 Production now sources `FLASK_SECRET_KEY` from the canonical systemd environment file:

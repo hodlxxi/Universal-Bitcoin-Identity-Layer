@@ -1,5 +1,8 @@
 # HODLXXI Secrets Rotation and Env Consolidation Plan — 2026-05-04
 
+> **Status:** Historical checkpoint. This document records deployment, cleanup, planning, or protocol state at the time it was written. Do not treat it as the current runbook or current implementation truth unless it is explicitly linked from `docs/DOCUMENTATION_MAP.md` or `docs/READINESS_EVALUATION.md`.
+
+
 ## Goal
 
 Consolidate production secrets into root-only environment files and prepare a safe rotation plan for Redis, Flask session signing, Bitcoin RPC, and LND credentials.

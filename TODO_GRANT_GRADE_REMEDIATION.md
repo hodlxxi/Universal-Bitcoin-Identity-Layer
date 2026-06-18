@@ -1,5 +1,8 @@
 # HODLXXI grant-grade remediation backlog (post hardening pass)
 
+> **Status:** Historical checkpoint. This document records deployment, cleanup, planning, or protocol state at the time it was written. Do not treat it as the current runbook or current implementation truth unless it is explicitly linked from `docs/DOCUMENTATION_MAP.md` or `docs/READINESS_EVALUATION.md`.
+
+
 This file tracks remaining production work that is **not safe to fake in CI** and requires either product decisions or live infrastructure.
 
 ## 1) Nostr relay transport (real network path)

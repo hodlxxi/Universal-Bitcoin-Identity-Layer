@@ -1,5 +1,8 @@
 # HODLXXI LND RPCSERVER Drop-In Cleanup — 2026-05-07
 
+> **Status:** Historical checkpoint. This document records deployment, cleanup, planning, or protocol state at the time it was written. Do not treat it as the current runbook or current implementation truth unless it is explicitly linked from `docs/DOCUMENTATION_MAP.md` or `docs/READINESS_EVALUATION.md`.
+
+
 ## Current state
 
 Production now sources LND_RPCSERVER from the canonical systemd env file and the remaining forced LND path drop-in.

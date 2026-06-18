@@ -1,5 +1,8 @@
 # STATE_OF_PRODUCT_AND_RUNTIME
 
+> **Status:** Historical checkpoint. This document records deployment, cleanup, planning, or protocol state at the time it was written. Do not treat it as the current runbook or current implementation truth unless it is explicitly linked from `docs/DOCUMENTATION_MAP.md` or `docs/READINESS_EVALUATION.md`.
+
+
 _Last updated: April 14, 2026_
 
 This document is the **runtime-truth snapshot** for HODLXXI in the current branch state. It intentionally separates what is live now from what is staging-confirmed and what is still transitional.
