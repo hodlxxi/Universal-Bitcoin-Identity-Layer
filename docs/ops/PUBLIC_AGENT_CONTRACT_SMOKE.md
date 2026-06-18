@@ -31,6 +31,14 @@ The smoke verifies HTTP 200 responses from these public surfaces:
 - `/agent/reputation`
 - `/agent/attestations`
 - `/agent/chain/health`
+- `/.well-known/oauth-authorization-server` (OAuth authorization server metadata)
+- `/.well-known/oauth-protected-resource` (OAuth protected resource metadata)
+- `/.well-known/nostr-dm-policy.json` (Nostr DM policy)
+- `/agent/readiness/self-scan` (agent readiness self-scan)
+
+These added well-known metadata and readiness checks cover existing public read-only metadata/readiness surfaces; this PR does not add new runtime routes or change endpoint behavior. The Nostr DM policy check is conservative and safety-oriented: it locks only the no-custody, no-server-plaintext-storage, and no-relay-publishing boundaries, not policy choices such as private DM delivery enablement.
+
+It validates OAuth metadata, including authorization endpoint, token endpoint, JWKS URI, protected resource metadata linkage, authorization-code grant support, protected resource authorization server linkage, and bearer header support. It validates the readiness self-scan snapshot as `hodlxxi.agent_readiness_report.v1` with `runtime_ready`, no failed checks, score 100, at least one check, and references to the OAuth metadata surfaces.
 
 It validates the E923 operator continuity declaration, including:
 
@@ -66,6 +74,8 @@ That means the public agent surfaces, E923 operator continuity advertisements, a
 This smoke test is intentionally narrow. It does not prove:
 
 - locked capital
-- paid job completion
+- paid job completion; paid job completion still requires the paid receipt runbook
 - private key custody beyond public declarations
+- private DM delivery
+- relay publishing
 - legal identity
