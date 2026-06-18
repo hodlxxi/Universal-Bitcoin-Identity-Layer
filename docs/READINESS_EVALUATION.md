@@ -16,6 +16,10 @@ HODLXXI currently proves or verifies:
 - signed receipt contract documentation
 - SDK compatibility with current verifier semantics
 - reproducible public smoke test
+- OAuth authorization server metadata availability
+- OAuth protected resource metadata availability
+- conservative Nostr DM policy safety boundaries
+- runtime self-reported readiness snapshot
 
 ## Primary public verification command
 
@@ -35,12 +39,20 @@ The command checks:
 - `/agent/reputation`
 - `/agent/attestations`
 - `/agent/chain/health`
+- `/.well-known/oauth-authorization-server`
+- `/.well-known/oauth-protected-resource`
+- `/.well-known/nostr-dm-policy.json`
+- `/agent/readiness/self-scan`
 - operator continuity fields
 - operator continuity advertisements
 - one unpaid `ping` job request
 - `/agent/jobs/<job_id>` returns HTTP 200 with `status=invoice_pending`
 - `/agent/verify/<job_id>` returns HTTP 409 `status=no_receipt`, `reason=receipt_not_issued`
 - missing job verifier returns HTTP 404 `error=not_found`
+- OAuth authorization server metadata fields including `authorization_endpoint`, `token_endpoint`, `jwks_uri`, protected resource metadata linkage, and `authorization_code` grant support
+- OAuth protected resource metadata fields including `resource`, `jwks_uri`, `authorization_servers`, and bearer `header` support
+- conservative Nostr DM policy boundaries: `key_custody=false`, `server_plaintext_storage=false`, and `relay_publishing=false`
+- `/agent/readiness/self-scan` as the runtime self-reported readiness snapshot with schema `hodlxxi.agent_readiness_report.v1`, `runtime_ready`, zero failed checks, score 100, and non-empty checks
 
 This smoke test:
 
@@ -97,6 +109,7 @@ The SDK returns normalized JSON for HTTP 200 verifier responses and normalized H
 This readiness path:
 
 - does not prove locked capital
+- does not prove locked-capital funding status
 - does not prove paid job completion unless the paid receipt runbook is executed
 - does not prove legal identity
 - does not prove private key custody beyond public declarations

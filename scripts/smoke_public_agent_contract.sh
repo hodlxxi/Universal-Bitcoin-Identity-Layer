@@ -4,6 +4,10 @@ set -euo pipefail
 BASE="${BASE:-https://hodlxxi.com}"
 BASE="${BASE%/}"
 OPERATOR_ENDPOINT="/.well-known/hodlxxi-operator.json"
+OAUTH_AUTHORIZATION_SERVER_ENDPOINT="/.well-known/oauth-authorization-server"
+OAUTH_PROTECTED_RESOURCE_ENDPOINT="/.well-known/oauth-protected-resource"
+NOSTR_DM_POLICY_ENDPOINT="/.well-known/nostr-dm-policy.json"
+READINESS_SELF_SCAN_ENDPOINT="/agent/readiness/self-scan"
 OPERATOR_PUBKEY="023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923"
 AGENT_PUBKEY="02019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f92"
 MISSING_JOB_ID="00000000-0000-0000-0000-000000000000"
@@ -78,6 +82,10 @@ for path in \
   "/agent/capabilities" \
   "/agent/discovery" \
   "$OPERATOR_ENDPOINT" \
+  "$OAUTH_AUTHORIZATION_SERVER_ENDPOINT" \
+  "$OAUTH_PROTECTED_RESOURCE_ENDPOINT" \
+  "$NOSTR_DM_POLICY_ENDPOINT" \
+  "$READINESS_SELF_SCAN_ENDPOINT" \
   "/agent/reputation" \
   "/agent/attestations" \
   "/agent/chain/health"; do
@@ -93,6 +101,38 @@ operator_json="$(get_body "$OPERATOR_ENDPOINT")"
 agent_json="$(get_body '/.well-known/agent.json')"
 capabilities_json="$(get_body '/agent/capabilities')"
 discovery_json="$(get_body '/agent/discovery')"
+oauth_authorization_server_json="$(get_body "$OAUTH_AUTHORIZATION_SERVER_ENDPOINT")"
+oauth_protected_resource_json="$(get_body "$OAUTH_PROTECTED_RESOURCE_ENDPOINT")"
+nostr_dm_policy_json="$(get_body "$NOSTR_DM_POLICY_ENDPOINT")"
+readiness_self_scan_json="$(get_body "$READINESS_SELF_SCAN_ENDPOINT")"
+
+
+check "OAuth authorization server issuer matches BASE" jq_equals "$oauth_authorization_server_json" '.issuer' "$BASE"
+check "OAuth authorization endpoint matches public route" jq_equals "$oauth_authorization_server_json" '.authorization_endpoint' "$BASE/oauth/authorize"
+check "OAuth token endpoint matches public route" jq_equals "$oauth_authorization_server_json" '.token_endpoint' "$BASE/oauth/token"
+check "OAuth authorization server jwks_uri matches public route" jq_equals "$oauth_authorization_server_json" '.jwks_uri' "$BASE/oauth/jwks.json"
+check "OAuth authorization server advertises protected resource metadata" jq_true "$oauth_authorization_server_json" "(.protected_resource_metadata == \"$BASE$OAUTH_PROTECTED_RESOURCE_ENDPOINT\") or (.agent_auth.protected_resource_metadata == \"$BASE$OAUTH_PROTECTED_RESOURCE_ENDPOINT\")"
+check "OAuth authorization server supports authorization_code grant" jq_true "$oauth_authorization_server_json" '.grant_types_supported | index("authorization_code") != null'
+
+check "OAuth protected resource matches BASE" jq_equals "$oauth_protected_resource_json" '.resource' "$BASE"
+check "OAuth protected resource jwks_uri matches public route" jq_equals "$oauth_protected_resource_json" '.jwks_uri' "$BASE/oauth/jwks.json"
+check "OAuth protected resource authorization_servers contains BASE" jq_true "$oauth_protected_resource_json" ".authorization_servers | index(\"$BASE\") != null"
+check "OAuth protected resource supports bearer header" jq_true "$oauth_protected_resource_json" '.bearer_methods_supported | index("header") != null'
+
+check "Nostr DM policy service is HODLXXI" jq_equals "$nostr_dm_policy_json" '.service' 'HODLXXI'
+check "Nostr DM policy version exists" jq_true "$nostr_dm_policy_json" '.version != null and .version != ""'
+check "Nostr DM policy nip17 exists" jq_true "$nostr_dm_policy_json" '.nip17 != null'
+check "Nostr DM policy key_custody is false" jq_true "$nostr_dm_policy_json" '.nip17.key_custody == false'
+check "Nostr DM policy server_plaintext_storage is false" jq_true "$nostr_dm_policy_json" '.nip17.server_plaintext_storage == false'
+check "Nostr DM policy relay_publishing is false" jq_true "$nostr_dm_policy_json" '.nip17.relay_publishing == false'
+
+check "readiness self-scan schema is hodlxxi.agent_readiness_report.v1" jq_equals "$readiness_self_scan_json" '.schema' 'hodlxxi.agent_readiness_report.v1'
+check "readiness self-scan summary status is runtime_ready" jq_equals "$readiness_self_scan_json" '.summary.status' 'runtime_ready'
+check "readiness self-scan summary failed is zero" jq_true "$readiness_self_scan_json" '.summary.failed == 0'
+check "readiness self-scan summary score is 100" jq_true "$readiness_self_scan_json" '.summary.score == 100'
+check "readiness self-scan checks are present" jq_true "$readiness_self_scan_json" '.checks | length > 0'
+check "readiness self-scan includes OAuth authorization server surface" jq_true "$readiness_self_scan_json" ".optional_supporting_surfaces | index(\"$OAUTH_AUTHORIZATION_SERVER_ENDPOINT\") != null"
+check "readiness self-scan includes OAuth protected resource surface" jq_true "$readiness_self_scan_json" ".optional_supporting_surfaces | index(\"$OAUTH_PROTECTED_RESOURCE_ENDPOINT\") != null"
 
 check "operator schema is hodlxxi.operator_continuity.v1" jq_equals "$operator_json" '.schema' 'hodlxxi.operator_continuity.v1'
 check "operator_id is E923" jq_equals "$operator_json" '.operator_id' 'E923'
