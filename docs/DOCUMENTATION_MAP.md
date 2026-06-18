@@ -67,6 +67,8 @@ SDK `verify_job()` understands the normalized HTTP 409 `no_receipt` verifier sta
 
 These docs are useful as evidence/history, but should not be treated as always-current runbooks unless linked by current ops docs. Examples include:
 
+Many historical checkpoint documents now include a standard status note at the top to prevent confusing old deployment evidence with current implementation truth.
+
 - `docs/ops/*2026-05-*.md`
 - `HARDENING_SPRINT_2026-05-04.md`
 - `RED_TEAM_REMEDIATION_STATUS_2026-04-29.md`

@@ -1,5 +1,8 @@
 # HODLXXI Gunicorn/Eventlet Shutdown Diagnosis — 2026-05-09
 
+> **Status:** Historical checkpoint. This document records deployment, cleanup, planning, or protocol state at the time it was written. Do not treat it as the current runbook or current implementation truth unless it is explicitly linked from `docs/DOCUMENTATION_MAP.md` or `docs/READINESS_EVALUATION.md`.
+
+
 ## Summary
 
 Production restarts can still hit the systemd stop timeout and kill old Gunicorn/eventlet processes with SIGKILL.

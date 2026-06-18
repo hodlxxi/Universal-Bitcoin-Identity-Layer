@@ -1,5 +1,8 @@
 # HODLXXI Systemd Env Cleanup Checkpoint — 2026-05-05
 
+> **Status:** Historical checkpoint. This document records deployment, cleanup, planning, or protocol state at the time it was written. Do not treat it as the current runbook or current implementation truth unless it is explicitly linked from `docs/DOCUMENTATION_MAP.md` or `docs/READINESS_EVALUATION.md`.
+
+
 ## Current state
 
 Production systemd now uses `/etc/hodlxxi/hodlxxi.env` as the only active `EnvironmentFile`.

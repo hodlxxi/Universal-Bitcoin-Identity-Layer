@@ -1,5 +1,8 @@
 # RUNTIME_TRANSITION_STATUS
 
+> **Status:** Historical checkpoint. This document records deployment, cleanup, planning, or protocol state at the time it was written. Do not treat it as the current runbook or current implementation truth unless it is explicitly linked from `docs/DOCUMENTATION_MAP.md` or `docs/READINESS_EVALUATION.md`.
+
+
 _Last updated: April 14, 2026_
 
 Purpose: map the current monolith-exit / factory-first transition without overstating completion.

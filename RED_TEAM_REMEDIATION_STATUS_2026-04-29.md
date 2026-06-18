@@ -1,5 +1,8 @@
 # Red Team Remediation Status — 2026-04-29
 
+> **Status:** Historical checkpoint. This document records deployment, cleanup, planning, or protocol state at the time it was written. Do not treat it as the current runbook or current implementation truth unless it is explicitly linked from `docs/DOCUMENTATION_MAP.md` or `docs/READINESS_EVALUATION.md`.
+
+
 ## Executive summary
 
 This document tracks remediation work completed after the red-team/security-hardening review.

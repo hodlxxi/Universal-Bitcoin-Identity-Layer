@@ -1,5 +1,8 @@
 # HODLXXI Redis Env Cleanup Checkpoint — 2026-05-07
 
+> **Status:** Historical checkpoint. This document records deployment, cleanup, planning, or protocol state at the time it was written. Do not treat it as the current runbook or current implementation truth unless it is explicitly linked from `docs/DOCUMENTATION_MAP.md` or `docs/READINESS_EVALUATION.md`.
+
+
 ## Current state
 
 Production systemd no longer has `redis-env.conf` as an active drop-in.

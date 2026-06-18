@@ -1,5 +1,8 @@
 # HODLXXI Staging Env-line Cleanup — 2026-05-07
 
+> **Status:** Historical checkpoint. This document records deployment, cleanup, planning, or protocol state at the time it was written. Do not treat it as the current runbook or current implementation truth unless it is explicitly linked from `docs/DOCUMENTATION_MAP.md` or `docs/READINESS_EVALUATION.md`.
+
+
 ## Summary
 
 Cleaned staging systemd override env handling so `ubid-staging.service` no longer carries direct `Environment=` values in its active override drop-in.
