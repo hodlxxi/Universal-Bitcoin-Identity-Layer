@@ -91,9 +91,10 @@ These are useful for future development, staging, compatibility, and design inte
 
 ## Static website and conceptual docs
 
-- `app/static/docs/docs/*`
+- `app/static/docs/docs/README.md` — static docs index.
+- `app/static/docs/docs/*` — conceptual/public-facing reference docs.
 
-These are public-facing conceptual or website docs. They are not the authoritative source for current API/runtime behavior unless they point back to current runtime docs.
+These docs are not authoritative for current runtime behavior, API semantics, production readiness, operator continuity, or verifier semantics unless they point back to current runtime/readiness docs. Current implementation truth starts from `docs/READINESS_EVALUATION.md` and `docs/DOCUMENTATION_MAP.md`.
 
 ## Archive candidates / low-value docs
 
