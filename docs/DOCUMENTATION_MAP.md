@@ -98,7 +98,9 @@ These docs are not authoritative for current runtime behavior, API semantics, pr
 
 ## Archive candidates / low-value docs
 
-Examples:
+See `docs/ARCHIVE_CANDIDATES.md` for the controlled index of low-value, stale, superseded, or review-before-removal docs. Listing a file there does not delete it and does not authorize removal without a separate focused review PR.
+
+Current candidate paths:
 
 - `docs/CI_PING.md`
 - `docs/UI_UNIFICATION.md`
@@ -107,7 +109,7 @@ Examples:
 - `docs/schemas/external_agent_record.schema.json`
 - `examples/social/first_external_paid_call_post.md`
 
-Do not delete them in this PR. This PR only marks navigation/status. Future cleanup PRs can decide whether to archive, move, or remove.
+Do not delete them in this PR. Use `docs/ARCHIVE_CANDIDATES.md` and a future focused cleanup PR to decide whether to archive, move, remove, or keep any candidate.
 
 ## Safety / non-claims
 
