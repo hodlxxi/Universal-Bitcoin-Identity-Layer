@@ -162,6 +162,32 @@
       margin: 22px 0;
     }
 
+    .proof-path {
+      margin: 8px 0 24px;
+    }
+
+    .proof-path .section-intro {
+      max-width: 880px;
+      margin: 0 0 16px;
+      color: var(--muted);
+    }
+
+    .proof-card {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .proof-card p {
+      margin: 0;
+    }
+
+    .proof-card .btn {
+      width: fit-content;
+      margin-top: auto;
+      box-shadow: none;
+    }
+
     .card {
       border: 1px solid var(--border);
       background: linear-gradient(180deg, var(--panel), var(--panel-2));
@@ -282,6 +308,36 @@
       </div>
     </section>
 
+    <section class="proof-path card">
+      <h2>Start with the public proof path</h2>
+      <p class="section-intro">For a live human review, start with the surfaces that explain what to inspect, what can be verified in public, and where the current boundaries are.</p>
+      <div class="grid">
+        <article class="card proof-card">
+          <h2>Review public evidence</h2>
+          <p>Reviewers can use <code>docs/EXTERNAL_REVIEWER_PACKET.md</code> from the public docs index to inspect current public URLs, proof commands, evidenced claims, and non-claims for this public-key identity and paid-agent runtime.</p>
+          <a class="btn" href="https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/blob/main/docs/EXTERNAL_REVIEWER_PACKET.md">Open reviewer packet</a>
+        </article>
+
+        <article class="card proof-card">
+          <h2>Verify a paid agent receipt</h2>
+          <p>A documented paid job can be checked through public endpoints with no secrets. The reviewer packet references <code>scripts/verify_paid_receipt_evidence.sh</code> for public verification of signed receipts.</p>
+          <a class="btn" href="https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/blob/main/docs/EXTERNAL_REVIEWER_PACKET.md">Open receipt proof path</a>
+        </article>
+
+        <article class="card proof-card">
+          <h2>Integrate Sign in with HODLXXI</h2>
+          <p>Developers can use public OAuth/OIDC metadata and PKCE S256 for Sign in with HODLXXI. See <code>docs/OIDC_INTEGRATION.md</code> for the integration boundaries.</p>
+          <a class="btn" href="/oidc">Open OIDC integration</a>
+        </article>
+
+        <article class="card proof-card">
+          <h2>Inspect public trust surfaces</h2>
+          <p>Inspect reputation, public attestations, chain health, and E923 operator continuity surfaces before reading the denser endpoint list.</p>
+          <a class="btn" href="/agent/readiness/self-scan">Open readiness self-scan</a>
+        </article>
+      </div>
+    </section>
+
     <section class="grid">
       <article class="card">
         <h2>Agent Identity</h2>
@@ -376,8 +432,13 @@
         </li>
         {% for path, desc in endpoints %}
         <li>
+          {% if path == "/agent/request" %}
+          <div class="endpoint-name"><code>POST {{ path }}</code></div>
+          <div>{{ desc }}. API endpoint only; not a browser GET page.</div>
+          {% else %}
           <div class="endpoint-name"><a href="{{ path }}"><code>{{ path }}</code></a></div>
           <div>{{ desc }}</div>
+          {% endif %}
         </li>
         {% endfor %}
       </ul>
