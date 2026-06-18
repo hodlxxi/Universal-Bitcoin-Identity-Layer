@@ -24,19 +24,25 @@
    - Authentication requirements
    - Rate limits
 
-3. **[COVENANT_SYSTEM.md](COVENANT_SYSTEM.md)** - Core feature documentation
+3. **[OIDC_INTEGRATION.md](OIDC_INTEGRATION.md)** - Sign in with HODLXXI relying-party guide
+   - Discovery metadata
+   - Authorization Code + PKCE S256 flow
+   - JWKS/token validation boundaries
+   - Conservative non-claims for external integrations
+
+4. **[COVENANT_SYSTEM.md](COVENANT_SYSTEM.md)** - Core feature documentation
    - 21-year Bitcoin contracts
    - Descriptor-based implementation
    - Explorer UI guide
    - API endpoints
 
-4. **[DATABASE_SCHEMA.md](DATABASE_SCHEMA.md)** - Database documentation
+5. **[DATABASE_SCHEMA.md](DATABASE_SCHEMA.md)** - Database documentation
    - All 17 tables documented
    - Foreign key relationships
    - Index strategy
    - Migration notes
 
-5. **[AGENT_SURFACES.md](AGENT_SURFACES.md)** - Agent/skills/marketplace discovery
+6. **[AGENT_SURFACES.md](AGENT_SURFACES.md)** - Agent/skills/marketplace discovery
    - `/.well-known/agent.json`
    - `/agent/capabilities` + `/agent/capabilities/schema`
    - `/agent/skills`
@@ -45,7 +51,7 @@
    - [ops/PAID_EXECUTION_RECEIPT_SMOKE.md](ops/PAID_EXECUTION_RECEIPT_SMOKE.md)
    - [ops/COMMERCE_RUNTIME_STATE_2026-06-17.md](ops/COMMERCE_RUNTIME_STATE_2026-06-17.md)
 
-6. **Python SDK**
+7. **Python SDK**
    - `docs/sdk/README.md`
    - `docs/sdk/AUTH_CHALLENGE_FLOW.md`
    - `docs/sdk/NOSTR_AUTH_CHALLENGE_FLOW.md`
@@ -53,7 +59,7 @@
    - `examples/python/auth_challenge_flow.py`
    - `examples/python/nostr_auth_challenge_flow.py`
 
-7. **[COVENANT_VISUALIZATION_MVP.md](COVENANT_VISUALIZATION_MVP.md)** - Paid covenant visualization capability
+8. **[COVENANT_VISUALIZATION_MVP.md](COVENANT_VISUALIZATION_MVP.md)** - Paid covenant visualization capability
    - `job_type: covenant_visualize`
    - input/output contracts
    - parsing boundaries and limitations

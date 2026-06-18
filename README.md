@@ -63,6 +63,9 @@ flask run
 The service exposes:
 
 - `/.well-known/openid-configuration`, `/oauth/token`, `/oauth/authorize`
+
+For third-party login setup, see [Sign in with HODLXXI Integration Guide](docs/OIDC_INTEGRATION.md).
+
 - `/.well-known/agent.json`, `/agent/capabilities`, `/agent/capabilities/schema`
 - `/agent/skills`, `/agent/marketplace/listing`, `/agent/reputation`, `/agent/attestations`
 - `/lnurl/auth` LNURL challenge endpoints

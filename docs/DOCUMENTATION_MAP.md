@@ -54,6 +54,7 @@ Current or recent operational verification references:
 
 Developer-facing integration references:
 
+- `docs/OIDC_INTEGRATION.md` — canonical third-party Sign in with HODLXXI relying-party guide.
 - `docs/sdk/README.md`
 - `docs/sdk/AUTH_CHALLENGE_FLOW.md`
 - `docs/sdk/NOSTR_AUTH_CHALLENGE_FLOW.md`
