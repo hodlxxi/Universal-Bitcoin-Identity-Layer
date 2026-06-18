@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HODLXXI Paid Receipt Proof</title>
+  <style>
+    :root { color-scheme: dark; --bg: #07110d; --panel: #0d1b14; --line: #1f3d2d; --text: #e7fff0; --muted: #a6cdb6; --accent: #35f08f; --warn: #ffd166; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at top, #10291b 0, var(--bg) 48rem); color: var(--text); }
+    main { width: min(1120px, calc(100% - 2rem)); margin: 0 auto; padding: 3rem 0; }
+    a { color: var(--accent); }
+    .hero, .card { border: 1px solid var(--line); background: rgba(13, 27, 20, 0.88); border-radius: 18px; box-shadow: 0 0 30px rgba(53, 240, 143, 0.08); }
+    .hero { padding: 2rem; margin-bottom: 1.5rem; }
+    h1 { margin: 0 0 1rem; font-size: clamp(2rem, 5vw, 4rem); letter-spacing: -0.04em; }
+    h2 { margin: 0 0 1rem; }
+    p { color: var(--muted); line-height: 1.65; }
+    .actions, .summary { display: flex; gap: 0.8rem; flex-wrap: wrap; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.8rem 1rem; border-radius: 999px; border: 1px solid var(--accent); text-decoration: none; font-weight: 700; background: rgba(53, 240, 143, 0.08); }
+    .summary { margin: 1.5rem 0; }
+    .metric { flex: 1 1 280px; padding: 1rem; border: 1px solid var(--line); border-radius: 14px; background: rgba(255, 255, 255, 0.03); }
+    .metric span { display: block; color: var(--muted); font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.08em; }
+    .metric strong { display: block; margin-top: 0.35rem; font-size: 1rem; overflow-wrap: anywhere; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    .card { padding: 1.35rem; }
+    ul { padding-left: 1.25rem; color: var(--muted); line-height: 1.65; }
+    code, pre { color: var(--text); background: rgba(255, 255, 255, 0.06); border-radius: 0.35rem; }
+    code { padding: 0.1rem 0.3rem; }
+    pre { padding: 1rem; border: 1px solid var(--line); overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .status { color: var(--accent); }
+    .nonclaim { color: var(--warn); }
+    @media (max-width: 780px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <h1>HODLXXI Paid Receipt Proof</h1>
+      <p>This page is a human-readable guide for verifying one public paid agent receipt.</p>
+      <p>The machine-readable verification remains in public endpoints and the shell verifier. No private key, login, or secret is required to inspect this proof path.</p>
+      <div class="actions">
+        <a class="btn" href="/agent/verify/{{ proof.job_id }}">Verify this job</a>
+        <a class="btn" href="/agent/attestations">Public attestations</a>
+        <a class="btn" href="/agent/reputation">Public reputation</a>
+        <a class="btn" href="/agent/chain/health">Chain health</a>
+        <a class="btn" href="/agent/readiness">Readiness report</a>
+        <a class="btn" href="/agent/readiness/self-scan">Machine readiness JSON</a>
+        <a class="btn" href="https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/blob/main/docs/EXTERNAL_REVIEWER_PACKET.md">Open reviewer packet</a>
+      </div>
+    </section>
+
+    <section class="summary" aria-label="Paid receipt proof summary">
+      <div class="metric"><span>job ID</span><strong>{{ proof.job_id }}</strong></div>
+      <div class="metric"><span>operator label</span><strong>{{ proof.operator_label }}</strong></div>
+      <div class="metric"><span>payment hash</span><strong>{{ proof.payment_hash }}</strong></div>
+      <div class="metric"><span>request hash</span><strong>{{ proof.request_hash }}</strong></div>
+      <div class="metric"><span>result hash</span><strong>{{ proof.result_hash }}</strong></div>
+      <div class="metric"><span>event hash</span><strong>{{ proof.event_hash }}</strong></div>
+      <div class="metric"><span>public verification status</span><strong class="status">verifiable from public endpoints</strong></div>
+    </section>
+
+    <section class="card">
+      <h2>Core verification command</h2>
+      <p>Run the public verifier from a checkout of the repository:</p>
+      <pre><code>BASE="https://hodlxxi.com" JOB_ID="{{ proof.job_id }}" bash scripts/verify_paid_receipt_evidence.sh</code></pre>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>What this proves</h2>
+        <ul>
+          <li>a public paid job record exists for the listed job ID;</li>
+          <li>public verification endpoints expose receipt/evidence data for that job;</li>
+          <li>the verifier script can check the relationship between job ID, receipt/evidence fields, attestation/reputation/chain-health surfaces, and signed/canonical public data as implemented by the current verifier;</li>
+          <li>the evidence is inspectable without account login or private secrets.</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>What this does not prove</h2>
+        <ul class="nonclaim">
+          <li>does not prove legal identity;</li>
+          <li>does not prove KYC;</li>
+          <li>does not prove custody of funds;</li>
+          <li>does not prove locked capital;</li>
+          <li>does not prove that all future jobs will succeed;</li>
+          <li>does not prove that every advertised integration is production-ready;</li>
+          <li>does not replace application-specific risk checks;</li>
+          <li>does not require trusting a private screenshot.</li>
+        </ul>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
