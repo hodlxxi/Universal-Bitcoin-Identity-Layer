@@ -119,7 +119,7 @@ This readiness path:
 
 ## Optional deeper checks
 
-- [`docs/ops/PAID_EXECUTION_RECEIPT_SMOKE.md`](ops/PAID_EXECUTION_RECEIPT_SMOKE.md) includes a 2026-06-18 manual paid receipt evidence run. Public smoke still does not prove paid job completion; paid job completion requires the paid receipt runbook/evidence.
+- [`docs/ops/PAID_EXECUTION_RECEIPT_SMOKE.md`](ops/PAID_EXECUTION_RECEIPT_SMOKE.md) includes a 2026-06-18 manual paid receipt evidence run. Public smoke still does not prove paid job completion; paid job completion requires the paid receipt runbook/evidence. The documented paid receipt evidence can be externally rechecked with the public-only `scripts/verify_paid_receipt_evidence.sh` verifier, which uses no secrets, does not create a job, does not pay an invoice, and does not prove locked capital or legal identity.
 - [`docs/ops/OPERATOR_CONTINUITY_VERIFY.md`](ops/OPERATOR_CONTINUITY_VERIFY.md)
 - [`docs/ops/RELEASE_GATE_SMOKE_MANUAL.md`](ops/RELEASE_GATE_SMOKE_MANUAL.md)
 - [`docs/ops/RUNTIME_OBSERVABILITY.md`](ops/RUNTIME_OBSERVABILITY.md)
