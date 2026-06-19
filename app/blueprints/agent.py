@@ -991,6 +991,11 @@ def readiness_page():
     )
 
 
+@agent_bp.get("/agent/evidence")
+def evidence_page():
+    return render_template("agent/evidence.html")
+
+
 @agent_bp.get("/agent/receipt-proof")
 def receipt_proof_page():
     proof = {

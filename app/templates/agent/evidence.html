@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HODLXXI Public Evidence</title>
+  <style>
+    :root { color-scheme: dark; --bg: #07110d; --panel: #0d1b14; --line: #1f3d2d; --text: #e7fff0; --muted: #a6cdb6; --accent: #35f08f; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at top, #10291b 0, var(--bg) 48rem); color: var(--text); }
+    main { width: min(1120px, calc(100% - 2rem)); margin: 0 auto; padding: 3rem 0; }
+    a { color: var(--accent); }
+    .hero, .card { border: 1px solid var(--line); background: rgba(13, 27, 20, 0.88); border-radius: 18px; box-shadow: 0 0 30px rgba(53, 240, 143, 0.08); }
+    .hero { padding: 2rem; margin-bottom: 1.5rem; }
+    h1 { margin: 0 0 1rem; font-size: clamp(2rem, 5vw, 4rem); letter-spacing: -0.04em; }
+    h2 { margin: 0 0 1rem; }
+    p { color: var(--muted); line-height: 1.65; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    .card { padding: 1.35rem; }
+    .card p { min-height: 4.8rem; }
+    .actions { display: flex; gap: 0.8rem; flex-wrap: wrap; margin-top: 1rem; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.8rem 1rem; border-radius: 999px; border: 1px solid var(--accent); text-decoration: none; font-weight: 700; background: rgba(53, 240, 143, 0.08); }
+    code { color: var(--text); background: rgba(255, 255, 255, 0.06); padding: 0.1rem 0.3rem; border-radius: 0.35rem; }
+    ul, ol { padding-left: 1.25rem; color: var(--muted); line-height: 1.65; }
+    .section { margin-top: 1rem; }
+    @media (max-width: 780px) { .grid { grid-template-columns: 1fr; } .card p { min-height: 0; } }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <h1>HODLXXI Public Evidence</h1>
+      <p>This page is a human-readable map of public HODLXXI evidence surfaces.</p>
+      <p>It helps reviewers inspect what is publicly verifiable before reading raw JSON or repository docs.</p>
+      <p>It does not replace machine-readable endpoints or the external reviewer packet.</p>
+    </section>
+
+    <section class="grid" aria-label="Public evidence surfaces">
+      <article class="card">
+        <h2>Paid receipt proof</h2>
+        <p>A canonical paid job can be inspected through a human receipt proof page and machine verification endpoints.</p>
+        <a class="btn" href="/agent/receipt-proof">Open receipt proof</a>
+      </article>
+
+      <article class="card">
+        <h2>Readiness report</h2>
+        <p>Readiness has a human wrapper and a machine-readable self-scan for public inspection.</p>
+        <a class="btn" href="/agent/readiness">Open readiness report</a>
+      </article>
+
+      <article class="card">
+        <h2>Machine readiness JSON</h2>
+        <p>The machine readiness JSON exposes the current public self-scan in a script-friendly format.</p>
+        <a class="btn" href="/agent/readiness/self-scan">Open readiness JSON</a>
+      </article>
+
+      <article class="card">
+        <h2>Operator continuity</h2>
+        <p>The operator continuity surface exposes the E923 operator identity and continuity metadata.</p>
+        <a class="btn" href="/.well-known/hodlxxi-operator.json">Open operator continuity</a>
+      </article>
+
+      <article class="card">
+        <h2>Reputation</h2>
+        <p>The public reputation surface summarizes observable behavior and trust signals exposed by the current runtime.</p>
+        <a class="btn" href="/agent/reputation">Open reputation</a>
+      </article>
+
+      <article class="card">
+        <h2>Attestations</h2>
+        <p>Public attestations expose signed/canonical evidence emitted by the current agent surfaces.</p>
+        <a class="btn" href="/agent/attestations">Open attestations</a>
+      </article>
+
+      <article class="card">
+        <h2>Chain health</h2>
+        <p>Chain health exposes the public health and continuity boundary for the current trust chain surface.</p>
+        <a class="btn" href="/agent/chain/health">Open chain health</a>
+      </article>
+
+      <article class="card">
+        <h2>Agent discovery</h2>
+        <p>The agent descriptor is the public machine-readable discovery entrypoint for HODLXXI agent capabilities.</p>
+        <a class="btn" href="/.well-known/agent.json">Open agent descriptor</a>
+      </article>
+
+      <article class="card">
+        <h2>OIDC / Sign in with HODLXXI</h2>
+        <p>OIDC metadata and integration docs show the Sign in with HODLXXI integration boundary.</p>
+        <a class="btn" href="/oidc">Open OIDC integration</a>
+      </article>
+
+      <article class="card">
+        <h2>External reviewer packet</h2>
+        <p>The external reviewer packet contains command-line verification context, public URLs, evidenced claims, and non-claims.</p>
+        <a class="btn" href="https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer/blob/main/docs/EXTERNAL_REVIEWER_PACKET.md">Open reviewer packet</a>
+      </article>
+    </section>
+
+    <section class="section grid">
+      <article class="card">
+        <h2>Suggested review path</h2>
+        <ol>
+          <li>Start with the paid receipt proof.</li>
+          <li>Check readiness.</li>
+          <li>Inspect operator continuity.</li>
+          <li>Compare reputation, attestations, and chain health.</li>
+          <li>Read the external reviewer packet for command-line verification.</li>
+        </ol>
+      </article>
+
+      <article class="card">
+        <h2>What this evidence can support</h2>
+        <ul>
+          <li>public-key continuity claims;</li>
+          <li>public paid-job receipt inspection;</li>
+          <li>signed/canonical receipt and attestation inspection through current public endpoints;</li>
+          <li>public readiness and reputation surface inspection;</li>
+          <li>OIDC metadata and integration boundary inspection.</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>What this evidence does not prove</h2>
+        <ul>
+          <li>does not prove legal identity;</li>
+          <li>does not prove KYC;</li>
+          <li>does not prove custody of funds;</li>
+          <li>does not prove locked capital;</li>
+          <li>does not prove all future jobs will succeed;</li>
+          <li>does not prove every advertised integration is production-ready;</li>
+          <li>does not replace application-specific risk checks;</li>
+          <li>does not require trusting private screenshots.</li>
+        </ul>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
