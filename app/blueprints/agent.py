@@ -996,6 +996,11 @@ def evidence_page():
     return render_template("agent/evidence.html")
 
 
+@agent_bp.get("/demo")
+def demo_page():
+    return render_template("agent/demo.html")
+
+
 @agent_bp.get("/agent/receipt-proof")
 def receipt_proof_page():
     proof = {

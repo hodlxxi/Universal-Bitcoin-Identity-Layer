@@ -12,16 +12,21 @@ def test_homepage_exposes_human_proof_path_without_overclaims():
     assert response.status_code == 200
 
     for marker in [
-        "Review public evidence",
-        "Verify a paid agent receipt",
+        "Human proof page",
+        "Open human proof demo",
+        'href="/demo"',
         "Integrate Sign in with HODLXXI",
-        "Inspect public trust surfaces",
-        "/agent/evidence",
+        "Open OIDC integration",
+        'href="/oidc"',
+        "Public proof surfaces",
         "Open evidence map",
-        "E923",
-        "signed receipts",
-        "public attestations",
-        "Sign in with HODLXXI",
+        'href="/agent/evidence"',
+        "Open receipt proof",
+        'href="/agent/receipt-proof"',
+        "Open readiness report",
+        'href="/agent/readiness"',
+        "PKCE S256",
+        "integration boundaries",
     ]:
         assert marker in text
 

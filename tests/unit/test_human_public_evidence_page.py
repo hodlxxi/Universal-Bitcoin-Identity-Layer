@@ -45,7 +45,7 @@ def test_human_public_evidence_page_renders_public_evidence_map():
         assert marker in text
 
 
-def test_homepage_review_public_evidence_card_points_to_evidence_map():
+def test_homepage_public_proof_surfaces_card_points_to_evidence_map():
     app = create_app()
     app.config.update(TESTING=True)
     client = app.test_client()
@@ -57,9 +57,9 @@ def test_homepage_review_public_evidence_card_points_to_evidence_map():
     assert "/agent/evidence" in text
     assert "Open evidence map" in text
 
-    card_start = text.index("Review public evidence")
-    card_end = text.index("Verify a paid agent receipt")
-    review_card = text[card_start:card_end]
+    card_start = text.index("Public proof surfaces")
+    card_end = text.index("</article>", card_start)
+    proof_surfaces_card = text[card_start:card_end]
 
-    assert "docs/EXTERNAL_REVIEWER_PACKET.md" not in review_card
-    assert "github.com/hodlxxi/Universal-Bitcoin-Identity-Layer" not in review_card
+    assert "docs/EXTERNAL_REVIEWER_PACKET.md" not in proof_surfaces_card
+    assert "github.com/hodlxxi/Universal-Bitcoin-Identity-Layer" not in proof_surfaces_card

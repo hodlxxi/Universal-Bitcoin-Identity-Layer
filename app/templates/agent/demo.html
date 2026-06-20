@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HODLXXI Human Proof Page</title>
+  <style>
+    :root { color-scheme: dark; --bg: #07110d; --panel: #0d1b14; --line: #1f3d2d; --text: #e7fff0; --muted: #a6cdb6; --accent: #35f08f; --warn: #ffd166; --bad: #ff6b6b; --ok: #35f08f; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at top, #10291b 0, var(--bg) 48rem); color: var(--text); }
+    main { width: min(1120px, calc(100% - 2rem)); margin: 0 auto; padding: 3rem 0; }
+    a { color: var(--accent); }
+    .hero, .card { border: 1px solid var(--line); background: rgba(13, 27, 20, 0.88); border-radius: 18px; box-shadow: 0 0 30px rgba(53, 240, 143, 0.08); }
+    .hero { padding: 2rem; margin-bottom: 1.5rem; }
+    h1 { margin: 0 0 1rem; font-size: clamp(2rem, 5vw, 4rem); letter-spacing: -0.04em; }
+    h2 { margin: 0 0 1rem; }
+    p { color: var(--muted); line-height: 1.65; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    .card { padding: 1.35rem; }
+    .steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; margin: 1rem 0; }
+    .step { border: 1px solid var(--line); border-radius: 14px; padding: 0.85rem; background: rgba(255, 255, 255, 0.03); color: var(--muted); font-weight: 700; }
+    .step strong { color: var(--accent); display: block; font-size: 1.1rem; }
+    label { display: block; color: var(--muted); font-weight: 700; margin: 0.8rem 0 0.35rem; }
+    input, textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 0.85rem; color: var(--text); background: rgba(0, 0, 0, 0.26); font: inherit; }
+    textarea { min-height: 7rem; resize: vertical; }
+    .actions { display: flex; gap: 0.8rem; flex-wrap: wrap; margin-top: 1rem; }
+    .btn, button { display: inline-flex; align-items: center; justify-content: center; padding: 0.8rem 1rem; border-radius: 999px; border: 1px solid var(--accent); color: var(--text); text-decoration: none; font-weight: 800; background: rgba(53, 240, 143, 0.08); cursor: pointer; }
+    button:disabled, .btn.disabled { opacity: 0.5; cursor: not-allowed; }
+    code, pre { color: var(--text); background: rgba(255, 255, 255, 0.06); border-radius: 0.35rem; }
+    code { padding: 0.1rem 0.3rem; }
+    pre { min-height: 4rem; padding: 1rem; border: 1px solid var(--line); overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .badge { display: inline-flex; align-items: center; gap: 0.35rem; border: 1px solid var(--line); border-radius: 999px; padding: 0.35rem 0.7rem; color: var(--muted); background: rgba(255, 255, 255, 0.03); font-weight: 800; }
+    .badge.ok { color: var(--ok); border-color: var(--ok); }
+    .badge.warn { color: var(--warn); border-color: var(--warn); }
+    .badge.bad { color: var(--bad); border-color: var(--bad); }
+    .warning { border-color: rgba(255, 209, 102, 0.65); background: rgba(255, 209, 102, 0.08); }
+    .invoice { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    @media (max-width: 860px) { .grid, .steps { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <span class="badge warn">21 sat live agent demo</span>
+      <h1>Human proof page</h1>
+      <p>Run a real 21 sat <code>ping</code> agent job in under 30 seconds: enter a public key, create a request, pay the Lightning invoice, see the result, and verify the signed receipt.</p>
+      <div class="steps" aria-label="Demo flow">
+        <div class="step"><strong>Request</strong>Create a paid job with <code>POST /agent/request</code>.</div>
+        <div class="step"><strong>Pay</strong>Pay the Lightning invoice returned by the runtime.</div>
+        <div class="step"><strong>Result</strong>Check <code>GET /agent/jobs/&lt;job_id&gt;</code>.</div>
+        <div class="step"><strong>Verify</strong>Call <code>GET /agent/verify/&lt;job_id&gt;</code>.</div>
+      </div>
+    </section>
+
+    <section class="card warning">
+      <h2>Honest identity boundary</h2>
+      <p>The public key is self-declared in this first demo.</p>
+      <p>This does not yet prove control of the key.</p>
+      <p>A later version can add challenge/signature proof-of-control.</p>
+    </section>
+
+    <section class="grid" aria-label="Interactive human proof demo">
+      <article class="card">
+        <h2>Request</h2>
+        <label for="requesterPubkey">Requester public key / npub</label>
+        <input id="requesterPubkey" name="requester_pubkey" autocomplete="off" placeholder="npub1... or hex public key">
+        <label for="message">Message</label>
+        <textarea id="message" name="message">Hello from HODLXXI demo</textarea>
+        <div class="actions">
+          <button type="button" id="createButton" onclick="createRequest()">Create 21 sat request</button>
+          <button type="button" onclick="resetDemo()">Reset</button>
+        </div>
+        <p>Payload includes <code>requester_pubkey</code>, <code>message</code>, and <code>demo: human_proof_v1</code>.</p>
+      </article>
+
+      <article class="card">
+        <h2>Pay</h2>
+        <p>Status: <span id="requestStatus" class="badge warn">not requested</span></p>
+        <p>Job ID: <code id="jobId">none</code></p>
+        <p>Lightning invoice:</p>
+        <pre id="invoice" class="invoice">Create a request to receive an invoice.</pre>
+        <div class="actions">
+          <button type="button" id="copyButton" onclick="copyInvoice()" disabled>Copy invoice</button>
+          <a class="btn disabled" id="lightningLink" href="#" aria-disabled="true">Open lightning link</a>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Result</h2>
+        <p>Status: <span id="jobStatus" class="badge warn">not checked</span></p>
+        <div class="actions">
+          <button type="button" id="checkButton" onclick="checkJob()" disabled>Check result</button>
+        </div>
+        <pre id="jobResponse">Pay the invoice, then check the job.</pre>
+      </article>
+
+      <article class="card">
+        <h2>Verify</h2>
+        <p>Status: <span id="verifyStatus" class="badge warn">not verified</span></p>
+        <div class="actions">
+          <button type="button" id="verifyButton" onclick="verifyJob()" disabled>Verify</button>
+        </div>
+        <pre id="verifyResponse">After the receipt is issued, verify the signed receipt.</pre>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    let currentJobId = null;
+    let currentInvoice = null;
+
+    function setText(id, value) {
+      document.getElementById(id).textContent = value;
+    }
+
+    function setBadge(id, value, state) {
+      const el = document.getElementById(id);
+      el.textContent = value;
+      el.className = `badge ${state || "warn"}`;
+    }
+
+    function compactJson(data) {
+      return JSON.stringify(data, null, 2);
+    }
+
+    async function readJsonResponse(response) {
+      const text = await response.text();
+      let data;
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch (error) {
+        data = { raw: text };
+      }
+      return data;
+    }
+
+    function applyInvoice(invoice) {
+      currentInvoice = invoice || null;
+      setText("invoice", currentInvoice || "No invoice was returned.");
+      const copyButton = document.getElementById("copyButton");
+      const lightningLink = document.getElementById("lightningLink");
+      copyButton.disabled = !currentInvoice;
+      if (currentInvoice) {
+        lightningLink.href = `lightning:${currentInvoice}`;
+        lightningLink.classList.remove("disabled");
+        lightningLink.setAttribute("aria-disabled", "false");
+      } else {
+        lightningLink.href = "#";
+        lightningLink.classList.add("disabled");
+        lightningLink.setAttribute("aria-disabled", "true");
+      }
+    }
+
+    async function createRequest() {
+      const requesterPubkey = document.getElementById("requesterPubkey").value.trim();
+      const message = document.getElementById("message").value.trim() || "Hello from HODLXXI demo";
+      const body = {
+        job_type: "ping",
+        payload: {
+          message: message,
+          requester_pubkey: requesterPubkey,
+          demo: "human_proof_v1"
+        }
+      };
+
+      setBadge("requestStatus", "creating", "warn");
+      setText("jobResponse", compactJson({ request: body }));
+      try {
+        const response = await fetch("/agent/request", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        const data = await readJsonResponse(response);
+        setText("jobResponse", compactJson(data));
+        if (!response.ok) {
+          setBadge("requestStatus", `failed (${response.status})`, "bad");
+          return;
+        }
+        currentJobId = data.job_id;
+        setText("jobId", currentJobId || "missing");
+        applyInvoice(data.invoice || data.payment_request || data.bolt11 || "");
+        setBadge("requestStatus", data.status || "created", "ok");
+        document.getElementById("checkButton").disabled = !currentJobId;
+        document.getElementById("verifyButton").disabled = !currentJobId;
+      } catch (error) {
+        setBadge("requestStatus", "failed", "bad");
+        setText("jobResponse", compactJson({ error: String(error) }));
+      }
+    }
+
+    async function checkJob() {
+      if (!currentJobId) return;
+      setBadge("jobStatus", "checking", "warn");
+      try {
+        const response = await fetch(`/agent/jobs/${encodeURIComponent(currentJobId)}`);
+        const data = await readJsonResponse(response);
+        setText("jobResponse", compactJson(data));
+        if (!response.ok) {
+          setBadge("jobStatus", `failed (${response.status})`, "bad");
+          return;
+        }
+        const done = data.status === "done" || Boolean(data.receipt);
+        setBadge("jobStatus", data.status || "unknown", done ? "ok" : "warn");
+      } catch (error) {
+        setBadge("jobStatus", "failed", "bad");
+        setText("jobResponse", compactJson({ error: String(error) }));
+      }
+    }
+
+    async function verifyJob() {
+      if (!currentJobId) return;
+      setBadge("verifyStatus", "verifying", "warn");
+      try {
+        const response = await fetch(`/agent/verify/${encodeURIComponent(currentJobId)}`);
+        const data = await readJsonResponse(response);
+        setText("verifyResponse", compactJson(data));
+        const verified = data.valid === true || data.verification === "verified";
+        setBadge("verifyStatus", verified ? "verified" : "not verified", verified ? "ok" : "bad");
+      } catch (error) {
+        setBadge("verifyStatus", "failed", "bad");
+        setText("verifyResponse", compactJson({ error: String(error) }));
+      }
+    }
+
+    async function copyInvoice() {
+      if (!currentInvoice) return;
+      await navigator.clipboard.writeText(currentInvoice);
+      setBadge("requestStatus", "invoice copied", "ok");
+    }
+
+    function resetDemo() {
+      currentJobId = null;
+      currentInvoice = null;
+      setText("jobId", "none");
+      applyInvoice(null);
+      setBadge("requestStatus", "not requested", "warn");
+      setBadge("jobStatus", "not checked", "warn");
+      setBadge("verifyStatus", "not verified", "warn");
+      setText("jobResponse", "Pay the invoice, then check the job.");
+      setText("verifyResponse", "After the receipt is issued, verify the signed receipt.");
+      document.getElementById("checkButton").disabled = true;
+      document.getElementById("verifyButton").disabled = true;
+    }
+  </script>
+</body>
+</html>
