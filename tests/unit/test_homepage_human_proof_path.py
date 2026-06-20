@@ -18,6 +18,8 @@ def test_homepage_exposes_human_proof_path_without_overclaims():
         "Integrate Sign in with HODLXXI",
         "Open OIDC integration",
         'href="/oidc"',
+        'href="/my-kyc-id"',
+        "KYK",
         "Public proof surfaces",
         "Open evidence map",
         'href="/agent/evidence"',
@@ -31,6 +33,7 @@ def test_homepage_exposes_human_proof_path_without_overclaims():
         assert marker in text
 
     assert 'href="/agent/request"' not in text
+    assert ">my-kyc-id</a>" not in text
 
     for forbidden_claim in [
         "proves legal identity",
