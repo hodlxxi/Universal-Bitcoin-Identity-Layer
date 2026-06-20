@@ -24,6 +24,7 @@ def test_human_demo_page_renders_interactive_paid_agent_flow():
         "/agent/verify/",
         "The public key is self-declared in this first demo",
         "This does not yet prove control of the key",
+        "self-declared requester key can be included in new signed receipts as a label",
         "A later version can add challenge/signature proof-of-control",
         "Create 21 sat request",
         "Hello from HODLXXI demo",
