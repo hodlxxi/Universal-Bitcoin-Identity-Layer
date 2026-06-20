@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import hashlib
 import logging
 import os
+import re
 import time
 import uuid
 from collections import defaultdict
@@ -1433,6 +1434,34 @@ def create_job_request():
     )
 
 
+def _validated_self_declared_requester_pubkey(value):
+    if not isinstance(value, str):
+        return None
+
+    candidate = value.strip()
+    if not candidate or len(candidate) > 128:
+        return None
+
+    if re.fullmatch(r"npub1[023456789acdefghjklmnpqrstuvwxyz]+", candidate) and 8 <= len(candidate) <= 128:
+        return candidate
+
+    if re.fullmatch(r"[0-9a-fA-F]{64}", candidate):
+        return candidate
+
+    if re.fullmatch(r"[0-9a-fA-F]{66}", candidate) and candidate[:2] in {"02", "03"}:
+        return candidate
+
+    return None
+
+
+def _requester_pubkey_from_job(job: AgentJob):
+    request_json = job.request_json if isinstance(job.request_json, dict) else {}
+    payload = request_json.get("payload", {})
+    if not isinstance(payload, dict):
+        return None
+    return _validated_self_declared_requester_pubkey(payload.get("requester_pubkey"))
+
+
 def _build_receipt(job: AgentJob, prev_event_hash: str | None) -> dict:
     payload = job.request_json.get("payload", {}) or {}
     result_payload = _job_result(job, payload)
@@ -1453,13 +1482,18 @@ def _build_receipt(job: AgentJob, prev_event_hash: str | None) -> dict:
         "prev_event_hash": prev_event_hash,
         "version": RECEIPT_VERSION,
     }
+    requester_pubkey = _requester_pubkey_from_job(job)
+    if requester_pubkey:
+        receipt["requester_pubkey"] = requester_pubkey
+        receipt["requester_pubkey_proof"] = "self_declared_no_signature"
+
     receipt["signature"] = sign_message(canonical_json_bytes(receipt))
     return receipt
 
 
 def _event_attestation(event: AgentEvent, job: AgentJob | None) -> dict:
     raw = event.event_json or {}
-    return {
+    attestation = {
         "version": raw.get("version", RECEIPT_VERSION),
         "event_type": raw.get("event_type", "job_receipt"),
         "job_id": raw.get("job_id", event.job_id),
@@ -1473,6 +1507,11 @@ def _event_attestation(event: AgentEvent, job: AgentJob | None) -> dict:
         "signature": raw.get("signature", event.signature),
         "event_hash": event.event_hash,
     }
+    if "requester_pubkey" in raw:
+        attestation["requester_pubkey"] = raw.get("requester_pubkey")
+    if "requester_pubkey_proof" in raw:
+        attestation["requester_pubkey_proof"] = raw.get("requester_pubkey_proof")
+    return attestation
 
 
 @agent_bp.post("/agent/jobs/<job_id>/dev/mark_paid")
