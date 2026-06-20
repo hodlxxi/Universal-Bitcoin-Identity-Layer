@@ -9,7 +9,7 @@ function resize() {
 resize();
 window.addEventListener("resize", resize);
 
-const chars = "01₿⚡NOSTR_ID_MY_KYC_HODLXXI";
+const chars = "01₿⚡KYK_HODLXXI_KEY_PROOF";
 const fontSize = 16;
 let columns = Math.floor(canvas.width / fontSize);
 let drops = Array(columns).fill(1);

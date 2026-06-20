@@ -358,11 +358,7 @@ def legacy_upgrade_route():
 
 @ui_bp.get("/my-kyc-id")
 def my_kyc_id_landing():
-    """Public MY_KYC_ID landing page.
-
-    CTA intentionally points to /login?next=/home so successful login returns
-    to the existing browser home/onboarding/explorer surface.
-    """
+    """Public KYK / Know Your Key identity landing page."""
     return render_template("my_kyc_id_landing.html")
 
 
