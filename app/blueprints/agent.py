@@ -1442,7 +1442,7 @@ def _validated_self_declared_requester_pubkey(value):
     if not candidate or len(candidate) > 128:
         return None
 
-    if re.fullmatch(r"npub1[023456789acdefghjklmnpqrstuvwxyz]+", candidate) and 8 <= len(candidate) <= 128:
+    if re.fullmatch(r"npub1[023456789acdefghjklmnpqrstuvwxyz]+", candidate) and 60 <= len(candidate) <= 90:
         return candidate
 
     if re.fullmatch(r"[0-9a-fA-F]{64}", candidate):

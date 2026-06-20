@@ -68,6 +68,15 @@ def test_invalid_requester_pubkey_is_omitted_from_receipt():
     _assert_signature_verifies(receipt)
 
 
+def test_short_npub_label_is_omitted_from_receipt():
+    receipt = _build_receipt(_job("npub1qqqq"), prev_event_hash=None)
+
+    assert "requester_pubkey" not in receipt
+    assert "requester_pubkey_proof" not in receipt
+    assert receipt["signature"]
+    _assert_signature_verifies(receipt)
+
+
 def test_existing_receipt_shape_without_requester_pubkey_still_verifies():
     receipt = _build_receipt(_job(), prev_event_hash=None)
 
