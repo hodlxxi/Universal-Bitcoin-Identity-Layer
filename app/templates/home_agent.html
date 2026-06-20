@@ -313,33 +313,25 @@
       <p class="section-intro">For a live human review, start with the surfaces that explain what to inspect, what can be verified in public, and where the current boundaries are.</p>
       <div class="grid">
         <article class="card proof-card">
-          <h2>Review public evidence</h2>
-          <p>Reviewers can use a human-readable evidence map to inspect current public URLs, proof surfaces, evidenced claims, and non-claims before opening the external reviewer packet.</p>
-          <a class="btn" href="/agent/evidence">Open evidence map</a>
-        </article>
-
-        <article class="card proof-card">
-          <h2>Verify a paid agent receipt</h2>
-          <p>A documented paid job can be checked through public endpoints with no secrets. The reviewer packet references <code>scripts/verify_paid_receipt_evidence.sh</code> for public verification of signed receipts.</p>
-          <a class="btn" href="/agent/receipt-proof">Open receipt proof</a>
+          <h2>Human proof page</h2>
+          <p>Run a real 21 sat agent job: create a request, pay the Lightning invoice, see the result, and verify the signed receipt.</p>
+          <a class="btn" href="/demo">Open human proof demo</a>
         </article>
 
         <article class="card proof-card">
           <h2>Integrate Sign in with HODLXXI</h2>
-          <p>Developers can use public OAuth/OIDC metadata and PKCE S256 for Sign in with HODLXXI. See <code>docs/OIDC_INTEGRATION.md</code> for the integration boundaries.</p>
+          <p>Developers can use public OAuth/OIDC metadata and PKCE S256 for Sign in with HODLXXI while staying inside documented integration boundaries.</p>
           <a class="btn" href="/oidc">Open OIDC integration</a>
         </article>
 
         <article class="card proof-card">
-          <h2>Inspect public trust surfaces</h2>
-          <p>Inspect reputation, public attestations, chain health, and E923 operator continuity surfaces before reading the denser endpoint list.</p>
-          <a class="btn" href="/agent/readiness">Open readiness report</a>
-        </article>
-
-        <article class="card proof-card">
-          <h2>Human proof page</h2>
-          <p>Run a real 21 sat agent job in under 30 seconds: enter a public key, create a request, pay the Lightning invoice, see the result, and verify the signed receipt.</p>
-          <a class="btn" href="/demo">Open human proof demo</a>
+          <h2>Public proof surfaces</h2>
+          <p>Review public evidence, inspect a canonical paid receipt proof, and check readiness/trust surfaces from one place.</p>
+          <div class="actions">
+            <a class="btn" href="/agent/evidence">Open evidence map</a>
+            <a class="btn" href="/agent/receipt-proof">Open receipt proof</a>
+            <a class="btn" href="/agent/readiness">Open readiness report</a>
+          </div>
         </article>
       </div>
     </section>

@@ -41,7 +41,7 @@ def test_receipt_proof_page_exposes_human_verification_path():
         assert marker in text
 
 
-def test_homepage_receipt_card_links_to_human_receipt_proof_page():
+def test_homepage_public_proof_surfaces_card_links_to_human_receipt_proof_page():
     app = create_app()
     app.config.update(TESTING=True)
     client = app.test_client()
@@ -54,7 +54,7 @@ def test_homepage_receipt_card_links_to_human_receipt_proof_page():
     assert "Open receipt proof" in text
     assert "Open receipt proof path" not in text
 
-    receipt_card_start = text.index("Verify a paid agent receipt")
-    next_card_start = text.index("Integrate Sign in with HODLXXI", receipt_card_start)
-    receipt_card = text[receipt_card_start:next_card_start]
-    assert REVIEWER_PACKET_URL not in receipt_card
+    card_start = text.index("Public proof surfaces")
+    card_end = text.index("</article>", card_start)
+    proof_surfaces_card = text[card_start:card_end]
+    assert REVIEWER_PACKET_URL not in proof_surfaces_card
