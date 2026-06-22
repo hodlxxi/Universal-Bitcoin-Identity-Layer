@@ -2,7 +2,9 @@
 Pytest configuration and shared fixtures for HODLXXI tests.
 """
 
+import atexit
 import os
+import shutil
 import tempfile
 import time
 from datetime import datetime, timedelta, timezone
@@ -56,6 +58,39 @@ os.environ["AGENT_PRIVKEY_HEX"] = "1" * 64
 import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+# Tests explicitly provision ephemeral signing material before any
+# application instance is created. Runtime create_app() remains read-only.
+_TEST_JWKS_DIR = tempfile.mkdtemp(prefix="hodlxxi-pytest-jwks-")
+atexit.register(
+    shutil.rmtree,
+    _TEST_JWKS_DIR,
+    ignore_errors=True,
+)
+os.environ["JWKS_DIR"] = _TEST_JWKS_DIR
+
+from app.jwks import ensure_rsa_keypair
+
+ensure_rsa_keypair(_TEST_JWKS_DIR)
+
+
+@pytest.fixture(autouse=True)
+def _reset_agent_ip_rate_limit_state():
+    """Isolate the process-local agent IP limiter between tests."""
+
+    def clear_state():
+        module = sys.modules.get("app.blueprints.agent")
+        if module is None:
+            return
+
+        state = getattr(module, "_ip_requests", None)
+        if state is not None:
+            state.clear()
+
+    clear_state()
+    yield
+    clear_state()
+
 
 # ------------------------------
 # Global RPC mocking (tests)

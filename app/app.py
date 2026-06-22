@@ -103,7 +103,7 @@ from app.db_storage import (
     revoke_oauth_token_by_refresh,
 )
 from app.billing_clients import check_client_invoice, create_client_invoice, require_paid_client
-from app.jwks import ensure_rsa_keypair
+from app.jwks import load_signing_material
 from app.oauth_utils import require_oauth_token
 from app.utils import get_rpc_connection
 from app.oidc import oidc_bp, validate_pkce
@@ -401,26 +401,30 @@ JWKS_DOCUMENT: Dict[str, List[Dict[str, str]]]
 
 if JWT_ALG == "RS256":
     jwks_dir = str(CFG.get("JWKS_DIR") or "keys")
-    private_pem, jwks_doc = ensure_rsa_keypair(jwks_dir)
-    JWT_SIGNING_KEY: str | bytes = private_pem
-    JWKS_DOCUMENT = jwks_doc
-    if not JWT_KID:
-        keys = jwks_doc.get("keys") if isinstance(jwks_doc, dict) else None
-        if keys and isinstance(keys, list) and keys and isinstance(keys[0], dict):
-            JWT_KID = keys[0].get("kid")
-    try:
-        private_key = serialization.load_pem_private_key(private_pem.encode("utf-8"), password=None)
-        JWT_VERIFYING_KEY = (
-            private_key.public_key()
-            .public_bytes(
-                serialization.Encoding.PEM,
-                serialization.PublicFormat.SubjectPublicKeyInfo,
-            )
-            .decode("utf-8")
+    jwks_doc, loaded_kid, private_key = load_signing_material(jwks_dir)
+
+    if JWT_KID and JWT_KID != loaded_kid:
+        logger.warning(
+            "Configured JWT_KID %s does not match loaded kid %s; " "using the validated loaded key",
+            JWT_KID,
+            loaded_kid,
         )
-    except Exception as exc:
-        logger.warning(f"Failed to derive public key from RSA private key: {exc}")
-        JWT_VERIFYING_KEY = private_pem
+
+    JWT_KID = loaded_kid
+    JWKS_DOCUMENT = jwks_doc
+    JWT_SIGNING_KEY: str | bytes = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    JWT_VERIFYING_KEY = (
+        private_key.public_key()
+        .public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode("utf-8")
+    )
 else:
     secret = CFG.get("JWT_SECRET", "dev-secret-fallback")
     JWT_SIGNING_KEY = secret if isinstance(secret, (bytes, bytearray)) else str(secret)
