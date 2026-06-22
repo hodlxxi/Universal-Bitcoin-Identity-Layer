@@ -3,7 +3,12 @@ import hashlib
 from urllib.parse import urlparse, parse_qs
 from unittest.mock import patch
 
+import jwt
+import pytest
+
 from app.factory import create_app
+from app.jwks import ensure_rsa_keypair
+from app.tokens import issue_rs256_jwt
 
 
 def _pkce_pair(verifier: str = "contract-verifier"):
@@ -69,6 +74,54 @@ def _jwks_directory_snapshot(directory):
         for item in sorted(directory.iterdir())
         if item.is_file()
     }
+
+
+def test_token_issuance_does_not_mutate_key_directory(tmp_path):
+    jwks_dir = tmp_path / "jwks"
+    ensure_rsa_keypair(str(jwks_dir))
+
+    before = _jwks_directory_snapshot(jwks_dir)
+
+    config = {
+        "JWKS_DIR": str(jwks_dir),
+        "JWT_ISSUER": "https://test.example.com",
+        "JWT_AUDIENCE": "test-audience",
+        "JWT_ALGORITHM": "HS256",
+    }
+
+    with patch("app.tokens.get_config", return_value=config):
+        token = issue_rs256_jwt(
+            sub="test-subject",
+            claims={"aud": "oauth-client"},
+        )
+
+    assert _jwks_directory_snapshot(jwks_dir) == before
+
+    header = jwt.get_unverified_header(token)
+    payload = jwt.decode(
+        token,
+        options={"verify_signature": False, "verify_aud": False},
+    )
+
+    assert header["alg"] == "RS256"
+    assert header["kid"]
+    assert payload["sub"] == "test-subject"
+    assert payload["aud"] == "oauth-client"
+
+
+def test_token_issuance_does_not_create_missing_keys(tmp_path):
+    jwks_dir = tmp_path / "missing-jwks"
+
+    config = {
+        "JWKS_DIR": str(jwks_dir),
+        "JWT_ISSUER": "https://test.example.com",
+    }
+
+    with patch("app.tokens.get_config", return_value=config):
+        with pytest.raises(FileNotFoundError, match="No signing keys found"):
+            issue_rs256_jwt(sub="test-subject")
+
+    assert not jwks_dir.exists()
 
 
 def test_jwks_get_does_not_mutate_key_directory(tmp_path):
