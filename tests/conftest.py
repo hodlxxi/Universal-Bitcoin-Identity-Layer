@@ -42,6 +42,9 @@ os.environ.setdefault("DISABLE_FORCE_HTTPS", "1")
 os.environ.setdefault("FLASK_SECRET_KEY", "test-secret-for-pytest")
 os.environ["FLASK_SECRET_KEY"] = "test-secret-key-for-testing-only"
 os.environ["JWT_SECRET"] = "test-jwt-secret"
+# Keep pytest independent from developer/server .env files.
+# app.app calls load_dotenv(), which must not re-enable HS256.
+os.environ["JWT_ALGORITHM"] = "RS256"
 os.environ["RPC_HOST"] = "localhost"
 os.environ["RPC_PORT"] = "8332"
 os.environ["RPC_USER"] = "test_user"

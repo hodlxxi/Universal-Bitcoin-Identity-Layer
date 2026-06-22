@@ -1,7 +1,10 @@
 import base64
 import hashlib
 import os
+import subprocess
+import sys
 import time
+from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 from unittest.mock import patch
 
@@ -11,6 +14,130 @@ import pytest
 from app.factory import create_app
 from app.jwks import ensure_rsa_keypair, get_signing_key
 from app.tokens import issue_rs256_jwt
+
+
+def test_factory_rejects_hs256_configuration():
+    with (
+        patch("app.factory.init_all"),
+        patch("app.factory.init_audit_logger"),
+    ):
+        with pytest.raises(
+            ValueError,
+            match="JWT_ALGORITHM must be RS256",
+        ):
+            create_app(
+                {
+                    "FLASK_SECRET_KEY": "rs256-only-test",
+                    "FLASK_ENV": "testing",
+                    "JWT_ALGORITHM": "HS256",
+                    "JWKS_DIR": os.environ["JWKS_DIR"],
+                    "DATABASE_URL": "sqlite:///:memory:",
+                    "TESTING": True,
+                }
+            )
+
+
+def test_lazy_legacy_runtime_is_rs256_only(tmp_path):
+    jwks_dir = tmp_path / "jwks"
+    ensure_rsa_keypair(str(jwks_dir))
+
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "JWT_ALGORITHM": "RS256",
+            "JWKS_DIR": str(jwks_dir),
+            "DATABASE_URL": "sqlite:///:memory:",
+            "REDIS_URL": "redis://127.0.0.1:6399/15",
+            "FLASK_ENV": "testing",
+            "FLASK_SECRET_KEY": "rs256-only-legacy-test",
+        }
+    )
+
+    script = r"""
+import time
+from unittest.mock import patch
+
+import jwt
+
+with (
+    patch("app.database.init_all"),
+    patch("app.audit_logger.init_audit_logger"),
+):
+    import app.app as legacy
+
+assert legacy.JWT_ALG == "RS256"
+assert legacy.JWT_ALLOWED_ALGORITHMS == ["RS256"]
+assert legacy.JWKS_DOCUMENT["keys"]
+
+now = int(time.time())
+claims = {
+    "sub": "legacy-rs256-proof",
+    "iat": now,
+    "exp": now + 60,
+}
+
+rs256_token = legacy.sign_jwt(claims)
+rs256_header = jwt.get_unverified_header(rs256_token)
+
+assert rs256_header["alg"] == "RS256"
+assert rs256_header["kid"] == legacy.JWT_KID
+
+decoded = legacy.decode_jwt(
+    rs256_token,
+    options={
+        "verify_aud": False,
+        "verify_iss": False,
+    },
+)
+assert decoded["sub"] == "legacy-rs256-proof"
+
+try:
+    legacy.sign_jwt(
+        claims,
+        headers={"alg": "HS256"},
+    )
+except jwt.InvalidAlgorithmError:
+    pass
+else:
+    raise AssertionError("HS256 signing override was accepted")
+
+hs256_token = jwt.encode(
+    claims,
+    "isolated-hs256-test-secret",
+    algorithm="HS256",
+)
+
+try:
+    legacy.decode_jwt(
+        hs256_token,
+        options={
+            "verify_aud": False,
+            "verify_iss": False,
+        },
+    )
+except jwt.InvalidAlgorithmError:
+    pass
+else:
+    raise AssertionError("HS256 token was accepted")
+
+print("legacy_rs256_signing_only=yes")
+print("legacy_rs256_verification_only=yes")
+print("legacy_hs256_rejected=yes")
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=str(Path(__file__).resolve().parents[2]),
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+
+    assert "legacy_rs256_signing_only=yes" in result.stdout
+    assert "legacy_rs256_verification_only=yes" in result.stdout
+    assert "legacy_hs256_rejected=yes" in result.stdout
 
 
 def _pkce_pair(verifier: str = "contract-verifier"):
@@ -121,6 +248,7 @@ def test_factory_startup_does_not_mutate_jwks(tmp_path):
             }
         )
 
+    assert app.config["JWT_ALGORITHM"] == "RS256"
     assert app.config["JWT_KID"]
     assert app.config["JWKS_DOCUMENT"]["keys"]
     assert _jwks_directory_snapshot(jwks_dir) == before

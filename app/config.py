@@ -101,7 +101,7 @@ def get_config() -> AppConfig:
         "FLASK_DEBUG": _get_env_bool("FLASK_DEBUG", False),
         # JWT Configuration
         "JWT_SECRET": os.getenv("JWT_SECRET", "dev-secret-CHANGE-ME-IN-PRODUCTION"),
-        "JWT_ALGORITHM": os.getenv("JWT_ALGORITHM", "HS256"),
+        "JWT_ALGORITHM": os.getenv("JWT_ALGORITHM", "RS256"),
         "JWT_ISSUER": os.getenv("JWT_ISSUER")
         or os.getenv("OIDC_ISSUER")
         or os.getenv("FLASK_SERVER_NAME")

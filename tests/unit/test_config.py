@@ -20,7 +20,7 @@ class TestGetConfig:
         assert config["FLASK_ENV"] == "testing"  # Set in conftest
         assert config["RPC_HOST"] == "localhost"
         assert config["RPC_PORT"] == 8332
-        assert config["JWT_ALGORITHM"] == "HS256"
+        assert config["JWT_ALGORITHM"] == "RS256"
         assert config["APP_NAME"] == "HODLXXI"
 
     def test_get_config_custom_values(self):
