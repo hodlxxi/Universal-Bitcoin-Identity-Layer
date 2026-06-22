@@ -28,9 +28,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 logger = logging.getLogger(__name__)
 
-_PRIVATE_JWK_FIELDS = frozenset(
-    {"d", "p", "q", "dp", "dq", "qi", "oth", "k"}
-)
+_PRIVATE_JWK_FIELDS = frozenset({"d", "p", "q", "dp", "dq", "qi", "oth", "k"})
 
 
 def load_jwks_document(jwks_dir: str) -> Dict[str, Any]:
@@ -52,9 +50,7 @@ def load_jwks_document(jwks_dir: str) -> Dict[str, Any]:
             raise ValueError(f"JWKS key at index {index} must be an object")
 
         if _PRIVATE_JWK_FIELDS.intersection(key):
-            raise ValueError(
-                f"JWKS key at index {index} contains private key fields"
-            )
+            raise ValueError(f"JWKS key at index {index} contains private key fields")
 
     return document
 
