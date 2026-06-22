@@ -14,6 +14,7 @@ Tests OAuth 2.0 and OpenID Connect functionality:
 import base64
 import hashlib
 import json
+import os
 import secrets
 import time
 from unittest.mock import patch
@@ -44,7 +45,7 @@ def app():
     test_config = {
         "FLASK_SECRET_KEY": "test_secret_key_oauth",
         "FLASK_ENV": "testing",
-        "JWKS_DIR": "runtime/test_jwks_oauth",
+        "JWKS_DIR": os.environ["JWKS_DIR"],
         "DATABASE_URL": "sqlite:///:memory:",
         "JWT_ISSUER": "https://test.example.com",
         "JWT_AUDIENCE": "test_audience",

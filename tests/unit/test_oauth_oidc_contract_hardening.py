@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import os
 import time
 from urllib.parse import urlparse, parse_qs
 from unittest.mock import patch
@@ -22,7 +23,7 @@ def _build_client():
         {
             "FLASK_SECRET_KEY": "test_secret_key_oauth_contract",
             "FLASK_ENV": "testing",
-            "JWKS_DIR": "runtime/test_jwks_oauth_contract",
+            "JWKS_DIR": os.environ["JWKS_DIR"],
             "DATABASE_URL": "sqlite:///:memory:",
             "JWT_ISSUER": "https://test.example.com",
             "TESTING": True,
@@ -77,6 +78,54 @@ def _jwks_directory_snapshot(directory):
     }
 
 
+def test_factory_does_not_create_missing_jwks(tmp_path):
+    jwks_dir = tmp_path / "missing-jwks"
+
+    with (
+        patch("app.factory.init_all"),
+        patch("app.factory.init_audit_logger"),
+    ):
+        with pytest.raises(FileNotFoundError):
+            create_app(
+                {
+                    "FLASK_SECRET_KEY": "readonly-factory-test",
+                    "FLASK_ENV": "testing",
+                    "JWKS_DIR": str(jwks_dir),
+                    "DATABASE_URL": "sqlite:///:memory:",
+                    "JWT_ISSUER": "https://test.example.com",
+                    "TESTING": True,
+                }
+            )
+
+    assert not jwks_dir.exists()
+
+
+def test_factory_startup_does_not_mutate_jwks(tmp_path):
+    jwks_dir = tmp_path / "jwks"
+    ensure_rsa_keypair(str(jwks_dir))
+
+    before = _jwks_directory_snapshot(jwks_dir)
+
+    with (
+        patch("app.factory.init_all"),
+        patch("app.factory.init_audit_logger"),
+    ):
+        app = create_app(
+            {
+                "FLASK_SECRET_KEY": "readonly-factory-test",
+                "FLASK_ENV": "testing",
+                "JWKS_DIR": str(jwks_dir),
+                "DATABASE_URL": "sqlite:///:memory:",
+                "JWT_ISSUER": "https://test.example.com",
+                "TESTING": True,
+            }
+        )
+
+    assert app.config["JWT_KID"]
+    assert app.config["JWKS_DOCUMENT"]["keys"]
+    assert _jwks_directory_snapshot(jwks_dir) == before
+
+
 def test_token_issuance_does_not_mutate_key_directory(tmp_path):
     jwks_dir = tmp_path / "jwks"
     ensure_rsa_keypair(str(jwks_dir))
@@ -127,6 +176,7 @@ def test_token_issuance_does_not_create_missing_keys(tmp_path):
 
 def test_jwks_get_does_not_mutate_key_directory(tmp_path):
     jwks_dir = tmp_path / "jwks"
+    ensure_rsa_keypair(str(jwks_dir))
 
     app = create_app(
         {
@@ -150,6 +200,7 @@ def test_jwks_get_does_not_mutate_key_directory(tmp_path):
 
 def test_jwks_get_does_not_recreate_missing_document(tmp_path):
     jwks_dir = tmp_path / "jwks"
+    ensure_rsa_keypair(str(jwks_dir))
 
     app = create_app(
         {
@@ -185,6 +236,7 @@ def test_introspection_rejects_key_from_literal_fallback_directory(
     primary_dir = tmp_path / "primary-jwks"
     fallback_dir = tmp_path / "keys"
 
+    ensure_rsa_keypair(str(primary_dir))
     ensure_rsa_keypair(str(fallback_dir))
     fallback_kid, fallback_private_key = get_signing_key(str(fallback_dir))
 
@@ -257,6 +309,7 @@ def test_introspection_rejects_global_fallback_issuer(
     tmp_path,
 ):
     jwks_dir = tmp_path / "jwks"
+    ensure_rsa_keypair(str(jwks_dir))
 
     configured_issuer = "https://configured.example.test"
     fallback_issuer = "https://fallback.example.test"

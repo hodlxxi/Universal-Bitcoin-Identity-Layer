@@ -314,6 +314,33 @@ def get_signing_key(jwks_dir: str) -> Tuple[str, rsa.RSAPrivateKey]:
     return kid, private_key
 
 
+def load_signing_material(
+    jwks_dir: str,
+) -> Tuple[Dict[str, Any], str, rsa.RSAPrivateKey]:
+    """Load and validate existing signing material without modifying files."""
+    document = load_jwks_document(jwks_dir)
+    kid, private_key = get_signing_key(jwks_dir)
+
+    published_key = next(
+        (key for key in document["keys"] if isinstance(key, dict) and str(key.get("kid")) == str(kid)),
+        None,
+    )
+
+    if published_key is None:
+        raise ValueError(f"Primary signing kid {kid} is not published in JWKS")
+
+    expected_public_key = _public_key_to_jwk(
+        private_key,
+        kid,
+    )
+
+    for field in ("kty", "use", "alg", "kid", "n", "e"):
+        if published_key.get(field) != expected_public_key[field]:
+            raise ValueError(f"Published JWKS key {kid} does not match " f"the private signing key field {field}")
+
+    return document, kid, private_key
+
+
 def get_key_by_kid(jwks_dir: str, kid: str) -> Optional[rsa.RSAPrivateKey]:
     """
     Get a specific key by kid for verification.

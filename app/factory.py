@@ -20,7 +20,7 @@ from werkzeug.exceptions import HTTPException
 from app.audit_logger import init_audit_logger
 from app.config import AppConfig, get_config
 from app.database import close_all, init_all
-from app.jwks import ensure_rsa_keypair
+from app.jwks import load_signing_material
 from app.request_context import get_or_create_request_id
 from app.security import init_security
 from app.structured_logging import log_event
@@ -99,21 +99,19 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     # Set Flask secret key (required for sessions)
     app.secret_key = cfg["FLASK_SECRET_KEY"]
 
-    # Initialize RSA keypair for RS256 JWT signing with key rotation
+    # Load and validate existing RS256 signing material.
+    # Key creation, rotation, and retirement are operator operations.
     try:
-        rotation_days = cfg.get("JWKS_ROTATION_DAYS", 90)
-        max_retired = cfg.get("JWKS_MAX_RETIRED_KEYS", 3)
-
-        jwks_doc, jwt_kid = ensure_rsa_keypair(
-            cfg["JWKS_DIR"], rotation_days=rotation_days, max_retired_keys=max_retired
-        )
+        jwks_doc, jwt_kid, _ = load_signing_material(str(cfg["JWKS_DIR"]))
         app.config["JWKS_DOCUMENT"] = jwks_doc
         app.config["JWT_KID"] = jwt_kid
         logger.info(
-            f"✅ JWKS initialized: kid={jwt_kid}, keys={len(jwks_doc.get('keys', []))}, rotation={rotation_days}d"
+            "✅ JWKS loaded read-only: kid=%s, keys=%s",
+            jwt_kid,
+            len(jwks_doc.get("keys", [])),
         )
     except Exception as e:
-        logger.error(f"❌ JWKS initialization failed: {e}")
+        logger.error(f"❌ JWKS read-only loading failed: {e}")
         raise
 
     # Initialize security middleware (Talisman, rate limiting, CORS)
