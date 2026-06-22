@@ -498,10 +498,12 @@ def introspect():
     try:
         import jwt
 
-        from app.config import get_config
         from app.jwks import get_key_by_kid
 
-        cfg = current_app.config.get("APP_CONFIG") or get_config()
+        cfg = current_app.config.get("APP_CONFIG")
+        if not cfg:
+            return jsonify({"active": False}), 200
+
         allowed_algs = ["RS256"]
 
         header = jwt.get_unverified_header(token)
@@ -522,29 +524,20 @@ def introspect():
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
 
-        issuers = []
-        primary_issuer = str(cfg.get("JWT_ISSUER") or "").rstrip("/")
-        if primary_issuer:
-            issuers.append(primary_issuer)
-        fallback_issuer = str(get_config().get("JWT_ISSUER") or "").rstrip("/")
-        if fallback_issuer and fallback_issuer not in issuers:
-            issuers.append(fallback_issuer)
+        issuer = str(cfg.get("JWT_ISSUER") or "").rstrip("/")
+        if not issuer:
+            return jsonify({"active": False}), 200
 
-        claims = None
-        for issuer in issuers or [None]:
-            try:
-                claims = jwt.decode(
-                    token,
-                    public_key,
-                    algorithms=allowed_algs,
-                    audience=client_id,
-                    issuer=issuer,
-                    options={"require": ["exp", "iat", "sub", "iss", "aud"]},
-                )
-                break
-            except jwt.InvalidIssuerError:
-                continue
-        if claims is None:
+        try:
+            claims = jwt.decode(
+                token,
+                public_key,
+                algorithms=allowed_algs,
+                audience=client_id,
+                issuer=issuer,
+                options={"require": ["exp", "iat", "sub", "iss", "aud"]},
+            )
+        except jwt.InvalidIssuerError:
             return jsonify({"active": False}), 200
 
         return (

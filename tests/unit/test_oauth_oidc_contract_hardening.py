@@ -253,6 +253,75 @@ def test_introspection_rejects_key_from_literal_fallback_directory(
     assert response.get_json() == {"active": False}
 
 
+def test_introspection_rejects_global_fallback_issuer(
+    tmp_path,
+):
+    jwks_dir = tmp_path / "jwks"
+
+    configured_issuer = "https://configured.example.test"
+    fallback_issuer = "https://fallback.example.test"
+    client_id = "isolated-client"
+    client_secret = "isolated-secret"
+
+    with (
+        patch("app.factory.init_all"),
+        patch("app.factory.init_audit_logger"),
+    ):
+        app = create_app(
+            {
+                "FLASK_SECRET_KEY": "isolated-test-secret",
+                "FLASK_ENV": "testing",
+                "JWKS_DIR": str(jwks_dir),
+                "DATABASE_URL": "sqlite:///:memory:",
+                "JWT_ISSUER": configured_issuer,
+                "TESTING": True,
+            }
+        )
+
+    client = app.test_client()
+    kid, private_key = get_signing_key(str(jwks_dir))
+    now = int(time.time())
+
+    token = jwt.encode(
+        {
+            "iss": fallback_issuer,
+            "aud": client_id,
+            "sub": "isolated-subject",
+            "iat": now,
+            "exp": now + 300,
+            "scope": "openid",
+        },
+        private_key,
+        algorithm="RS256",
+        headers={"kid": kid},
+    )
+
+    with (
+        patch(
+            "app.blueprints.oauth.get_oauth_client",
+            return_value={"client_secret": client_secret},
+        ),
+        patch(
+            "app.config.get_config",
+            return_value={
+                "JWKS_DIR": str(jwks_dir),
+                "JWT_ISSUER": fallback_issuer,
+            },
+        ),
+    ):
+        response = client.post(
+            "/oauth/introspect",
+            data={
+                "token": token,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"active": False}
+
+
 def test_authorize_rejects_missing_client_id_without_500():
     client = _build_client()
     resp = client.get(
