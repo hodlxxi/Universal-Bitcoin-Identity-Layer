@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import time
 from urllib.parse import urlparse, parse_qs
 from unittest.mock import patch
 
@@ -7,7 +8,7 @@ import jwt
 import pytest
 
 from app.factory import create_app
-from app.jwks import ensure_rsa_keypair
+from app.jwks import ensure_rsa_keypair, get_signing_key
 from app.tokens import issue_rs256_jwt
 
 
@@ -173,6 +174,83 @@ def test_jwks_get_does_not_recreate_missing_document(tmp_path):
     assert response.get_json() == {"error": "jwks_unavailable"}
     assert not jwks_path.exists()
     assert _jwks_directory_snapshot(jwks_dir) == before
+
+
+def test_introspection_rejects_key_from_literal_fallback_directory(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+
+    primary_dir = tmp_path / "primary-jwks"
+    fallback_dir = tmp_path / "keys"
+
+    ensure_rsa_keypair(str(fallback_dir))
+    fallback_kid, fallback_private_key = get_signing_key(str(fallback_dir))
+
+    issuer = "https://isolated.example.test"
+    client_id = "isolated-client"
+    client_secret = "isolated-secret"
+
+    # Prevent this unit test from connecting to staging DB, Redis, or audit services.
+    with (
+        patch("app.factory.init_all"),
+        patch("app.factory.init_audit_logger"),
+    ):
+        app = create_app(
+            {
+                "FLASK_SECRET_KEY": "isolated-test-secret",
+                "FLASK_ENV": "testing",
+                "JWKS_DIR": str(primary_dir),
+                "DATABASE_URL": "sqlite:///:memory:",
+                "JWT_ISSUER": issuer,
+                "TESTING": True,
+            }
+        )
+
+    client = app.test_client()
+
+    public_response = client.get("/oauth/jwks.json")
+    assert public_response.status_code == 200
+
+    public_kids = {
+        str(key.get("kid"))
+        for key in public_response.get_json().get("keys", [])
+        if isinstance(key, dict) and key.get("kid")
+    }
+
+    assert fallback_kid not in public_kids
+
+    now = int(time.time())
+    token = jwt.encode(
+        {
+            "iss": issuer,
+            "aud": client_id,
+            "sub": "isolated-subject",
+            "iat": now,
+            "exp": now + 300,
+            "scope": "openid",
+        },
+        fallback_private_key,
+        algorithm="RS256",
+        headers={"kid": fallback_kid},
+    )
+
+    with patch(
+        "app.blueprints.oauth.get_oauth_client",
+        return_value={"client_secret": client_secret},
+    ):
+        response = client.post(
+            "/oauth/introspect",
+            data={
+                "token": token,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"active": False}
 
 
 def test_authorize_rejects_missing_client_id_without_500():

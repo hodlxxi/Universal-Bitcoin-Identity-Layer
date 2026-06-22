@@ -25,9 +25,14 @@ def _resolve_ttl(cfg: Dict[str, Any]) -> int:
         return 3600
 
 
-def issue_rs256_jwt(sub: str, claims: Optional[Dict[str, Any]] = None) -> str:
+def issue_rs256_jwt(
+    sub: str,
+    claims: Optional[Dict[str, Any]] = None,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> str:
     """Issue an RS256 JWT using the existing active signing key."""
-    cfg = get_config()
+    if cfg is None:
+        cfg = get_config()
     ttl = _resolve_ttl(cfg)
     now = int(time.time())
 

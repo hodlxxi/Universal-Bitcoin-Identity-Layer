@@ -37,7 +37,14 @@ limiter = _limiter or _NoopLimiter()
 from app.tokens import issue_rs256_jwt as _issue_rs256_jwt
 
 
-def issue_jwt_compat(*, subject=None, sub=None, claims=None, **kwargs):
+def issue_jwt_compat(
+    *,
+    subject=None,
+    sub=None,
+    claims=None,
+    cfg=None,
+    **kwargs,
+):
     """
     Compatibility wrapper around RS256 JWT issuer.
 
@@ -60,11 +67,14 @@ def issue_jwt_compat(*, subject=None, sub=None, claims=None, **kwargs):
     # Map OAuth-style `audience` to JWT `aud` (tests expect aud == client_id)
     if "aud" not in merged_claims and "audience" in merged_claims:
         merged_claims["aud"] = merged_claims.pop("audience")
-    # Don't leak config flags into JWT claims
-    merged_claims.pop("cfg", None)
+    # Don't leak compatibility flags into JWT claims.
     merged_claims.pop("id_token", None)
 
-    return _issue_rs256_jwt(sub=sub, claims=merged_claims or None)
+    return _issue_rs256_jwt(
+        sub=sub,
+        claims=merged_claims or None,
+        cfg=cfg,
+    )
 
 
 logger = logging.getLogger(__name__)
@@ -499,21 +509,11 @@ def introspect():
         if not kid:
             return jsonify({"active": False}), 200
 
-        jwks_dirs = []
-        primary_dir = str(cfg.get("JWKS_DIR") or "keys")
-        if primary_dir:
-            jwks_dirs.append(primary_dir)
-        fallback_dir = str(get_config().get("JWKS_DIR") or "keys")
-        if fallback_dir and fallback_dir not in jwks_dirs:
-            jwks_dirs.append(fallback_dir)
-        if "keys" not in jwks_dirs:
-            jwks_dirs.append("keys")
+        jwks_dir = cfg.get("JWKS_DIR")
+        if not jwks_dir:
+            return jsonify({"active": False}), 200
 
-        key = None
-        for jwks_dir in jwks_dirs:
-            key = get_key_by_kid(jwks_dir, str(kid))
-            if key is not None:
-                break
+        key = get_key_by_kid(str(jwks_dir), str(kid))
         if key is None:
             return jsonify({"active": False}), 200
 
