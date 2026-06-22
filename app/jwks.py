@@ -28,6 +28,32 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 logger = logging.getLogger(__name__)
 
+_PRIVATE_JWK_FIELDS = frozenset({"d", "p", "q", "dp", "dq", "qi", "oth", "k"})
+
+
+def load_jwks_document(jwks_dir: str) -> Dict[str, Any]:
+    """Load an existing public JWKS document without modifying files."""
+    jwks_path = os.path.join(jwks_dir, "jwks.json")
+
+    with open(jwks_path, "r", encoding="utf-8") as fh:
+        document = json.load(fh)
+
+    if not isinstance(document, dict):
+        raise ValueError("JWKS document must be a JSON object")
+
+    keys = document.get("keys")
+    if not isinstance(keys, list) or not keys:
+        raise ValueError("JWKS document must contain a non-empty keys list")
+
+    for index, key in enumerate(keys):
+        if not isinstance(key, dict):
+            raise ValueError(f"JWKS key at index {index} must be an object")
+
+        if _PRIVATE_JWK_FIELDS.intersection(key):
+            raise ValueError(f"JWKS key at index {index} contains private key fields")
+
+    return document
+
 
 def _b64u(data: bytes) -> str:
     """Return URL-safe base64 without padding."""

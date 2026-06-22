@@ -10,7 +10,7 @@ from typing import Mapping, Optional
 from flask import Blueprint, Response, current_app, jsonify, request
 
 from .config import get_config
-from .jwks import ensure_rsa_keypair
+from .jwks import load_jwks_document
 
 oidc_bp = Blueprint("oidc", __name__)
 
@@ -453,8 +453,14 @@ NIP-17 / NIP-59 messaging remains staged. Sending, intake, and relay publishing 
 def jwks_document():
     cfg = _app_config()
     jwks_dir = str(cfg.get("JWKS_DIR") or "keys")
-    jwks_doc, _ = ensure_rsa_keypair(jwks_dir)
-    return jsonify(jwks_doc)
+
+    try:
+        document = load_jwks_document(jwks_dir)
+    except (OSError, ValueError):
+        current_app.logger.exception("Public JWKS document is unavailable")
+        return jsonify({"error": "jwks_unavailable"}), 503
+
+    return jsonify(document)
 
 
 def validate_pkce(code_challenge: Optional[str], code_verifier: Optional[str], method: Optional[str] = "S256") -> bool:

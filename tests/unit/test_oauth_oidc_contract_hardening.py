@@ -59,6 +59,69 @@ def test_jwks_contract_public_only():
         assert private_fields.isdisjoint(key.keys())
 
 
+def _jwks_directory_snapshot(directory):
+    return {
+        item.name: {
+            "size": item.stat().st_size,
+            "mtime_ns": item.stat().st_mtime_ns,
+            "sha256": hashlib.sha256(item.read_bytes()).hexdigest(),
+        }
+        for item in sorted(directory.iterdir())
+        if item.is_file()
+    }
+
+
+def test_jwks_get_does_not_mutate_key_directory(tmp_path):
+    jwks_dir = tmp_path / "jwks"
+
+    app = create_app(
+        {
+            "FLASK_SECRET_KEY": "test-secret-jwks-read-only",
+            "FLASK_ENV": "testing",
+            "JWKS_DIR": str(jwks_dir),
+            "DATABASE_URL": "sqlite:///:memory:",
+            "JWT_ISSUER": "https://test.example.com",
+            "TESTING": True,
+        }
+    )
+    client = app.test_client()
+
+    before = _jwks_directory_snapshot(jwks_dir)
+
+    response = client.get("/oauth/jwks.json")
+
+    assert response.status_code == 200
+    assert _jwks_directory_snapshot(jwks_dir) == before
+
+
+def test_jwks_get_does_not_recreate_missing_document(tmp_path):
+    jwks_dir = tmp_path / "jwks"
+
+    app = create_app(
+        {
+            "FLASK_SECRET_KEY": "test-secret-jwks-missing",
+            "FLASK_ENV": "testing",
+            "JWKS_DIR": str(jwks_dir),
+            "DATABASE_URL": "sqlite:///:memory:",
+            "JWT_ISSUER": "https://test.example.com",
+            "TESTING": True,
+        }
+    )
+    client = app.test_client()
+
+    jwks_path = jwks_dir / "jwks.json"
+    jwks_path.unlink()
+
+    before = _jwks_directory_snapshot(jwks_dir)
+
+    response = client.get("/oauth/jwks.json")
+
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "jwks_unavailable"}
+    assert not jwks_path.exists()
+    assert _jwks_directory_snapshot(jwks_dir) == before
+
+
 def test_authorize_rejects_missing_client_id_without_500():
     client = _build_client()
     resp = client.get(
