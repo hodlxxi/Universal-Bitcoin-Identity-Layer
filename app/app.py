@@ -308,10 +308,6 @@ file_handler.setLevel(logging.INFO)
 logger.addHandler(file_handler)
 
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 CFG = get_config()
 
 

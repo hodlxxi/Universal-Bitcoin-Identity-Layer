@@ -57,7 +57,17 @@ def test_lazy_legacy_runtime_is_rs256_only(tmp_path):
 import time
 from unittest.mock import patch
 
+import dotenv
 import jwt
+
+
+def _forbid_runtime_dotenv_loading(*args, **kwargs):
+    raise AssertionError(
+        "app.app must not call load_dotenv() at import time"
+    )
+
+
+dotenv.load_dotenv = _forbid_runtime_dotenv_loading
 
 with (
     patch("app.database.init_all"),
@@ -123,6 +133,7 @@ else:
 print("legacy_rs256_signing_only=yes")
 print("legacy_rs256_verification_only=yes")
 print("legacy_hs256_rejected=yes")
+print("legacy_runtime_did_not_load_dotenv=yes")
 """
 
     result = subprocess.run(
@@ -138,6 +149,7 @@ print("legacy_hs256_rejected=yes")
     assert "legacy_rs256_signing_only=yes" in result.stdout
     assert "legacy_rs256_verification_only=yes" in result.stdout
     assert "legacy_hs256_rejected=yes" in result.stdout
+    assert "legacy_runtime_did_not_load_dotenv=yes" in result.stdout
 
 
 def _pkce_pair(verifier: str = "contract-verifier"):
