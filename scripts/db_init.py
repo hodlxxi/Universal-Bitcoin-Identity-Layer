@@ -12,10 +12,6 @@ import sys
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from sqlalchemy import create_engine
 
 from app.database import get_database_url, get_health_status, init_all
