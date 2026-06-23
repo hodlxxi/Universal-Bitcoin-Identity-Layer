@@ -385,6 +385,9 @@ if GUEST_PUBKEY:
 SPECIAL_USERS = [x.strip() for x in os.getenv("SPECIAL_USERS", "").split(",") if x.strip()]
 # === JWT / JWKS / Redis / Limiter setup ===
 JWT_ALG = str(CFG.get("JWT_ALGORITHM") or "RS256").upper()
+if JWT_ALG != "RS256":
+    raise RuntimeError(f"JWT_ALGORITHM must be RS256; got {JWT_ALG or 'unset'}")
+
 REDIS_URL = CFG.get("REDIS_URL")
 if not REDIS_URL:
     redis_host = CFG.get("REDIS_HOST", "127.0.0.1")
@@ -399,39 +402,33 @@ if not REDIS_URL:
 JWT_KID = os.getenv("JWT_KID")
 JWKS_DOCUMENT: Dict[str, List[Dict[str, str]]]
 
-if JWT_ALG == "RS256":
-    jwks_dir = str(CFG.get("JWKS_DIR") or "keys")
-    jwks_doc, loaded_kid, private_key = load_signing_material(jwks_dir)
+jwks_dir = str(CFG.get("JWKS_DIR") or "keys")
+jwks_doc, loaded_kid, private_key = load_signing_material(jwks_dir)
 
-    if JWT_KID and JWT_KID != loaded_kid:
-        logger.warning(
-            "Configured JWT_KID %s does not match loaded kid %s; " "using the validated loaded key",
-            JWT_KID,
-            loaded_kid,
-        )
-
-    JWT_KID = loaded_kid
-    JWKS_DOCUMENT = jwks_doc
-    JWT_SIGNING_KEY: str | bytes = private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
+if JWT_KID and JWT_KID != loaded_kid:
+    logger.warning(
+        "Configured JWT_KID %s does not match loaded kid %s; " "using the validated loaded key",
+        JWT_KID,
+        loaded_kid,
     )
-    JWT_VERIFYING_KEY = (
-        private_key.public_key()
-        .public_bytes(
-            serialization.Encoding.PEM,
-            serialization.PublicFormat.SubjectPublicKeyInfo,
-        )
-        .decode("utf-8")
-    )
-else:
-    secret = CFG.get("JWT_SECRET", "dev-secret-fallback")
-    JWT_SIGNING_KEY = secret if isinstance(secret, (bytes, bytearray)) else str(secret)
-    JWT_VERIFYING_KEY = JWT_SIGNING_KEY
-    JWKS_DOCUMENT = {"keys": []}
 
-JWT_ALLOWED_ALGORITHMS = [JWT_ALG] if JWT_ALG in {"RS256", "HS256"} else ["HS256"]
+JWT_KID = loaded_kid
+JWKS_DOCUMENT = jwks_doc
+JWT_SIGNING_KEY: str | bytes = private_key.private_bytes(
+    encoding=serialization.Encoding.PEM,
+    format=serialization.PrivateFormat.PKCS8,
+    encryption_algorithm=serialization.NoEncryption(),
+)
+JWT_VERIFYING_KEY = (
+    private_key.public_key()
+    .public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    .decode("utf-8")
+)
+
+JWT_ALLOWED_ALGORITHMS = ["RS256"]
 
 try:
     TOKEN_TTL_SECONDS = int(CFG.get("TOKEN_TTL", 3600))
@@ -443,18 +440,44 @@ AUDIENCE = str(CFG.get("JWT_AUDIENCE") or "bitcoin-api")
 
 
 def sign_jwt(claims: dict, headers: Optional[Dict[str, str]] | None = None) -> str:
-    token_headers = headers or ({"kid": JWT_KID} if JWT_ALG == "RS256" and JWT_KID else None)
-    algorithm = JWT_ALG if JWT_ALG in {"RS256", "HS256"} else "HS256"
-    key = JWT_SIGNING_KEY
-    signing_key = key if isinstance(key, (bytes, bytearray)) else str(key or "")
-    return jwt.encode(claims, signing_key, algorithm=algorithm, headers=token_headers)
+    token_headers = dict(headers or {})
+
+    requested_algorithm = str(token_headers.pop("alg", "RS256")).upper()
+    if requested_algorithm != "RS256":
+        raise jwt.InvalidAlgorithmError("Only RS256 signing is allowed")
+
+    requested_kid = token_headers.get("kid")
+    if requested_kid and requested_kid != JWT_KID:
+        raise jwt.InvalidKeyError("JWT kid must match the active validated signing key")
+
+    token_headers["kid"] = JWT_KID
+
+    return jwt.encode(
+        claims,
+        JWT_SIGNING_KEY,
+        algorithm="RS256",
+        headers=token_headers,
+    )
 
 
 def decode_jwt(token: str, **kwargs):
-    key = JWT_VERIFYING_KEY
-    verify_key = key if isinstance(key, (bytes, bytearray)) else str(key or "")
-    algorithms = kwargs.pop("algorithms", JWT_ALLOWED_ALGORITHMS)
-    return jwt.decode(token, verify_key, algorithms=algorithms, **kwargs)
+    requested_algorithms = kwargs.pop("algorithms", None)
+
+    if requested_algorithms is not None:
+        if isinstance(requested_algorithms, str):
+            normalized_algorithms = {requested_algorithms.upper()}
+        else:
+            normalized_algorithms = {str(item).upper() for item in requested_algorithms}
+
+        if normalized_algorithms != {"RS256"}:
+            raise jwt.InvalidAlgorithmError("Only RS256 verification is allowed")
+
+    return jwt.decode(
+        token,
+        JWT_VERIFYING_KEY,
+        algorithms=["RS256"],
+        **kwargs,
+    )
 
 
 REGISTRY = CollectorRegistry()

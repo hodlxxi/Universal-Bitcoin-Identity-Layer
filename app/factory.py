@@ -96,6 +96,11 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     cfg = config_override or get_config()
     app.config["APP_CONFIG"] = cfg
 
+    jwt_algorithm = str(cfg.get("JWT_ALGORITHM") or "RS256").upper()
+    if jwt_algorithm != "RS256":
+        raise ValueError(f"JWT_ALGORITHM must be RS256; got {jwt_algorithm or 'unset'}")
+    app.config["JWT_ALGORITHM"] = "RS256"
+
     # Set Flask secret key (required for sessions)
     app.secret_key = cfg["FLASK_SECRET_KEY"]
 
