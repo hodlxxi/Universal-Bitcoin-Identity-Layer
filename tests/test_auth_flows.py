@@ -185,7 +185,12 @@ class TestBitcoinSignatureAuth:
             },
         )
 
-        assert response.status_code == 500
+        assert response.status_code == 503
+        data = json.loads(response.data)
+        assert data == {
+            "verified": False,
+            "error": "Authentication service temporarily unavailable",
+        }
 
 
 class TestGuestLogin:
