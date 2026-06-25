@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import os
 import re
+import secrets
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -25,6 +26,7 @@ def api_challenge():
         AGENT_REQUESTER_PROOF_PURPOSE,
         CHALLENGE_TTL_SECONDS,
         is_valid_pubkey,
+        prune_expired_agent_requester_proofs,
         validate_agent_requester_proof_request,
     )
 
@@ -50,6 +52,7 @@ def api_challenge():
     cid = str(uuid.uuid4())
 
     if purpose == AGENT_REQUESTER_PROOF_PURPOSE:
+        prune_expired_agent_requester_proofs()
         if data.get("method") != "nostr":
             return jsonify(error="unsupported_method"), 400
         ok, error, canonical_pubkey, request_hash = validate_agent_requester_proof_request(
@@ -105,10 +108,13 @@ def api_verify():
     """
     import app.app as legacy_auth
     from app.auth_api_core import (
+        ACTIVE_AGENT_REQUESTER_PROOFS,
         ACTIVE_CHALLENGES,
         AGENT_REQUESTER_PROOF_PURPOSE,
+        AGENT_REQUESTER_PROOF_SESSION_KEY,
         CHALLENGE_TTL_SECONDS,
         is_valid_pubkey,
+        prune_expired_agent_requester_proofs,
         mint_access_token,
         verify_nostr_login_event,
     )
@@ -172,6 +178,7 @@ def api_verify():
             expected_pubkey=nostr_expected_pubkey,
             expected_challenge=rec["challenge"],
             expected_verify_url=request.url_root.rstrip("/") + url_for("api_auth.api_verify"),
+            require_verify_url=rec.get("purpose") == AGENT_REQUESTER_PROOF_PURPOSE,
         )
         logger.warning("NOSTR_STEP=after_verify_nostr_login_event cid=%r ok=%r error=%r", cid, ok, error)
 
@@ -180,9 +187,11 @@ def api_verify():
 
         if rec.get("purpose") == AGENT_REQUESTER_PROOF_PURPOSE:
             ACTIVE_CHALLENGES.pop(cid, None)
+            prune_expired_agent_requester_proofs()
             now_ts = int(time.time())
             expires_at = min(now_ts + CHALLENGE_TTL_SECONDS, int(rec["expires"].timestamp()))
-            session[AGENT_REQUESTER_PROOF_PURPOSE] = {
+            proof_id = secrets.token_urlsafe(32)
+            ACTIVE_AGENT_REQUESTER_PROOFS[proof_id] = {
                 "pubkey": rec["requester_pubkey"],
                 "canonical_pubkey": rec["canonical_pubkey"],
                 "request_hash": rec["request_hash"],
@@ -191,6 +200,8 @@ def api_verify():
                 "expires_at": expires_at,
                 "purpose": AGENT_REQUESTER_PROOF_PURPOSE,
             }
+            session.pop(AGENT_REQUESTER_PROOF_PURPOSE, None)
+            session[AGENT_REQUESTER_PROOF_SESSION_KEY] = proof_id
             return jsonify(
                 ok=True,
                 verified=True,

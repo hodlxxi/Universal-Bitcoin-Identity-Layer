@@ -43,10 +43,13 @@ from app.services.trust_surface import (
 )
 from app.utils import get_rpc_connection
 from app.auth_api_core import (
+    ACTIVE_AGENT_REQUESTER_PROOFS,
     AGENT_REQUESTER_PROOF_DEMO,
     AGENT_REQUESTER_PROOF_PURPOSE,
+    AGENT_REQUESTER_PROOF_SESSION_KEY,
     canonical_request_hash,
     canonical_xonly_pubkey,
+    prune_expired_agent_requester_proofs,
 )
 from app.blueprints.nip17_messages import get_nip17_metadata
 
@@ -93,13 +96,20 @@ def _scrub_client_proof_claims(payload: dict) -> dict:
 
 
 def _consume_agent_requester_proof(job_type: str, payload: dict, req_hash: str) -> tuple[bool, str, dict | None]:
-    proof = flask_session.get(AGENT_REQUESTER_PROOF_PURPOSE)
+    prune_expired_agent_requester_proofs()
+    proof_id = flask_session.get(AGENT_REQUESTER_PROOF_SESSION_KEY)
+    flask_session.pop(AGENT_REQUESTER_PROOF_PURPOSE, None)
+    if not isinstance(proof_id, str) or not proof_id:
+        flask_session.pop(AGENT_REQUESTER_PROOF_SESSION_KEY, None)
+        return False, "requester_proof_required", None
+
+    proof = ACTIVE_AGENT_REQUESTER_PROOFS.pop(proof_id, None)
+    flask_session.pop(AGENT_REQUESTER_PROOF_SESSION_KEY, None)
     if not isinstance(proof, dict):
         return False, "requester_proof_required", None
     if proof.get("purpose") != AGENT_REQUESTER_PROOF_PURPOSE or proof.get("method") != "nostr":
         return False, "requester_proof_mismatch", None
-    if int(proof.get("expires_at") or 0) < int(time.time()):
-        flask_session.pop(AGENT_REQUESTER_PROOF_PURPOSE, None)
+    if int(proof.get("expires_at") or 0) <= int(time.time()):
         return False, "requester_proof_expired", None
     if not hmac.compare_digest(str(proof.get("request_hash") or ""), req_hash):
         return False, "requester_proof_mismatch", None
@@ -119,7 +129,6 @@ def _consume_agent_requester_proof(job_type: str, payload: dict, req_hash: str) 
         "request_hash": proof.get("request_hash"),
         "verified_at": proof.get("verified_at"),
     }
-    flask_session.pop(AGENT_REQUESTER_PROOF_PURPOSE, None)
     return True, "", server_proof
 
 
@@ -1550,10 +1559,16 @@ def _build_receipt(job: AgentJob, prev_event_hash: str | None) -> dict:
         verified = False
         if isinstance(proof, dict) and proof.get("level") == "signature_verified" and proof.get("method") == "nostr":
             try:
-                verified = hmac.compare_digest(
-                    str(proof.get("request_hash") or ""), job.request_hash
-                ) and hmac.compare_digest(
-                    str(proof.get("canonical_pubkey") or ""), canonical_xonly_pubkey(requester_pubkey)
+                proof_verified_at = proof.get("verified_at")
+                requester_canonical = canonical_xonly_pubkey(requester_pubkey)
+                proof_pubkey_canonical = canonical_xonly_pubkey(proof.get("pubkey"))
+                verified = (
+                    payload.get("demo") == AGENT_REQUESTER_PROOF_DEMO
+                    and isinstance(proof_verified_at, int)
+                    and proof_verified_at > 0
+                    and hmac.compare_digest(str(proof.get("request_hash") or ""), job.request_hash)
+                    and hmac.compare_digest(str(proof.get("canonical_pubkey") or ""), requester_canonical)
+                    and hmac.compare_digest(proof_pubkey_canonical, requester_canonical)
                 )
             except ValueError:
                 verified = False

@@ -173,3 +173,50 @@ def test_tampered_server_proof_does_not_upgrade_receipt(monkeypatch):
     receipt = agent._build_receipt(job, None)
     assert receipt["requester_pubkey_proof"] == "self_declared_no_signature"
     assert "requester_pubkey_proof_method" not in receipt
+
+
+def _receipt_for_server_proof(monkeypatch, proof_overrides=None, payload_overrides=None, request_hash="a" * 64):
+    import app.blueprints.agent as agent
+    from app.models import AgentJob
+
+    monkeypatch.setattr(agent, "sign_message", lambda payload: "sig")
+    payload = {"message": "hello", "requester_pubkey": "b" * 64, "demo": "human_proof_v2", "demo_nonce": "n"}
+    if payload_overrides:
+        payload.update(payload_overrides)
+    proof = {
+        "level": "signature_verified",
+        "method": "nostr",
+        "pubkey": "b" * 64,
+        "canonical_pubkey": "b" * 64,
+        "request_hash": request_hash,
+        "verified_at": 123,
+    }
+    if proof_overrides:
+        proof.update(proof_overrides)
+    job = AgentJob(
+        id="job-proof-hardening",
+        job_type="ping",
+        request_hash=request_hash,
+        payment_hash="payhash",
+        request_json={"job_type": "ping", "payload": payload, "requester_proof": proof},
+    )
+    return agent._build_receipt(job, None)
+
+
+def test_receipt_downgrades_wrong_original_proof_pubkey(monkeypatch):
+    receipt = _receipt_for_server_proof(monkeypatch, proof_overrides={"pubkey": "c" * 64})
+    assert receipt["requester_pubkey_proof"] == "self_declared_no_signature"
+    assert "requester_pubkey_proof_method" not in receipt
+
+
+def test_receipt_downgrades_missing_or_invalid_verified_at(monkeypatch):
+    for bad_verified_at in (None, 0, "123"):
+        receipt = _receipt_for_server_proof(monkeypatch, proof_overrides={"verified_at": bad_verified_at})
+        assert receipt["requester_pubkey_proof"] == "self_declared_no_signature"
+        assert "requester_pubkey_proof_method" not in receipt
+
+
+def test_receipt_downgrades_wrong_demo_version(monkeypatch):
+    receipt = _receipt_for_server_proof(monkeypatch, payload_overrides={"demo": "human_proof_v1"})
+    assert receipt["requester_pubkey_proof"] == "self_declared_no_signature"
+    assert "requester_pubkey_proof_method" not in receipt

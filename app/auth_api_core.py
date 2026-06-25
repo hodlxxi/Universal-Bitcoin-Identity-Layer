@@ -15,6 +15,9 @@ from bech32 import bech32_decode, convertbits
 # In-memory login/PoF challenge store (single worker/eventlet).
 # If you scale workers, move this to Redis.
 ACTIVE_CHALLENGES = {}
+# In-memory requester proof store (single worker/eventlet).
+# If you scale workers, move this to Redis or another shared/persistent server-side store.
+ACTIVE_AGENT_REQUESTER_PROOFS = {}
 CHALLENGE_TTL_SECONDS = 300
 # /CHALLENGE_STORE_V1
 
@@ -57,6 +60,18 @@ def is_valid_pubkey(pubkey: str) -> bool:
 AGENT_REQUESTER_PROOF_PURPOSE = "agent_requester_proof_v1"
 AGENT_REQUESTER_PROOF_DEMO = "human_proof_v2"
 MAX_AGENT_PROOF_REQUEST_BODY_BYTES = 4096
+AGENT_REQUESTER_PROOF_SESSION_KEY = "agent_requester_proof_id"
+
+
+def prune_expired_agent_requester_proofs(now_ts: int | None = None) -> None:
+    now = int(now_ts if now_ts is not None else time.time())
+    for proof_id, proof in list(ACTIVE_AGENT_REQUESTER_PROOFS.items()):
+        try:
+            expires_at = int(proof.get("expires_at") or 0)
+        except Exception:
+            expires_at = 0
+        if expires_at <= now:
+            ACTIVE_AGENT_REQUESTER_PROOFS.pop(proof_id, None)
 
 
 def canonical_xonly_pubkey(pubkey: str) -> str:
@@ -175,6 +190,7 @@ def verify_nostr_login_event(
     expected_challenge: str,
     expected_verify_url: Optional[str] = None,
     now_ts: Optional[int] = None,
+    require_verify_url: bool = False,
 ) -> tuple[bool, Optional[str]]:
     if not isinstance(event, dict):
         return False, "Invalid nostr_event"
@@ -227,6 +243,8 @@ def verify_nostr_login_event(
 
     # support both old "u" and new "url"
     url_tag = _nostr_get_tag(event, "u") or _nostr_get_tag(event, "url")
+    if require_verify_url and not url_tag:
+        return False, "Missing nostr event URL"
     if url_tag and expected_verify_url and url_tag != expected_verify_url:
         return False, "Nostr event URL mismatch"
 
