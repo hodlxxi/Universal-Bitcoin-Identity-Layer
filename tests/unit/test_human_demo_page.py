@@ -22,11 +22,11 @@ def test_human_demo_page_renders_interactive_paid_agent_flow():
         "/agent/request",
         "/agent/jobs/",
         "/agent/verify/",
-        "The public key is self-declared in this first demo",
-        "This does not yet prove control of the key",
-        "self-declared requester key can be included in new signed receipts as a label",
-        "A later version can add challenge/signature proof-of-control",
-        "Create 21 sat request",
+        "The requester key is proven by a compatible Nostr signer before the invoice is created",
+        "This proves control of the signing key for this request",
+        "It does not prove a legal name, government identity",
+        "No private key is requested",
+        "Prove key and create 21 sat request",
         "Hello from HODLXXI demo",
     ]:
         assert marker in text

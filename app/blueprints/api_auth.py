@@ -20,7 +20,13 @@ def api_challenge():
     Transitional extraction: this blueprint owns the route, while shared auth
     helpers/state still live in app.app until the next monolith-retirement step.
     """
-    from app.auth_api_core import ACTIVE_CHALLENGES, is_valid_pubkey
+    from app.auth_api_core import (
+        ACTIVE_CHALLENGES,
+        AGENT_REQUESTER_PROOF_PURPOSE,
+        CHALLENGE_TTL_SECONDS,
+        is_valid_pubkey,
+        validate_agent_requester_proof_request,
+    )
 
     data = request.get_json() or {}
     user_input = (data.get("pubkey") or "").strip()
@@ -39,9 +45,40 @@ def api_challenge():
         else:
             return jsonify(error="Missing or invalid pubkey"), 400
 
-    cid = str(uuid.uuid4())
-    challenge = f"HODLXXI:login:{int(time.time())}:{uuid.uuid4().hex[:8]}"
+    purpose = (data.get("purpose") or "login").strip()
     now_utc = datetime.now(timezone.utc)
+    cid = str(uuid.uuid4())
+
+    if purpose == AGENT_REQUESTER_PROOF_PURPOSE:
+        if data.get("method") != "nostr":
+            return jsonify(error="unsupported_method"), 400
+        ok, error, canonical_pubkey, request_hash = validate_agent_requester_proof_request(
+            pubkey, data.get("request_body")
+        )
+        if not ok:
+            return jsonify(error=error), 400
+        challenge = f"HODLXXI:agent-request:{int(time.time())}:{uuid.uuid4().hex[:8]}:{request_hash}"
+        ACTIVE_CHALLENGES[cid] = {
+            "pubkey": pubkey,
+            "canonical_pubkey": canonical_pubkey,
+            "requester_pubkey": data["request_body"]["payload"]["requester_pubkey"].strip(),
+            "request_hash": request_hash,
+            "purpose": purpose,
+            "label": label,
+            "challenge": challenge,
+            "created": now_utc,
+            "expires": now_utc + timedelta(seconds=CHALLENGE_TTL_SECONDS),
+            "method": "nostr",
+        }
+        return jsonify(
+            ok=True,
+            challenge_id=cid,
+            challenge=challenge,
+            request_hash=request_hash,
+            expires_in=CHALLENGE_TTL_SECONDS,
+        )
+
+    challenge = f"HODLXXI:login:{int(time.time())}:{uuid.uuid4().hex[:8]}"
 
     ACTIVE_CHALLENGES[cid] = {
         "pubkey": pubkey,
@@ -69,6 +106,8 @@ def api_verify():
     import app.app as legacy_auth
     from app.auth_api_core import (
         ACTIVE_CHALLENGES,
+        AGENT_REQUESTER_PROOF_PURPOSE,
+        CHALLENGE_TTL_SECONDS,
         is_valid_pubkey,
         mint_access_token,
         verify_nostr_login_event,
@@ -138,6 +177,28 @@ def api_verify():
 
         if not ok:
             return jsonify(error=error or "Nostr verification failed"), 403
+
+        if rec.get("purpose") == AGENT_REQUESTER_PROOF_PURPOSE:
+            ACTIVE_CHALLENGES.pop(cid, None)
+            now_ts = int(time.time())
+            expires_at = min(now_ts + CHALLENGE_TTL_SECONDS, int(rec["expires"].timestamp()))
+            session[AGENT_REQUESTER_PROOF_PURPOSE] = {
+                "pubkey": rec["requester_pubkey"],
+                "canonical_pubkey": rec["canonical_pubkey"],
+                "request_hash": rec["request_hash"],
+                "method": "nostr",
+                "verified_at": now_ts,
+                "expires_at": expires_at,
+                "purpose": AGENT_REQUESTER_PROOF_PURPOSE,
+            }
+            return jsonify(
+                ok=True,
+                verified=True,
+                purpose=AGENT_REQUESTER_PROOF_PURPOSE,
+                pubkey=rec["requester_pubkey"],
+                request_hash=rec["request_hash"],
+                proof_expires_in=max(0, expires_at - now_ts),
+            )
 
         try:
             in_total, out_total = get_save_and_check_balances_for_pubkey(rec["pubkey"])

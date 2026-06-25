@@ -117,3 +117,59 @@ def test_event_attestation_does_not_invent_requester_pubkey_from_job():
 
     assert "requester_pubkey" not in attestation
     assert "requester_pubkey_proof" not in attestation
+
+
+def test_signature_verified_server_proof_upgrades_receipt(monkeypatch):
+    import app.blueprints.agent as agent
+    from app.models import AgentJob
+
+    monkeypatch.setattr(agent, "sign_message", lambda payload: "sig")
+    job = AgentJob(
+        id="job-proof",
+        job_type="ping",
+        request_hash="a" * 64,
+        payment_hash="payhash",
+        request_json={
+            "job_type": "ping",
+            "payload": {"message": "hello", "requester_pubkey": "b" * 64, "demo": "human_proof_v2", "demo_nonce": "n"},
+            "requester_proof": {
+                "level": "signature_verified",
+                "method": "nostr",
+                "pubkey": "b" * 64,
+                "canonical_pubkey": "b" * 64,
+                "request_hash": "a" * 64,
+                "verified_at": 123,
+            },
+        },
+    )
+    receipt = agent._build_receipt(job, None)
+    assert receipt["requester_pubkey_proof"] == "signature_verified"
+    assert receipt["requester_pubkey_proof_method"] == "nostr"
+    assert receipt["requester_pubkey_verified_at"] == 123
+
+
+def test_tampered_server_proof_does_not_upgrade_receipt(monkeypatch):
+    import app.blueprints.agent as agent
+    from app.models import AgentJob
+
+    monkeypatch.setattr(agent, "sign_message", lambda payload: "sig")
+    job = AgentJob(
+        id="job-proof",
+        job_type="ping",
+        request_hash="a" * 64,
+        payment_hash="payhash",
+        request_json={
+            "job_type": "ping",
+            "payload": {"message": "hello", "requester_pubkey": "b" * 64},
+            "requester_proof": {
+                "level": "signature_verified",
+                "method": "nostr",
+                "canonical_pubkey": "c" * 64,
+                "request_hash": "a" * 64,
+                "verified_at": 123,
+            },
+        },
+    )
+    receipt = agent._build_receipt(job, None)
+    assert receipt["requester_pubkey_proof"] == "self_declared_no_signature"
+    assert "requester_pubkey_proof_method" not in receipt

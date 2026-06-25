@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 """Minimal Agent UBID routes: capabilities, jobs, attestations, and discovery."""
 
 import hashlib
+import hmac
 import logging
 import os
 import re
@@ -12,7 +13,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, render_template, request
+from flask import Blueprint, current_app, jsonify, render_template, request, session as flask_session
 
 from app.audit_logger import get_audit_logger
 
@@ -41,6 +42,12 @@ from app.services.trust_surface import (
     trust_page_context,
 )
 from app.utils import get_rpc_connection
+from app.auth_api_core import (
+    AGENT_REQUESTER_PROOF_DEMO,
+    AGENT_REQUESTER_PROOF_PURPOSE,
+    canonical_request_hash,
+    canonical_xonly_pubkey,
+)
 from app.blueprints.nip17_messages import get_nip17_metadata
 
 logger = logging.getLogger(__name__)
@@ -70,6 +77,50 @@ OPERATOR_CONTINUITY_SCHEMA = "hodlxxi.operator_continuity.v1"
 OPERATOR_ID = "E923"
 OPERATOR_PUBKEY = "023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923"
 PUBLIC_AGENT_PUBKEY = "02019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f92"
+
+
+def _scrub_client_proof_claims(payload: dict) -> dict:
+    clean = dict(payload)
+    for key in (
+        "requester_proof",
+        "requester_pubkey_proof",
+        "requester_pubkey_proof_method",
+        "requester_pubkey_verified_at",
+        "requester_pubkey_proof_level",
+    ):
+        clean.pop(key, None)
+    return clean
+
+
+def _consume_agent_requester_proof(job_type: str, payload: dict, req_hash: str) -> tuple[bool, str, dict | None]:
+    proof = flask_session.get(AGENT_REQUESTER_PROOF_PURPOSE)
+    if not isinstance(proof, dict):
+        return False, "requester_proof_required", None
+    if proof.get("purpose") != AGENT_REQUESTER_PROOF_PURPOSE or proof.get("method") != "nostr":
+        return False, "requester_proof_mismatch", None
+    if int(proof.get("expires_at") or 0) < int(time.time()):
+        flask_session.pop(AGENT_REQUESTER_PROOF_PURPOSE, None)
+        return False, "requester_proof_expired", None
+    if not hmac.compare_digest(str(proof.get("request_hash") or ""), req_hash):
+        return False, "requester_proof_mismatch", None
+    if job_type != "ping" or payload.get("demo") != AGENT_REQUESTER_PROOF_DEMO:
+        return False, "requester_proof_mismatch", None
+    try:
+        payload_canonical = canonical_xonly_pubkey(payload.get("requester_pubkey"))
+    except ValueError:
+        return False, "requester_proof_mismatch", None
+    if not hmac.compare_digest(str(proof.get("canonical_pubkey") or ""), payload_canonical):
+        return False, "requester_proof_mismatch", None
+    server_proof = {
+        "level": "signature_verified",
+        "method": "nostr",
+        "pubkey": proof.get("pubkey"),
+        "canonical_pubkey": proof.get("canonical_pubkey"),
+        "request_hash": proof.get("request_hash"),
+        "verified_at": proof.get("verified_at"),
+    }
+    flask_session.pop(AGENT_REQUESTER_PROOF_PURPOSE, None)
+    return True, "", server_proof
 
 
 def _check_ip_rate_limit() -> bool:
@@ -1272,7 +1323,7 @@ def create_job_request():
         return jsonify({"error": "invalid_payload"}), 400
 
     job_type = data.get("job_type")
-    payload = _request_payload_from_data(data)
+    payload = _scrub_client_proof_claims(_request_payload_from_data(data))
 
     ok, error = _validate_payload_ceilings(payload)
     if not ok and error:
@@ -1299,7 +1350,14 @@ def create_job_request():
             return jsonify({"error": "rate_limited", "message": "daily job limit reached"}), 429
 
     request_payload = {"job_type": job_type, "payload": payload}
-    req_hash = _sha256_hex(request_payload)
+    req_hash = canonical_request_hash(request_payload)
+    server_requester_proof = None
+    if payload.get("demo") == AGENT_REQUESTER_PROOF_DEMO:
+        proof_ok, proof_error, server_requester_proof = _consume_agent_requester_proof(job_type, payload, req_hash)
+        if not proof_ok:
+            log_event(logger, "agent.request_rejected", outcome=proof_error)
+            status = 403 if proof_error.startswith("requester_proof") else 400
+            return jsonify({"error": proof_error}), status
 
     with session_scope() as session:
         existing_job = (
@@ -1398,7 +1456,10 @@ def create_job_request():
     with session_scope() as session:
         job = AgentJob(
             job_type=job_type,
-            request_json=request_payload,
+            request_json={
+                **request_payload,
+                **({"requester_proof": server_requester_proof} if server_requester_proof else {}),
+            },
             request_hash=req_hash,
             sats=sats,
             payment_request=invoice,
@@ -1485,7 +1546,23 @@ def _build_receipt(job: AgentJob, prev_event_hash: str | None) -> dict:
     requester_pubkey = _requester_pubkey_from_job(job)
     if requester_pubkey:
         receipt["requester_pubkey"] = requester_pubkey
-        receipt["requester_pubkey_proof"] = "self_declared_no_signature"
+        proof = job.request_json.get("requester_proof") if isinstance(job.request_json, dict) else None
+        verified = False
+        if isinstance(proof, dict) and proof.get("level") == "signature_verified" and proof.get("method") == "nostr":
+            try:
+                verified = hmac.compare_digest(
+                    str(proof.get("request_hash") or ""), job.request_hash
+                ) and hmac.compare_digest(
+                    str(proof.get("canonical_pubkey") or ""), canonical_xonly_pubkey(requester_pubkey)
+                )
+            except ValueError:
+                verified = False
+        if verified:
+            receipt["requester_pubkey_proof"] = "signature_verified"
+            receipt["requester_pubkey_proof_method"] = "nostr"
+            receipt["requester_pubkey_verified_at"] = proof.get("verified_at")
+        else:
+            receipt["requester_pubkey_proof"] = "self_declared_no_signature"
 
     receipt["signature"] = sign_message(canonical_json_bytes(receipt))
     return receipt

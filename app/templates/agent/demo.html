@@ -288,10 +288,10 @@
 
     <section class="card warning">
       <h2>Honest identity boundary</h2>
-      <p>The public key is self-declared in this first demo.</p>
-      <p>This does not yet prove control of the key.</p>
-      <p>The self-declared requester key can be included in new signed receipts as a label, not as proof of key control.</p>
-      <p>A later version can add challenge/signature proof-of-control.</p>
+      <p>The requester key is proven by a compatible Nostr signer before the invoice is created.</p>
+      <p>This proves control of the signing key for this request. It does not prove a legal name, government identity, or that one human controls only one key.</p>
+      <p>The server binds the signature challenge to the exact message and demo nonce, then includes signature_verified in the signed receipt only after payment.</p>
+      <p>No private key is requested or exposed; signing happens inside your Nostr extension.</p>
     </section>
 
     <section class="grid" aria-label="Interactive human proof demo">
@@ -302,22 +302,22 @@
           id="requesterPubkey"
           name="requester_pubkey"
           autocomplete="off"
-          placeholder="npub1... or hex public key"
+          placeholder="loaded from Nostr signer" readonly
           required
           aria-describedby="requesterHelp requesterError"
           aria-invalid="false"
         >
-        <p class="field-help" id="requesterHelp">Required. This label will be covered by the signed receipt when it is valid.</p>
+        <p class="field-help" id="requesterHelp">Loaded from window.nostr.getPublicKey(); the signer key is the source of the verified requester key.</p>
         <p class="error-text" id="requesterError" role="alert" hidden></p>
 
         <label for="message">Message</label>
         <textarea id="message" name="message">Hello from HODLXXI demo</textarea>
 
         <div class="actions">
-          <button type="button" id="createButton" onclick="createRequest()">Create 21 sat request</button>
+          <button type="button" id="createButton" onclick="createRequest()">Prove key and create 21 sat request</button>
           <button type="button" onclick="resetDemo()">Reset</button>
         </div>
-        <p>Each click adds a fresh <code>demo_nonce</code>, so a new visitor receives a new job instead of an old deduplicated receipt.</p>
+        <p>Each proof prepares one unchanged request body with one <code>demo_nonce</code>. If the message changes, sign again.</p>
       </article>
 
       <article class="card">
@@ -364,8 +364,10 @@
         <p>This is the human proof: a public record tying one declared requester key to one paid job, one result, and one agent signature.</p>
         <div class="proof-grid">
           <div class="proof-item"><span>Requester key</span><code id="proofRequester">waiting</code></div>
-          <div class="proof-item"><span>Requester key proof level</span><code id="proofRequesterLevel">self-declared, not yet signature-proven</code></div>
+          <div class="proof-item"><span>Requester key proof level</span><code id="proofRequesterLevel">waiting for signature proof</code></div>
           <div class="proof-item"><span>Job ID</span><code id="proofJobId">waiting</code></div>
+          <div class="proof-item"><span>Proof method</span><code id="proofMethod">waiting</code></div>
+          <div class="proof-item"><span>Verified for this request</span><code id="proofVerifiedForRequest">waiting</code></div>
           <div class="proof-item"><span>Payment hash</span><code id="proofPaymentHash">waiting</code></div>
           <div class="proof-item"><span>Result hash</span><code id="proofResultHash">waiting</code></div>
           <div class="proof-item"><span>Agent public key</span><code id="proofAgentPubkey">waiting</code></div>
@@ -377,7 +379,7 @@
     <details aria-label="Technical endpoint contract">
       <summary>Technical endpoint contract</summary>
       <p>The browser creates the request with <code>POST /agent/request</code>, checks <code>GET /agent/jobs/&lt;job_id&gt;</code>, and verifies with <code>GET /agent/verify/&lt;job_id&gt;</code>.</p>
-      <p>The payload includes <code>requester_pubkey</code>, <code>message</code>, <code>demo: human_proof_v1</code>, and a unique <code>demo_nonce</code>.</p>
+      <p>The payload includes <code>requester_pubkey</code>, <code>message</code>, <code>demo: human_proof_v2</code>, and a unique <code>demo_nonce</code>.</p>
       <pre id="requestResponse">No request created yet.</pre>
     </details>
   </main>
@@ -391,6 +393,8 @@
     let pollTimer = null;
     let pollStartedAt = 0;
     let verificationStarted = false;
+    let preparedRequestBody = null;
+    let preparedRequestFingerprint = null;
 
     function setText(id, value) {
       document.getElementById(id).textContent = value;
@@ -437,6 +441,53 @@
       error.textContent = message || "";
     }
 
+    function requestFingerprint(body) {
+      return JSON.stringify(body);
+    }
+
+    async function ensureNostrSignerPubkey() {
+      if (!window.nostr || typeof window.nostr.getPublicKey !== "function" || typeof window.nostr.signEvent !== "function") {
+        throw new Error("A compatible Nostr signer extension is required for this proof-of-control version.");
+      }
+      const pubkey = await window.nostr.getPublicKey();
+      if (!/^[0-9a-fA-F]{64}$/.test(pubkey || "")) throw new Error("Nostr signer returned an invalid public key.");
+      document.getElementById("requesterPubkey").value = pubkey.toLowerCase();
+      return pubkey.toLowerCase();
+    }
+
+    async function provePreparedRequest(pubkey, body) {
+      const challengeResponse = await fetch("/api/challenge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pubkey: pubkey,
+          method: "nostr",
+          purpose: "agent_requester_proof_v1",
+          request_body: body
+        })
+      });
+      const challengeData = await readJsonResponse(challengeResponse);
+      if (!challengeResponse.ok) throw new Error(challengeData.error || "Bound challenge failed");
+      const event = await window.nostr.signEvent({
+        kind: 22242,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [["challenge", challengeData.challenge], ["url", `${window.location.origin}/api/verify`]],
+        content: "HODLXXI agent requester proof"
+      });
+      const verifyResponse = await fetch("/api/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challenge_id: challengeData.challenge_id, pubkey: pubkey, nostr_event: event })
+      });
+      const verifyData = await readJsonResponse(verifyResponse);
+      if (!verifyResponse.ok) throw new Error(verifyData.error || "Proof verification failed");
+      setBadge("requestStatus", "Key control verified for this request", "ok");
+      setText("proofRequesterLevel", "signature_verified");
+      setText("proofMethod", "nostr");
+      setText("proofVerifiedForRequest", verifyData.request_hash === challengeData.request_hash ? "yes" : "no");
+      return verifyData;
+    }
+
     function newDemoNonce() {
       if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
         return globalThis.crypto.randomUUID();
@@ -473,6 +524,8 @@
       if (currentJobId) setText("proofJobId", currentJobId);
       if (receipt.requester_pubkey) setText("proofRequester", receipt.requester_pubkey);
       if (receipt.requester_pubkey_proof) setText("proofRequesterLevel", receipt.requester_pubkey_proof);
+      if (receipt.requester_pubkey_proof_method) setText("proofMethod", receipt.requester_pubkey_proof_method);
+      if (receipt.requester_pubkey_proof === "signature_verified") setText("proofVerifiedForRequest", "yes");
       if (receipt.payment_hash) setText("proofPaymentHash", receipt.payment_hash);
       if (receipt.result_hash) setText("proofResultHash", receipt.result_hash);
       if (receipt.agent_pubkey) setText("proofAgentPubkey", receipt.agent_pubkey);
@@ -498,14 +551,7 @@
     }
 
     async function createRequest() {
-      const requesterPubkey = document.getElementById("requesterPubkey").value.trim();
       const message = document.getElementById("message").value.trim() || "Hello from HODLXXI demo";
-
-      if (!isValidRequesterPubkey(requesterPubkey)) {
-        showRequesterError("Enter a valid npub, 64-character x-only key, or 66-character compressed public key.");
-        document.getElementById("requesterPubkey").focus();
-        return;
-      }
 
       showRequesterError("");
       clearPolling();
@@ -514,28 +560,35 @@
       setStep("stepPay", null);
       setStep("stepResult", null);
       setStep("stepVerify", null);
-      setBadge("requestStatus", "creating", "warn");
+      setBadge("requestStatus", "proving key control", "warn");
       setBadge("jobStatus", "not checked", "warn");
       setBadge("verifyStatus", "not verified", "warn");
-
-      const body = {
-        job_type: "ping",
-        payload: {
-          message: message,
-          requester_pubkey: requesterPubkey,
-          demo: "human_proof_v1",
-          demo_nonce: newDemoNonce()
-        }
-      };
-
-      setText("requestResponse", compactJson({ request: body }));
       document.getElementById("createButton").disabled = true;
 
       try {
+        const signerPubkey = await ensureNostrSignerPubkey();
+        const body = {
+          job_type: "ping",
+          payload: {
+            message: message,
+            requester_pubkey: signerPubkey,
+            demo: "human_proof_v2",
+            demo_nonce: newDemoNonce()
+          }
+        };
+        preparedRequestBody = body;
+        preparedRequestFingerprint = requestFingerprint(body);
+        setText("requestResponse", compactJson({ request: preparedRequestBody }));
+        await provePreparedRequest(signerPubkey, preparedRequestBody);
+
+        if (requestFingerprint(preparedRequestBody) !== preparedRequestFingerprint) {
+          throw new Error("Request changed after proof; sign again.");
+        }
+
         const response = await fetch("/agent/request", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body)
+          body: JSON.stringify(preparedRequestBody)
         });
         const data = await readJsonResponse(response);
         setText("requestResponse", compactJson(data));
@@ -550,7 +603,10 @@
         currentJobId = data.job_id;
         setText("jobId", currentJobId || "missing");
         setText("proofJobId", currentJobId || "missing");
-        setText("proofRequester", requesterPubkey);
+        setText("proofRequester", signerPubkey);
+        setText("proofRequesterLevel", "signature_verified");
+        setText("proofMethod", "nostr");
+        setText("proofVerifiedForRequest", "yes");
         setText("proofPaymentHash", data.payment_hash || "waiting");
         applyInvoice(data.invoice || data.payment_request || data.bolt11 || "");
         setBadge("requestStatus", data.status || "created", "ok");
@@ -560,7 +616,10 @@
         document.getElementById("verifyButton").disabled = true;
         startPolling();
       } catch (error) {
+        preparedRequestBody = null;
+        preparedRequestFingerprint = null;
         setBadge("requestStatus", "failed", "bad");
+        showRequesterError(String(error).replace(/^Error: /, ""));
         setText("requestResponse", compactJson({ error: String(error) }));
         setStep("stepRequest", null);
         document.getElementById("createButton").disabled = false;
@@ -672,7 +731,7 @@
       setText("jobResponse", "Pay the invoice, then check the job.");
       setText("verifyResponse", "After the receipt is issued, verify the signed receipt.");
       setText("proofRequester", "waiting");
-      setText("proofRequesterLevel", "self-declared, not yet signature-proven");
+      setText("proofRequesterLevel", "waiting for signature proof");
       setText("proofJobId", "waiting");
       setText("proofPaymentHash", "waiting");
       setText("proofResultHash", "waiting");
