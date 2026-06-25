@@ -14,7 +14,7 @@ The operator tooling:
 - performs no automatic retention deletion;
 - never stops or restarts the application service;
 - never writes to, drops, recreates, or migrates the production database;
-- verifies restore capability only through a disposable scratch database.
+- restores only into a uniquely named scratch database.
 
 Run both scripts as root on the database host.
 
@@ -42,6 +42,8 @@ The archive and checksum must both be owned by `root:root` and must not be acces
 
 ## Verify restore capability
 
+Run verification against the exact archive reported by the backup helper:
+
 ```bash
 sudo bash scripts/postgres_verify_backup.sh \
   --backup /var/backups/hodlxxi/postgresql/hodlxxi_<UTC timestamp>.dump \
@@ -49,9 +51,19 @@ sudo bash scripts/postgres_verify_backup.sh \
   --postgres-os-user postgres
 ```
 
-The verifier validates the adjacent checksum, restores only into a database named `ubid_restore_verify_<UTC timestamp>_<PID>`, compares object counts, normalized schema, and relation ownership, verifies restored tables are queryable, and removes the scratch database.
+The verifier:
 
-PostgreSQL `pg_dump` emits random `\restrict` and `\unrestrict` markers. The verifier removes only those markers before computing schema hashes.
+1. validates root-only artifact ownership and permissions;
+2. verifies the adjacent SHA-256 checksum;
+3. verifies that the archive table of contents is readable;
+4. reads the production database encoding, collation, and character type;
+5. creates a database named `ubid_restore_verify_<UTC timestamp>_<PID>`;
+6. restores with `pg_restore --exit-on-error`;
+7. compares object counts, normalized schema, and relation ownership;
+8. verifies every restored application table can be queried;
+9. leaves the scratch database in place for explicit operator cleanup.
+
+PostgreSQL `pg_dump` emits random `\restrict` and `\unrestrict` markers. The verifier removes only those markers before comparing normalized schema output.
 
 Expected terminal contract:
 
@@ -59,18 +71,26 @@ Expected terminal contract:
 restore_verification=success
 normalized_schema_match=yes
 relation_ownership_contract_match=yes
+restored_tables_queryable=yes
 production_database_unchanged=yes
-scratch_database_removed=yes
+scratch_database=ubid_restore_verify_<UTC timestamp>_<PID>
+scratch_cleanup_required=yes
 verified_backup=<absolute archive path>
 ```
 
 A successful `pg_restore --list` is not sufficient evidence by itself. The scratch restore must complete successfully.
 
-## Failure behavior
+## Explicit operator cleanup
 
-The verifier uses a cleanup trap. If restoration or comparison fails after scratch creation, it attempts to remove only a database whose name begins with `ubid_restore_verify_`.
+The verifier intentionally does not delete databases. This keeps destructive authority outside the verification helper and makes cleanup a separate, reviewable operator action.
 
-It must never execute `dropdb` against the production database.
+After checking the exact `scratch_database` value printed by the verifier, remove only that scratch database:
+
+```bash
+sudo -u postgres dropdb -- ubid_restore_verify_<exact printed suffix>
+```
+
+Never substitute the production database name. If verification fails, the scratch name is printed before creation so the same explicit cleanup procedure can be used.
 
 ## Production recovery boundary
 
