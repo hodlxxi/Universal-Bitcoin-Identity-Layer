@@ -49,8 +49,9 @@ def test_restore_verifier_contract_markers():
         "sha256sum --check",
         "normalized_schema_match=yes",
         "relation_ownership_contract_match=yes",
+        "restored_tables_queryable=yes",
         "production_database_unchanged=yes",
-        "scratch_database_removed=yes",
+        "scratch_cleanup_required=yes",
     ):
         assert marker in text
 
@@ -64,11 +65,12 @@ def test_runbook_documents_operator_and_recovery_boundaries():
         "root-only",
         "no automatic retention deletion",
         "scratch database",
+        "explicit operator cleanup",
         "production restore is intentionally not automated",
         "scripts/db_backup.sh",
         "scripts/db_restore.sh",
         "backward compatibility",
         "production_database_unchanged=yes",
-        "scratch_database_removed=yes",
+        "scratch_cleanup_required=yes",
     ):
         assert marker in text
