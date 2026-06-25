@@ -114,10 +114,11 @@ runuser -u "$POSTGRES_OS_USER" -- psql -X -d "$PRODUCTION_DATABASE" -AtF '|' -c 
 runuser -u "$POSTGRES_OS_USER" -- psql -X -d "$SCRATCH_DATABASE" -AtF '|' -c "$ownership_sql" > "$TMPDIR_PATH/scratch.owners"
 cmp -s "$TMPDIR_PATH/production.owners" "$TMPDIR_PATH/scratch.owners"
 
-runuser -u "$POSTGRES_OS_USER" -- psql -X -d "$SCRATCH_DATABASE" <<'SQL'
+runuser -u "$POSTGRES_OS_USER" -- psql -X -v ON_ERROR_STOP=1 -d "$SCRATCH_DATABASE" <<'SQL'
 DO $$
 DECLARE
   relation record;
+  probe integer;
 BEGIN
   FOR relation IN
     SELECT n.nspname AS schema_name, c.relname AS relation_name
@@ -127,7 +128,7 @@ BEGIN
       AND n.nspname NOT IN ('pg_catalog','information_schema')
       AND n.nspname NOT LIKE 'pg_toast%'
   LOOP
-    EXECUTE format('SELECT 1 FROM %I.%I LIMIT 1', relation.schema_name, relation.relation_name);
+    EXECUTE format('SELECT 1 FROM %I.%I LIMIT 1', relation.schema_name, relation.relation_name) INTO probe;
   END LOOP;
 END
 $$;
