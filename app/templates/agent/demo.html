@@ -653,6 +653,7 @@
         }
 
         clearPolling();
+        setBadge("requestStatus", "paid", "ok");
         setBadge("jobStatus", "result received", "ok");
         setText("resultSummary", "Payment was detected and the agent returned the result with a signed receipt.");
         setStep("stepPay", "done");

@@ -60,3 +60,21 @@ def test_human_demo_v2_bound_proof_contract_markers():
     assert "preparedRequestBody" in text
     assert "private" not in text.lower() or "No private key is requested" in text
     assert "It does not prove a legal name, government identity, or that one human controls only one key." in text
+
+
+def test_human_demo_marks_pay_card_paid_when_job_completes():
+    from pathlib import Path
+
+    text = Path("app/templates/agent/demo.html").read_text()
+    done_marker = 'const done = data.status === "done" || Boolean(data.receipt);'
+    paid_marker = 'setBadge("requestStatus", "paid", "ok");'
+    result_marker = 'setBadge("jobStatus", "result received", "ok");'
+    verify_marker = "await verifyJob();"
+    reset_marker = 'setBadge("requestStatus", "not requested", "warn");'
+
+    assert done_marker in text
+    assert paid_marker in text
+    assert result_marker in text
+    assert verify_marker in text
+    assert reset_marker in text
+    assert text.index(done_marker) < text.index(paid_marker) < text.index(result_marker) < text.index(verify_marker)
