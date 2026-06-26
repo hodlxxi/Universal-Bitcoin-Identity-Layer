@@ -23,10 +23,10 @@ def _body(pubkey=PUBKEY, message="hello", nonce="nonce-1"):
     }
 
 
-def _event(challenge, pubkey=PUBKEY, sig="c" * 128):
+def _event(challenge, pubkey=PUBKEY, sig="c" * 128, created_at=1_778_350_000):
     event = {
         "pubkey": pubkey,
-        "created_at": 1_778_350_000,
+        "created_at": created_at,
         "kind": 22242,
         "tags": [["challenge", challenge], ["url", "http://localhost/api/verify"]],
         "content": "HODLXXI agent requester proof",
@@ -288,3 +288,46 @@ def test_valid_request_stores_server_generated_proof_and_client_request_hash(cli
             "request_hash": canonical_request_hash(body),
             "verified_at": 123,
         }
+
+
+def test_npub_requester_proof_verifies_against_xonly_nostr_event(client, monkeypatch):
+    import sys
+    import types
+
+    class FakePublicKeyXOnly:
+        def __init__(self, raw_pubkey):
+            self.raw_pubkey = raw_pubkey
+
+        def verify(self, raw_sig, raw_event_id):
+            return True
+
+    monkeypatch.setitem(sys.modules, "coincurve", types.SimpleNamespace(PublicKeyXOnly=FakePublicKeyXOnly))
+    npub = bech32_encode("npub", convertbits(bytes.fromhex(PUBKEY), 8, 5, True))
+    request_body = _body(pubkey=npub, message="npub proof", nonce="npub-nonce")
+
+    challenge_response = client.post(
+        "/api/challenge",
+        json={
+            "pubkey": npub,
+            "method": "nostr",
+            "purpose": "agent_requester_proof_v1",
+            "request_body": request_body,
+        },
+    )
+    assert challenge_response.status_code == 200
+    challenge = challenge_response.get_json()
+
+    event = _event(challenge["challenge"], pubkey=PUBKEY, created_at=int(__import__("time").time()))
+    verify_response = client.post(
+        "/api/verify",
+        json={"challenge_id": challenge["challenge_id"], "pubkey": npub, "nostr_event": event},
+    )
+
+    assert verify_response.status_code == 200
+    with client.session_transaction() as sess:
+        assert "agent_requester_proof_v1" not in sess
+        proof_id = sess[AGENT_REQUESTER_PROOF_SESSION_KEY]
+    assert proof_id in ACTIVE_AGENT_REQUESTER_PROOFS
+    assert ACTIVE_AGENT_REQUESTER_PROOFS[proof_id]["pubkey"] == npub
+    assert ACTIVE_AGENT_REQUESTER_PROOFS[proof_id]["canonical_pubkey"] == PUBKEY
+    assert ACTIVE_AGENT_REQUESTER_PROOFS[proof_id]["request_hash"] == challenge["request_hash"]

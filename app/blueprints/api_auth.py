@@ -165,12 +165,15 @@ def api_verify():
         if not nostr_event:
             return jsonify(error="Missing nostr_event"), 400
 
-        nostr_expected_pubkey = rec["pubkey"]
-        if re.fullmatch(r"[0-9a-fA-F]{66}", nostr_expected_pubkey) and nostr_expected_pubkey[:2].lower() in {
-            "02",
-            "03",
-        }:
-            nostr_expected_pubkey = nostr_expected_pubkey[2:]
+        if rec.get("purpose") == AGENT_REQUESTER_PROOF_PURPOSE:
+            nostr_expected_pubkey = rec["canonical_pubkey"]
+        else:
+            nostr_expected_pubkey = rec["pubkey"]
+            if re.fullmatch(r"[0-9a-fA-F]{66}", nostr_expected_pubkey) and nostr_expected_pubkey[:2].lower() in {
+                "02",
+                "03",
+            }:
+                nostr_expected_pubkey = nostr_expected_pubkey[2:]
 
         logger.warning("NOSTR_STEP=before_verify_nostr_login_event cid=%r", cid)
         ok, error = verify_nostr_login_event(
