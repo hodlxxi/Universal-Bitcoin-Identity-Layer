@@ -222,3 +222,53 @@ def test_verify_nostr_login_event_rejects_invalid_signature():
 
     assert ok is False
     assert error == "Invalid nostr signature"
+
+
+def test_verify_nostr_login_event_requires_url_when_requested():
+    event = make_event(tags=[["challenge", CHALLENGE]])
+    event["id"] = _nostr_event_id(event)
+
+    ok, error = verify_nostr_login_event(
+        event,
+        expected_pubkey=PUBKEY,
+        expected_challenge=CHALLENGE,
+        expected_verify_url=VERIFY_URL,
+        now_ts=NOW,
+        require_verify_url=True,
+    )
+
+    assert ok is False
+    assert error == "Missing nostr event URL"
+
+
+def test_verify_nostr_login_event_wrong_required_url_fails():
+    event = make_event(tags=[["challenge", CHALLENGE], ["url", "https://evil.example/api/verify"]])
+    event["id"] = _nostr_event_id(event)
+
+    ok, error = verify_nostr_login_event(
+        event,
+        expected_pubkey=PUBKEY,
+        expected_challenge=CHALLENGE,
+        expected_verify_url=VERIFY_URL,
+        now_ts=NOW,
+        require_verify_url=True,
+    )
+
+    assert ok is False
+    assert error == "Nostr event URL mismatch"
+
+
+def test_verify_nostr_login_event_missing_url_still_allowed_for_legacy_login():
+    event = make_event(tags=[["challenge", CHALLENGE]])
+    event["id"] = _nostr_event_id(event)
+
+    ok, error = verify_nostr_login_event(
+        event,
+        expected_pubkey=PUBKEY,
+        expected_challenge=CHALLENGE,
+        expected_verify_url=VERIFY_URL,
+        now_ts=NOW,
+    )
+
+    assert ok is True
+    assert error is None
