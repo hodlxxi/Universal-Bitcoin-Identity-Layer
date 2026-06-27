@@ -78,3 +78,17 @@ def test_human_demo_marks_pay_card_paid_when_job_completes():
     assert verify_marker in text
     assert reset_marker in text
     assert text.index(done_marker) < text.index(paid_marker) < text.index(result_marker) < text.index(verify_marker)
+
+
+def test_human_demo_does_not_request_invoice_before_verify_success():
+    from pathlib import Path
+
+    text = Path("app/templates/agent/demo.html").read_text()
+    assert 'fetch("/api/verify"' in text
+    assert 'fetch("/agent/request"' in text
+    assert text.index("if (!verifyResponse.ok) throw new Error") < text.index(
+        "await submitVerifiedPreparedRequest(stored.pubkey)"
+    )
+    assert text.index("await provePreparedRequest(signerPubkey, preparedRequestBody)") < text.index(
+        "await submitVerifiedPreparedRequest(signerPubkey)"
+    )
