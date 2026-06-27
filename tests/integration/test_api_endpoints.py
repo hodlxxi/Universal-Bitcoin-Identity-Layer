@@ -5,6 +5,7 @@ Integration tests for API endpoints.
 import json
 from datetime import datetime, timedelta
 
+from coincurve import PrivateKey
 import pytest
 
 
@@ -50,35 +51,134 @@ class TestMetricsEndpoint:
 class TestLNURLAuthEndpoints:
     """Test LNURL-auth endpoints."""
 
+    def _create_session(self, client):
+        response = client.post("/api/lnurl-auth/create")
+        assert response.status_code == 200
+        return response.get_json()
+
+    def _sign_k1(self, k1):
+        private_key = PrivateKey()
+        sig = private_key.sign(bytes.fromhex(k1), hasher=None)
+        key = private_key.public_key.format(compressed=True).hex()
+        return sig.hex(), key
+
     def test_create_lnurl_auth_session(self, client):
         """Test creating LNURL-auth session."""
-        response = client.post("/api/lnurl-auth/create")
+        data = self._create_session(client)
 
-        assert response.status_code == 200
-        data = response.get_json()
-
-        # Verify required fields
         assert "session_id" in data
         assert "lnurl" in data
         assert "qr_code" in data
+        assert "params_url" in data
+        assert "callback_url" in data
+        assert len(data["k1"]) == 64
+        assert data["tag"] == "login"
 
-        # Verify session_id format
         session_id = data["session_id"]
         assert isinstance(session_id, str)
         assert len(session_id) > 0
 
-    def test_check_lnurl_auth_session_not_verified(self, client):
-        """Test checking unverified LNURL-auth session."""
-        # Create session first
-        create_response = client.post("/api/lnurl-auth/create")
-        session_id = create_response.get_json()["session_id"]
+    def test_lnurl_auth_params(self, client):
+        """Test fetching LNURL-auth wallet parameters."""
+        session = self._create_session(client)
 
-        # Check status
-        response = client.get(f"/api/lnurl-auth/check/{session_id}")
+        response = client.get(f"/api/lnurl-auth/params?session_id={session['session_id']}")
 
         assert response.status_code == 200
         data = response.get_json()
-        assert data["verified"] is False
+        assert data["tag"] == "login"
+        assert data["k1"] == session["k1"]
+        assert data["callback"] == session["callback_url"]
+
+    def test_lnurl_auth_callback_valid_signature_marks_verified(self, client):
+        """Test callback with a real secp256k1 signature marks the session verified."""
+        session = self._create_session(client)
+        sig, key = self._sign_k1(session["k1"])
+
+        response = client.get(
+            f"/api/lnurl-auth/callback/{session['session_id']}",
+            query_string={"k1": session["k1"], "sig": sig, "key": key},
+        )
+
+        assert response.status_code == 200
+        assert response.get_json() == {"status": "OK"}
+
+        check_response = client.get(f"/api/lnurl-auth/check/{session['session_id']}")
+        assert check_response.status_code == 200
+        assert check_response.get_json() == {"verified": True, "pubkey": key}
+
+    def test_lnurl_auth_callback_bad_signature_does_not_verify(self, client):
+        """Test bad signatures are rejected and do not mark the session verified."""
+        session = self._create_session(client)
+        sig, key = self._sign_k1(session["k1"])
+        bad_sig = sig[:-2] + ("00" if sig[-2:] != "00" else "01")
+
+        response = client.get(
+            f"/api/lnurl-auth/callback/{session['session_id']}",
+            query_string={"k1": session["k1"], "sig": bad_sig, "key": key},
+        )
+
+        assert response.status_code in (400, 403)
+        assert response.get_json()["status"] == "ERROR"
+        assert client.get(f"/api/lnurl-auth/check/{session['session_id']}").get_json()["verified"] is False
+
+    def test_lnurl_auth_callback_signature_with_wrong_pubkey_does_not_verify(self, client):
+        """Test a valid signature paired with the wrong public key is rejected."""
+        session = self._create_session(client)
+        signing_key = PrivateKey()
+        wrong_key = PrivateKey()
+        sig = signing_key.sign(bytes.fromhex(session["k1"]), hasher=None).hex()
+        wrong_pubkey = wrong_key.public_key.format(compressed=True).hex()
+
+        response = client.get(
+            f"/api/lnurl-auth/callback/{session['session_id']}",
+            query_string={"k1": session["k1"], "sig": sig, "key": wrong_pubkey},
+        )
+
+        assert response.status_code == 403
+        assert response.get_json()["status"] == "ERROR"
+        assert client.get(f"/api/lnurl-auth/check/{session['session_id']}").get_json() == {
+            "verified": False,
+            "pubkey": None,
+        }
+
+    def test_lnurl_auth_callback_bad_k1_does_not_verify(self, client):
+        """Test mismatched challenges are rejected."""
+        session = self._create_session(client)
+        bad_k1 = "00" * 32
+        sig, key = self._sign_k1(bad_k1)
+
+        response = client.get(
+            f"/api/lnurl-auth/callback/{session['session_id']}",
+            query_string={"k1": bad_k1, "sig": sig, "key": key},
+        )
+
+        assert response.status_code == 403
+        assert response.get_json()["status"] == "ERROR"
+        assert client.get(f"/api/lnurl-auth/check/{session['session_id']}").get_json()["verified"] is False
+
+    def test_lnurl_auth_callback_malformed_key_does_not_verify(self, client):
+        """Test malformed keys are rejected."""
+        session = self._create_session(client)
+        sig, _key = self._sign_k1(session["k1"])
+
+        response = client.get(
+            f"/api/lnurl-auth/callback/{session['session_id']}",
+            query_string={"k1": session["k1"], "sig": sig, "key": "not-a-key"},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["status"] == "ERROR"
+        assert client.get(f"/api/lnurl-auth/check/{session['session_id']}").get_json()["verified"] is False
+
+    def test_check_lnurl_auth_session_not_verified(self, client):
+        """Test checking unverified LNURL-auth session."""
+        session = self._create_session(client)
+
+        response = client.get(f"/api/lnurl-auth/check/{session['session_id']}")
+
+        assert response.status_code == 200
+        assert response.get_json() == {"verified": False, "pubkey": None}
 
     def test_check_nonexistent_lnurl_session(self, client):
         """Test checking non-existent LNURL-auth session."""
@@ -86,7 +186,7 @@ class TestLNURLAuthEndpoints:
 
         assert response.status_code == 404
         data = response.get_json()
-        assert "error" in data
+        assert data["verified"] is False
 
 
 class TestProofOfFundsEndpoints:

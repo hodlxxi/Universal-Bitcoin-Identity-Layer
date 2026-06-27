@@ -9,6 +9,8 @@ import secrets
 import time
 from typing import Optional
 
+from coincurve import PublicKey
+
 from flask import Blueprint, current_app, jsonify, request
 import bech32
 
@@ -35,6 +37,75 @@ audit_logger = get_audit_logger()
 lnurl_bp = Blueprint("lnurl", __name__)
 
 LNURL_RATE_LIMIT = "20 per minute"
+
+
+def _audit_verify_failed(session_id: str, reason: str) -> None:
+    audit_logger.log_event("lnurl.verify_failed", session_id=session_id, reason=reason, ip=request.remote_addr)
+
+
+def _decode_k1(k1: str) -> bytes:
+    if len(k1) != 64:
+        raise ValueError("k1 must be 32 bytes hex")
+    try:
+        return bytes.fromhex(k1)
+    except ValueError as exc:
+        raise ValueError("k1 must be hex") from exc
+
+
+def _decode_signature(sig: str) -> bytes:
+    if not sig or len(sig) % 2 != 0:
+        raise ValueError("signature must be hex")
+    try:
+        sig_bytes = bytes.fromhex(sig)
+    except ValueError as exc:
+        raise ValueError("signature must be hex") from exc
+    # DER ECDSA signatures are ASN.1 SEQUENCE values and begin with 0x30.
+    # coincurve performs the full DER validation during verify().
+    if not sig_bytes or sig_bytes[0] != 0x30:
+        raise ValueError("signature must be DER encoded")
+    return sig_bytes
+
+
+def _decode_pubkey(key: str) -> bytes:
+    if not key or len(key) % 2 != 0:
+        raise ValueError("public key must be hex")
+    try:
+        key_bytes = bytes.fromhex(key)
+    except ValueError as exc:
+        raise ValueError("public key must be hex") from exc
+    if len(key_bytes) != 33 or key_bytes[0] not in (0x02, 0x03):
+        raise ValueError("public key must be a compressed secp256k1 key")
+    # Constructor validates that the bytes represent a real secp256k1 point.
+    PublicKey(key_bytes)
+    return key_bytes
+
+
+def _verify_lnurl_auth_signature(k1: str, sig: str, key: str) -> tuple[bool, Optional[str]]:
+    try:
+        k1_bytes = _decode_k1(k1)
+    except ValueError:
+        return False, "malformed_k1"
+
+    try:
+        sig_bytes = _decode_signature(sig)
+    except ValueError:
+        return False, "malformed_signature"
+
+    try:
+        key_bytes = _decode_pubkey(key)
+    except ValueError:
+        return False, "malformed_pubkey"
+
+    try:
+        if not PublicKey(key_bytes).verify(sig_bytes, k1_bytes, hasher=None):
+            return False, "signature_invalid"
+    except ValueError:
+        return False, "malformed_signature"
+    except Exception:
+        logger.warning("LNURL signature verification failed unexpectedly", exc_info=True)
+        return False, "signature_invalid"
+
+    return True, None
 
 
 @lnurl_bp.route("/create", methods=["POST"])
@@ -124,6 +195,7 @@ def lnurl_callback(session_id: str):
     key = request.args.get("key")
 
     if not all([k1, sig, key]):
+        _audit_verify_failed(session_id, "missing_parameters")
         return jsonify({"status": "ERROR", "reason": "Missing required parameters"}), 400
 
     try:
@@ -131,25 +203,36 @@ def lnurl_callback(session_id: str):
         challenge_data = get_lnurl_challenge(session_id)
 
         if not challenge_data:
+            _audit_verify_failed(session_id, "invalid_or_expired_session")
             return jsonify({"status": "ERROR", "reason": "Invalid or expired session"}), 404
+
+        # Verify challenge format before comparing so malformed wallet input is explicit.
+        try:
+            _decode_k1(k1)
+        except ValueError:
+            _audit_verify_failed(session_id, "malformed_k1")
+            return jsonify({"status": "ERROR", "reason": "Malformed k1"}), 400
 
         # Verify challenge matches
         stored_challenge = challenge_data.get("challenge") or challenge_data.get("k1")
 
         if not stored_challenge or stored_challenge != k1:
-            audit_logger.log_event(
-                "lnurl.verify_failed", session_id=session_id, reason="challenge_mismatch", ip=request.remote_addr
-            )
+            _audit_verify_failed(session_id, "challenge_mismatch")
             return jsonify({"status": "ERROR", "reason": "Challenge mismatch"}), 403
 
-        # Verify signature
-        # In production, implement proper secp256k1 signature verification
-        # For now, we trust the signature (this should be replaced)
-        import hashlib
+        verified, failure_reason = _verify_lnurl_auth_signature(k1, sig, key)
+        if not verified:
+            _audit_verify_failed(session_id, failure_reason or "signature_invalid")
+            response_reason = {
+                "malformed_k1": "Malformed k1",
+                "malformed_signature": "Malformed signature",
+                "malformed_pubkey": "Malformed public key",
+                "signature_invalid": "Invalid signature",
+            }.get(failure_reason, "Invalid signature")
+            status_code = 400 if failure_reason and failure_reason.startswith("malformed_") else 403
+            return jsonify({"status": "ERROR", "reason": response_reason}), status_code
 
-        message_hash = hashlib.sha256(k1.encode()).hexdigest()
-
-        # Update challenge as verified
+        # Update challenge as verified only after successful secp256k1 verification.
         challenge_data["verified"] = True
         challenge_data["pubkey"] = key
         challenge_data["verified_at"] = time.time()
@@ -160,6 +243,7 @@ def lnurl_callback(session_id: str):
             update_lnurl_challenge(session_id, key)
         except Exception as e:
             logger.error("LNURL update failed: %s", e, exc_info=True)
+            _audit_verify_failed(session_id, "update_failed")
             return jsonify({"status": "ERROR", "reason": "Failed to update challenge"}), 500
 
         audit_logger.log_event("lnurl.verify_success", session_id=session_id, pubkey=key, ip=request.remote_addr)
