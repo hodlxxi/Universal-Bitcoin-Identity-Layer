@@ -788,6 +788,7 @@
         const verifyData = await readJsonResponse(verifyResponse);
         if (!verifyResponse.ok) throw new Error(verifyData.error || "Proof verification failed");
         if (verifyData.request_hash !== stored.request_hash) throw new Error("Verified proof did not match the prepared request.");
+        window.history.replaceState({}, document.title, window.location.pathname);
         setBadge("requestStatus", "Key control verified for this request", "ok");
         setText("proofRequesterLevel", "signature_verified");
         setText("proofMethod", "nostr");
@@ -798,6 +799,7 @@
         setBadge("requestStatus", "failed", "bad");
         showRequesterError(String(error).replace(/^Error: /, ""));
         setText("requestResponse", compactJson({ error: String(error) }));
+        document.getElementById("createButton").disabled = false;
       }
     }
 

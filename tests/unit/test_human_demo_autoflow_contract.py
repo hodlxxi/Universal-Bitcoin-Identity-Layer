@@ -92,3 +92,32 @@ def test_human_demo_does_not_request_invoice_before_verify_success():
     assert text.index("await provePreparedRequest(signerPubkey, preparedRequestBody)") < text.index(
         "await submitVerifiedPreparedRequest(signerPubkey)"
     )
+
+
+def test_human_demo_android_callback_failure_reenables_create_button():
+    from pathlib import Path
+
+    text = Path("app/templates/agent/demo.html").read_text()
+    resume_marker = "async function resumeAndroidProofFromCallback()"
+    catch_marker = """showRequesterError(String(error).replace(/^Error: /, ""));
+        setText("requestResponse", compactJson({ error: String(error) }));
+        document.getElementById("createButton").disabled = false;"""
+    assert text.index(resume_marker) < text.index(catch_marker)
+
+
+def test_human_demo_android_callback_success_clears_mobile_query_after_verify():
+    from pathlib import Path
+
+    text = Path("app/templates/agent/demo.html").read_text()
+    verify_ok_marker = 'if (!verifyResponse.ok) throw new Error(verifyData.error || "Proof verification failed");'
+    hash_match_marker = 'if (verifyData.request_hash !== stored.request_hash) throw new Error("Verified proof did not match the prepared request.");'
+    clear_history_marker = "window.history.replaceState({}, document.title, window.location.pathname);"
+    submit_marker = "await submitVerifiedPreparedRequest(stored.pubkey);"
+
+    assert clear_history_marker in text
+    assert (
+        text.index(verify_ok_marker)
+        < text.index(hash_match_marker)
+        < text.index(clear_history_marker)
+        < text.index(submit_marker)
+    )
