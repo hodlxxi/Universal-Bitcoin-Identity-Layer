@@ -310,6 +310,18 @@
         <p class="field-help" id="requesterHelp">Loaded from window.nostr.getPublicKey(); the signer key is the source of the verified requester key.</p>
         <p class="error-text" id="requesterError" role="alert" hidden></p>
 
+        <div class="card warning" id="mobileSignerChooser" hidden>
+          <h2>Choose a signer</h2>
+          <p>No signer is available in this browser.</p>
+          <p>On desktop, use a Nostr signer extension.</p>
+          <p>On Android, open a compatible Nostr signer app.</p>
+          <p>iPhone remote signing support is not available yet.</p>
+          <p>Open this page on desktop with a NIP-07 signer.</p>
+          <div class="actions">
+            <button type="button" id="androidSignerButton" onclick="openAndroidSigner()">Open Android signer</button>
+          </div>
+        </div>
+
         <label for="message">Message</label>
         <textarea id="message" name="message">Hello from HODLXXI demo</textarea>
 
@@ -395,6 +407,7 @@
     let verificationStarted = false;
     let preparedRequestBody = null;
     let preparedRequestFingerprint = null;
+    const MOBILE_PROOF_STORAGE_PREFIX = "hodlxxi_mobile_proof_v1:";
 
     function setText(id, value) {
       document.getElementById(id).textContent = value;
@@ -441,13 +454,28 @@
       error.textContent = message || "";
     }
 
+    function hasNip07Signer() {
+      return Boolean(window.nostr && typeof window.nostr.getPublicKey === "function" && typeof window.nostr.signEvent === "function");
+    }
+
+    function showMobileSignerChooser() {
+      const chooser = document.getElementById("mobileSignerChooser");
+      const input = document.getElementById("requesterPubkey");
+      if (chooser) chooser.hidden = false;
+      input.readOnly = false;
+      input.placeholder = "paste 64-hex x-only Nostr pubkey";
+      document.getElementById("requesterHelp").textContent =
+        "Paste your 64-hex x-only Nostr pubkey for Android NIP-55 signing. Never paste an nsec or private key.";
+    }
+
     function requestFingerprint(body) {
       return JSON.stringify(body);
     }
 
     async function ensureNostrSignerPubkey() {
-      if (!window.nostr || typeof window.nostr.getPublicKey !== "function" || typeof window.nostr.signEvent !== "function") {
-        throw new Error("A compatible Nostr signer extension is required for this proof-of-control version.");
+      if (!hasNip07Signer()) {
+        showMobileSignerChooser();
+        throw new Error("No signer is available in this browser. Use the signer chooser below.");
       }
       const pubkey = await window.nostr.getPublicKey();
       if (!/^[0-9a-fA-F]{64}$/.test(pubkey || "")) throw new Error("Nostr signer returned an invalid public key.");
@@ -486,6 +514,54 @@
       setText("proofMethod", "nostr");
       setText("proofVerifiedForRequest", verifyData.request_hash === challengeData.request_hash ? "yes" : "no");
       return verifyData;
+    }
+
+    function buildPreparedRequestBody(pubkey, message) {
+      return {
+        job_type: "ping",
+        payload: {
+          message: message,
+          requester_pubkey: pubkey,
+          demo: "human_proof_v2",
+          demo_nonce: newDemoNonce()
+        }
+      };
+    }
+
+    function randomMobileStateId() {
+      if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") return globalThis.crypto.randomUUID();
+      return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+
+    function mobileProofStorageKey(stateId) {
+      return `${MOBILE_PROOF_STORAGE_PREFIX}${stateId}`;
+    }
+
+    function parseSignedNostrEvent(params) {
+      const raw = params.get("event") || params.get("signed_event") || params.get("nostr_event") || params.get("result");
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw);
+      } catch (error) {
+        return JSON.parse(decodeURIComponent(raw));
+      }
+    }
+
+    function createNip55Url(unsignedEvent, stateId, challengeId) {
+      const callbackUrl = new URL(window.location.href);
+      callbackUrl.search = "";
+      callbackUrl.hash = "";
+      callbackUrl.searchParams.set("mobile_proof", "1");
+      callbackUrl.searchParams.set("state", stateId);
+      callbackUrl.searchParams.set("challenge_id", challengeId);
+      callbackUrl.searchParams.set("event", "");
+
+      const signerUrl = new URL(`nostrsigner:${encodeURIComponent(JSON.stringify(unsignedEvent))}`);
+      signerUrl.searchParams.set("type", "sign_event");
+      signerUrl.searchParams.set("returnType", "event");
+      signerUrl.searchParams.set("compressionType", "none");
+      signerUrl.searchParams.set("callbackUrl", callbackUrl.toString());
+      return signerUrl.toString();
     }
 
     function newDemoNonce() {
@@ -567,15 +643,7 @@
 
       try {
         const signerPubkey = await ensureNostrSignerPubkey();
-        const body = {
-          job_type: "ping",
-          payload: {
-            message: message,
-            requester_pubkey: signerPubkey,
-            demo: "human_proof_v2",
-            demo_nonce: newDemoNonce()
-          }
-        };
+        const body = buildPreparedRequestBody(signerPubkey, message);
         preparedRequestBody = body;
         preparedRequestFingerprint = requestFingerprint(body);
         setText("requestResponse", compactJson({ request: preparedRequestBody }));
@@ -585,36 +653,7 @@
           throw new Error("Request changed after proof; sign again.");
         }
 
-        const response = await fetch("/agent/request", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(preparedRequestBody)
-        });
-        const data = await readJsonResponse(response);
-        setText("requestResponse", compactJson(data));
-
-        if (!response.ok) {
-          setBadge("requestStatus", `failed (${response.status})`, "bad");
-          setStep("stepRequest", null);
-          document.getElementById("createButton").disabled = false;
-          return;
-        }
-
-        currentJobId = data.job_id;
-        setText("jobId", currentJobId || "missing");
-        setText("proofJobId", currentJobId || "missing");
-        setText("proofRequester", signerPubkey);
-        setText("proofRequesterLevel", "signature_verified");
-        setText("proofMethod", "nostr");
-        setText("proofVerifiedForRequest", "yes");
-        setText("proofPaymentHash", data.payment_hash || "waiting");
-        applyInvoice(data.invoice || data.payment_request || data.bolt11 || "");
-        setBadge("requestStatus", data.status || "created", "ok");
-        setStep("stepRequest", "done");
-        setStep("stepPay", "active");
-        document.getElementById("checkButton").disabled = !currentJobId;
-        document.getElementById("verifyButton").disabled = true;
-        startPolling();
+        await submitVerifiedPreparedRequest(signerPubkey);
       } catch (error) {
         preparedRequestBody = null;
         preparedRequestFingerprint = null;
@@ -622,6 +661,144 @@
         showRequesterError(String(error).replace(/^Error: /, ""));
         setText("requestResponse", compactJson({ error: String(error) }));
         setStep("stepRequest", null);
+        document.getElementById("createButton").disabled = false;
+      }
+    }
+
+    async function submitVerifiedPreparedRequest(signerPubkey) {
+      if (requestFingerprint(preparedRequestBody) !== preparedRequestFingerprint) {
+        throw new Error("Request changed after proof; sign again.");
+      }
+
+      const response = await fetch("/agent/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(preparedRequestBody)
+      });
+      const data = await readJsonResponse(response);
+      setText("requestResponse", compactJson(data));
+
+      if (!response.ok) {
+        setBadge("requestStatus", `failed (${response.status})`, "bad");
+        setStep("stepRequest", null);
+        document.getElementById("createButton").disabled = false;
+        return;
+      }
+
+      currentJobId = data.job_id;
+      setText("jobId", currentJobId || "missing");
+      setText("proofJobId", currentJobId || "missing");
+      setText("proofRequester", signerPubkey);
+      setText("proofRequesterLevel", "signature_verified");
+      setText("proofMethod", "nostr");
+      setText("proofVerifiedForRequest", "yes");
+      setText("proofPaymentHash", data.payment_hash || "waiting");
+      applyInvoice(data.invoice || data.payment_request || data.bolt11 || "");
+      setBadge("requestStatus", data.status || "created", "ok");
+      setStep("stepRequest", "done");
+      setStep("stepPay", "active");
+      document.getElementById("checkButton").disabled = !currentJobId;
+      document.getElementById("verifyButton").disabled = true;
+      startPolling();
+    }
+
+    async function openAndroidSigner() {
+      const pubkey = document.getElementById("requesterPubkey").value.trim().toLowerCase();
+      const message = document.getElementById("message").value.trim() || "Hello from HODLXXI demo";
+      showRequesterError("");
+      if (!/^[0-9a-f]{64}$/.test(pubkey)) {
+        showRequesterError("Paste a 64-hex x-only Nostr pubkey before opening the Android signer.");
+        return;
+      }
+
+      try {
+        const body = buildPreparedRequestBody(pubkey, message);
+        preparedRequestBody = body;
+        preparedRequestFingerprint = requestFingerprint(body);
+        setText("requestResponse", compactJson({ request: preparedRequestBody }));
+        setBadge("requestStatus", "preparing Android signer challenge", "warn");
+
+        const challengeResponse = await fetch("/api/challenge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pubkey: pubkey,
+            method: "nostr",
+            purpose: "agent_requester_proof_v1",
+            request_body: preparedRequestBody
+          })
+        });
+        const challengeData = await readJsonResponse(challengeResponse);
+        if (!challengeResponse.ok) throw new Error(challengeData.error || "Bound challenge failed");
+
+        const stateId = randomMobileStateId();
+        sessionStorage.setItem(
+          mobileProofStorageKey(stateId),
+          JSON.stringify({
+            challenge_id: challengeData.challenge_id,
+            request_hash: challengeData.request_hash,
+            pubkey: pubkey,
+            request_body: preparedRequestBody,
+            request_fingerprint: preparedRequestFingerprint
+          })
+        );
+
+        const unsignedEvent = {
+          kind: 22242,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [["challenge", challengeData.challenge], ["url", `${window.location.origin}/api/verify`]],
+          content: "HODLXXI agent requester proof"
+        };
+        window.location.href = createNip55Url(unsignedEvent, stateId, challengeData.challenge_id);
+      } catch (error) {
+        setBadge("requestStatus", "failed", "bad");
+        showRequesterError(String(error).replace(/^Error: /, ""));
+        setText("requestResponse", compactJson({ error: String(error) }));
+      }
+    }
+
+    async function resumeAndroidProofFromCallback() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("mobile_proof") !== "1") return;
+
+      showMobileSignerChooser();
+      const stateId = params.get("state");
+      const challengeId = params.get("challenge_id");
+      const signedEvent = parseSignedNostrEvent(params);
+      if (!stateId || !challengeId || !signedEvent) {
+        showRequesterError("Android signer callback is missing proof state or signed event.");
+        return;
+      }
+
+      try {
+        const stored = JSON.parse(sessionStorage.getItem(mobileProofStorageKey(stateId)) || "null");
+        if (!stored || stored.challenge_id !== challengeId) throw new Error("Android proof state is missing or changed; start again.");
+        preparedRequestBody = stored.request_body;
+        preparedRequestFingerprint = stored.request_fingerprint;
+        if (requestFingerprint(preparedRequestBody) !== preparedRequestFingerprint) throw new Error("Request changed after proof; sign again.");
+        document.getElementById("requesterPubkey").value = stored.pubkey;
+        setText("requestResponse", compactJson({ request: preparedRequestBody }));
+        setBadge("requestStatus", "verifying Android signer proof", "warn");
+
+        const verifyResponse = await fetch("/api/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ challenge_id: challengeId, pubkey: stored.pubkey, nostr_event: signedEvent })
+        });
+        const verifyData = await readJsonResponse(verifyResponse);
+        if (!verifyResponse.ok) throw new Error(verifyData.error || "Proof verification failed");
+        if (verifyData.request_hash !== stored.request_hash) throw new Error("Verified proof did not match the prepared request.");
+        window.history.replaceState({}, document.title, window.location.pathname);
+        setBadge("requestStatus", "Key control verified for this request", "ok");
+        setText("proofRequesterLevel", "signature_verified");
+        setText("proofMethod", "nostr");
+        setText("proofVerifiedForRequest", "yes");
+        sessionStorage.removeItem(mobileProofStorageKey(stateId));
+        await submitVerifiedPreparedRequest(stored.pubkey);
+      } catch (error) {
+        setBadge("requestStatus", "failed", "bad");
+        showRequesterError(String(error).replace(/^Error: /, ""));
+        setText("requestResponse", compactJson({ error: String(error) }));
         document.getElementById("createButton").disabled = false;
       }
     }
@@ -743,6 +920,9 @@
       document.getElementById("verifyButton").disabled = true;
       ["stepRequest", "stepPay", "stepResult", "stepVerify"].forEach((id) => setStep(id, null));
     }
+
+    if (!hasNip07Signer()) showMobileSignerChooser();
+    window.addEventListener("DOMContentLoaded", resumeAndroidProofFromCallback);
   </script>
 </body>
 </html>

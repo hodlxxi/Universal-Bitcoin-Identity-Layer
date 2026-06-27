@@ -30,3 +30,47 @@ def test_human_demo_page_renders_interactive_paid_agent_flow():
         "Hello from HODLXXI demo",
     ]:
         assert marker in text
+
+
+def test_human_demo_no_nostr_shows_mobile_signer_chooser():
+    app = create_app()
+    app.config.update(TESTING=True)
+    client = app.test_client()
+
+    response = client.get("/demo", base_url="https://hodlxxi.com")
+    text = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    for marker in [
+        "No signer is available in this browser.",
+        "On desktop, use a Nostr signer extension.",
+        "On Android, open a compatible Nostr signer app.",
+        "iPhone remote signing support is not available yet.",
+        "Open Android signer",
+        "Open this page on desktop with a NIP-07 signer.",
+    ]:
+        assert marker in text
+
+
+def test_human_demo_android_nip55_contract_markers():
+    from pathlib import Path
+
+    text = Path("app/templates/agent/demo.html").read_text()
+    for marker in [
+        "nostrsigner:",
+        "type",
+        "sign_event",
+        "returnType",
+        "event",
+        "callbackUrl",
+        'callbackUrl.searchParams.set("event", "")',
+        'params.get("result")',
+        'signerUrl.searchParams.set("type", "sign_event")',
+        'signerUrl.searchParams.set("returnType", "event")',
+        'signerUrl.searchParams.set("compressionType", "none")',
+        "agent_requester_proof_v1",
+        "human_proof_v2",
+        "sessionStorage",
+        "mobile_proof",
+    ]:
+        assert marker in text
