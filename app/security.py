@@ -162,8 +162,8 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
         storage_uri = os.getenv("RATELIMIT_STORAGE_URL") or os.getenv("REDIS_URL") or "memory://"
         logger.info("Rate limiting disabled")
     else:
-        # ALWAYS use memory:// storage for reliability
-        # Redis-based rate limiting can be added later if needed
+        # Validate storage before binding Flask-Limiter so production cannot
+        # silently downgrade to in-memory rate-limit state.
         try:
             storage_uri = os.getenv("RATELIMIT_STORAGE_URL") or os.getenv("REDIS_URL") or "memory://"
             storage_uri = _validate_rate_limit_storage(storage_uri, cfg)
@@ -173,7 +173,9 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
                 storage_uri=storage_uri,
                 strategy="fixed-window",
             )
-        except TypeError:
+        except TypeError as exc:
+            if redis_required(cfg):
+                raise RuntimeError("Rate limiter initialization failed in production") from exc
             limiter.init_app(app)
         # HODLXXI_EXEMPT_STATUS_V2
         # Screensaver polls /api/public/status; exempt it from Flask-Limiter defaults.

@@ -107,3 +107,22 @@ def test_non_production_rate_limiter_redis_failure_uses_memory_with_warning(monk
         record.msg == "redis.memory_fallback" and getattr(record, "surface", None) == "rate_limit"
         for record in caplog.records
     )
+
+
+def test_init_security_production_refuses_typeerror_fallback(monkeypatch):
+    app = Flask(__name__)
+    cfg = {
+        "FLASK_ENV": "production",
+        "RATE_LIMIT_ENABLED": True,
+        "RATE_LIMIT_DEFAULT": "100/hour",
+    }
+    monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:6379/0")
+    monkeypatch.setattr(security.redis, "from_url", lambda *a, **k: FakeRedisClient())
+
+    def raise_type_error(*args, **kwargs):
+        raise TypeError("legacy limiter signature")
+
+    monkeypatch.setattr(security.limiter, "init_app", raise_type_error)
+
+    with pytest.raises(RuntimeError, match="Rate limiter initialization failed in production"):
+        security.init_security(app, cfg)
