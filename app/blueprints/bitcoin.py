@@ -45,7 +45,8 @@ RPC_RATE_LIMIT = "30 per minute"
 
 @bitcoin_bp.before_request
 def _gate_legacy_wallet_routes():
-    if request.endpoint == "bitcoin.rpc_command" and not production_closed_flag(
+    legacy_wallet_endpoints = {"bitcoin.rpc_command", "bitcoin.list_descriptors"}
+    if request.endpoint in legacy_wallet_endpoints and not production_closed_flag(
         "ENABLE_LEGACY_WALLET_ROUTES", current_app.config
     ):
         abort(404)

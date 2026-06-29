@@ -48,6 +48,7 @@ def production_client(monkeypatch):
         ("/agent/jobs/test/dev/mark_paid", "post"),
         ("/rpc/getblockchaininfo", "get"),
         ("/api/rpc/getblockchaininfo", "get"),
+        ("/api/descriptors", "get"),
         ("/export_descriptors", "get"),
         ("/import_descriptor", "post"),
         ("/set_labels_from_zpub", "post"),
