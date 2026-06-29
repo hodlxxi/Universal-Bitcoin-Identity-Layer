@@ -130,6 +130,7 @@ def register_legacy_routes(app):
             continue
         app.add_url_rule(rule, endpoint, make_lazy_view(view_func), methods=methods)
 
+
 def register_full_user_product_routes(app):
     """Register full-user product routes required by /home without broad legacy enablement."""
     from flask import jsonify, request
@@ -154,6 +155,7 @@ def register_full_user_product_routes(app):
         existing.add(rule)
 
     if "/rpc/<cmd>" not in existing:
+
         def _browser_rpc(cmd):
             denied = _require_full_user_session()
             if denied is not None:
@@ -182,6 +184,7 @@ def register_full_user_product_routes(app):
                 return jsonify(allowed[cmd]())
             except Exception:
                 import logging
+
                 logging.getLogger(__name__).error("full_user_browser_rpc failed", exc_info=True)
                 return jsonify({"error": "Internal server error"}), 500
 
@@ -189,7 +192,9 @@ def register_full_user_product_routes(app):
         app.add_url_rule("/rpc/<cmd>", "full_user_browser_rpc", _browser_rpc, methods=["GET"])
         existing.add("/rpc/<cmd>")
 
-    _add_guarded_legacy("/verify_pubkey_and_list", "full_user_verify_pubkey_and_list", "verify_pubkey_and_list", ["GET"])
+    _add_guarded_legacy(
+        "/verify_pubkey_and_list", "full_user_verify_pubkey_and_list", "verify_pubkey_and_list", ["GET"]
+    )
     _add_guarded_legacy("/export_descriptors", "full_user_export_descriptors", "export_descriptors", ["GET"])
     _add_guarded_legacy("/import_descriptor", "full_user_import_descriptor", "import_descriptor", ["POST"])
     _add_guarded_legacy("/set_labels_from_zpub", "full_user_set_labels_from_zpub", "set_labels_from_zpub", ["POST"])
