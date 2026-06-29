@@ -7,6 +7,14 @@ def _get_legacy():
     return importlib.import_module("app.app")
 
 
+def _require_authenticated_session():
+    from flask import jsonify, session
+
+    if not session.get("logged_in_pubkey"):
+        return jsonify(error="unauthorized"), 401
+    return None
+
+
 def _require_full_user_session():
     from flask import jsonify, session
 
@@ -129,6 +137,33 @@ def register_legacy_routes(app):
         if rule in existing:
             continue
         app.add_url_rule(rule, endpoint, make_lazy_view(view_func), methods=methods)
+
+
+def register_authenticated_explorer_routes(app):
+    """Register authenticated explorer routes without broad legacy enablement."""
+
+    existing = {str(rule) for rule in app.url_map.iter_rules()}
+
+    def _add_guarded_legacy(rule, endpoint, view_func, methods):
+        if rule in existing:
+            return
+
+        def _view(*args, **kwargs):
+            gate = _require_authenticated_session()
+            if gate is not None:
+                return gate
+
+            from importlib import import_module
+
+            legacy_runtime = import_module("app.app")
+            legacy_view = getattr(legacy_runtime, view_func)
+            return legacy_view(*args, **kwargs)
+
+        _view.__name__ = endpoint
+        app.add_url_rule(rule, endpoint, _view, methods=methods)
+        existing.add(rule)
+
+    _add_guarded_legacy("/api/pubkey/resolve", "authenticated_api_pubkey_resolve", "api_pubkey_resolve", ["GET"])
 
 
 def register_full_user_product_routes(app):
