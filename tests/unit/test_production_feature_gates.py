@@ -45,12 +45,8 @@ def production_client(monkeypatch):
         ("/metrics/prometheus", "get"),
         ("/dev/dashboard", "get"),
         ("/agent/jobs/test/dev/mark_paid", "post"),
-        ("/rpc/getblockchaininfo", "get"),
         ("/api/rpc/getblockchaininfo", "get"),
         ("/api/descriptors", "get"),
-        ("/export_descriptors", "get"),
-        ("/import_descriptor", "post"),
-        ("/set_labels_from_zpub", "post"),
     ],
 )
 def test_production_defensive_surfaces_default_closed(production_client, path, method):
@@ -82,3 +78,8 @@ def test_config_flag_accepts_only_explicit_true_values(monkeypatch):
     for value in ["", "0", "false", "no", "off", "enabled"]:
         monkeypatch.setenv("TEST_BOOLEAN_FLAG", value)
         assert config_flag("TEST_BOOLEAN_FLAG") is False
+
+
+def test_anonymous_full_user_wallet_product_route_is_not_public(production_client):
+    response = production_client.get("/rpc/getblockchaininfo")
+    assert response.status_code != 200

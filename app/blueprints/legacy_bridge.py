@@ -7,19 +7,31 @@ def _get_legacy():
     return importlib.import_module("app.app")
 
 
-def register_legacy_routes(app):
+def _require_full_user_session():
+    from flask import jsonify, session
 
-    # === BROWSER RPC (session-based) ===
+    if not session.get("logged_in_pubkey"):
+        return jsonify(error="unauthorized"), 401
+    if session.get("access_level") != "full":
+        return jsonify(error="forbidden"), 403
+    return None
+
+
+def register_covenant_wallet_routes(app):
+    """Register authenticated full-user covenant wallet product routes.
+
+    These routes are distinct from unsafe legacy wallet/API surfaces and do not
+    depend on ENABLE_LEGACY_WALLET_ROUTES.
+    """
+
     @app.route("/rpc/<cmd>", methods=["GET"])
     def browser_rpc(cmd):
-        from flask import session, jsonify, request
+        guard = _require_full_user_session()
+        if guard:
+            return guard
+        from flask import jsonify, request
+
         from app.utils import get_rpc_connection
-
-        if not session.get("logged_in_pubkey"):
-            return jsonify(error="unauthorized"), 401
-
-        if session.get("access_level") != "full":
-            return jsonify(error="forbidden"), 403
 
         rpc = get_rpc_connection()
         allowed = {
@@ -48,6 +60,31 @@ def register_legacy_routes(app):
             logging.getLogger(__name__).error("browser_rpc failed", exc_info=True)
             return jsonify({"error": "Internal server error"}), 500
 
+    bindings = [
+        ("/export_descriptors", "export_descriptors", "export_descriptors", ["GET"]),
+        ("/import_descriptor", "import_descriptor", "import_descriptor", ["POST"]),
+        ("/set_labels_from_zpub", "set_labels_from_zpub", "set_labels_from_zpub", ["POST"]),
+    ]
+    existing = {r.rule for r in app.url_map.iter_rules()}
+
+    for rule, endpoint, view_func, methods in bindings:
+        if rule in existing:
+            continue
+
+        def make_full_user_view(func_name):
+            def _view(*args, **kwargs):
+                guard = _require_full_user_session()
+                if guard:
+                    return guard
+                legacy = _get_legacy()
+                return getattr(legacy, func_name)(*args, **kwargs)
+
+            return _view
+
+        app.add_url_rule(rule, endpoint, make_full_user_view(view_func), methods=methods)
+
+
+def register_legacy_routes(app):
     """
     Safe bridge: re-bind a handful of legacy handlers that still exist in app.app
     so factory-first runtime can serve the old endpoints again.
