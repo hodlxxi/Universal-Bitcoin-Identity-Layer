@@ -13,7 +13,7 @@ QR Pointer v0 is intentionally documentation-only. It does not add a Flask route
 - Status: canon/docs only.
 - Runtime status: not live.
 - Endpoint status: no QR Pointer endpoint is added in v0.
-- Schema status: no JSON Schema is added in v0.
+- Schema status: `docs/schemas/qr_pointer_v0.schema.json` defines the local documentation/schema contract; no runtime schema endpoint is added in v0.
 - Storage status: no pointer storage or database migration is added in v0.
 
 This document describes safety boundaries for future PRs. It must not be read as evidence that `/qr/<token>` or any QR Pointer runtime route exists.
@@ -172,9 +172,11 @@ If such a route is introduced later, it must:
 
 This PR does not add that route.
 
-## Future JSON schema direction
+## JSON schema contract
 
-A future QR Pointer schema should be explicit and minimal. Candidate fields include:
+The v0 schema contract lives at `docs/schemas/qr_pointer_v0.schema.json`. It is a repository-local contract for tests, review, and future implementation planning. It is not a live runtime endpoint and does not add route behavior.
+
+A QR Pointer schema should remain explicit and minimal. Current fields include:
 
 - `schema`: stable schema identifier;
 - `pointer_id`: stable local identifier;
@@ -187,7 +189,7 @@ A future QR Pointer schema should be explicit and minimal. Candidate fields incl
 - `privacy_class`: public, pseudonymous, or sensitive;
 - `signature`: optional future signature over canonical JSON.
 
-The schema should avoid embedding private identity data, private delegation data, secrets, bearer tokens, payment credentials, session identifiers, or third-party mutable redirect state.
+The schema avoids embedding private identity data, private delegation data, secrets, bearer tokens, payment credentials, session identifiers, or third-party mutable redirect state.
 
 ## Pointer lifecycle
 
@@ -348,7 +350,7 @@ For future runtime PRs:
 ## PR roadmap
 
 - PR 1 — docs/canon only.
-- PR 2 — JSON Schema and validation tests.
+- PR 2 — JSON Schema and validation tests. This PR adds the local schema contract only, not a runtime endpoint.
 - PR 3 — read-only local `/qr/<token>` landing surface behind a static pointer registry.
 - PR 4 — integrate QR Pointer with `/agent/verify/<job_id>` as a discovery-only receipt verification link.
 - PR 5 — integrate with delegation surfaces only after delegation records exist.
