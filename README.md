@@ -13,7 +13,7 @@ A production-focused Flask service that bridges OAuth2/OpenID Connect with Light
 
 ## 🚀 Highlights
 
-- **Security-first OAuth2/OIDC core** – RS256 tokens with on-disk JWKS rotation, PKCE validation, HTTPS enforcement through `app.security`, and Redis-powered rate limiting that degrades gracefully to in-memory limits.
+- **Security-first OAuth2/OIDC core** – RS256 tokens with on-disk JWKS rotation, PKCE validation, HTTPS enforcement through `app.security`, and Redis-powered rate limiting with production fail-closed behavior and explicit non-production in-memory fallback warnings.
 - **Lightning-aware identity workflows** – LNURL-auth challenge storage, Bitcoin signature verification helpers, and adapters that keep the legacy authorization views working while the storage layer matured.
 - **Persistent storage** – SQLAlchemy models for OAuth clients/codes/tokens, sessions, LNURL challenges, proof-of-funds requests, and audit logs backed by Postgres with Redis coordination for ephemeral state.
 - **Operational tooling** – `/metrics/prometheus` endpoint, structured JSON logging, and a reusable `create_app()` factory (`app/factory.py`) for factory-based deployments.

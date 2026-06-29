@@ -4,29 +4,20 @@ Database connection and session management for HODLXXI.
 Production-grade PostgreSQL and Redis connections with pooling.
 """
 
-import sqlite3  # or your actual DB engine
-
-from flask import g
-
-
-def get_db():
-    if "db" not in g:
-        g.db = sqlite3.connect("/srv/ubid/ubid.db")  # or your actual DB path
-    return g.db
-
-
 import logging
-import os
+import sqlite3  # or your actual DB engine
 from contextlib import contextmanager
 from typing import Generator, Optional
 
 import redis
-from sqlalchemy import create_engine, event, exc
+from flask import g
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
 from sqlalchemy.pool import Pool
 
 from app.config import get_config
 from app.models import Base
+from app.redis_contract import has_explicit_redis_config, log_memory_fallback_warning, redis_required
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +25,12 @@ logger = logging.getLogger(__name__)
 _engine = None
 _SessionFactory = None
 _redis_client = None
+
+
+def get_db():
+    if "db" not in g:
+        g.db = sqlite3.connect("/srv/ubid/ubid.db")  # or your actual DB path
+    return g.db
 
 
 def get_database_url() -> str:
@@ -219,6 +216,10 @@ def init_redis() -> None:
 
     config = get_config()
     redis_url = config.get("REDIS_URL")
+    production_requires_redis = redis_required(config)
+
+    if production_requires_redis and not has_explicit_redis_config(config):
+        raise RuntimeError("Redis is required in production but no explicit Redis configuration was provided")
 
     try:
         if redis_url:
@@ -254,9 +255,11 @@ def init_redis() -> None:
         _redis_client.ping()
 
     except Exception as e:
-        logger.error(f"Failed to initialize Redis: {e}")
-        logger.warning("Falling back to in-memory session storage")
+        logger.error("Failed to initialize Redis", exc_info=True)
         _redis_client = None
+        if production_requires_redis:
+            raise RuntimeError("Redis is required in production but initialization failed") from e
+        log_memory_fallback_warning("cache_session", e.__class__.__name__)
 
 
 def get_redis() -> Optional[redis.Redis]:
