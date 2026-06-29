@@ -129,3 +129,73 @@ def register_legacy_routes(app):
         if rule in existing:
             continue
         app.add_url_rule(rule, endpoint, make_lazy_view(view_func), methods=methods)
+
+
+def register_full_user_product_routes(app):
+    """Register full-user product routes required by /home without broad legacy enablement."""
+    from flask import jsonify, request
+    from app.utils import get_rpc_connection
+
+    existing = {r.rule for r in app.url_map.iter_rules()}
+
+    def _add_guarded_legacy(rule, endpoint, func_name, methods):
+        nonlocal existing
+        if rule in existing:
+            return
+
+        def _view(*args, **kwargs):
+            denied = _require_full_user_session()
+            if denied is not None:
+                return denied
+            legacy = _get_legacy()
+            return getattr(legacy, func_name)(*args, **kwargs)
+
+        _view.__name__ = endpoint
+        app.add_url_rule(rule, endpoint, _view, methods=methods)
+        existing.add(rule)
+
+    if "/rpc/<cmd>" not in existing:
+
+        def _browser_rpc(cmd):
+            denied = _require_full_user_session()
+            if denied is not None:
+                return denied
+
+            rpc = get_rpc_connection()
+            allowed = {
+                "getwalletinfo": lambda: rpc.getwalletinfo(),
+                "listdescriptors": lambda: rpc.listdescriptors(),
+                "getreceivedbylabel": lambda: rpc.getreceivedbylabel(request.args.get("p", "")),
+                "listtransactions": lambda: rpc.listtransactions(),
+                "listunspent": lambda: rpc.listunspent(),
+                "listreceivedbylabel": lambda: rpc.listreceivedbylabel(),
+                "listreceivedbyaddress": lambda: rpc.listreceivedbyaddress(),
+                "listaddressgroupings": lambda: rpc.listaddressgroupings(),
+                "listlabels": lambda: rpc.listlabels(),
+                "getbalance": lambda: rpc.getbalance(),
+                "getblockcount": lambda: rpc.getblockcount(),
+                "rescanblockchain": lambda: rpc.rescanblockchain(),
+            }
+
+            if cmd not in allowed:
+                return jsonify({"error": f"Unsupported RPC method `{cmd}`"}), 400
+
+            try:
+                return jsonify(allowed[cmd]())
+            except Exception:
+                import logging
+
+                logging.getLogger(__name__).error("full_user_browser_rpc failed", exc_info=True)
+                return jsonify({"error": "Internal server error"}), 500
+
+        _browser_rpc.__name__ = "full_user_browser_rpc"
+        app.add_url_rule("/rpc/<cmd>", "full_user_browser_rpc", _browser_rpc, methods=["GET"])
+        existing.add("/rpc/<cmd>")
+
+    _add_guarded_legacy(
+        "/verify_pubkey_and_list", "full_user_verify_pubkey_and_list", "verify_pubkey_and_list", ["GET"]
+    )
+    _add_guarded_legacy("/export_descriptors", "full_user_export_descriptors", "export_descriptors", ["GET"])
+    _add_guarded_legacy("/import_descriptor", "full_user_import_descriptor", "import_descriptor", ["POST"])
+    _add_guarded_legacy("/set_labels_from_zpub", "full_user_set_labels_from_zpub", "set_labels_from_zpub", ["POST"])
+    _add_guarded_legacy("/api/ui/hide_manifesto", "full_user_api_hide_manifesto", "api_hide_manifesto", ["POST"])
