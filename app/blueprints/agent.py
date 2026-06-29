@@ -13,7 +13,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, render_template, request, session as flask_session
+from flask import Blueprint, abort, current_app, jsonify, render_template, request, session as flask_session
 
 from app.audit_logger import get_audit_logger
 
@@ -21,6 +21,7 @@ from app.agent_signer import canonical_json_bytes, get_agent_pubkey_hex, sign_me
 from app.database import session_scope
 from app.models import AgentEvent, AgentJob
 from app.payments.ln import check_invoice_paid, create_invoice
+from app.feature_flags import production_closed_flag
 from app.structured_logging import log_event
 from app.services.covenant_visualizer import CovenantInputError, visualize_covenant
 from app.services.agent_readiness_report import (
@@ -1608,6 +1609,8 @@ def _event_attestation(event: AgentEvent, job: AgentJob | None) -> dict:
 
 @agent_bp.post("/agent/jobs/<job_id>/dev/mark_paid")
 def dev_mark_paid(job_id: str):
+    if not production_closed_flag("ENABLE_DEV_ROUTES", current_app.config):
+        abort(404)
     """
     Dev endpoint: simulate invoice payment and immediately issue a receipt.
     Protected by DEV_AGENT_ADMIN_TOKEN and disabled in production-like mode.

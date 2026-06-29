@@ -27,6 +27,7 @@ from app.structured_logging import log_event
 from app.browser_routes import register_browser_route_handlers
 from app.socket_handlers import register_socket_handlers
 from app.socket_state import CHAT_HISTORY, ONLINE_USERS
+from app.feature_flags import production_closed_flag
 from app.utils import generate_challenge, get_rpc_connection
 
 logger = logging.getLogger(__name__)
@@ -169,11 +170,13 @@ def register_blueprints(app: Flask) -> None:
     # Authentication blueprint (login, logout, signature verification)
     from app.blueprints.auth import auth_bp
     from app.blueprints.api_auth import api_auth_bp
-    from app.blueprints.debug_session import debug_session_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(api_auth_bp)
-    app.register_blueprint(debug_session_bp)
+    if production_closed_flag("ENABLE_DEBUG_ROUTES", app.config):
+        from app.blueprints.debug_session import debug_session_bp
+
+        app.register_blueprint(debug_session_bp)
 
     # Bitcoin operations blueprint (RPC, descriptors, wallets)
     from app.blueprints.bitcoin import bitcoin_bp
@@ -195,9 +198,10 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(oauth_bp, url_prefix="/oauth")
 
     # OAuth developer-facing surface (status/docs/client listing)
-    from app.blueprints.oauth_dev import oauth_dev_bp
+    if production_closed_flag("ENABLE_OAUTH_DEV_ROUTES", app.config):
+        from app.blueprints.oauth_dev import oauth_dev_bp
 
-    app.register_blueprint(oauth_dev_bp)
+        app.register_blueprint(oauth_dev_bp)
 
     # Admin/operations blueprint (health, metrics, TURN)
     from app.blueprints.admin import admin_bp
@@ -212,12 +216,14 @@ def register_blueprints(app: Flask) -> None:
 
     # UI/frontend blueprint (dashboard, playground, chat)
     from app.blueprints.ui import ui_bp
-    from app.dev_routes import dev_bp
 
     app.register_blueprint(ui_bp)
     # Developer Platform
-    app.register_blueprint(dev_bp)
-    logger.info("✓ Developer platform registered")
+    if production_closed_flag("ENABLE_DEV_ROUTES", app.config):
+        from app.dev_routes import dev_bp
+
+        app.register_blueprint(dev_bp)
+        logger.info("✓ Developer platform registered")
 
     # OAuth client billing endpoints
     from app.blueprints.billing_agent import billing_agent_bp
@@ -245,9 +251,10 @@ def register_blueprints(app: Flask) -> None:
 
     register_docs_routes(app)
 
-    from app.blueprints.legacy_bridge import register_legacy_routes
+    if production_closed_flag("ENABLE_LEGACY_WALLET_ROUTES", app.config):
+        from app.blueprints.legacy_bridge import register_legacy_routes
 
-    register_legacy_routes(app)
+        register_legacy_routes(app)
     logger.info("✅ All blueprints registered")
 
 

@@ -8,9 +8,10 @@ import logging
 import time
 from typing import Any, Dict
 
-from flask import Blueprint, Response, current_app, jsonify
+from flask import Blueprint, Response, abort, current_app, jsonify
 from prometheus_client import CollectorRegistry, Counter, Gauge, generate_latest
 
+from app.feature_flags import production_closed_flag
 from app.utils import get_rpc_connection
 
 logger = logging.getLogger(__name__)
@@ -99,6 +100,8 @@ def readiness():
 
 @admin_bp.route("/metrics", methods=["GET"])
 def metrics():
+    if not production_closed_flag("ENABLE_PUBLIC_METRICS", current_app.config):
+        abort(404)
     """
     JSON metrics endpoint.
 
@@ -107,8 +110,6 @@ def metrics():
       - top-level keys include: timestamp, application, metrics
     """
     import time as _time
-
-    from flask import current_app
 
     # uptime
     started = current_app.config.get("START_TIME")
@@ -150,6 +151,8 @@ def metrics():
 
 @admin_bp.route("/metrics/prometheus")
 def metrics_prometheus():
+    if not production_closed_flag("ENABLE_PUBLIC_METRICS", current_app.config):
+        abort(404)
     """
     Prometheus metrics endpoint.
 
@@ -172,6 +175,8 @@ def metrics_prometheus():
 
 @admin_bp.route("/turn_credentials")
 def turn_credentials():
+    if not production_closed_flag("ENABLE_PUBLIC_TURN_CREDENTIALS", current_app.config):
+        abort(404)
     """
     TURN server credentials for WebRTC.
 

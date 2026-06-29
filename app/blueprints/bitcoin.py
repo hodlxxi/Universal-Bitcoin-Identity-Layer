@@ -12,7 +12,7 @@ import uuid
 from decimal import Decimal
 from typing import Any, Callable, Dict
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, abort, current_app, jsonify, request
 
 from app.audit_logger import get_audit_logger
 from app.billing_clients import require_paid_client
@@ -32,6 +32,7 @@ class _NoopLimiter:
 
 limiter = _limiter or _NoopLimiter()
 
+from app.feature_flags import production_closed_flag
 from app.utils import get_rpc_connection, is_valid_pubkey
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,16 @@ audit_logger = get_audit_logger()
 bitcoin_bp = Blueprint("bitcoin", __name__)
 
 RPC_RATE_LIMIT = "30 per minute"
+
+
+@bitcoin_bp.before_request
+def _gate_legacy_wallet_routes():
+    legacy_wallet_endpoints = {"bitcoin.rpc_command", "bitcoin.list_descriptors"}
+    if request.endpoint in legacy_wallet_endpoints and not production_closed_flag(
+        "ENABLE_LEGACY_WALLET_ROUTES", current_app.config
+    ):
+        abort(404)
+
 
 SAFE_RPC_METHODS: dict[str, dict[str, Any]] = {
     "getblockchaininfo": {"call": lambda rpc, _args: rpc.getblockchaininfo(), "max_args": 0},
@@ -59,6 +70,8 @@ SAFE_RPC_METHODS: dict[str, dict[str, Any]] = {
 @require_oauth_token("read_limited")
 @require_paid_client(cost_sats=int(os.getenv("HODLXXI_COST_BITCOIN_RPC_SATS", "1")))
 def rpc_command(cmd: str):
+    if not production_closed_flag("ENABLE_LEGACY_WALLET_ROUTES", current_app.config):
+        abort(404)
     """
     Execute Bitcoin Core RPC command.
 
