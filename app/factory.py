@@ -18,16 +18,16 @@ from flask_socketio import SocketIO
 from werkzeug.exceptions import HTTPException
 
 from app.audit_logger import init_audit_logger
+from app.browser_routes import register_browser_route_handlers
 from app.config import AppConfig, get_config
 from app.database import close_all, init_all
+from app.feature_flags import production_closed_flag
 from app.jwks import load_signing_material
 from app.request_context import get_or_create_request_id
 from app.security import init_security
-from app.structured_logging import log_event
-from app.browser_routes import register_browser_route_handlers
 from app.socket_handlers import register_socket_handlers
 from app.socket_state import CHAT_HISTORY, ONLINE_USERS
-from app.feature_flags import production_closed_flag
+from app.structured_logging import log_event
 from app.utils import generate_challenge, get_rpc_connection
 
 logger = logging.getLogger(__name__)
@@ -168,8 +168,8 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(oidc_bp)
 
     # Authentication blueprint (login, logout, signature verification)
-    from app.blueprints.auth import auth_bp
     from app.blueprints.api_auth import api_auth_bp
+    from app.blueprints.auth import auth_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(api_auth_bp)
@@ -209,7 +209,7 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(admin_bp)
 
     # Proof-of-Funds blueprints (legacy public frontend + API)
-    from app.pof_routes import pof_bp, pof_api_bp
+    from app.pof_routes import pof_api_bp, pof_bp
 
     app.register_blueprint(pof_bp)
     app.register_blueprint(pof_api_bp)
@@ -226,8 +226,8 @@ def register_blueprints(app: Flask) -> None:
         logger.info("✓ Developer platform registered")
 
     # OAuth client billing endpoints
-    from app.blueprints.billing_agent import billing_agent_bp
     from app.blueprints.agent import agent_bp
+    from app.blueprints.billing_agent import billing_agent_bp
     from app.blueprints.nip17_messages import nip17_messages_bp
 
     app.register_blueprint(billing_agent_bp)
@@ -250,6 +250,10 @@ def register_blueprints(app: Flask) -> None:
     from app.docs_routes import register_docs_routes
 
     register_docs_routes(app)
+
+    from app.blueprints.legacy_bridge import register_covenant_wallet_routes
+
+    register_covenant_wallet_routes(app)
 
     if production_closed_flag("ENABLE_LEGACY_WALLET_ROUTES", app.config):
         from app.blueprints.legacy_bridge import register_legacy_routes

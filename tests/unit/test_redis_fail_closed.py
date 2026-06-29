@@ -109,7 +109,7 @@ def test_non_production_rate_limiter_redis_failure_uses_memory_with_warning(monk
     )
 
 
-def test_init_security_production_refuses_typeerror_fallback(monkeypatch):
+def test_init_security_production_allows_legacy_typeerror_after_validated_redis(monkeypatch):
     app = Flask(__name__)
     cfg = {
         "FLASK_ENV": "production",
@@ -119,10 +119,62 @@ def test_init_security_production_refuses_typeerror_fallback(monkeypatch):
     monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:6379/0")
     monkeypatch.setattr(security.redis, "from_url", lambda *a, **k: FakeRedisClient())
 
-    def raise_type_error(*args, **kwargs):
+    calls = []
+
+    def legacy_type_error_once(*args, **kwargs):
+        calls.append(kwargs)
+        if kwargs:
+            raise TypeError("legacy limiter signature")
+        return None
+
+    monkeypatch.setattr(security.limiter, "init_app", legacy_type_error_once)
+
+    security.init_security(app, cfg)
+
+    assert calls == [
+        {
+            "default_limits": ["100/hour"],
+            "storage_uri": "redis://127.0.0.1:6379/0",
+            "strategy": "fixed-window",
+        },
+        {},
+    ]
+    assert app.config["RATELIMIT_STORAGE_URI"] == "redis://127.0.0.1:6379/0"
+    assert app.config["RATE_LIMIT_STORAGE_URI"] == "redis://127.0.0.1:6379/0"
+
+
+@pytest.mark.parametrize("uri", ["redis://127.0.0.1:6379/0", "rediss://cache.example/0", "unix:///run/redis.sock"])
+def test_rate_limit_legacy_fallback_accepts_only_redis_backed_schemes(monkeypatch, uri):
+    app = Flask(__name__)
+    app.config.update(FLASK_ENV="production", RATE_LIMIT_STORAGE_URI=uri)
+    monkeypatch.setattr(security.redis, "from_url", lambda *a, **k: FakeRedisClient())
+    calls = []
+
+    def legacy_type_error_once(*args, **kwargs):
+        calls.append(kwargs)
+        if kwargs:
+            raise TypeError("legacy limiter signature")
+        return None
+
+    monkeypatch.setattr(security.limiter, "init_app", legacy_type_error_once)
+
+    security.init_rate_limiter(app)
+
+    assert calls[-1] == {}
+    assert app.config["RATELIMIT_STORAGE_URI"] == uri
+
+
+@pytest.mark.parametrize("uri", ["", "memory://", "http://redis.example/0", "redis+sentinel://example/0"])
+def test_rate_limit_legacy_fallback_rejects_non_redis_backed_schemes(monkeypatch, uri):
+    app = Flask(__name__)
+    app.config.update(FLASK_ENV="production", RATE_LIMIT_STORAGE_URI=uri)
+    if uri == "":
+        monkeypatch.delenv("REDIS_URL", raising=False)
+
+    def legacy_type_error(*args, **kwargs):
         raise TypeError("legacy limiter signature")
 
-    monkeypatch.setattr(security.limiter, "init_app", raise_type_error)
+    monkeypatch.setattr(security.limiter, "init_app", legacy_type_error)
 
-    with pytest.raises(RuntimeError, match="Rate limiter initialization failed in production"):
-        security.init_security(app, cfg)
+    with pytest.raises(RuntimeError):
+        security.init_rate_limiter(app)
