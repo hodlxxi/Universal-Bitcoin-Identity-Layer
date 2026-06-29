@@ -2,7 +2,6 @@
 
 import pytest
 
-
 _FALSEY_FLAGS = [
     "ENABLE_DEBUG_ROUTES",
     "ENABLE_DEV_ROUTES",
