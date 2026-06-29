@@ -11,6 +11,10 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+import redis
+
+from app.redis_contract import log_memory_fallback_warning, redis_required
+
 try:  # pragma: no cover - optional dependency
     from flask_talisman import Talisman  # type: ignore
 except ModuleNotFoundError:  # pragma: no cover - fallback for tests
@@ -71,6 +75,31 @@ def _build_redis_uri(cfg: Mapping[str, Any]) -> str:
     if password:
         return f"redis://:{password}@{host}:{port}/{db}"
     return f"redis://{host}:{port}/{db}"
+
+
+def _validate_rate_limit_storage(storage_uri: str, cfg: Mapping[str, Any]) -> str:
+    """Return a safe rate-limit storage URI or fail closed in production."""
+
+    if storage_uri == "memory://":
+        if redis_required(cfg):
+            raise RuntimeError("Redis-backed rate limiting is required in production")
+        log_memory_fallback_warning("rate_limit", "missing_storage_uri")
+        return storage_uri
+
+    if storage_uri.startswith(("redis://", "rediss://", "unix://")):
+        try:
+            client = redis.from_url(storage_uri, socket_connect_timeout=5, socket_timeout=5)
+            client.ping()
+            client.close()
+        except Exception as exc:
+            if redis_required(cfg):
+                raise RuntimeError(
+                    "Redis-backed rate limiting is required in production but Redis ping failed"
+                ) from exc
+            log_memory_fallback_warning("rate_limit", exc.__class__.__name__)
+            return "memory://"
+
+    return storage_uri
 
 
 def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
@@ -137,6 +166,7 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
         # Redis-based rate limiting can be added later if needed
         try:
             storage_uri = os.getenv("RATELIMIT_STORAGE_URL") or os.getenv("REDIS_URL") or "memory://"
+            storage_uri = _validate_rate_limit_storage(storage_uri, cfg)
             limiter.init_app(
                 app,
                 default_limits=[limit_default],
@@ -198,6 +228,7 @@ def init_rate_limiter(app):
         or os.getenv("REDIS_URL")
         or "memory://"
     )
+    storage_uri = _validate_rate_limit_storage(storage_uri, app.config)
     default_limit = app.config.get("RATE_LIMIT_DEFAULT") or "100/hour"
 
     # Even when disabled, keep limiter object valid for decorators.
@@ -210,6 +241,8 @@ def init_rate_limiter(app):
         )
     except TypeError:
         # older signatures: init_app(app) only
+        if redis_required(app.config):
+            raise RuntimeError("Rate limiter initialization failed in production")
         limiter.init_app(app)
 
     try:
