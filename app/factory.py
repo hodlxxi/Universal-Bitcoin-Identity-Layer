@@ -251,9 +251,15 @@ def register_blueprints(app: Flask) -> None:
 
     register_docs_routes(app)
 
-    from app.blueprints.legacy_bridge import register_covenant_wallet_routes
+    # Full-user product routes required by /home#onboard.
+    # Kept independent from the broad legacy route gate.
+    from app.blueprints.legacy_bridge import (
+        register_covenant_wallet_routes,
+        register_full_user_product_routes,
+    )
 
     register_covenant_wallet_routes(app)
+    register_full_user_product_routes(app)
 
     if production_closed_flag("ENABLE_LEGACY_WALLET_ROUTES", app.config):
         from app.blueprints.legacy_bridge import register_legacy_routes
