@@ -16,6 +16,13 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
+ALLOWED_EXACT_TARGETS = {
+    "/.well-known/agent.json",
+    "/.well-known/hodlxxi-operator.json",
+    "/agent/discovery",
+    "/agent/capabilities",
+}
+VERIFY_TARGET_RE = re.compile(r"^/agent/verify/([A-Za-z0-9][A-Za-z0-9_.:-]*)$")
 SECRET_LIKE_FIELDS = {
     "secret",
     "token_secret",
@@ -93,15 +100,31 @@ def _walk_keys(value: Any) -> set[str]:
 
 def validate_target(target: Any) -> str:
     if not isinstance(target, str) or not target:
-        _fail("record target must be a local relative path")
+        _fail("record target must be an allowlisted local path")
+
     parsed = urlparse(target)
     if parsed.scheme or parsed.netloc:
         _fail("record target must not be an external URL")
     if target.startswith("//"):
         _fail("record target must not be protocol-relative")
+    if parsed.query:
+        _fail("record target must not include a query string")
+    if parsed.fragment:
+        _fail("record target must not include a fragment")
     if not target.startswith("/"):
-        _fail("record target must be a local relative path beginning with /")
-    return target
+        _fail("record target must be an allowlisted local path beginning with /")
+
+    path = parsed.path
+    if path in ALLOWED_EXACT_TARGETS:
+        return path
+
+    verify_match = VERIFY_TARGET_RE.fullmatch(path)
+    if verify_match:
+        job_id = verify_match.group(1)
+        if ".." not in job_id:
+            return path
+
+    _fail("record target must be an allowlisted QR Pointer target")
 
 
 def validate_record(record: Any, requested_token: str | None = None) -> tuple[str, str]:

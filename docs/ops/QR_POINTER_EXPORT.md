@@ -18,7 +18,7 @@ The safe authority boundary is HODLXXI pointer state, not possession of a printe
 
 - runs locally and offline;
 - reads only local JSON pointer records or a local static registry directory;
-- rejects external and protocol-relative targets;
+- rejects any target outside the export allowlist, including external and protocol-relative targets;
 - rejects secret-like fields before printing output;
 - rejects authority-claim fields such as `consent`, `approval`, `delegation`, `authorization`, `payment_proof`, `receipt_validity`, `trust`, `reputation`, and `human_presence`;
 - does not write analytics or audit events;
@@ -47,6 +47,17 @@ python scripts/export_qr_pointer.py \
 ```
 
 The command prints the payload URL, the local target path, a status line, and the required discovery-only warning. It never prints the full record JSON by default.
+
+The export target validator is fail-closed and allowlisted. The only exact targets accepted are:
+
+- `/.well-known/agent.json`
+- `/.well-known/hodlxxi-operator.json`
+- `/agent/discovery`
+- `/agent/capabilities`
+
+The only pattern target accepted is `/agent/verify/<job_id>`, where `<job_id>` starts with an alphanumeric character, contains only alphanumeric characters, underscore, hyphen, dot, or colon, and contains no slashes, query string, fragment, traversal, or nested path.
+
+The exporter rejects `/agent/request`, `/agent/request/...`, `/agent/jobs/<job_id>`, `/agent/delegations`, `/agent/delegations/...`, `/agent/policy`, `/.well-known/agent-delegation.json`, `/admin`, `/admin/...`, arbitrary local paths, external URLs, protocol-relative URLs, query strings, fragments, traversal paths, and nested verify paths.
 
 ## How to generate a PNG/SVG if supported
 

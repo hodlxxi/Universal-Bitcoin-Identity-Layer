@@ -83,6 +83,69 @@ def test_protocol_relative_target_rejected(tmp_path, capsys):
     assert "external URL" in err or "protocol-relative" in err
 
 
+@pytest.mark.parametrize(
+    "target",
+    [
+        "/.well-known/agent.json",
+        "/.well-known/hodlxxi-operator.json",
+        "/agent/discovery",
+        "/agent/capabilities",
+    ],
+)
+def test_exact_allowed_discovery_targets_pass(tmp_path, capsys, target):
+    record_path = write_record(tmp_path, {"token": "Pointer_123", "target": target})
+    code, out, err = run_cli(capsys, "--dry-run", "--record", str(record_path), "--base-url", "https://example.com")
+    assert code == 0, err
+    assert f"target_path: {target}" in out
+
+
+@pytest.mark.parametrize(
+    "job_id",
+    [
+        "job123",
+        "job_123",
+        "job-123",
+        "job.123",
+        "job:123",
+        "a",
+    ],
+)
+def test_valid_agent_verify_job_id_targets_pass(tmp_path, capsys, job_id):
+    target = f"/agent/verify/{job_id}"
+    record_path = write_record(tmp_path, {"token": "Pointer_123", "target": target})
+    code, out, err = run_cli(capsys, "--dry-run", "--record", str(record_path), "--base-url", "https://example.com")
+    assert code == 0, err
+    assert f"target_path: {target}" in out
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "/agent/request",
+        "/agent/request/x",
+        "/agent/jobs/job_123",
+        "/agent/delegations",
+        "/agent/delegations/abc",
+        "/agent/policy",
+        "/.well-known/agent-delegation.json",
+        "/admin",
+        "/admin/x",
+        "/some/unknown/local/path",
+        "/agent/verify",
+        "/agent/verify/",
+        "/agent/verify/a/b",
+        "/agent/verify/job?id=1",
+        "/agent/verify/job#fragment",
+        "/agent/verify/../x",
+    ],
+)
+def test_non_allowlisted_local_targets_rejected(tmp_path, capsys, target):
+    record_path = write_record(tmp_path, {"token": "Pointer_123", "target": target})
+    code, _out, err = run_cli(capsys, "--dry-run", "--record", str(record_path), "--base-url", "https://example.com")
+    assert code == 2
+    assert "target" in err
+
+
 def test_secret_like_field_rejected(tmp_path, capsys):
     record_path = write_record(
         tmp_path, {"token": "Pointer_123", "target": "/agent/verify/job-123", "metadata": {"private_key": "redacted"}}
