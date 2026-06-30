@@ -234,7 +234,7 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(agent_bp)
     app.register_blueprint(nip17_messages_bp)
 
-    from app.qr_pointer import qr_pointer_bp
+    from app.blueprints.qr_pointer import qr_pointer_bp
 
     app.register_blueprint(qr_pointer_bp)
 
