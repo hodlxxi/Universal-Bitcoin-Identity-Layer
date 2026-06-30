@@ -35,6 +35,7 @@ def test_capabilities_shape_contract(client):
     assert body["capability_schema"]["version"]
     assert isinstance(body["job_types"], dict)
     assert isinstance(body["endpoints"], dict)
+    assert not any("/qr/" in str(value) for value in body["endpoints"].values())
     assert isinstance(body["signature"], str) and body["signature"]
 
 
