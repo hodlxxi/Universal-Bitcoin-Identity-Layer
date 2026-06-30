@@ -35,6 +35,10 @@ Canonical protocol and trust details remain in:
 
 - [QR Pointer v0](QR_POINTER_V0.md) — planned/canonical documentation only. QR Pointer is not live in the current runtime, adds no endpoint in v0, and is defined only as a discovery pointer to open bounded verification surfaces. A QR scan does not imply identity, consent, delegation, approval, authorization, receipt validity, payment, obligation, trust, reputation, human presence, or operator approval.
 
+## Planned delegated identity canon
+
+- [Agent Delegation v0](AGENT_DELEGATION_V0.md) — planned/canonical documentation and schema only. Delegation endpoints are not live in this PR; the contract exists to keep future delegated identities bounded, signed, scoped, revocable, and explicitly non-authoritative outside declared limits.
+
 
 ## Paid Work
 

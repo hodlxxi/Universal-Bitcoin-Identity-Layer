@@ -354,7 +354,7 @@ For future runtime PRs:
 - PR 2 — JSON Schema and validation tests.
 - PR 3 — read-only local `/qr/<token>` landing surface behind a static pointer registry.
 - PR 4 — integrate QR Pointer with `/agent/verify/<job_id>` as a discovery-only receipt verification link. The verifier may return a `qr_pointer` object that reopens the same verifier surface, but the pointer does not prove receipt validity or payment by itself.
-- PR 5 — integrate with delegation surfaces only after delegation records exist.
+- PR 5 — integrate with delegation surfaces only after delegation records exist under the Agent Delegation v0 contract.
 - PR 6 — optional external QR provider/export adapter with no trust-base expansion.
 
 ## Decision gates
