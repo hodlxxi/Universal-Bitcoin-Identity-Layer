@@ -462,6 +462,12 @@ def test_verify_endpoint_returns_valid_true_for_existing_receipt(client, monkeyp
     assert "attestation" in body
     assert body["attestation"]["job_type"] == "verify_signature"
     assert "receipt" in body
+    assert body["qr_pointer"]["schema"] == "hodlxxi.qr_pointer.v0"
+    assert body["qr_pointer"]["target_path"] == f"/agent/verify/{req['job_id']}"
+    assert body["qr_pointer"]["target_class"] == "receipt_verification"
+    assert body["qr_pointer"]["privacy_class"] == "pseudonymous"
+    assert "does_not_prove_receipt_validity" in body["qr_pointer"]["non_claims"]
+    assert "does_not_prove_payment" in body["qr_pointer"]["non_claims"]
 
 
 def test_verify_endpoint_returns_409_for_existing_unpaid_job_without_receipt(client, monkeypatch):
@@ -479,15 +485,16 @@ def test_verify_endpoint_returns_409_for_existing_unpaid_job_without_receipt(cli
     assert res.status_code == 409
 
     body = res.get_json()
-    assert body == {
-        "job_id": req["job_id"],
-        "status": "no_receipt",
-        "valid": False,
-        "verification": "unavailable",
-        "job_status": "invoice_pending",
-        "receipt": None,
-        "reason": "receipt_not_issued",
-    }
+    assert body["job_id"] == req["job_id"]
+    assert body["status"] == "no_receipt"
+    assert body["valid"] is False
+    assert body["verification"] == "unavailable"
+    assert body["job_status"] == "invoice_pending"
+    assert body["receipt"] is None
+    assert body["reason"] == "receipt_not_issued"
+    assert body["qr_pointer"]["target_path"] == f"/agent/verify/{req['job_id']}"
+    assert body["qr_pointer"]["target_class"] == "receipt_verification"
+    assert "does_not_prove_receipt_validity" in body["qr_pointer"]["non_claims"]
 
 
 def test_verify_endpoint_returns_404_for_missing_job(client):

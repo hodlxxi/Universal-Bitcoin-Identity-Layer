@@ -1106,6 +1106,35 @@ def well_known_agent():
     return jsonify(_agent_identity_document())
 
 
+QR_POINTER_NON_CLAIMS = [
+    "does_not_prove_identity",
+    "does_not_prove_human_identity",
+    "does_not_prove_consent",
+    "does_not_prove_approval",
+    "does_not_prove_delegation",
+    "does_not_prove_authorization",
+    "does_not_prove_execution",
+    "does_not_prove_receipt_validity",
+    "does_not_prove_payment",
+    "does_not_prove_obligation",
+    "does_not_prove_trust",
+    "does_not_prove_human_presence",
+]
+
+
+def _receipt_verification_qr_pointer(job_id: str) -> dict:
+    return {
+        "schema": "hodlxxi.qr_pointer.v0",
+        "pointer_id": f"receipt-verify:{job_id}",
+        "target_path": f"/agent/verify/{job_id}",
+        "target_class": "receipt_verification",
+        "created_at": _iso_now(),
+        "revocation_status": "active",
+        "privacy_class": "pseudonymous",
+        "non_claims": QR_POINTER_NON_CLAIMS,
+    }
+
+
 def _signed_message_bytes(envelope: dict) -> bytes:
     """Canonical bytes used for signature verification/signing.
 
@@ -1755,6 +1784,7 @@ def verify_job_receipt(job_id: str):
                         "job_status": job.status,
                         "receipt": None,
                         "reason": "receipt_not_issued",
+                        "qr_pointer": _receipt_verification_qr_pointer(job_id),
                     }
                 ),
                 409,
@@ -1782,6 +1812,7 @@ def verify_job_receipt(job_id: str):
                 "event_hash": event_hash,
                 "attestation": attestation,
                 "receipt": receipt,
+                "qr_pointer": _receipt_verification_qr_pointer(job_id),
             }
         )
 
