@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QR Pointer</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.5; color: #111827; background: #f9fafb; }
+    main { max-width: 44rem; margin: auto; background: white; border: 1px solid #e5e7eb; border-radius: 0.75rem; padding: 1.5rem; }
+    code { background: #f3f4f6; padding: 0.125rem 0.25rem; border-radius: 0.25rem; }
+    .warning { border-left: 4px solid #f59e0b; background: #fffbeb; padding: 1rem; }
+    .button { display: inline-block; margin-top: 1rem; padding: 0.75rem 1rem; border-radius: 0.5rem; background: #111827; color: white; text-decoration: none; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>QR Pointer</h1>
+  <p>Status: <strong>{{ status }}</strong></p>
+  <p>Target path: <code>{{ target }}</code></p>
+  {% if issuer %}
+  <h2>Issuer metadata</h2>
+  <dl>
+    {% for key, value in issuer.items() %}
+    <dt>{{ key }}</dt><dd>{{ value }}</dd>
+    {% endfor %}
+  </dl>
+  {% endif %}
+  <p class="warning">{{ warning }}</p>
+  {% if status == "active" %}
+  <a class="button" href="{{ target }}">Open target</a>
+  {% else %}
+  <p>This pointer is not active and will not redirect.</p>
+  {% endif %}
+</main>
+</body>
+</html>
