@@ -86,7 +86,9 @@ def _validate_contract_subset(payload: dict, schema: dict) -> list[str]:
         errors.append("schema_const")
 
     delegation_id = payload.get("delegation_id", "")
-    if not isinstance(delegation_id, str) or not re.match(schema["properties"]["delegation_id"]["pattern"], delegation_id):
+    if not isinstance(delegation_id, str) or not re.match(
+        schema["properties"]["delegation_id"]["pattern"], delegation_id
+    ):
         errors.append("delegation_id")
 
     scopes = payload.get("authority", {}).get("scopes", [])
