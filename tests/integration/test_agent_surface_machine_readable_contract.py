@@ -129,3 +129,13 @@ def test_public_surfaces_do_not_expose_secret_like_fields(client):
         _walk_for_secret_like_keys(payload, found)
 
     assert not found, f"secret-like keys leaked in public surfaces: {sorted(found)}"
+
+
+def test_capabilities_do_not_advertise_qr_or_delegation_runtime_endpoints(client):
+    body = client.get("/agent/capabilities").get_json()
+    serialized = str(body).lower()
+
+    assert "/qr/" not in serialized
+    assert "/.well-known/agent-delegation.json" not in serialized
+    assert "/agent/delegations" not in serialized
+    assert "/agent/policy" not in serialized
