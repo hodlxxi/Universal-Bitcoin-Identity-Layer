@@ -13,7 +13,7 @@ QR Pointer v0 is intentionally documentation-only. It does not add a Flask route
 - Status: canon/docs only.
 - Runtime status: not live.
 - Endpoint status: no QR Pointer endpoint is added in v0.
-- Schema status: `docs/schemas/qr_pointer_v0.schema.json` defines the local documentation/schema contract; no runtime schema endpoint is added in v0.
+- Schema status: `docs/schemas/qr_pointer_v0.schema.json` records the documentation-phase contract for future validation. It is not served by the runtime in v0.
 - Storage status: no pointer storage or database migration is added in v0.
 
 This document describes safety boundaries for future PRs. It must not be read as evidence that `/qr/<token>` or any QR Pointer runtime route exists.
@@ -172,11 +172,11 @@ If such a route is introduced later, it must:
 
 This PR does not add that route.
 
-## JSON schema contract
+## Future JSON schema direction
 
-The v0 schema contract lives at `docs/schemas/qr_pointer_v0.schema.json`. It is a repository-local contract for tests, review, and future implementation planning. It is not a live runtime endpoint and does not add route behavior.
+The documentation-phase schema is checked in at `docs/schemas/qr_pointer_v0.schema.json`. It is a repository contract for validation tests and future implementation planning; it is not served by the runtime in v0.
 
-A QR Pointer schema should remain explicit and minimal. Current fields include:
+A future QR Pointer schema should remain explicit and minimal. Candidate fields include:
 
 - `schema`: stable schema identifier;
 - `pointer_id`: stable local identifier;
@@ -189,7 +189,7 @@ A QR Pointer schema should remain explicit and minimal. Current fields include:
 - `privacy_class`: public, pseudonymous, or sensitive;
 - `signature`: optional future signature over canonical JSON.
 
-The schema avoids embedding private identity data, private delegation data, secrets, bearer tokens, payment credentials, session identifiers, or third-party mutable redirect state.
+The schema should avoid embedding private identity data, private delegation data, secrets, bearer tokens, payment credentials, session identifiers, or third-party mutable redirect state.
 
 ## Pointer lifecycle
 
@@ -326,9 +326,10 @@ For v0 docs-only review:
 
 1. Confirm this document exists.
 2. Confirm it states no runtime endpoint is added in the v0 docs-only phase.
-3. Confirm it says a QR Pointer does not prove identity, consent, delegation, approval, trust, receipt validity, payment, obligation, or human presence.
-4. Confirm no Flask routes, capabilities payloads, database models, migrations, QR storage, analytics, dependencies, or external provider integrations changed.
-5. Confirm public surface contract tests still pass.
+3. Confirm the repository schema validates only bounded discovery or verification pointer shapes.
+4. Confirm it says a QR Pointer does not prove identity, consent, delegation, approval, trust, receipt validity, payment, obligation, or human presence.
+5. Confirm no Flask routes, capabilities payloads, database models, migrations, QR storage, analytics, dependencies, or external provider integrations changed.
+6. Confirm public surface contract tests still pass.
 
 For future runtime PRs, verification must additionally prove fail-closed target validation, no scan side effects, no private-data leakage, and clear non-claim UI/API text.
 
@@ -350,10 +351,10 @@ For future runtime PRs:
 ## PR roadmap
 
 - PR 1 — docs/canon only.
-- PR 2 — JSON Schema and validation tests. This PR adds the local schema contract only, not a runtime endpoint.
+- PR 2 — JSON Schema and validation tests.
 - PR 3 — read-only local `/qr/<token>` landing surface behind a static pointer registry.
-- PR 4 — integrate QR Pointer with `/agent/verify/<job_id>` as a discovery-only receipt verification link.
-- PR 5 — integrate with delegation surfaces only after delegation records exist.
+- PR 4 — integrate QR Pointer with `/agent/verify/<job_id>` as a discovery-only receipt verification link. The verifier may return a `qr_pointer` object that reopens the same verifier surface, but the pointer does not prove receipt validity or payment by itself.
+- PR 5 — integrate with delegation surfaces only after delegation records exist under the Agent Delegation v0 contract.
 - PR 6 — optional external QR provider/export adapter with no trust-base expansion.
 
 ## Decision gates

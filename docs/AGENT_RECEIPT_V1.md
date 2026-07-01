@@ -71,6 +71,9 @@ Do not assume additional cryptographic claims beyond what the current code enfor
 | `receipt` | Stored receipt JSON. |
 | `attestation` | Normalized attestation view of the receipt event. |
 | `agent_pubkey` | Public key used for verification. |
+| `qr_pointer` | Discovery-only QR Pointer v0 object whose `target_path` reopens `/agent/verify/<job_id>`; it does not prove receipt validity, payment, consent, approval, delegation, trust, or human presence by itself. |
+
+The `qr_pointer` object is safe to render or encode later because replaying it only reopens the existing receipt verification surface. It is not a QR image, not a `/qr/<token>` route, not storage, not analytics, and not an approval/delegation signal.
 
 Expected paid state is `status=done` on `/agent/jobs/<job_id>`, with `result` present, `receipt` present, and `/agent/verify/<job_id>` returning `status=verified` and `valid=true`.
 

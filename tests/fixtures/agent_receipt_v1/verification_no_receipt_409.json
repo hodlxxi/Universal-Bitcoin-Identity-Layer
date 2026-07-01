@@ -5,5 +5,28 @@
   "verification": "unavailable",
   "job_status": "invoice_pending",
   "receipt": null,
-  "reason": "receipt_not_issued"
+  "reason": "receipt_not_issued",
+  "qr_pointer": {
+    "schema": "hodlxxi.qr_pointer.v0",
+    "pointer_id": "receipt-verify:00000000-0000-4000-8000-000000000002",
+    "target_path": "/agent/verify/00000000-0000-4000-8000-000000000002",
+    "target_class": "receipt_verification",
+    "created_at": "2026-06-30T00:00:00+00:00",
+    "revocation_status": "active",
+    "privacy_class": "pseudonymous",
+    "non_claims": [
+      "does_not_prove_identity",
+      "does_not_prove_human_identity",
+      "does_not_prove_consent",
+      "does_not_prove_approval",
+      "does_not_prove_delegation",
+      "does_not_prove_authorization",
+      "does_not_prove_execution",
+      "does_not_prove_receipt_validity",
+      "does_not_prove_payment",
+      "does_not_prove_obligation",
+      "does_not_prove_trust",
+      "does_not_prove_human_presence"
+    ]
+  }
 }

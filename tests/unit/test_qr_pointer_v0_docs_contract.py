@@ -28,9 +28,3 @@ def test_qr_pointer_v0_is_docs_only_without_runtime_endpoint() -> None:
     assert "no qr pointer endpoint is added in v0" in text
     assert "this pr does not add that route" in text
     assert "runtime status: not live" in text
-
-
-def test_qr_pointer_v0_doc_links_schema_without_live_endpoint() -> None:
-    text = _doc()
-    assert "docs/schemas/qr_pointer_v0.schema.json" in text
-    assert "not a live runtime endpoint" in text

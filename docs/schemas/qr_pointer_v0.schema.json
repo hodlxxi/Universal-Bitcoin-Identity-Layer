@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://hodlxxi.com/schemas/qr_pointer_v0.schema.json",
   "title": "HODLXXI QR Pointer v0",
-  "description": "Documentation-only schema contract for a bounded discovery pointer. A QR Pointer does not grant authority, prove consent, or create runtime side effects.",
+  "description": "Documentation-phase JSON Schema for a discovery-only QR Pointer. A valid pointer opens a bounded HODLXXI runtime surface and does not grant authority, consent, approval, delegation, payment, receipt validity, trust, reputation, human presence, or operator approval.",
   "type": "object",
   "required": [
     "schema",
@@ -10,9 +10,9 @@
     "target_path",
     "target_class",
     "created_at",
-    "non_claims",
+    "revocation_status",
     "privacy_class",
-    "lifecycle"
+    "non_claims"
   ],
   "properties": {
     "schema": {
@@ -26,16 +26,33 @@
     },
     "target_path": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 512,
-      "pattern": "^/[^?#]*$",
-      "description": "Relative HODLXXI runtime path only; no scheme, host, query string, fragment, or third-party redirect URL."
+      "description": "Relative HODLXXI runtime path. The schema intentionally allowlists bounded discovery or verification surfaces only.",
+      "oneOf": [
+        { "const": "/.well-known/agent.json" },
+        { "const": "/.well-known/hodlxxi-operator.json" },
+        { "const": "/.well-known/agent-delegation.json" },
+        { "const": "/agent/discovery" },
+        { "const": "/agent/capabilities" },
+        { "const": "/agent/attestations" },
+        { "const": "/agent/trust/events" },
+        { "const": "/agent/reputation" },
+        { "const": "/agent/chain/health" },
+        { "const": "/agent/marketplace/listing" },
+        { "const": "/agent/skills" },
+        { "pattern": "^/agent/verify/[A-Za-z0-9._:-]+$" },
+        { "pattern": "^/agent/jobs/[A-Za-z0-9._:-]+$" },
+        { "pattern": "^/agent/delegations/[A-Za-z0-9._:-]+$" },
+        { "pattern": "^/agent/attestations/[A-Za-z0-9._:-]+$" },
+        { "pattern": "^/agent/trust/events/[A-Za-z0-9._:-]+$" },
+        { "pattern": "^/agent/request/[A-Za-z0-9._:-]+$" }
+      ]
     },
     "target_class": {
       "type": "string",
       "enum": [
         "agent_discovery",
         "operator_discovery",
+        "delegation_discovery",
         "capability_discovery",
         "receipt_verification",
         "job_status_discovery",
@@ -44,8 +61,7 @@
         "reputation_discovery",
         "chain_health_discovery",
         "marketplace_discovery",
-        "skills_discovery",
-        "delegation_discovery",
+        "skill_discovery",
         "request_discovery"
       ]
     },
@@ -61,13 +77,14 @@
       "type": "string",
       "enum": ["active", "revoked", "expired"]
     },
+    "privacy_class": {
+      "type": "string",
+      "enum": ["public", "pseudonymous", "sensitive"]
+    },
     "non_claims": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 10,
       "uniqueItems": true,
-      "contains": {
-        "const": "does_not_prove_identity"
-      },
       "items": {
         "type": "string",
         "enum": [
@@ -81,41 +98,38 @@
           "does_not_prove_receipt_validity",
           "does_not_prove_payment",
           "does_not_prove_satisfaction",
-          "does_not_create_obligation",
+          "does_not_prove_obligation",
           "does_not_prove_trust",
           "does_not_prove_reputation",
           "does_not_prove_human_presence",
           "does_not_prove_operator_approval",
-          "does_not_prove_printed_code_integrity",
-          "does_not_prove_third_party_qr_provider_trustworthiness",
-          "is_not_an_audit_log"
+          "does_not_prove_printed_qr_not_substituted",
+          "does_not_prove_third_party_qr_provider_trustworthy",
+          "is_not_audit_log"
         ]
-      }
-    },
-    "privacy_class": {
-      "type": "string",
-      "enum": ["public", "pseudonymous", "sensitive"]
-    },
-    "lifecycle": {
-      "type": "object",
-      "required": ["scan_side_effects", "replay_safe", "copy_safe"],
-      "properties": {
-        "scan_side_effects": {
-          "const": "none"
-        },
-        "replay_safe": {
-          "const": true
-        },
-        "copy_safe": {
-          "const": true
-        }
       },
-      "additionalProperties": false
+      "contains": { "const": "does_not_prove_identity" },
+      "allOf": [
+        { "contains": { "const": "does_not_prove_consent" } },
+        { "contains": { "const": "does_not_prove_delegation" } },
+        { "contains": { "const": "does_not_prove_approval" } },
+        { "contains": { "const": "does_not_prove_trust" } }
+      ]
     },
     "signature": {
       "type": "string",
-      "description": "Optional future signature over canonical JSON. Not required for the docs-only/schema-only phase."
+      "description": "Reserved for a future signed pointer profile; not required in QR Pointer v0."
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "not": {
+    "anyOf": [
+      { "required": ["secret"] },
+      { "required": ["token"] },
+      { "required": ["password"] },
+      { "required": ["private_key"] },
+      { "required": ["session_id"] },
+      { "required": ["analytics"] }
+    ]
+  }
 }
