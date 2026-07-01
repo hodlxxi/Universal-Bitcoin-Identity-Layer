@@ -45,22 +45,185 @@ _LANDING_TEMPLATE = """
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HODLXXI QR Pointer</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070706;
+      --panel: #12100c;
+      --panel-strong: #1d1810;
+      --text: #f6efe1;
+      --muted: #c8bfae;
+      --line: rgba(245, 177, 66, 0.24);
+      --gold: #f5b142;
+      --gold-soft: rgba(245, 177, 66, 0.14);
+      --inactive: #ff6b5f;
+      --inactive-soft: rgba(255, 107, 95, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(245, 177, 66, 0.18), transparent 34rem),
+        linear-gradient(135deg, #070706 0%, #11100e 48%, #060605 100%);
+    }
+
+    main {
+      width: min(46rem, calc(100% - 2rem));
+      margin: 0 auto;
+      padding: 8vh 0;
+    }
+
+    .card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: linear-gradient(180deg, rgba(29, 24, 16, 0.94), rgba(13, 12, 10, 0.96));
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+    }
+
+    .hero { padding: clamp(1.5rem, 5vw, 3rem); }
+
+    .eyebrow {
+      margin: 0 0 0.75rem;
+      color: var(--gold);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2rem, 7vw, 3.6rem);
+      line-height: 0.98;
+      letter-spacing: -0.055em;
+    }
+
+    .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      margin: 1.35rem 0 0;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      padding: 0.45rem 0.72rem;
+      font-size: 0.84rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .badge::before {
+      width: 0.58rem;
+      height: 0.58rem;
+      border-radius: 999px;
+      background: currentColor;
+      content: "";
+    }
+
+    .badge-active { color: var(--gold); background: var(--gold-soft); }
+    .badge-inactive { color: var(--inactive); background: var(--inactive-soft); }
+
+    .copy {
+      color: var(--muted);
+      font-size: 1.05rem;
+      line-height: 1.65;
+    }
+
+    .target-panel {
+      margin-top: 1.5rem;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 1rem;
+      background: rgba(0, 0, 0, 0.2);
+    }
+
+    .target-label {
+      margin: 0 0 0.6rem;
+      color: var(--gold);
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    code {
+      display: block;
+      overflow-wrap: anywhere;
+      color: var(--text);
+      font: 0.98rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .action {
+      display: inline-flex;
+      margin-top: 1.25rem;
+      border-radius: 999px;
+      padding: 0.85rem 1.1rem;
+      color: #130d04;
+      background: var(--gold);
+      font-weight: 900;
+      text-decoration: none;
+      box-shadow: 0 10px 32px rgba(245, 177, 66, 0.22);
+    }
+
+    .footer-note {
+      border-top: 1px solid var(--line);
+      padding: 1rem clamp(1.5rem, 5vw, 3rem);
+      color: var(--muted);
+      background: rgba(0, 0, 0, 0.16);
+      font-size: 0.95rem;
+      line-height: 1.55;
+    }
+  </style>
 </head>
 <body>
   <main>
-    <h1>{{ label }}</h1>
-    <p><strong>Status:</strong> {{ status }}</p>
-    <p>
-      This QR page is a discovery-only safety landing page. It does not redirect
-      automatically, mutate jobs, issue receipts, or call verification endpoints.
-    </p>
-    {% if active %}
-      <p>Review the target before opening it:</p>
-      <p><code>{{ target }}</code></p>
-      <p><a href="{{ target }}" rel="nofollow noopener">Open target manually</a></p>
-    {% else %}
-      <p>This QR pointer is no longer active. No target was opened.</p>
-    {% endif %}
+    <section class="card" aria-labelledby="qr-title">
+      <div class="hero">
+        <p class="eyebrow">HODLXXI</p>
+        <h1 id="qr-title">{{ label }}</h1>
+        <div class="status-row">
+          {% if active %}
+            <span class="badge badge-active">Active pointer</span>
+          {% else %}
+            <span class="badge badge-inactive">Inactive pointer</span>
+          {% endif %}
+        </div>
+
+        {% if active %}
+          <p class="copy">
+            QR discovery landing. This read-only page shows the target before any navigation.
+            The browser will not redirect automatically.
+          </p>
+          <div class="target-panel">
+            <p class="target-label">Target to review</p>
+            <code>{{ target }}</code>
+          </div>
+          <a class="action" href="{{ target }}" rel="nofollow noopener">Open target</a>
+        {% else %}
+          <p class="copy">
+            This QR pointer is no longer active. The page fails closed and no target-opening
+            action is available.
+          </p>
+        {% endif %}
+      </div>
+      <p class="footer-note">
+        QR pages are discovery-only and non-authoritative. Use the target runtime surface for
+        job or receipt review; /agent/verify/&lt;job_id&gt; remains the authority for job and receipt checks.
+      </p>
+    </section>
   </main>
 </body>
 </html>
