@@ -53,7 +53,7 @@ def _normalize_pointer(token: str, pointer: dict[str, Any]) -> dict[str, Any]:
         "is_active": status == "active",
         "is_revoked": status == "revoked",
         "is_expired": status == "expired",
-        "safe_local_target": is_allowed_qr_target(target),
+        "manual_target_allowed": status == "active" and is_allowed_qr_target(target),
     }
 
 

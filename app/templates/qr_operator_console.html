@@ -63,7 +63,7 @@
           <td><code>{{ pointer.qr_url }}</code></td>
           <td>
             <a href="/qr/{{ pointer.token }}" rel="nofollow noopener">Open landing</a>
-            {% if pointer.safe_local_target %}
+            {% if pointer.manual_target_allowed %}
               <br><a href="{{ pointer.target }}" rel="nofollow noopener">Open target manually</a>
             {% endif %}
           </td>

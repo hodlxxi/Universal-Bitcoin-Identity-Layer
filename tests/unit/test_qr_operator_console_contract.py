@@ -25,7 +25,7 @@ def test_normalized_pointer_contract(app):
         "is_active": True,
         "is_revoked": False,
         "is_expired": False,
-        "safe_local_target": True,
+        "manual_target_allowed": True,
     }
 
 
@@ -37,6 +37,8 @@ def test_revoked_and_expired_state_flags(app):
     assert revoked["is_active"] is False
     assert revoked["is_revoked"] is True
     assert revoked["is_expired"] is False
+    assert revoked["manual_target_allowed"] is False
     assert expired["is_active"] is False
     assert expired["is_revoked"] is False
     assert expired["is_expired"] is True
+    assert expired["manual_target_allowed"] is False

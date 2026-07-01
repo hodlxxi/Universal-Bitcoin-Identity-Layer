@@ -19,6 +19,14 @@ SECRET_MARKERS = [
 ]
 
 
+def _row_for_token(body: str, token: str) -> str:
+    marker = f"<code>{token}</code>"
+    marker_index = body.index(marker)
+    row_start = body.rfind("<tr>", 0, marker_index)
+    row_end = body.find("</tr>", marker_index)
+    return body[row_start : row_end + len("</tr>")]
+
+
 def _set_session(client, pubkey: str, access_level: str) -> None:
     with client.session_transaction() as sess:
         sess["logged_in_pubkey"] = pubkey
@@ -41,6 +49,26 @@ def test_full_session_can_access_operator_console(client):
     assert "QR is discovery-only." in body
     assert "QR is not authorization." in body
     assert "/agent/verify/&lt;job_id&gt;" in body
+
+
+def test_manual_target_links_only_render_for_active_pointers(client):
+    _set_session(client, FULL_PUBKEY, "full")
+
+    res = client.get("/operator/qr")
+
+    assert res.status_code == 200
+    body = res.get_data(as_text=True)
+    active_row = _row_for_token(body, "demo-active")
+    verify_row = _row_for_token(body, "verify-demo")
+    revoked_row = _row_for_token(body, "demo-revoked")
+    expired_row = _row_for_token(body, "demo-expired")
+
+    assert 'href="/agent/discovery"' in active_row
+    assert 'href="/agent/verify/demo-job-001"' in verify_row
+    assert 'href="/agent/discovery"' not in revoked_row
+    assert 'href="/agent/discovery"' not in expired_row
+    assert "/agent/discovery" in revoked_row
+    assert "/agent/discovery" in expired_row
 
 
 def test_limited_session_receives_forbidden_from_operator_console(client):
@@ -67,7 +95,11 @@ def test_full_session_can_access_operator_pointer_api(client):
     assert records["demo-active"]["target"] == "/agent/discovery"
     assert records["demo-active"]["status"] == "active"
     assert records["demo-active"]["qr_url"] == "http://localhost/qr/demo-active"
+    assert records["demo-active"]["manual_target_allowed"] is True
     assert records["verify-demo"]["qr_url"] == "http://localhost/qr/verify-demo"
+    assert records["verify-demo"]["manual_target_allowed"] is True
+    assert records["demo-revoked"]["manual_target_allowed"] is False
+    assert records["demo-expired"]["manual_target_allowed"] is False
 
 
 def test_limited_session_receives_forbidden_from_operator_pointer_api(client):
