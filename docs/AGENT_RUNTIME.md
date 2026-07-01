@@ -31,6 +31,11 @@ Canonical protocol and trust details remain in:
 
 - [Agent Receipt Quickstart](AGENT_RECEIPT_QUICKSTART.md) — external developer flow from discovery to paid job to signed receipt verification.
 
+## Planned QR Pointer canon
+
+- [QR Pointer v0](QR_POINTER_V0.md) — planned/canonical documentation only. QR Pointer is not live in the current runtime, adds no endpoint in v0, and is defined only as a discovery pointer to open bounded verification surfaces. A QR scan does not imply identity, consent, delegation, approval, authorization, receipt validity, payment, obligation, trust, reputation, human presence, or operator approval.
+
+
 ## Paid Work
 
 - `POST /agent/request`
