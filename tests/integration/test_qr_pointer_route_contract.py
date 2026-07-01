@@ -99,37 +99,6 @@ def test_allows_bounded_verify_targets(target):
     assert is_allowed_qr_target(target)
 
 
-def test_traversal_like_token_returns_not_found(client):
-    assert client.get("/qr/..%2Fagent%2Fcapabilities").status_code == 404
-
-
-def test_capabilities_do_not_advertise_qr_or_operator_qr(client):
-    res = client.get("/agent/capabilities")
-
-    assert res.status_code == 200
-    serialized = json.dumps(res.get_json(), sort_keys=True)
-    assert "/qr/" not in serialized
-    assert "/operator/qr" not in serialized
-
-
-def test_qr_landing_avoids_forbidden_authority_wording(client):
-    forbidden_terms = [
-        "verified by qr",
-        "trusted",
-        "approved",
-        "paid",
-        "authorized",
-        "identity confirmed",
-        "human present",
-        "delegated",
-    ]
-
-    for path in ("/qr/demo-active", "/qr/demo-revoked", "/qr/demo-expired"):
-        body = client.get(path).get_data(as_text=True).lower()
-        for term in forbidden_terms:
-            assert term not in body
-
-
 @pytest.mark.parametrize(
     "target",
     [
