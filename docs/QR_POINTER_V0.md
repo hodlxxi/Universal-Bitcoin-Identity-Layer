@@ -370,3 +370,11 @@ Before implementing any QR Pointer runtime behavior, require affirmative answers
 - Are replay and copy safe because they only reopen discovery or verification?
 - Are tests in place before runtime implementation?
 - Is rollback possible without changing unrelated public surfaces?
+
+## Integration hardening: non-authority boundary
+
+QR Pointer surfaces remain discovery-only and fail-closed. A QR descriptor or QR landing page must not be treated as identity, human identity, consent, approval, delegation, authorization, execution authority, receipt validity by itself, payment, trust, reputation, human presence, or operator approval.
+
+QR Pointer targets must remain local and bounded. External URLs, protocol-relative URLs, `/agent/request`, delegation targets, and policy targets are not valid QR Pointer targets unless a later explicit audited PR introduces the required signed records, policy, revocation, and verification behavior.
+
+QR Pointer records and descriptors must not contain secret-like fields such as secrets, passwords, private keys, macaroons, cookies, bearer tokens, raw invoices, or preimages.

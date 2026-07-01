@@ -276,3 +276,9 @@ For this PR:
 Revert the commit that adds this document, schema, and tests.
 
 No production data, routes, migrations, or external providers are affected.
+
+## Integration hardening: delegation remains future-only
+
+Agent Delegation v0 remains contract-only unless a later explicit audited PR adds runtime records, policy evaluation, revocation, verification surfaces, and least-authority scopes. A QR Pointer to delegation-related material is discovery-only and must not grant authority, prove identity, create consent, create approval, create delegation, execute work, validate a receipt, create a payment, or establish trust.
+
+Delegation contracts must reject or explicitly forbid raw command execution scopes and unlimited authority markers, including shell execution, arbitrary commands, wildcard authority, unrestricted filesystem/network/wallet access, and unbounded spend authority.
