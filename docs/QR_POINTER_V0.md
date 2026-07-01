@@ -378,3 +378,29 @@ QR Pointer surfaces remain discovery-only and fail-closed. A QR descriptor or QR
 QR Pointer targets must remain local and bounded. External URLs, protocol-relative URLs, `/agent/request`, delegation targets, and policy targets are not valid QR Pointer targets unless a later explicit audited PR introduces the required signed records, policy, revocation, and verification behavior.
 
 QR Pointer records and descriptors must not contain secret-like fields such as secrets, passwords, private keys, macaroons, cookies, bearer tokens, raw invoices, or preimages.
+
+## Static `/qr/<token>` landing runtime phase
+
+The QR Pointer landing runtime is a read-only discovery interstitial backed by checked-in/static pointer records. It exists to help a scanner open a bounded HODLXXI discovery or verification surface, not to create authority or mutate state.
+
+Runtime constraints for this phase:
+
+- `GET /qr/<token>` is read-only.
+- The token is opaque and locally validated.
+- The pointer record is loaded from the checked-in/static registry.
+- Unknown, malformed, revoked, or expired pointers fail closed.
+- The page must not auto-redirect.
+- The page must not create jobs.
+- The page must not mutate jobs.
+- The page must not approve work.
+- The page must not mark anything paid.
+- The page must not issue or validate a receipt by itself.
+- The page must not create delegation.
+- The page must not call external QR providers.
+- The page must not add analytics, tracking pixels, scan events, or third-party scripts.
+- The page must not expose secret-like fields.
+- The page must preserve the discovery-only non-authority warning.
+
+Allowed pointer targets remain bounded local HODLXXI surfaces only. External URLs, protocol-relative URLs, traversal, `/agent/request`, delegation targets, policy targets, arbitrary local paths, and provider-controlled dynamic redirects are not valid QR Pointer targets for this phase.
+
+`/agent/verify/<job_id>` remains the verification authority for receipt/job verification. A QR landing page may link to a verification surface, but the QR scan and landing page do not prove identity, consent, approval, delegation, authorization, payment, receipt validity, reputation, trust, or human presence.
