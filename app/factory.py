@@ -236,6 +236,10 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(nip17_messages_bp)
     app.register_blueprint(qr_pointer_bp)
 
+    from app.blueprints.qr_pointer import qr_pointer_bp
+
+    app.register_blueprint(qr_pointer_bp)
+
     # Public status route: factory-native and lightweight.
     # Must register before legacy_bridge so /api/public/status does not lazy-import app.app.
     from app.blueprints.public_status import public_status_bp

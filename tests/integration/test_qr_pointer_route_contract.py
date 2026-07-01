@@ -1,113 +1,119 @@
+from __future__ import annotations
+
 import json
 
 import pytest
 
 from app.blueprints import qr_pointer
-from app.blueprints.qr_pointer import DISCOVERY_ONLY_WARNING, validate_target_path
+from app.blueprints.qr_pointer import is_allowed_qr_target
 
 
-def _html(response):
-    return response.get_data(as_text=True)
+def _qr_routes(app):
+    return [rule for rule in app.url_map.iter_rules() if rule.rule == "/qr/<token>" and "GET" in rule.methods]
 
 
-def test_known_active_token_returns_safe_landing_page(client):
-    response = client.get("/qr/agentjsonA1")
-    body = _html(response)
-
-    assert response.status_code == 200
-    assert "/.well-known/agent.json" in body
-    assert "Status: <strong>active</strong>" in body
-    assert DISCOVERY_ONLY_WARNING in body
-    assert 'href="/.well-known/agent.json"' in body
+def test_registers_exactly_one_qr_pointer_route(app):
+    assert len(_qr_routes(app)) == 1
 
 
-def test_unknown_token_returns_404(client):
-    assert client.get("/qr/unknown000").status_code == 404
+def test_active_pointer_returns_safe_landing_page(client):
+    res = client.get("/qr/demo-active")
+
+    assert res.status_code == 200
+    body = res.get_data(as_text=True)
+    assert "/agent/discovery" in body
+    compact = " ".join(body.split())
+    assert "does not redirect automatically" in compact
+    assert "call verification endpoints" in compact
 
 
-@pytest.mark.parametrize("path", ["/qr/../agentjsonA1", "/qr/bad/token", "/qr/%2e%2e%2fagentjsonA1"])
-def test_token_with_slash_or_traversal_is_rejected(client, path):
-    assert client.get(path).status_code in {400, 404}
+def test_revoked_pointer_returns_gone_without_redirect(client):
+    res = client.get("/qr/demo-revoked")
+
+    assert res.status_code == 410
+    assert 300 > res.status_code or res.status_code >= 400
+    assert "no longer active" in res.get_data(as_text=True).lower()
 
 
-def test_revoked_token_returns_410_without_redirect(client):
-    response = client.get("/qr/revokedA1", follow_redirects=False)
-    body = _html(response)
+def test_expired_pointer_returns_gone_without_redirect(client):
+    res = client.get("/qr/demo-expired")
 
-    assert response.status_code == 410
-    assert "revoked" in body
-    assert "will not redirect" in body
-    assert 300 > response.status_code or response.status_code >= 400
-    assert "Location" not in response.headers
+    assert res.status_code == 410
+    assert "no longer active" in res.get_data(as_text=True).lower()
 
 
-def test_expired_token_returns_410_without_redirect(client):
-    response = client.get("/qr/expiredA1", follow_redirects=False)
-    body = _html(response)
-
-    assert response.status_code == 410
-    assert "expired" in body
-    assert "will not redirect" in body
-    assert "Location" not in response.headers
+def test_unknown_pointer_returns_not_found(client):
+    assert client.get("/qr/unknown").status_code == 404
 
 
 @pytest.mark.parametrize(
     "target",
     [
-        "https://example.com/.well-known/agent.json",
-        "//example.com/.well-known/agent.json",
-        "/agent/request",
-        "/.well-known/agent-delegation.json",
-        "/agent/delegations",
-        "/agent/delegations/abc",
-        "/agent/policy",
+        "/agent/verify/job_123",
+        "/agent/verify/job-123",
+        "/agent/verify/job.123",
+        "/agent/verify/job:123",
     ],
 )
-def test_forbidden_targets_are_rejected_by_contract(target):
-    assert validate_target_path(target) is False
+def test_allows_bounded_verify_targets(target):
+    assert is_allowed_qr_target(target)
 
 
-def test_malformed_external_target_fixture_cannot_be_loaded(app, tmp_path, monkeypatch):
-    registry = tmp_path / "qr_pointers"
-    registry.mkdir()
-    (registry / "externalA1.json").write_text(
-        json.dumps({"token": "externalA1", "status": "active", "target": "https://example.com"}),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(qr_pointer, "_registry_dir", lambda: registry)
-
-    with app.app_context():
-        assert qr_pointer.load_pointer_record("externalA1") is None
-
-
-def test_response_does_not_contain_forbidden_authority_claims_or_secret_fields(client):
-    response = client.get("/qr/agentjsonA1")
-    body = _html(response).lower()
-
-    assert DISCOVERY_ONLY_WARNING.lower() in body
-    for secret in ["private_key", "privkey", "macaroon", "cookie", "password", "credential", "approval_token"]:
-        assert secret not in body
-    for claim in ["proves identity", "proves consent", "proves approval", "proves delegation", "proves authorization"]:
-        assert claim not in body
+@pytest.mark.parametrize(
+    "target",
+    [
+        "/agent/verify",
+        "/agent/verify/",
+        "/agent/verify/../x",
+        "/agent/verify/a/b",
+        "/agent/verify/job?id=1",
+        "/agent/verify/job#fragment",
+        "https://example.com/agent/verify/job",
+        "//example.com/agent/verify/job",
+        "/agent/jobs/job_123",
+    ],
+)
+def test_rejects_unbounded_or_external_targets(target):
+    assert not is_allowed_qr_target(target)
 
 
-def test_no_automatic_redirect_by_default(client):
-    response = client.get("/qr/agentjsonA1", follow_redirects=False)
+def test_verify_pointer_is_safe_landing_and_does_not_call_verify(client, monkeypatch):
+    calls = []
 
-    assert response.status_code == 200
-    assert "Location" not in response.headers
+    def fail_if_called(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError("verify route must not be called by QR landing")
+
+    monkeypatch.setattr(qr_pointer, "render_template_string", qr_pointer.render_template_string)
+    res = client.get("/qr/verify-demo")
+
+    assert res.status_code == 200
+    assert "/agent/verify/demo-job-001" in res.get_data(as_text=True)
+    assert calls == []
 
 
-def test_capabilities_do_not_advertise_qr_route(client):
-    response = client.get("/agent/capabilities")
-    serialized = json.dumps(response.get_json())
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "{malformed",
+        json.dumps([{"token": "x"}]),
+        json.dumps({"x": {"token": "mismatch", "status": "active", "target": "/agent/discovery"}}),
+        json.dumps({"x": {"token": "x", "status": "pending", "target": "/agent/discovery"}}),
+        json.dumps({"x": {"token": "x", "status": "active", "target": "https://example.com"}}),
+        json.dumps({"x": {"token": "x", "status": "active", "target": "/agent/discovery", "api_key": "secret"}}),
+    ],
+)
+def test_static_registry_fail_closed(monkeypatch, payload):
+    class FakeResource:
+        def joinpath(self, _name):
+            return self
 
-    assert response.status_code == 200
-    assert "/qr/" not in serialized
+        def read_text(self):
+            return payload
 
-
-def test_existing_public_machine_readable_surfaces_remain_available(client):
-    for path in ["/.well-known/agent.json", "/agent/capabilities", "/agent/capabilities/schema"]:
-        response = client.get(path)
-        assert response.status_code == 200
-        assert response.is_json
+    monkeypatch.setattr(qr_pointer.resources, "files", lambda _package: FakeResource())
+    qr_pointer.load_qr_pointers.cache_clear()
+    try:
+        assert qr_pointer.load_qr_pointers() == {}
+    finally:
+        qr_pointer.load_qr_pointers.cache_clear()

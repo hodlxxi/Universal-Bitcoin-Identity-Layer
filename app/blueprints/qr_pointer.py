@@ -1,148 +1,159 @@
-"""Read-only QR Pointer landing surface backed by checked-in fixtures."""
+"""Safe QR pointer landing pages.
+
+The QR pointer surface is intentionally discovery-only. It renders a bounded,
+non-redirecting landing page for static QR pointer fixtures and never mutates
+jobs, issues receipts, or calls receipt verification automatically.
+"""
 
 from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
-from pathlib import Path
+from functools import lru_cache
+from html import escape
+from importlib import resources
+from typing import Any
 from urllib.parse import urlsplit
 
-from flask import Blueprint, abort, current_app, render_template
+from flask import Blueprint, abort, render_template_string
 
 qr_pointer_bp = Blueprint("qr_pointer", __name__)
 
-TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
-DISCOVERY_ONLY_WARNING = (
-    "This QR Pointer is discovery-only. It does not prove identity, consent, approval, "
-    "delegation, authorization, payment, receipt validity, reputation, trust, or human presence."
-)
-ALLOWED_TARGETS = {
+_ALLOWED_STATIC_TARGETS = {
     "/.well-known/agent.json",
-    "/.well-known/hodlxxi-operator.json",
-    "/agent/discovery",
     "/agent/capabilities",
+    "/agent/discovery",
 }
-FORBIDDEN_TARGETS = {
-    "/agent/request",
-    "/.well-known/agent-delegation.json",
-    "/agent/delegations",
-    "/agent/policy",
-}
-SECRET_LIKE_KEYS = {
-    "secret",
-    "token_secret",
+_ALLOWED_STATUSES = {"active", "revoked", "expired"}
+_SECRET_LIKE_KEYS = {
+    "api_key",
+    "mnemonic",
+    "password",
     "private_key",
     "privkey",
-    "password",
-    "cookie",
-    "macaroon",
-    "credential",
-    "credentials",
-    "invoice",
-    "payment_request",
-    "approval_token",
-    "delegation_secret",
+    "secret",
+    "seed",
+    "wif",
+    "xprv",
 }
-SAFE_ISSUER_KEYS = {"name", "url", "contact", "pubkey", "note"}
+_JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+_LANDING_TEMPLATE = """
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HODLXXI QR Pointer</title>
+</head>
+<body>
+  <main>
+    <h1>{{ label }}</h1>
+    <p><strong>Status:</strong> {{ status }}</p>
+    <p>
+      This QR page is a discovery-only safety landing page. It does not redirect
+      automatically, mutate jobs, issue receipts, or call verification endpoints.
+    </p>
+    {% if active %}
+      <p>Review the target before opening it:</p>
+      <p><code>{{ target }}</code></p>
+      <p><a href="{{ target }}" rel="nofollow noopener">Open target manually</a></p>
+    {% else %}
+      <p>This QR pointer is no longer active. No target was opened.</p>
+    {% endif %}
+  </main>
+</body>
+</html>
+"""
 
 
-def _registry_dir() -> Path:
-    return Path(current_app.root_path) / "data" / "qr_pointers"
-
-
-def token_is_valid(token: str) -> bool:
-    return bool(TOKEN_RE.fullmatch(token or ""))
-
-
-def validate_target_path(target: str) -> bool:
-    if not isinstance(target, str) or not target.startswith("/"):
-        return False
-    parsed = urlsplit(target)
-    if parsed.scheme or parsed.netloc or target.startswith("//"):
-        return False
-    if ".." in parsed.path.split("/"):
-        return False
-    if parsed.path in FORBIDDEN_TARGETS:
-        return False
-    if parsed.path.startswith("/agent/request") or parsed.path.startswith("/agent/delegations"):
-        return False
-    return target in ALLOWED_TARGETS
-
-
-def _contains_secret_like_field(value) -> bool:
+def _contains_secret_like_key(value: Any) -> bool:
     if isinstance(value, dict):
         for key, nested in value.items():
-            normalized = str(key).lower().replace("-", "_")
-            if normalized in SECRET_LIKE_KEYS or "secret" in normalized or "password" in normalized:
+            lowered = str(key).lower()
+            if any(secret_key in lowered for secret_key in _SECRET_LIKE_KEYS):
                 return True
-            if _contains_secret_like_field(nested):
+            if _contains_secret_like_key(nested):
                 return True
     elif isinstance(value, list):
-        return any(_contains_secret_like_field(item) for item in value)
+        return any(_contains_secret_like_key(item) for item in value)
     return False
 
 
-def _safe_issuer(record: dict) -> dict:
-    issuer = record.get("issuer")
-    if not isinstance(issuer, dict):
-        return {}
-    return {key: str(value) for key, value in issuer.items() if key in SAFE_ISSUER_KEYS and value is not None}
+def is_allowed_qr_target(target: object) -> bool:
+    """Return whether a QR target is a bounded local discovery URL."""
+    if not isinstance(target, str) or not target.startswith("/"):
+        return False
+    if target.startswith("//"):
+        return False
+
+    parsed = urlsplit(target)
+    if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
+        return False
+    if ".." in parsed.path.split("/"):
+        return False
+    if target in _ALLOWED_STATIC_TARGETS:
+        return True
+
+    prefix = "/agent/verify/"
+    if not target.startswith(prefix):
+        return False
+    job_id = target[len(prefix) :]
+    return "/" not in job_id and bool(_JOB_ID_RE.fullmatch(job_id))
 
 
-def load_pointer_record(token: str) -> dict | None:
-    if not token_is_valid(token):
+def _normalize_pointer(token: str, value: Any) -> dict[str, str] | None:
+    if not isinstance(value, dict):
         return None
-    path = _registry_dir() / f"{token}.json"
+    if _contains_secret_like_key(value):
+        return None
+    if value.get("token") != token:
+        return None
+    status = value.get("status")
+    target = value.get("target")
+    if status not in _ALLOWED_STATUSES or not is_allowed_qr_target(target):
+        return None
+    label = value.get("label")
+    if not isinstance(label, str) or not label.strip():
+        label = "HODLXXI QR Pointer"
+    return {"label": label.strip(), "status": status, "target": target}
+
+
+@lru_cache(maxsize=1)
+def load_qr_pointers() -> dict[str, dict[str, str]]:
+    """Load static QR pointer fixtures, failing closed on malformed data."""
     try:
-        resolved = path.resolve(strict=True)
-    except FileNotFoundError:
-        return None
-    if _registry_dir().resolve() not in resolved.parents:
-        return None
-    with resolved.open("r", encoding="utf-8") as handle:
-        record = json.load(handle)
-    if record.get("token") != token:
-        return None
-    if _contains_secret_like_field(record):
-        return None
-    target = record.get("target")
-    if not validate_target_path(target):
-        return None
-    return record
+        raw = resources.files(__package__).joinpath("qr_pointers.json").read_text()
+        decoded = json.loads(raw)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return {}
 
+    if not isinstance(decoded, dict) or _contains_secret_like_key(decoded):
+        return {}
 
-def _effective_status(record: dict) -> str:
-    status = str(record.get("status", "")).lower()
-    expires_at = record.get("expires_at")
-    if expires_at:
-        try:
-            expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
-            if expiry <= datetime.now(timezone.utc):
-                return "expired"
-        except ValueError:
-            return "expired"
-    if status in {"active", "revoked", "expired"}:
-        return status
-    return "revoked"
+    pointers: dict[str, dict[str, str]] = {}
+    for token, value in decoded.items():
+        if not isinstance(token, str) or not token:
+            continue
+        normalized = _normalize_pointer(token, value)
+        if normalized is not None:
+            pointers[token] = normalized
+    return pointers
 
 
 @qr_pointer_bp.get("/qr/<token>")
 def qr_pointer_landing(token: str):
-    record = load_pointer_record(token)
-    if record is None:
+    pointer = load_qr_pointers().get(token)
+    if pointer is None:
         abort(404)
-    status = _effective_status(record)
-    http_status = 200 if status == "active" else 410
-    return (
-        render_template(
-            "qr_pointer_landing.html",
-            token=token,
-            status=status,
-            target=record["target"],
-            issuer=_safe_issuer(record),
-            warning=DISCOVERY_ONLY_WARNING,
-        ),
-        http_status,
-        {"Cache-Control": "public, max-age=300"},
+
+    active = pointer["status"] == "active"
+    status_code = 200 if active else 410
+    html = render_template_string(
+        _LANDING_TEMPLATE,
+        active=active,
+        label=escape(pointer["label"]),
+        status=escape(pointer["status"]),
+        target=escape(pointer["target"]),
     )
+    return html, status_code
