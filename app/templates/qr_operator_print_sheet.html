@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QR Operator Print Sheet</title>
+  <script src="/static/js/qrcode.min.js"></script>
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: system-ui, sans-serif; margin: 1rem; color: #111; background: #fff; }
+    header { margin-bottom: 1rem; }
+    .meta { font-size: 0.9rem; color: #333; }
+    .sheet { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+    .card { border: 1px solid #111; border-radius: 10px; padding: 1rem; break-inside: avoid; page-break-inside: avoid; }
+    .qr-code { width: 180px; min-height: 180px; margin-bottom: 0.75rem; }
+    code { overflow-wrap: anywhere; }
+    .warnings { border-top: 1px solid #999; margin-top: 0.75rem; padding-top: 0.75rem; font-size: 0.85rem; }
+    .warnings p { margin: 0.35rem 0; }
+    @media print {
+      body { margin: 0.4in; }
+      header { break-after: avoid; page-break-after: avoid; }
+      .sheet { display: block; }
+      .card { display: inline-block; width: 3.5in; min-height: 5in; margin: 0 0.15in 0.25in 0; vertical-align: top; page-break-inside: avoid; break-inside: avoid; }
+      .qr-code { width: 1.8in; min-height: 1.8in; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>QR Operator Print Sheet</h1>
+    <p class="meta"><strong>Access level:</strong> <code>{{ access_level }}</code></p>
+    <p class="meta"><strong>Pubkey tail:</strong> <code>{{ user_pubkey_tail }}</code></p>
+    <p class="meta">Only active QR pointers are included by default.</p>
+  </header>
+
+  <main class="sheet">
+    {% for pointer in pointers %}
+      <article class="card">
+        <div id="print-qr-{{ loop.index }}" class="qr-code" data-qr-url="{{ pointer.qr_url }}"></div>
+        <p><strong>Token:</strong> <code>{{ pointer.token }}</code></p>
+        <p><strong>Status:</strong> <code>{{ pointer.status }}</code></p>
+        <p><strong>QR URL:</strong> <code>{{ pointer.qr_url }}</code></p>
+        <p><strong>Target:</strong> <code>{{ pointer.target }}</code></p>
+        <section class="warnings" aria-label="QR card warnings">
+          <p><strong>Discovery-only:</strong> QR is discovery-only.</p>
+          <p>QR is not authorization, identity, consent, delegation, payment, receipt validity, trust, or human presence.</p>
+          <p><code>/agent/verify/&lt;job_id&gt;</code> remains the authority for job/receipt verification.</p>
+        </section>
+      </article>
+    {% endfor %}
+  </main>
+
+  <script>
+    document.querySelectorAll('[data-qr-url]').forEach((node) => {
+      new QRCode(node, { text: node.dataset.qrUrl, width: 180, height: 180 });
+    });
+  </script>
+</body>
+</html>

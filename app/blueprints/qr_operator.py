@@ -61,6 +61,10 @@ def _normalized_pointers() -> list[dict[str, Any]]:
     return [_normalize_pointer(token, pointer) for token, pointer in sorted(load_qr_pointers().items())]
 
 
+def _active_pointers() -> list[dict[str, Any]]:
+    return [pointer for pointer in _normalized_pointers() if pointer["is_active"]]
+
+
 @qr_operator_bp.get("/operator/qr")
 def qr_operator_console():
     pubkey, access_level = _require_full_user()
@@ -69,6 +73,17 @@ def qr_operator_console():
         access_level=access_level,
         user_pubkey_tail=_pubkey_tail(pubkey),
         pointers=_normalized_pointers(),
+    )
+
+
+@qr_operator_bp.get("/operator/qr/print")
+def qr_operator_print_sheet():
+    pubkey, access_level = _require_full_user()
+    return render_template(
+        "qr_operator_print_sheet.html",
+        access_level=access_level,
+        user_pubkey_tail=_pubkey_tail(pubkey),
+        pointers=_active_pointers(),
     )
 
 

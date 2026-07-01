@@ -71,6 +71,49 @@ def test_manual_target_links_only_render_for_active_pointers(client):
     assert "/agent/discovery" in expired_row
 
 
+def test_full_session_can_access_operator_print_sheet(client):
+    _set_session(client, FULL_PUBKEY, "full")
+
+    res = client.get("/operator/qr/print")
+
+    assert res.status_code == 200
+    body = res.get_data(as_text=True)
+    assert "QR Operator Print Sheet" in body
+    assert "qrcode.min.js" in body
+    assert "demo-active" in body
+    assert "verify-demo" in body
+    assert "demo-revoked" not in body
+    assert "demo-expired" not in body
+    assert "QR is discovery-only." in body
+    assert (
+        "QR is not authorization, identity, consent, delegation, payment, receipt validity, trust, or human presence."
+        in body
+    )
+    assert "/agent/verify/&lt;job_id&gt;" in body
+    assert FULL_PUBKEY not in body
+
+
+def test_limited_session_receives_forbidden_from_operator_print_sheet(client):
+    _set_session(client, LIMITED_PUBKEY, "limited")
+
+    assert client.get("/operator/qr/print").status_code == 403
+
+
+def test_anonymous_session_receives_safe_denied_from_operator_print_sheet(client):
+    assert client.get("/operator/qr/print").status_code in {401, 302}
+
+
+def test_operator_print_sheet_does_not_expose_secret_material(client):
+    _set_session(client, FULL_PUBKEY, "full")
+
+    res = client.get("/operator/qr/print")
+    serialized = res.get_data(as_text=True).lower()
+
+    for marker in SECRET_MARKERS:
+        assert marker.lower() not in serialized
+    assert "abcd" in serialized
+
+
 def test_limited_session_receives_forbidden_from_operator_console(client):
     _set_session(client, LIMITED_PUBKEY, "limited")
 
@@ -149,6 +192,7 @@ def test_operator_surfaces_do_not_mutate_jobs_receipts_payments_or_delegations(c
         before = dict(sess)
 
     assert client.get("/operator/qr").status_code == 200
+    assert client.get("/operator/qr/print").status_code == 200
     assert client.get("/api/operator/qr/pointers").status_code == 200
 
     with client.session_transaction() as sess:
