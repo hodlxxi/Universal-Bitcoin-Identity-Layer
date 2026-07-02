@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QR Operator Console</title>
+  <script src="/static/js/qrcode.min.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.45; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: left; vertical-align: top; }
+    code { overflow-wrap: anywhere; }
+    .warning { border: 1px solid #b7791f; background: #fffaf0; padding: 1rem; margin: 1rem 0; }
+    .qr-canvas { width: 160px; min-height: 160px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>QR Operator Console</h1>
+    <p><strong>Access level:</strong> <code>{{ access_level }}</code></p>
+    <p><strong>Pubkey tail:</strong> <code>{{ user_pubkey_tail }}</code></p>
+
+    <section class="warning" aria-label="QR safety warnings">
+      <h2>Discovery-only warnings</h2>
+      <ul>
+        <li>QR is discovery-only.</li>
+        <li>QR is not identity.</li>
+        <li>QR is not authorization.</li>
+        <li>QR is not consent.</li>
+        <li>QR is not delegation.</li>
+        <li>QR is not payment.</li>
+        <li>QR is not receipt validity.</li>
+        <li>QR is not trust.</li>
+        <li>QR is not human presence.</li>
+        <li><code>/agent/verify/&lt;job_id&gt;</code> remains the authority for job/receipt verification.</li>
+      </ul>
+    </section>
+
+    <table>
+      <thead>
+        <tr>
+          <th>QR</th>
+          <th>Token</th>
+          <th>Status</th>
+          <th>State</th>
+          <th>Target</th>
+          <th>QR URL</th>
+          <th>Manual links</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for pointer in pointers %}
+        <tr>
+          <td><div id="qr-{{ loop.index }}" class="qr-canvas" data-qr-url="{{ pointer.qr_url }}"></div></td>
+          <td><code>{{ pointer.token }}</code></td>
+          <td><code>{{ pointer.status }}</code></td>
+          <td>
+            active={{ pointer.is_active|lower }}<br>
+            revoked={{ pointer.is_revoked|lower }}<br>
+            expired={{ pointer.is_expired|lower }}
+          </td>
+          <td><code>{{ pointer.target }}</code></td>
+          <td><code>{{ pointer.qr_url }}</code></td>
+          <td>
+            <a href="/qr/{{ pointer.token }}" rel="nofollow noopener">Open landing</a>
+            {% if pointer.manual_target_allowed %}
+              <br><a href="{{ pointer.target }}" rel="nofollow noopener">Open target manually</a>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </main>
+  <script>
+    document.querySelectorAll('[data-qr-url]').forEach((node) => {
+      new QRCode(node, { text: node.dataset.qrUrl, width: 160, height: 160 });
+    });
+  </script>
+</body>
+</html>
