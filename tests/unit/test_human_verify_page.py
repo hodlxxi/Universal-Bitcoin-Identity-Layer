@@ -33,6 +33,8 @@ def test_public_human_verify_page_renders_contract():
         "invalid signature / verification failed",
         "fetch/network error",
         "receipt download URL",
+        "requester proof verified",
+        "requester proof method",
     ]:
         assert marker in text
 
