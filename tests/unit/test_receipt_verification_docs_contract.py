@@ -105,6 +105,9 @@ def test_verifier_state_fixtures_match_current_contract():
     assert no_receipt["verification"] == "unavailable"
     assert no_receipt["reason"] == "receipt_not_issued"
     assert no_receipt["receipt"] is None
+    assert no_receipt["qr_pointer"]["target_path"] == f"/agent/verify/{no_receipt['job_id']}"
+    assert no_receipt["qr_pointer"]["target_class"] == "receipt_verification"
+    assert "does_not_prove_receipt_validity" in no_receipt["qr_pointer"]["non_claims"]
 
     assert not_found["error"] == "not_found"
     assert not_found["verification"] == "unavailable"

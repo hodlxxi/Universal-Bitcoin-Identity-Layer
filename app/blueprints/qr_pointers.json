@@ -1,0 +1,26 @@
+{
+  "demo-active": {
+    "token": "demo-active",
+    "status": "active",
+    "target": "/agent/discovery",
+    "label": "HODLXXI agent discovery"
+  },
+  "demo-revoked": {
+    "token": "demo-revoked",
+    "status": "revoked",
+    "target": "/agent/discovery",
+    "label": "Revoked HODLXXI agent discovery"
+  },
+  "demo-expired": {
+    "token": "demo-expired",
+    "status": "expired",
+    "target": "/agent/discovery",
+    "label": "Expired HODLXXI agent discovery"
+  },
+  "verify-demo": {
+    "token": "verify-demo",
+    "status": "active",
+    "target": "/agent/verify/demo-job-001",
+    "label": "HODLXXI agent receipt verification"
+  }
+}

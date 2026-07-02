@@ -28,6 +28,7 @@ Status legend:
 | `/agent/attestations` | Agent clients/observers | Public receipt history surface | Public | Live now |
 | `/agent/reputation` | Agent clients/observers | Aggregate runtime performance/history surface | Public | Live now |
 | `/agent/skills` | Agent integrators | Discover installable/public skills | Public | Live now |
+| `/qr/<token>` | Humans / agent integrators | Read-only QR Pointer interstitial backed by a local/static registry; discovery-only, non-authoritative, and not advertised in capabilities yet | Public | Live now |
 
 ## Notes on auth labels
 

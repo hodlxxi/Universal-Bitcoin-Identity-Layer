@@ -15,7 +15,7 @@ Receipt verification proves:
 - the receipt `event_hash` matches the receipt JSON, and
 - the receipt is linked to previous local attestation history through `prev_event_hash`.
 
-Receipt verification does not prove legal identity. It also does not prove locked capital, global consensus, external anchoring, or that a Lightning invoice was independently paid unless the verifier also checks payment evidence or trusts the runtime's payment observation.
+Receipt verification does not prove legal identity. It also does not prove locked capital, global consensus, external anchoring, or that a Lightning invoice was independently paid unless the verifier also checks payment evidence or trusts the runtime's payment observation. A `qr_pointer` returned by the verifier is only a discovery pointer back to the verifier surface; it does not prove receipt validity, payment, consent, approval, delegation, trust, or human presence by itself.
 
 ## Canonical JSON
 
@@ -65,6 +65,7 @@ HTTP 200 verified receipt:
 - `receipt` present
 - `event_hash` present
 - `attestation` present
+- `qr_pointer` present as a discovery-only QR Pointer v0 object pointing back to `/agent/verify/<job_id>`
 
 HTTP 409 no receipt:
 
@@ -73,6 +74,7 @@ HTTP 409 no receipt:
 - `verification=unavailable`
 - `reason=receipt_not_issued`
 - `receipt=null`
+- `qr_pointer` present as a discovery-only pointer to the same verifier surface, not as proof that a receipt exists
 
 HTTP 404 missing job:
 

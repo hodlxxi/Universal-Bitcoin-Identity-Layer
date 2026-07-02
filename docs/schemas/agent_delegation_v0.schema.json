@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hodlxxi.com/schemas/agent_delegation_v0.schema.json",
+  "title": "HODLXXI Agent Delegation v0",
+  "description": "Documentation-phase schema for bounded delegated identity records. A delegation record is not human consent, not operator approval by itself, not payment authority, not unrestricted command execution, not a receipt, and not an audit log.",
+  "type": "object",
+  "required": [
+    "schema",
+    "delegation_id",
+    "issuer",
+    "subject",
+    "authority",
+    "limits",
+    "status",
+    "issued_at",
+    "verification",
+    "non_claims",
+    "signature"
+  ],
+  "properties": {
+    "schema": { "const": "hodlxxi.agent_delegation.v0" },
+    "delegation_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^deleg_[a-zA-Z0-9._:-]+$"
+    },
+    "issuer": {
+      "type": "object",
+      "required": ["type", "id", "pubkey"],
+      "properties": {
+        "type": { "enum": ["agent", "operator"] },
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "pubkey": { "type": "string", "minLength": 32, "maxLength": 130 },
+        "well_known": { "type": "string", "pattern": "^/" }
+      },
+      "additionalProperties": false
+    },
+    "subject": {
+      "type": "object",
+      "required": ["type", "id", "pubkey"],
+      "properties": {
+        "type": { "enum": ["agent", "operator", "tool"] },
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "pubkey": { "type": "string", "minLength": 32, "maxLength": 130 },
+        "well_known": { "type": "string", "pattern": "^/" }
+      },
+      "additionalProperties": false
+    },
+    "authority": {
+      "type": "object",
+      "required": ["scopes"],
+      "properties": {
+        "scopes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "identity.read",
+              "delegation.read",
+              "receipt.read",
+              "attestation.read",
+              "trust.read",
+              "job.propose",
+              "message.propose",
+              "operator.inspect_runtime",
+              "operator.inspect_git",
+              "operator.inspect_logs",
+              "operator.run_smoke",
+              "operator.restart_staging",
+              "operator.verify_deploy"
+            ]
+          }
+        },
+        "resources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^/" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "limits": {
+      "type": "object",
+      "required": ["max_requests_per_day"],
+      "properties": {
+        "max_requests_per_day": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "max_sats_per_request": { "type": "integer", "minimum": 0 },
+        "max_sats_per_day": { "type": "integer", "minimum": 0 },
+        "allowed_job_types": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+        },
+        "allowed_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^/" }
+        },
+        "not_before": { "type": "string", "format": "date-time" },
+        "expires_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "status": { "enum": ["draft", "active", "revoked", "expired"] },
+    "issued_at": { "type": "string", "format": "date-time" },
+    "verification": {
+      "type": "object",
+      "required": ["canonicalization", "signature_scheme", "signed_payload_hash"],
+      "properties": {
+        "canonicalization": { "const": "json.canonical.v1" },
+        "signature_scheme": { "enum": ["secp256k1_ecdsa_sha256"] },
+        "signed_payload_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      },
+      "additionalProperties": false
+    },
+    "non_claims": {
+      "type": "array",
+      "minItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "does_not_prove_human_identity",
+          "does_not_prove_legal_authority",
+          "does_not_prove_human_consent",
+          "does_not_prove_operator_approval",
+          "does_not_create_payment_authority",
+          "does_not_authorize_unrestricted_command_execution",
+          "does_not_prove_job_execution",
+          "does_not_issue_receipt",
+          "does_not_create_attestation",
+          "does_not_create_reputation",
+          "does_not_prove_human_presence",
+          "is_not_audit_log"
+        ]
+      },
+      "contains": { "const": "does_not_authorize_unrestricted_command_execution" },
+      "allOf": [
+        { "contains": { "const": "does_not_prove_human_consent" } },
+        { "contains": { "const": "does_not_create_payment_authority" } },
+        { "contains": { "const": "does_not_issue_receipt" } },
+        { "contains": { "const": "is_not_audit_log" } }
+      ]
+    },
+    "signature": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Future runtime profile must verify this signature over the canonical unsigned delegation payload before treating status=active as usable authority."
+    }
+  },
+  "additionalProperties": false,
+  "not": {
+    "anyOf": [
+      { "required": ["secret"] },
+      { "required": ["token"] },
+      { "required": ["password"] },
+      { "required": ["private_key"] },
+      { "required": ["seed"] },
+      { "required": ["mnemonic"] },
+      { "required": ["raw_command"] },
+      { "required": ["shell"] },
+      { "required": ["sudo"] }
+    ]
+  }
+}
