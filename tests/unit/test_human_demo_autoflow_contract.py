@@ -43,6 +43,7 @@ def test_human_demo_keeps_the_identity_boundary_explicit():
     assert response.status_code == 200
     assert "proven by a compatible Nostr signer" in text
     assert "This proves control of the signing key for this request" in text
+    assert "Requester key proof means key control for this request only." in text
     assert "signature_verified" in text
     assert "No private key is requested" in text
 
@@ -60,6 +61,22 @@ def test_human_demo_v2_bound_proof_contract_markers():
     assert "preparedRequestBody" in text
     assert "private" not in text.lower() or "No private key is requested" in text
     assert "It does not prove a legal name, government identity, or that one human controls only one key." in text
+    for marker in [
+        "HODLXXI is a Bitcoin-native proof runtime: pay for an action, get a result, and verify the signed receipt later.",
+        "I paid, I requested, I received, I can verify.",
+        "What this proves",
+        "What this does not prove",
+        "not a token sale",
+        "not an investment",
+        "not KYC",
+        "not legal identity",
+        "not custody",
+        "not a promise of profit",
+        "not proof of moral trustworthiness",
+        "not a guarantee of future performance",
+        "not ownership of a network",
+    ]:
+        assert marker in text
 
 
 def test_human_demo_marks_pay_card_paid_when_job_completes():
