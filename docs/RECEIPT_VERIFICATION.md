@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is for external verifiers who want to validate HODLXXI agent receipts without trusting Flask internals. The `/agent/verify/<job_id>` endpoint is useful for online checks, but independent verifiers should also understand how to verify receipt payloads locally from the JSON they receive.
+This document is for external verifiers who want to validate HODLXXI agent receipts without trusting Flask internals. `GET /agent/verify` is the human-readable public verification page for entering an arbitrary `job_id`. The `/agent/verify/<job_id>` endpoint is the raw JSON verifier and remains the verification authority for online checks, but independent verifiers should also understand how to verify receipt payloads locally from the JSON they receive.
 
 This document describes current receipt v1 behavior only. Newly issued portable receipts use `schema=hodlxxi.receipt.v1` while older/minimal receipt objects without that additive field remain valid if their signature verifies.
 
@@ -55,6 +55,12 @@ Do not overclaim Schnorr/BIP340 verification for receipt v1 unless a future runt
 6. Recompute `event_hash` over canonical signed receipt bytes.
 7. Compare with `/agent/verify/<job_id>` and `/agent/attestations` if online.
 8. Check `prev_event_hash` continuity if replaying attestation history.
+
+## Public verification surfaces
+
+- `GET /agent/verify` renders the read-only human verification page. It accepts an optional `?job_id=<job_id>` query string and fetches the raw verifier for display.
+- `GET /agent/verify/<job_id>` is the raw JSON verifier and verification authority.
+- `GET /agent/receipts/<job_id>.json` downloads the standalone signed receipt JSON after receipt issuance.
 
 ## Download endpoint states
 

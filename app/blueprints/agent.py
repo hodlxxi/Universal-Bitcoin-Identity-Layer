@@ -1066,6 +1066,11 @@ def demo_page():
     return render_template("agent/demo.html")
 
 
+@agent_bp.get("/agent/verify")
+def public_verify_page():
+    return render_template("agent/verify.html", job_id=request.args.get("job_id", ""))
+
+
 @agent_bp.get("/agent/receipt-proof")
 def receipt_proof_page():
     proof = {

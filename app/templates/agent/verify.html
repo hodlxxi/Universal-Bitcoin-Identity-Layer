@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Verify Human Proof Receipt · HODLXXI</title>
+  <style>
+    :root { color-scheme: dark; --bg: #0f1117; --card: #171b26; --muted: #a9b3c7; --text: #f6f7fb; --line: #2b3345; --good: #6ee7a8; --warn: #ffd166; --bad: #ff7b7b; }
+    body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+    main { max-width: 1040px; margin: 0 auto; padding: 2rem; }
+    .hero, .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 16px 48px rgba(0,0,0,.2); }
+    h1, h2 { margin-top: 0; }
+    p, li { color: var(--muted); line-height: 1.55; }
+    a { color: #8ab4ff; }
+    label { display: block; font-weight: 700; margin-bottom: .4rem; }
+    input { width: min(100%, 680px); box-sizing: border-box; padding: .8rem; border-radius: 12px; border: 1px solid var(--line); background: #0b0d13; color: var(--text); font: inherit; }
+    button, .btn { display: inline-block; border: 1px solid var(--line); background: #243047; color: var(--text); padding: .75rem 1rem; border-radius: 12px; font-weight: 800; text-decoration: none; cursor: pointer; }
+    button:hover, .btn:hover { border-color: #8ab4ff; }
+    .actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin-top: .9rem; }
+    .badge { display: inline-block; padding: .25rem .55rem; border-radius: 999px; font-size: .85rem; font-weight: 800; border: 1px solid var(--line); color: var(--muted); }
+    .badge.good { color: var(--good); border-color: rgba(110,231,168,.45); }
+    .badge.warn { color: var(--warn); border-color: rgba(255,209,102,.45); }
+    .badge.bad { color: var(--bad); border-color: rgba(255,123,123,.45); }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    .result-grid { display: grid; grid-template-columns: minmax(180px, .35fr) minmax(0, 1fr); gap: .5rem .8rem; }
+    .result-grid dt { color: var(--muted); font-weight: 800; }
+    .result-grid dd { margin: 0; overflow-wrap: anywhere; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #0b0d13; border: 1px solid var(--line); border-radius: 12px; padding: 1rem; color: var(--muted); }
+    .muted { color: var(--muted); }
+    @media (max-width: 760px) { main { padding: 1rem; } .grid { grid-template-columns: 1fr; } .result-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <span class="badge warn">public receipt verifier</span>
+      <h1>Verify an existing Human Proof receipt</h1>
+      <p>HODLXXI is a Bitcoin-native proof runtime: pay for an action, get a result, and verify the signed receipt later.</p>
+      <p><strong>I paid, I requested, I received, I can verify.</strong></p>
+      <p class="muted">This page is read-only. It fetches the raw verifier endpoint and renders the response for humans; <code>GET /agent/verify/&lt;job_id&gt;</code> remains the verification authority.</p>
+    </section>
+
+    <section class="card" aria-label="Verify by job id">
+      <form id="verifyForm">
+        <label for="job_id">job_id</label>
+        <input id="job_id" name="job_id" autocomplete="off" placeholder="Paste a job_id" value="{{ job_id or '' }}" required>
+        <div class="actions">
+          <button type="submit">Verify</button>
+          <a class="btn" id="rawLink" href="#">Raw JSON endpoint</a>
+          <a class="btn" id="receiptLink" href="#">Receipt JSON download</a>
+        </div>
+      </form>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>What this proves</h2>
+        <p>When the raw verifier returns <code>valid=true</code> and <code>status=verified</code>, this page can display bounded runtime evidence:</p>
+        <ul>
+          <li>the runtime has a signed receipt for the job_id;</li>
+          <li>the receipt signature verifies under the advertised agent key;</li>
+          <li>the receipt records a request hash, result hash, payment hash, timestamp, and related receipt metadata when present.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h2>What this does not prove</h2>
+        <p>This proof is bounded runtime evidence only: not a token sale; not an investment; not KYC; not legal identity; not custody; not a promise of profit; not proof of moral trustworthiness; not a guarantee of future performance; not ownership of a network.</p>
+      </article>
+    </section>
+
+    <section class="card" aria-live="polite">
+      <h2>Verification result</h2>
+      <p>Status: <span id="stateBadge" class="badge warn">enter a job_id</span></p>
+      <p id="summary">Enter a job_id to fetch <code>/agent/verify/&lt;job_id&gt;</code>.</p>
+      <dl class="result-grid" id="resultFields"></dl>
+      <details>
+        <summary>Show raw verifier response</summary>
+        <pre id="rawResponse">No verifier response yet.</pre>
+      </details>
+    </section>
+  </main>
+
+  <script>
+    const queryJobId = new URLSearchParams(window.location.search).get("job_id") || "";
+    const jobInput = document.getElementById("job_id");
+    const form = document.getElementById("verifyForm");
+    const rawLink = document.getElementById("rawLink");
+    const receiptLink = document.getElementById("receiptLink");
+    const stateBadge = document.getElementById("stateBadge");
+    const summary = document.getElementById("summary");
+    const resultFields = document.getElementById("resultFields");
+    const rawResponse = document.getElementById("rawResponse");
+
+    if (queryJobId && !jobInput.value) jobInput.value = queryJobId;
+
+    function endpoint(jobId) { return `/agent/verify/${encodeURIComponent(jobId)}`; }
+    function receiptEndpoint(jobId) { return `/agent/receipts/${encodeURIComponent(jobId)}.json`; }
+
+    function updateLinks(jobId) {
+      rawLink.href = jobId ? endpoint(jobId) : "#";
+      receiptLink.href = jobId ? receiptEndpoint(jobId) : "#";
+    }
+
+    function setState(label, tone, text) {
+      stateBadge.textContent = label;
+      stateBadge.className = `badge ${tone}`;
+      summary.textContent = text;
+    }
+
+    function valueAt(payload, path) {
+      return path.split(".").reduce((current, key) => current && current[key] !== undefined ? current[key] : undefined, payload);
+    }
+
+    function renderFields(payload, jobId) {
+      const fields = [
+        ["job_id", "job_id"],
+        ["status", "status"],
+        ["valid", "valid"],
+        ["schema", "receipt.schema"],
+        ["receipt_id", "receipt.receipt_id"],
+        ["runtime", "receipt.runtime"],
+        ["requester_pubkey", "receipt.requester_pubkey"],
+        ["requester proof level", "receipt.requester_proof.level"],
+        ["requester proof status", "receipt.requester_proof.status"],
+        ["amount_sats", "receipt.amount_sats"],
+        ["payment_hash", "receipt.payment_hash"],
+        ["request_hash", "receipt.request_hash"],
+        ["input_hash", "receipt.input_hash"],
+        ["result_hash", "receipt.result_hash"],
+        ["timestamp", "receipt.timestamp"],
+        ["agent_pubkey", "agent_pubkey"],
+        ["signing_key", "receipt.signing_key"],
+        ["verify_url", "receipt.verify_url"],
+        ["receipt download URL", "_receipt_download_url"],
+      ];
+      const augmented = Object.assign({ _receipt_download_url: receiptEndpoint(jobId) }, payload || {});
+      resultFields.innerHTML = "";
+      for (const [label, path] of fields) {
+        const value = valueAt(augmented, path);
+        if (value === undefined || value === null || value === "") continue;
+        const dt = document.createElement("dt");
+        const dd = document.createElement("dd");
+        dt.textContent = label;
+        dd.textContent = typeof value === "object" ? JSON.stringify(value) : String(value);
+        resultFields.append(dt, dd);
+      }
+    }
+
+    function classify(payload, httpStatus) {
+      if (payload && payload.valid === true && payload.status === "verified") return ["verified", "good", "Verified receipt: the raw verifier returned valid=true and status=verified."];
+      if (httpStatus === 409 || (payload && payload.status === "no_receipt")) return ["no receipt yet", "warn", "This job exists, but no receipt has been issued yet. Do not treat it as verified."];
+      if (httpStatus === 404 || (payload && (payload.status === "not_found" || payload.error === "not_found"))) return ["not found", "bad", "No job was found for this job_id."];
+      if (payload && payload.valid === false) return ["invalid signature / verification failed", "bad", payload.reason || payload.error || "The raw verifier did not validate this receipt."];
+      return ["verification failed", "bad", "The verifier response was not a verified receipt."];
+    }
+
+    async function verify(jobId) {
+      updateLinks(jobId);
+      resultFields.innerHTML = "";
+      setState("checking", "warn", "Fetching the raw JSON verifier endpoint.");
+      try {
+        const response = await fetch(endpoint(jobId), { cache: "no-store" });
+        const payload = await response.json().catch(() => ({ error: "non_json_response" }));
+        rawResponse.textContent = JSON.stringify(payload, null, 2);
+        const [label, tone, text] = classify(payload, response.status);
+        setState(label, tone, text);
+        renderFields(payload, jobId);
+      } catch (error) {
+        rawResponse.textContent = String(error);
+        setState("fetch/network error", "bad", "Could not reach the raw verifier endpoint from this browser.");
+      }
+    }
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const jobId = jobInput.value.trim();
+      if (!jobId) return;
+      window.history.replaceState({}, "", `/agent/verify?job_id=${encodeURIComponent(jobId)}`);
+      verify(jobId);
+    });
+
+    updateLinks(jobInput.value.trim());
+    if (jobInput.value.trim()) verify(jobInput.value.trim());
+  </script>
+</body>
+</html>
