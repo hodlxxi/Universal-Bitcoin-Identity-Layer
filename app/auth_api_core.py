@@ -63,6 +63,52 @@ MAX_AGENT_PROOF_REQUEST_BODY_BYTES = 4096
 AGENT_REQUESTER_PROOF_SESSION_KEY = "agent_requester_proof_id"
 
 
+def agent_requester_proof_storage_mode() -> dict:
+    """Return the explicit requester proof storage contract for ops/tests.
+
+    The current Human Proof requester proof records are intentionally kept in
+    process-local memory for the MVP launch. This preserves existing behavior
+    while making the single-worker/session-affinity requirement machine-testable.
+    """
+    return {
+        "storage": "memory",
+        "shared_across_workers": False,
+        "requires": "single_worker_or_session_affinity",
+        "ttl_seconds": CHALLENGE_TTL_SECONDS,
+        "multi_worker_safe": False,
+        "risk": (
+            "Process-local requester proof records are not shared across app workers; "
+            "multi-worker deployments need Redis or another shared TTL store before "
+            "enabling Human Proof requester proof flows at scale."
+        ),
+    }
+
+
+def _parse_positive_worker_count(raw_value: object) -> int | None:
+    try:
+        value = int(str(raw_value).strip())
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def requester_proof_storage_worker_warning(environ: dict | None = None) -> str | None:
+    """Return a warning when safe env worker-count signals indicate >1 worker."""
+    env = os.environ if environ is None else environ
+    mode = agent_requester_proof_storage_mode()
+    if mode.get("storage") != "memory":
+        return None
+
+    for key in ("WEB_CONCURRENCY", "GUNICORN_WORKERS"):
+        workers = _parse_positive_worker_count(env.get(key))
+        if workers and workers > 1:
+            return (
+                f"Human Proof requester proof storage is process-local memory but {key}={workers}; "
+                "use one worker/session affinity or move requester proof records to Redis/shared TTL storage."
+            )
+    return None
+
+
 def prune_expired_agent_requester_proofs(now_ts: int | None = None) -> None:
     now = int(now_ts if now_ts is not None else time.time())
     for proof_id, proof in list(ACTIVE_AGENT_REQUESTER_PROOFS.items()):
