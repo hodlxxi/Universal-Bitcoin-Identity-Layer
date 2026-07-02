@@ -28,6 +28,9 @@ def test_human_demo_requires_a_key_and_auto_advances_after_payment():
         "proofResultHash",
         "proofAgentPubkey",
         "verified agent signature",
+        "Download receipt JSON",
+        "setReceiptDownloadEnabled",
+        "/agent/receipts/",
     ]:
         assert marker in text
 

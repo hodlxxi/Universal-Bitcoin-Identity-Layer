@@ -70,7 +70,8 @@ After settlement is observed, completed jobs are expected to return:
 - `status=done`
 - `result` present
 - `receipt` present
-- receipt fields such as `job_receipt`, `payment_hash`, `request_hash`, `result_hash`, `signature`, and `agent_pubkey`
+- backward-compatible receipt fields such as `job_receipt`, `payment_hash`, `request_hash`, `result_hash`, `signature`, and `agent_pubkey`
+- portable receipt fields such as `schema=hodlxxi.receipt.v1`, `receipt_id`, `input_hash`, `amount_sats`, `settled`, `verify_url`, and `signing_key`
 
 ## 6. Verify the signed receipt
 
@@ -92,7 +93,19 @@ For a completed paid job with an issued receipt, expected verifier fields includ
 
 Unpaid/no-receipt semantics are intentionally different from lifecycle/status semantics. An unpaid job may exist while `/agent/verify/<job_id>` returns `409 Conflict` with `status=no_receipt`, `valid=false`, `verification=unavailable`, the current `job_status`, `receipt=null`, and `reason=receipt_not_issued` because no receipt has been issued yet. A job id that does not exist still returns `404 not_found`. Use `/agent/jobs/<job_id>` for lifecycle state before receipt issuance.
 
-## 7. Inspect attestations and reputation
+## 7. Download the receipt JSON
+
+After a receipt exists, download the standalone signed receipt object:
+
+```bash
+curl -sS -OJ "https://hodlxxi.com/agent/receipts/$JOB_ID.json"
+```
+
+If the job exists but no receipt has been issued yet, this endpoint returns `409 Conflict` with `status=no_receipt` and `reason=receipt_not_issued`. If the job id is unknown, it returns `404 not_found`.
+
+The receipt proves the HODLXXI runtime recorded this invoice-backed job as settled before issuing the result. Independent Lightning settlement verification may require separate payment evidence.
+
+## 8. Inspect attestations and reputation
 
 ```bash
 curl -sS "https://hodlxxi.com/agent/attestations?limit=30" | jq .
