@@ -23,8 +23,11 @@ def test_active_pointer_returns_safe_landing_page(client):
     body = res.get_data(as_text=True)
     assert "/agent/discovery" in body
     compact = " ".join(body.split())
-    assert "does not redirect automatically" in compact
-    assert "call verification endpoints" in compact
+    assert "QR discovery landing" in compact
+    assert "browser will not redirect automatically" in compact
+    assert "Open target" in compact
+    assert "<meta http-equiv" not in body.lower()
+    assert "refresh" not in body.lower()
 
 
 def test_revoked_pointer_returns_gone_without_redirect(client):
@@ -32,18 +35,55 @@ def test_revoked_pointer_returns_gone_without_redirect(client):
 
     assert res.status_code == 410
     assert 300 > res.status_code or res.status_code >= 400
-    assert "no longer active" in res.get_data(as_text=True).lower()
+    body = res.get_data(as_text=True).lower()
+    assert "no longer active" in body
+    assert 'href="/agent/discovery"' not in body
+    assert "open target" not in body
 
 
 def test_expired_pointer_returns_gone_without_redirect(client):
     res = client.get("/qr/demo-expired")
 
     assert res.status_code == 410
-    assert "no longer active" in res.get_data(as_text=True).lower()
+    body = res.get_data(as_text=True).lower()
+    assert "no longer active" in body
+    assert 'href="/agent/discovery"' not in body
+    assert "open target" not in body
 
 
 def test_unknown_pointer_returns_not_found(client):
     assert client.get("/qr/unknown").status_code == 404
+
+
+def test_traversal_like_token_returns_not_found(client):
+    assert client.get("/qr/..%2Fagent%2Fcapabilities").status_code == 404
+
+
+def test_capabilities_do_not_advertise_qr_or_operator_qr(client):
+    res = client.get("/agent/capabilities")
+
+    assert res.status_code == 200
+    serialized = json.dumps(res.get_json(), sort_keys=True)
+    assert "/qr/" not in serialized
+    assert "/operator/qr" not in serialized
+
+
+def test_qr_landing_avoids_forbidden_authority_wording(client):
+    forbidden_terms = [
+        "verified by qr",
+        "trusted",
+        "approved",
+        "paid",
+        "authorized",
+        "identity confirmed",
+        "human present",
+        "delegated",
+    ]
+
+    for path in ("/qr/demo-active", "/qr/demo-revoked", "/qr/demo-expired"):
+        body = client.get(path).get_data(as_text=True).lower()
+        for term in forbidden_terms:
+            assert term not in body
 
 
 @pytest.mark.parametrize(
