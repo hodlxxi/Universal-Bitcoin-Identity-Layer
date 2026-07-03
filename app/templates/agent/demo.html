@@ -277,6 +277,7 @@
     <section class="hero">
       <span class="badge warn">21 sat live agent demo</span>
       <h1>Human proof page</h1>
+      <p>HODLXXI is a Bitcoin-native proof runtime: pay for an action, get a result, and verify the signed receipt later.</p>
       <p>Make one small request. Pay 21 sats. The runtime remembers which public key asked, what was paid, what result was returned, and whether the signed receipt verifies.</p>
       <div class="steps" aria-label="Demo flow">
         <div class="step" id="stepRequest"><strong>Request</strong>Say who is asking and create the job.</div>
@@ -289,7 +290,7 @@
     <section class="card warning">
       <h2>Honest identity boundary</h2>
       <p>The requester key is proven by a compatible Nostr signer before the invoice is created.</p>
-      <p>This proves control of the signing key for this request. It does not prove a legal name, government identity, or that one human controls only one key.</p>
+      <p>This proves control of the signing key for this request. Requester key proof means key control for this request only. It does not prove a legal name, government identity, or that one human controls only one key.</p>
       <p>The server binds the signature challenge to the exact message and demo nonce, then includes signature_verified in the signed receipt only after payment.</p>
       <p>No private key is requested or exposed; signing happens inside your Nostr extension.</p>
     </section>
@@ -372,6 +373,20 @@
       </article>
 
       <article class="card proof-card">
+        <h2>What this proves</h2>
+        <p>I paid, I requested, I received, I can verify.</p>
+        <p>The proof is limited to bounded recorded facts:</p>
+        <ul>
+          <li>a requester public key signed this request;</li>
+          <li>a 21 sat invoice-backed job was created;</li>
+          <li>the runtime recorded the invoice-backed job as settled before issuing the result;</li>
+          <li>the runtime returned a result;</li>
+          <li>the runtime signed a receipt that can be verified later.</li>
+        </ul>
+
+        <h2>What this does not prove</h2>
+        <p>This proof is bounded runtime evidence only: not a token sale; not an investment; not KYC; not legal identity; not custody; not a promise of profit; not proof of moral trustworthiness; not a guarantee of future performance; not ownership of a network.</p>
+
         <h2>What the signed receipt remembers</h2>
         <p>This is the human proof: a public record tying one declared requester key to one paid job, one result, and one agent signature.</p>
         <div class="proof-grid">
