@@ -75,7 +75,9 @@ After settlement is observed, completed jobs are expected to return:
 
 ## 6. Verify the signed receipt
 
-`GET /agent/verify/<job_id>` is the receipt verifier after receipt issuance:
+For a human-readable verification page, open `GET /agent/verify` and paste a `job_id`, or open `GET /agent/verify?job_id=<job_id>` directly. The page is read-only and displays the raw verifier result.
+
+`GET /agent/verify/<job_id>` is the raw JSON receipt verifier and verification authority after receipt issuance:
 
 ```bash
 curl -sS "https://hodlxxi.com/agent/verify/$JOB_ID" | jq .
@@ -95,7 +97,7 @@ Unpaid/no-receipt semantics are intentionally different from lifecycle/status se
 
 ## 7. Download the receipt JSON
 
-After a receipt exists, download the standalone signed receipt object:
+`GET /agent/receipts/<job_id>.json` is the receipt download endpoint. After a receipt exists, download the standalone signed receipt object:
 
 ```bash
 curl -sS -OJ "https://hodlxxi.com/agent/receipts/$JOB_ID.json"
