@@ -220,3 +220,127 @@ def test_receipt_downgrades_wrong_demo_version(monkeypatch):
     receipt = _receipt_for_server_proof(monkeypatch, payload_overrides={"demo": "human_proof_v1"})
     assert receipt["requester_pubkey_proof"] == "self_declared_no_signature"
     assert "requester_pubkey_proof_method" not in receipt
+
+
+def test_new_receipt_v1_additive_fields_are_signed():
+    receipt = _build_receipt(_job(VALID_XONLY_PUBKEY), prev_event_hash="0" * 64)
+
+    for key in [
+        "schema",
+        "receipt_id",
+        "runtime",
+        "requester_proof",
+        "input_hash",
+        "amount_sats",
+        "invoice_hash",
+        "settled",
+        "verify_url",
+        "attestations_url",
+        "reputation_url",
+        "chain_health_url",
+        "signing_key",
+    ]:
+        assert key in receipt
+
+    for key in [
+        "version",
+        "event_type",
+        "job_id",
+        "job_type",
+        "request_hash",
+        "payment_hash",
+        "result_hash",
+        "timestamp",
+        "agent_pubkey",
+        "prev_event_hash",
+        "requester_pubkey",
+        "requester_pubkey_proof",
+        "signature",
+    ]:
+        assert key in receipt
+
+    assert receipt["schema"] == "hodlxxi.receipt.v1"
+    assert receipt["receipt_id"] == "hodlxxi-receipt-v1:job-requester-pubkey"
+    assert receipt["runtime"] == "HODLXXI 21-Sat Proof Runtime"
+    assert receipt["requester_proof"] == {
+        "level": "self_declared_no_signature",
+        "verified": False,
+        "pubkey_present": True,
+    }
+    assert receipt["input_hash"] == receipt["request_hash"]
+    assert receipt["amount_sats"] == 21
+    assert receipt["invoice_hash"] == hashlib.sha256("lnbc21test".encode("utf-8")).hexdigest()
+    assert receipt["settled"] is True
+    assert receipt["verify_url"] == "/agent/verify/job-requester-pubkey"
+    assert receipt["attestations_url"] == "/agent/attestations"
+    assert receipt["reputation_url"] == "/agent/reputation"
+    assert receipt["chain_health_url"] == "/agent/chain/health"
+    assert receipt["signing_key"] == receipt["agent_pubkey"]
+    _assert_signature_verifies(receipt)
+
+
+def test_old_minimal_receipt_shape_still_verifies():
+    from app.blueprints.agent import get_agent_pubkey_hex, sign_message
+
+    old_receipt = {
+        "event_type": "job_receipt",
+        "job_id": "old-job",
+        "job_type": "ping",
+        "request_hash": "a" * 64,
+        "payment_hash": "b" * 64,
+        "result_hash": "c" * 64,
+        "timestamp": "2026-01-01T00:00:00+00:00",
+        "agent_pubkey": get_agent_pubkey_hex(),
+        "prev_event_hash": None,
+        "version": "1.0",
+    }
+    old_receipt["signature"] = sign_message(canonical_json_bytes(old_receipt))
+
+    _assert_signature_verifies(old_receipt)
+
+
+def test_receipt_json_download_endpoint_returns_standalone_receipt(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.blueprints.agent.create_invoice",
+        lambda amount_sats, memo, user_pubkey, expiry_seconds=3600: ("lnbc21download", "lookup-download"),
+    )
+    monkeypatch.setattr("app.blueprints.agent.check_invoice_paid", lambda invoice_id: True)
+
+    req = client.post("/agent/request", json={"job_type": "ping", "payload": {"message": "download"}}).get_json()
+    job_response = client.get(f"/agent/jobs/{req['job_id']}")
+    assert job_response.status_code == 200
+    receipt = job_response.get_json()["receipt"]
+
+    verify_response = client.get(f"/agent/verify/{req['job_id']}")
+    assert verify_response.status_code == 200
+    assert verify_response.get_json()["valid"] is True
+
+    response = client.get(f"/agent/receipts/{req['job_id']}.json")
+    body = response.get_json()
+
+    assert response.status_code == 200
+    assert response.content_type.startswith("application/json")
+    assert response.headers["Content-Disposition"] == f'attachment; filename="hodlxxi-receipt-{req["job_id"]}.json"'
+    assert body == receipt
+    assert body["schema"] == "hodlxxi.receipt.v1"
+    assert body["signature"]
+    for secret_marker in ["private", "macaroon", "session", "cookie", "rpc_password", "database_url"]:
+        assert secret_marker not in str(body).lower()
+
+
+def test_receipt_json_download_endpoint_reports_pending_and_missing(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.blueprints.agent.create_invoice",
+        lambda amount_sats, memo, user_pubkey, expiry_seconds=3600: ("lnbc21pending", "lookup-pending"),
+    )
+
+    req = client.post("/agent/request", json={"job_type": "ping", "payload": {"message": "pending"}}).get_json()
+
+    pending = client.get(f"/agent/receipts/{req['job_id']}.json")
+    assert pending.status_code == 409
+    assert pending.get_json()["status"] == "no_receipt"
+    assert pending.get_json()["reason"] == "receipt_not_issued"
+
+    missing = client.get("/agent/receipts/unknown-job.json")
+    assert missing.status_code == 404
+    assert missing.get_json()["status"] == "not_found"

@@ -365,6 +365,7 @@
         <p id="verifySummary">When the receipt exists, the runtime signature will be checked automatically.</p>
         <div class="actions">
           <button type="button" id="verifyButton" onclick="verifyJob()" disabled>Verify again</button>
+          <a class="btn disabled" id="receiptDownloadLink" href="#" aria-disabled="true" download>Download receipt JSON</a>
         </div>
         <details>
           <summary>Show raw verification response</summary>
@@ -610,6 +611,20 @@
       }
     }
 
+    function setReceiptDownloadEnabled(enabled) {
+      const link = document.getElementById("receiptDownloadLink");
+      if (!link) return;
+      if (enabled && currentJobId) {
+        link.href = `/agent/receipts/${encodeURIComponent(currentJobId)}.json`;
+        link.classList.remove("disabled");
+        link.setAttribute("aria-disabled", "false");
+      } else {
+        link.href = "#";
+        link.classList.add("disabled");
+        link.setAttribute("aria-disabled", "true");
+      }
+    }
+
     function updateProofFromJob(data) {
       const receipt = data && data.receipt && typeof data.receipt === "object" ? data.receipt : {};
       if (currentJobId) setText("proofJobId", currentJobId);
@@ -714,6 +729,7 @@
       setStep("stepPay", "active");
       document.getElementById("checkButton").disabled = !currentJobId;
       document.getElementById("verifyButton").disabled = true;
+      setReceiptDownloadEnabled(false);
       startPolling();
     }
 
@@ -852,6 +868,7 @@
         setStep("stepResult", "done");
         setStep("stepVerify", "active");
         document.getElementById("verifyButton").disabled = false;
+        setReceiptDownloadEnabled(Boolean(data.receipt));
 
         if (!verificationStarted) {
           verificationStarted = true;
@@ -889,6 +906,7 @@
             : "The receipt was returned, but its signature did not verify."
         );
         setText("proofVerification", verified ? "verified agent signature" : "verification failed");
+        setReceiptDownloadEnabled(verified || Boolean(data.receipt));
         setStep("stepVerify", verified ? "done" : "active");
       } catch (error) {
         setBadge("verifyStatus", "failed", "bad");
@@ -933,6 +951,7 @@
       document.getElementById("createButton").disabled = false;
       document.getElementById("checkButton").disabled = true;
       document.getElementById("verifyButton").disabled = true;
+      setReceiptDownloadEnabled(false);
       ["stepRequest", "stepPay", "stepResult", "stepVerify"].forEach((id) => setStep(id, null));
     }
 

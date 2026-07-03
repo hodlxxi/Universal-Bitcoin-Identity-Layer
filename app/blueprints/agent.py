@@ -65,6 +65,8 @@ MAX_JOBS_PER_DAY = 100
 CAPABILITIES_SCHEMA_VERSION = "1.0"
 MARKETPLACE_LISTING_VERSION = "1.0"
 RECEIPT_VERSION = "1.0"
+RECEIPT_SCHEMA = "hodlxxi.receipt.v1"
+RECEIPT_RUNTIME = "HODLXXI 21-Sat Proof Runtime"
 SKILLS_ROOT = Path(__file__).resolve().parents[2] / "skills" / "public"
 SKILLS_REPO_RAW_BASE = "https://raw.githubusercontent.com/hodlxxi/Universal-Bitcoin-Identity-Layer/main/skills/public"
 
@@ -198,6 +200,7 @@ def _agent_endpoints() -> dict:
         "nostr_dm_policy": "/.well-known/nostr-dm-policy.json",
         "job": "/agent/jobs/<job_id>",
         "verify": "/agent/verify/<job_id>",
+        "receipt_json": "/agent/receipts/<job_id>.json",
         "attestations": "/agent/attestations",
         "trust_events": "/agent/trust/events",
         "discovery": "/agent/discovery",
@@ -1562,6 +1565,44 @@ def _requester_pubkey_from_job(job: AgentJob):
     return _validated_self_declared_requester_pubkey(payload.get("requester_pubkey"))
 
 
+def _receipt_requester_proof_summary(receipt: dict) -> dict:
+    level = receipt.get("requester_pubkey_proof") or "none"
+    summary = {"level": level, "verified": level == "signature_verified"}
+    if receipt.get("requester_pubkey_proof_method"):
+        summary["method"] = receipt.get("requester_pubkey_proof_method")
+    if receipt.get("requester_pubkey"):
+        summary["pubkey_present"] = True
+    return summary
+
+
+def _receipt_invoice_hash(job: AgentJob) -> str | None:
+    invoice = (job.payment_request or "").strip()
+    if not invoice:
+        return None
+    return hashlib.sha256(invoice.encode("utf-8")).hexdigest()
+
+
+def _add_canonical_receipt_v1_fields(receipt: dict, job: AgentJob) -> None:
+    agent_pubkey = receipt["agent_pubkey"]
+    receipt.update(
+        {
+            "schema": RECEIPT_SCHEMA,
+            "receipt_id": f"hodlxxi-receipt-v1:{job.id}",
+            "runtime": RECEIPT_RUNTIME,
+            "requester_proof": _receipt_requester_proof_summary(receipt),
+            "input_hash": job.request_hash,
+            "amount_sats": job.sats,
+            "invoice_hash": _receipt_invoice_hash(job),
+            "settled": job.status == "done",
+            "verify_url": f"/agent/verify/{job.id}",
+            "attestations_url": "/agent/attestations",
+            "reputation_url": "/agent/reputation",
+            "chain_health_url": "/agent/chain/health",
+            "signing_key": agent_pubkey,
+        }
+    )
+
+
 def _build_receipt(job: AgentJob, prev_event_hash: str | None) -> dict:
     payload = job.request_json.get("payload", {}) or {}
     result_payload = _job_result(job, payload)
@@ -1609,6 +1650,7 @@ def _build_receipt(job: AgentJob, prev_event_hash: str | None) -> dict:
         else:
             receipt["requester_pubkey_proof"] = "self_declared_no_signature"
 
+    _add_canonical_receipt_v1_fields(receipt, job)
     receipt["signature"] = sign_message(canonical_json_bytes(receipt))
     return receipt
 
@@ -1815,6 +1857,31 @@ def verify_job_receipt(job_id: str):
                 "qr_pointer": _receipt_verification_qr_pointer(job_id),
             }
         )
+
+
+@agent_bp.get("/agent/receipts/<job_id>.json")
+def download_job_receipt_json(job_id: str):
+    with session_scope() as session:
+        job = session.query(AgentJob).filter_by(id=job_id).first()
+        if not job:
+            return jsonify({"status": "not_found", "error": "not_found", "job_id": job_id}), 404
+
+        event = session.query(AgentEvent).filter_by(job_id=job_id).order_by(AgentEvent.created_at.desc()).first()
+        if not event:
+            return (
+                jsonify(
+                    {
+                        "job_id": job_id,
+                        "status": "no_receipt",
+                        "reason": "receipt_not_issued",
+                    }
+                ),
+                409,
+            )
+
+        response = jsonify(event.event_json)
+        response.headers["Content-Disposition"] = f'attachment; filename="hodlxxi-receipt-{job_id}.json"'
+        return response
 
 
 @agent_bp.get("/agent/chain/health")

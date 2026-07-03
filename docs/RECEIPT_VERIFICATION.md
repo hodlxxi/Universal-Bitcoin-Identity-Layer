@@ -4,7 +4,7 @@
 
 This document is for external verifiers who want to validate HODLXXI agent receipts without trusting Flask internals. The `/agent/verify/<job_id>` endpoint is useful for online checks, but independent verifiers should also understand how to verify receipt payloads locally from the JSON they receive.
 
-This document describes current receipt v1 behavior only. It does not introduce new runtime behavior, endpoint behavior, payment behavior, SDK behavior, or signer behavior.
+This document describes current receipt v1 behavior only. Newly issued portable receipts use `schema=hodlxxi.receipt.v1` while older/minimal receipt objects without that additive field remain valid if their signature verifies.
 
 ## Verification model
 
@@ -15,7 +15,7 @@ Receipt verification proves:
 - the receipt `event_hash` matches the receipt JSON, and
 - the receipt is linked to previous local attestation history through `prev_event_hash`.
 
-Receipt verification does not prove legal identity. It also does not prove locked capital, global consensus, external anchoring, or that a Lightning invoice was independently paid unless the verifier also checks payment evidence or trusts the runtime's payment observation. A `qr_pointer` returned by the verifier is only a discovery pointer back to the verifier surface; it does not prove receipt validity, payment, consent, approval, delegation, trust, or human presence by itself.
+Receipt verification does not prove legal identity. It also does not prove locked capital, global consensus, external anchoring, or that a Lightning invoice was independently paid unless the verifier also checks payment evidence or trusts the runtime's payment observation. The receipt proves the HODLXXI runtime recorded this invoice-backed job as settled before issuing the result. Independent Lightning settlement verification may require separate payment evidence. A `qr_pointer` returned by the verifier is only a discovery pointer back to the verifier surface; it does not prove receipt validity, payment, consent, approval, delegation, trust, or human presence by itself.
 
 ## Canonical JSON
 
@@ -41,7 +41,7 @@ The `event_hash` rule includes the top-level `signature` field because it hashes
 
 ## Signature coverage
 
-To verify the receipt signature, copy the receipt, remove the top-level `signature` field, canonicalize the remaining receipt, and verify the hex signature using ECDSA/SHA-256 against `agent_pubkey`. The runtime uses compressed secp256k1 public keys for `agent_pubkey`.
+To verify the receipt signature, copy the receipt, remove the top-level `signature` field, canonicalize the remaining receipt, and verify the hex signature using ECDSA/SHA-256 against `agent_pubkey`. The runtime uses compressed secp256k1 public keys for `agent_pubkey`. For enriched `hodlxxi.receipt.v1` receipts, this means the signature covers the additive fields `schema`, `receipt_id`, `runtime`, `requester_proof`, `input_hash`, `amount_sats`, `invoice_hash`, `settled`, `verify_url`, `attestations_url`, `reputation_url`, `chain_health_url`, and `signing_key`. Older/minimal receipts still verify because verifiers sign the fields present after excluding only `signature`.
 
 Do not overclaim Schnorr/BIP340 verification for receipt v1 unless a future runtime contract explicitly changes the signer.
 
@@ -55,6 +55,25 @@ Do not overclaim Schnorr/BIP340 verification for receipt v1 unless a future runt
 6. Recompute `event_hash` over canonical signed receipt bytes.
 7. Compare with `/agent/verify/<job_id>` and `/agent/attestations` if online.
 8. Check `prev_event_hash` continuity if replaying attestation history.
+
+## Download endpoint states
+
+`GET /agent/receipts/<job_id>.json` is a download surface for the standalone signed receipt JSON. It does not replace `/agent/verify/<job_id>`.
+
+HTTP 200 issued receipt:
+
+- response body is the signed receipt object itself
+- `Content-Type` is `application/json`
+- `Content-Disposition` is an attachment filename such as `hodlxxi-receipt-<job_id>.json`
+
+HTTP 409 existing job without a receipt:
+
+- `status=no_receipt`
+- `reason=receipt_not_issued`
+
+HTTP 404 missing job:
+
+- `status=not_found`
 
 ## Verifier endpoint states
 
