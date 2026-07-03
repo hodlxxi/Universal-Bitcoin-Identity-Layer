@@ -4,7 +4,7 @@
 
 This document is for external verifiers who want to validate HODLXXI agent receipts without trusting Flask internals. `GET /agent/verify` is the human-readable public verification page for entering an arbitrary `job_id`. The `/agent/verify/<job_id>` endpoint is the raw JSON verifier and remains the verification authority for online checks, but independent verifiers should also understand how to verify receipt payloads locally from the JSON they receive.
 
-This document describes current receipt v1 behavior only. Newly issued portable receipts use `schema=hodlxxi.receipt.v1` while older/minimal receipt objects without that additive field remain valid if their signature verifies.
+This document describes current receipt v1 behavior only. For the Human Proof MVP launch boundary and operator checklist, see [`HUMAN_PROOF_MVP.md`](HUMAN_PROOF_MVP.md) and [`ops/HUMAN_PROOF_MVP_RUNBOOK.md`](ops/HUMAN_PROOF_MVP_RUNBOOK.md). Newly issued portable receipts use `schema=hodlxxi.receipt.v1` while older/minimal receipt objects without that additive field remain valid if their signature verifies.
 
 ## Verification model
 
