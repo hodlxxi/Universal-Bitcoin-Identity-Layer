@@ -136,6 +136,20 @@
 
     input[aria-invalid="true"] { border-color: var(--bad); }
 
+    .qr-preview {
+      display: block;
+      width: 11rem;
+      max-width: 100%;
+      padding: .65rem;
+      border-radius: 12px;
+      background: #fff;
+      margin: .75rem 0;
+    }
+
+    .hidden {
+      display: none;
+    }
+
     textarea {
       min-height: 7rem;
       resize: vertical;
@@ -372,8 +386,12 @@
           <h2>QR-ready receipt verifier link</h2>
           <p>QR opens the public verifier for this job.</p>
           <p>The QR code is not the proof. The signed receipt and verifier response are the proof.</p>
-          <p>A QR code can carry this verifier URL; the deterministic QR image endpoint will be added separately.</p>
+          <p>QR opens the public verifier for this job; QR opens the public verifier by encoding <code>/agent/verify?job_id=&lt;job_id&gt;</code>.</p>
           <p>Verifier URL: <a id="receiptVerifierLink" href="/agent/verify">/agent/verify</a></p>
+          <p>Raw JSON authority: <code>/agent/verify/&lt;job_id&gt;</code> remains the raw JSON verification authority.</p>
+          <p id="receiptVerifierQrEmpty">Create a job first to generate the verifier QR.</p>
+          <img id="receiptVerifierQrImage" class="qr-preview hidden" alt="Verifier QR opens the public verifier page" loading="lazy">
+          <p><a class="btn disabled" id="receiptVerifierQrLink" href="#" aria-disabled="true">Open verifier QR SVG</a></p>
           <p>QR is discovery/transport only: not proof of payment by itself, not proof of identity, not proof of consent, not proof of authority, not proof of moral trustworthiness, not custody, not KYC, not global consensus, and not an investment signal.</p>
         </div>
         <details>
@@ -629,16 +647,51 @@
       }
     }
 
-    function verifierUrl(jobId) {
+    function humanVerifierUrl(jobId) {
+      return jobId ? `/agent/verify?job_id=${encodeURIComponent(jobId)}` : "/agent/verify";
+    }
+
+    function rawVerifierUrl(jobId) {
       return jobId ? `/agent/verify/${encodeURIComponent(jobId)}` : "/agent/verify";
+    }
+
+    function verifierQrSvgUrl(jobId) {
+      return jobId ? `/agent/qr/verify/${encodeURIComponent(jobId)}.svg` : "";
     }
 
     function updateReceiptVerifierLink() {
       const link = document.getElementById("receiptVerifierLink");
+      const qrImage = document.getElementById("receiptVerifierQrImage");
+      const qrLink = document.getElementById("receiptVerifierQrLink");
+      const qrEmpty = document.getElementById("receiptVerifierQrEmpty");
       if (!link) return;
-      const url = verifierUrl(currentJobId);
+      const url = humanVerifierUrl(currentJobId);
       link.href = url;
       link.textContent = url;
+      const qrUrl = verifierQrSvgUrl(currentJobId);
+      if (qrUrl) {
+        if (qrImage) {
+          qrImage.src = qrUrl;
+          qrImage.classList.remove("hidden");
+        }
+        if (qrLink) {
+          qrLink.href = qrUrl;
+          qrLink.classList.remove("disabled");
+          qrLink.setAttribute("aria-disabled", "false");
+        }
+        if (qrEmpty) qrEmpty.classList.add("hidden");
+      } else {
+        if (qrImage) {
+          qrImage.removeAttribute("src");
+          qrImage.classList.add("hidden");
+        }
+        if (qrLink) {
+          qrLink.href = "#";
+          qrLink.classList.add("disabled");
+          qrLink.setAttribute("aria-disabled", "true");
+        }
+        if (qrEmpty) qrEmpty.classList.remove("hidden");
+      }
     }
 
     function setReceiptDownloadEnabled(enabled) {

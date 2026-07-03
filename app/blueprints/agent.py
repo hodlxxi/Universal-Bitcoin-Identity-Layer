@@ -9,6 +9,11 @@ import os
 import re
 import time
 import uuid
+from io import BytesIO
+from urllib.parse import quote
+
+import qrcode
+import qrcode.image.svg
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -83,6 +88,27 @@ OPERATOR_CONTINUITY_SCHEMA = "hodlxxi.operator_continuity.v1"
 OPERATOR_ID = "E923"
 OPERATOR_PUBKEY = "023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923"
 PUBLIC_AGENT_PUBKEY = "02019e7a92d22e4467e0afb20ce62976e976d1558e553351e1fb1a886b4a149f92"
+SAFE_HUMAN_PROOF_JOB_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+
+
+def _is_safe_human_proof_job_id(job_id: str) -> bool:
+    return bool(SAFE_HUMAN_PROOF_JOB_ID_RE.fullmatch(job_id or ""))
+
+
+def _human_proof_public_base_url() -> str:
+    configured = (
+        current_app.config.get("HUMAN_PROOF_PUBLIC_BASE_URL")
+        or current_app.config.get("PUBLIC_BASE_URL")
+        or os.getenv("HUMAN_PROOF_PUBLIC_BASE_URL")
+        or os.getenv("PUBLIC_BASE_URL")
+        or ""
+    )
+    base_url = str(configured).strip() or (request.url_root or "").strip()
+    return base_url.rstrip("/")
+
+
+def _human_verifier_url_for_job(job_id: str) -> str:
+    return f"{_human_proof_public_base_url()}/agent/verify?job_id={quote(job_id, safe='')}"
 
 
 def _scrub_client_proof_claims(payload: dict) -> dict:
@@ -200,6 +226,7 @@ def _agent_endpoints() -> dict:
         "nostr_dm_policy": "/.well-known/nostr-dm-policy.json",
         "job": "/agent/jobs/<job_id>",
         "verify": "/agent/verify/<job_id>",
+        "verify_qr_svg": "/agent/qr/verify/<job_id>.svg",
         "receipt_json": "/agent/receipts/<job_id>.json",
         "attestations": "/agent/attestations",
         "trust_events": "/agent/trust/events",
@@ -1069,6 +1096,30 @@ def demo_page():
 @agent_bp.get("/agent/verify")
 def public_verify_page():
     return render_template("agent/verify.html", job_id=request.args.get("job_id", ""))
+
+
+@agent_bp.get("/agent/qr/verify/<job_id>.svg")
+def human_proof_verifier_qr_svg(job_id: str):
+    if not _is_safe_human_proof_job_id(job_id):
+        abort(400)
+
+    target_url = _human_verifier_url_for_job(job_id)
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(target_url)
+    qr.make(fit=True)
+    image = qr.make_image(image_factory=qrcode.image.svg.SvgPathImage)
+    output = BytesIO()
+    image.save(output)
+    return current_app.response_class(
+        output.getvalue(),
+        status=200,
+        mimetype="image/svg+xml",
+    )
 
 
 @agent_bp.get("/agent/receipt-proof")

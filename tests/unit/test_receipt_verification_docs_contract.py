@@ -47,10 +47,14 @@ def test_receipt_verification_doc_exists_and_covers_external_contract():
         "does not prove locked capital",
         "does not prove legal identity",
         "QR verification affordance",
-        "QR can carry the verifier URL",
+        "/agent/qr/verify/<job_id>.svg",
+        "deterministic SVG QR code",
+        "encodes `/agent/verify?job_id=<job_id>`",
         "QR does not replace receipt verification",
-        "/agent/verify/<job_id> remains the verification authority",
-        "signed receipt remains the proof artifact",
+        "`/agent/verify/<job_id>` remains the raw JSON verification authority",
+        "signed receipt and verifier response are the proof",
+        "read-only",
+        "does not create jobs, invoices, payments, receipts, sessions, auth state, or database mutations",
         "discovery/transport only",
     ]
     for term in required_terms:

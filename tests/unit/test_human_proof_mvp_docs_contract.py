@@ -97,10 +97,14 @@ def test_human_proof_mvp_docs_include_qr_verification_affordance_boundary():
     docs = _combined_docs()
     for marker in [
         "QR verification affordance",
-        "QR verification affordance can carry the verifier URL",
+        "/agent/qr/verify/<job_id>.svg",
+        "deterministic SVG QR code",
+        "encodes `/agent/verify?job_id=<job_id>`",
         "QR does not replace receipt verification",
-        "/agent/verify/<job_id> remains the verification authority",
-        "signed receipt remains the proof artifact",
+        "`/agent/verify/<job_id>` remains the raw JSON verification authority",
+        "signed receipt and verifier response are the proof",
+        "read-only",
+        "does not create jobs, invoices, payments, receipts, sessions, auth state, or database mutations",
         "discovery/transport only",
     ]:
         assert marker in docs

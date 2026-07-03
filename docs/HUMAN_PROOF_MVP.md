@@ -31,7 +31,7 @@ Runtime context links such as `/agent/attestations`, `/agent/reputation`, and `/
 
 ## QR verification affordance
 
-A QR verification affordance can carry the verifier URL for a receipt, such as `/agent/verify/<job_id>`, so a third party can open the public verifier page for that job. QR is discovery/transport only. QR does not replace receipt verification, /agent/verify/<job_id> remains the verification authority, and the signed receipt remains the proof artifact.
+`GET /agent/qr/verify/<job_id>.svg` returns a deterministic SVG QR code for the Human Proof verifier URL. The QR encodes `/agent/verify?job_id=<job_id>` so a scanner opens the human verifier page, while `/agent/verify/<job_id>` remains the raw JSON verification authority. QR is discovery/transport only. The QR does not prove the receipt. QR does not replace receipt verification, and the signed receipt and verifier response are the proof. The QR endpoint is read-only and does not create jobs, invoices, payments, receipts, sessions, auth state, or database mutations.
 
 The QR code itself is not proof of payment by itself, not proof of identity, not proof of consent, not proof of authority, not proof of moral trustworthiness, not custody, not KYC, not global consensus, and not an investment signal.
 

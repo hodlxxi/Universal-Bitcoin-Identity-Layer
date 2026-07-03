@@ -31,6 +31,10 @@ def test_human_proof_smoke_script_uses_public_read_only_get_contract():
         "/agent/verify/unknown-human-proof-mvp-job-id",
         "/agent/receipt-proof",
         "/.well-known/agent.json",
+        "/agent/qr/verify/unknown-human-proof-smoke-token.svg",
+        "image/svg+xml",
+        "<svg",
+        "SECRET|TOKEN|PASSWORD|PRIVATE|MACAROON|DATABASE_URL|REDIS_URL|LND",
     ]:
         assert marker in text
 
