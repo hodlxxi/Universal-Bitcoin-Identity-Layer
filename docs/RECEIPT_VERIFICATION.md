@@ -62,6 +62,16 @@ Do not overclaim Schnorr/BIP340 verification for receipt v1 unless a future runt
 - `GET /agent/verify/<job_id>` is the raw JSON verifier and verification authority.
 - `GET /agent/receipts/<job_id>.json` downloads the standalone signed receipt JSON after receipt issuance.
 
+## Runtime context links
+
+Receipt v1 may include `attestations_url`, `reputation_url`, and `chain_health_url`. These links help audit the runtime receipt context but do not expand what the receipt proves. They are factual runtime surfaces, not human trust scores.
+
+- `GET /agent/attestations` returns signed runtime events, including receipt attestations for completed jobs when present.
+- `GET /agent/reputation` returns factual runtime counters/continuity, not a human trust score and not proof of moral trustworthiness.
+- `GET /agent/chain/health` returns local append-only continuity, not global consensus.
+
+These surfaces are not KYC, not legal identity, not authority, not consent, not global consensus, not an investment signal, not token ownership, not a guarantee of future performance, and not ownership of a network.
+
 ## Download endpoint states
 
 `GET /agent/receipts/<job_id>.json` is a download surface for the standalone signed receipt JSON. It does not replace `/agent/verify/<job_id>`.

@@ -66,6 +66,17 @@
         <h2>What this does not prove</h2>
         <p>This proof is bounded runtime evidence only: not a token sale; not an investment; not KYC; not legal identity; not custody; not a promise of profit; not proof of moral trustworthiness; not a guarantee of future performance; not ownership of a network.</p>
       </article>
+      <article class="card">
+        <h2>Runtime context surfaces</h2>
+        <p>These are factual runtime surfaces, not human trust scores. Third-party receipt reviewers can inspect them as runtime context only.</p>
+        <ul>
+          <li><a href="/agent/attestations">Attestations</a> show signed runtime events.</li>
+          <li><a href="/agent/reputation">Reputation</a> shows factual runtime counters/continuity, not a human trust score or moral trustworthiness.</li>
+          <li><a href="/agent/chain/health">Chain health</a> shows local append-only continuity, not global consensus.</li>
+        </ul>
+        <p>These links are not KYC, not legal identity, not proof of moral trustworthiness, not authority, not consent, not global consensus, not an investment signal, not token ownership, not a guarantee of future performance, and not ownership of a network.</p>
+      </article>
+
     </section>
 
     <section class="card" aria-live="polite">
@@ -132,6 +143,9 @@
         ["agent_pubkey", "agent_pubkey"],
         ["signing_key", "receipt.signing_key"],
         ["verify_url", "receipt.verify_url"],
+        ["attestations_url", "receipt.attestations_url"],
+        ["reputation_url", "receipt.reputation_url"],
+        ["chain_health_url", "receipt.chain_health_url"],
         ["receipt download URL", "_receipt_download_url"],
       ];
       const augmented = Object.assign({ _receipt_download_url: receiptEndpoint(jobId) }, payload || {});

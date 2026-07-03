@@ -71,7 +71,7 @@ After settlement is observed, completed jobs are expected to return:
 - `result` present
 - `receipt` present
 - backward-compatible receipt fields such as `job_receipt`, `payment_hash`, `request_hash`, `result_hash`, `signature`, and `agent_pubkey`
-- portable receipt fields such as `schema=hodlxxi.receipt.v1`, `receipt_id`, `input_hash`, `amount_sats`, `settled`, `verify_url`, and `signing_key`
+- portable receipt fields such as `schema=hodlxxi.receipt.v1`, `receipt_id`, `input_hash`, `amount_sats`, `settled`, `verify_url`, `attestations_url`, `reputation_url`, `chain_health_url`, and `signing_key`
 
 ## 6. Verify the signed receipt
 
@@ -107,16 +107,23 @@ If the job exists but no receipt has been issued yet, this endpoint returns `409
 
 The receipt proves the HODLXXI runtime recorded this invoice-backed job as settled before issuing the result. Independent Lightning settlement verification may require separate payment evidence.
 
-## 8. Inspect attestations and reputation
+## 8. Inspect factual runtime surfaces
 
 ```bash
 curl -sS "https://hodlxxi.com/agent/attestations?limit=30" | jq .
 curl -sS "https://hodlxxi.com/agent/reputation" | jq .
+curl -sS "https://hodlxxi.com/agent/chain/health" | jq .
 ```
 
-`GET /agent/attestations` returns signed receipt events for completed jobs. A completed job should have a matching `job_receipt` attestation. Unpaid jobs should not have a receipt attestation.
+These are factual runtime surfaces, not human trust scores. They help audit runtime receipt context but do not expand what the receipt proves.
 
-`GET /agent/reputation` exposes aggregate operating history that external apps can use as a trust signal alongside receipt verification.
+`GET /agent/attestations` returns signed runtime events. A completed job should have a matching `job_receipt` attestation. Unpaid jobs should not have a receipt attestation.
+
+`GET /agent/reputation` exposes factual runtime counters/continuity, not a human trust score and not proof of moral trustworthiness.
+
+`GET /agent/chain/health` exposes local append-only continuity, not global consensus.
+
+These surfaces are not KYC, not legal identity, not authority, not consent, not global consensus, not an investment signal, not token ownership, not a guarantee of future performance, and not ownership of a network.
 
 ## Receipt contract
 
