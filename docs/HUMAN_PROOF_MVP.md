@@ -29,6 +29,12 @@ A Human Proof receipt proves only the bounded runtime facts encoded by the signe
 
 Runtime context links such as `/agent/attestations`, `/agent/reputation`, and `/agent/chain/health` help auditors inspect continuity around the receipt. They do not expand the receipt into a broader personal, legal, financial, or consensus claim.
 
+## QR verification affordance
+
+A QR verification affordance can carry the verifier URL for a receipt, such as `/agent/verify/<job_id>`, so a third party can open the public verifier page for that job. QR is discovery/transport only. QR does not replace receipt verification, /agent/verify/<job_id> remains the verification authority, and the signed receipt remains the proof artifact.
+
+The QR code itself is not proof of payment by itself, not proof of identity, not proof of consent, not proof of authority, not proof of moral trustworthiness, not custody, not KYC, not global consensus, and not an investment signal.
+
 ## Requester key proof boundary
 
 Requester key proof binds a requester-controlled key proof to the Human Proof request boundary used by the current runtime. It is not legal identity, KYC, consent, authority, custody, or a durable account system by itself.

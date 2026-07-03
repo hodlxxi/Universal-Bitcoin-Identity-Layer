@@ -57,6 +57,13 @@ def test_human_demo_page_renders_interactive_paid_agent_flow():
         "No private key is requested",
         "Prove key and create 21 sat request",
         "Hello from HODLXXI demo",
+        "QR-ready receipt verifier link",
+        "A QR code can carry this verifier URL; the deterministic QR image endpoint will be added separately.",
+        "QR opens the public verifier",
+        "QR code is not the proof",
+        "signed receipt and verifier response are the proof",
+        "not proof of payment by itself",
+        "not proof of identity",
     ]:
         assert marker in text
 

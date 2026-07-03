@@ -62,6 +62,12 @@ Do not overclaim Schnorr/BIP340 verification for receipt v1 unless a future runt
 - `GET /agent/verify/<job_id>` is the raw JSON verifier and verification authority.
 - `GET /agent/receipts/<job_id>.json` downloads the standalone signed receipt JSON after receipt issuance.
 
+## QR verification affordance
+
+QR can carry the verifier URL, such as `/agent/verify/<job_id>`, to help a third party open the public verifier for a receipt. QR is discovery/transport only. QR does not replace receipt verification, /agent/verify/<job_id> remains the verification authority, and the signed receipt remains the proof artifact.
+
+A QR verifier link does not prove payment by itself, identity, consent, authority, moral trustworthiness, custody, KYC, global consensus, or investment value. The verifier checks the receipt; the QR code only transports the verifier location.
+
 ## Runtime context links
 
 Receipt v1 may include `attestations_url`, `reputation_url`, and `chain_health_url`. These links help audit the runtime receipt context but do not expand what the receipt proves. They are factual runtime surfaces, not human trust scores.
