@@ -54,6 +54,14 @@ systemctl status ubid-staging --no-pager
 
 ## Staging validation
 
+After the staging checkout and restart, run the consolidated public-surface smoke script:
+
+```bash
+BASE_URL=https://staging.hodlxxi.com scripts/smoke_human_proof_public_surfaces.sh
+```
+
+The script is read-only. It performs only public `GET` checks, requires no credentials, does not read environment files, and does not create jobs, invoices, payments, or database mutations.
+
 Use staging first. The following commands are safe read-only HTTP checks and do not create jobs, invoices, payments, or database mutations:
 
 ```bash
@@ -82,6 +90,14 @@ Production validation should repeat only the read-only checks already proven in 
 Confirm the current production ref, intended rollback ref, intended systemd unit, and operator approval before restarting anything. Restart only the intended service if a restart is part of the separately approved deployment procedure.
 
 ## Smoke tests
+
+After the production rollout and restart, run the same consolidated public-surface smoke script against production:
+
+```bash
+BASE_URL=https://hodlxxi.com scripts/smoke_human_proof_public_surfaces.sh
+```
+
+This script is safe for production launch verification because it is read-only, uses only public `GET` requests, requires no credentials, and does not create jobs, invoices, payments, or database mutations.
 
 Production smoke checks are read-only:
 
