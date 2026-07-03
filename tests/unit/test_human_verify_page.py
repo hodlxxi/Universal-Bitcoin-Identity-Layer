@@ -56,6 +56,8 @@ def test_public_human_verify_page_renders_contract():
         "QR is discovery/transport only",
         "verifier checks the receipt",
         "QR does not replace receipt verification",
+        "/agent/qr/verify/",
+        "A verifier QR appears after a job_id is entered",
         "not proof of payment by itself",
         "not proof of identity",
         "not proof of consent",
@@ -74,6 +76,7 @@ def test_public_human_verify_page_accepts_query_job_id():
 
     assert response.status_code == 200
     assert 'value="job_123"' in text
+    assert "/agent/qr/verify/job_123.svg" in text
 
 
 def test_human_demo_links_to_public_verify_page():

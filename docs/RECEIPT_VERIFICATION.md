@@ -64,7 +64,7 @@ Do not overclaim Schnorr/BIP340 verification for receipt v1 unless a future runt
 
 ## QR verification affordance
 
-QR can carry the verifier URL, such as `/agent/verify/<job_id>`, to help a third party open the public verifier for a receipt. QR is discovery/transport only. QR does not replace receipt verification, /agent/verify/<job_id> remains the verification authority, and the signed receipt remains the proof artifact.
+`GET /agent/qr/verify/<job_id>.svg` returns a deterministic SVG QR code for the Human Proof verifier URL. The QR encodes `/agent/verify?job_id=<job_id>` so a scanner opens the human verifier page, while `/agent/verify/<job_id>` remains the raw JSON verification authority. QR is discovery/transport only. The QR does not prove the receipt. QR does not replace receipt verification, and the signed receipt and verifier response are the proof. The QR endpoint is read-only and does not create jobs, invoices, payments, receipts, sessions, auth state, or database mutations.
 
 A QR verifier link does not prove payment by itself, identity, consent, authority, moral trustworthiness, custody, KYC, global consensus, or investment value. The verifier checks the receipt; the QR code only transports the verifier location.
 

@@ -27,6 +27,8 @@
     .result-grid dd { margin: 0; overflow-wrap: anywhere; }
     pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #0b0d13; border: 1px solid var(--line); border-radius: 12px; padding: 1rem; color: var(--muted); }
     .muted { color: var(--muted); }
+    .qr-preview { display: block; width: 11rem; max-width: 100%; padding: .65rem; border-radius: 12px; background: #fff; margin: .75rem 0; }
+    .hidden { display: none; }
     @media (max-width: 760px) { main { padding: 1rem; } .grid { grid-template-columns: 1fr; } .result-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -40,6 +42,20 @@
       <p class="muted">This page is read-only. It fetches the raw verifier endpoint and renders the response for humans; <code>GET /agent/verify/&lt;job_id&gt;</code> remains the verification authority.</p>
       <p class="muted">QR links may open this verifier page. The verifier checks the receipt; QR is discovery/transport only, and QR does not replace receipt verification.</p>
       <p class="muted">A QR link is not proof of payment by itself, not proof of identity, not proof of consent, not proof of authority, not proof of moral trustworthiness, not custody, not KYC, not global consensus, and not an investment signal.</p>
+    </section>
+
+    <section class="card" aria-label="Verifier QR code">
+      <h2>Verifier QR</h2>
+      <p>QR links may open this verifier page. QR opens this verifier page for the selected job_id.</p>
+      <p>QR is discovery/transport only. QR does not replace receipt verification.</p>
+      <p id="verifierQrEmpty">A verifier QR appears after a job_id is entered.</p>
+      {% if job_id %}
+        <img id="verifierQrImage" class="qr-preview" src="/agent/qr/verify/{{ job_id|urlencode }}.svg" alt="Verifier QR opens this verifier page">
+        <p><a class="btn" id="verifierQrLink" href="/agent/qr/verify/{{ job_id|urlencode }}.svg">Open verifier QR SVG</a></p>
+      {% else %}
+        <img id="verifierQrImage" class="qr-preview hidden" alt="Verifier QR opens this verifier page">
+        <p><a class="btn" id="verifierQrLink" href="#">Open verifier QR SVG</a></p>
+      {% endif %}
     </section>
 
     <section class="card" aria-label="Verify by job id">
@@ -108,10 +124,24 @@
 
     function endpoint(jobId) { return `/agent/verify/${encodeURIComponent(jobId)}`; }
     function receiptEndpoint(jobId) { return `/agent/receipts/${encodeURIComponent(jobId)}.json`; }
+    function verifierQrEndpoint(jobId) { return `/agent/qr/verify/${encodeURIComponent(jobId)}.svg`; }
 
     function updateLinks(jobId) {
       rawLink.href = jobId ? endpoint(jobId) : "#";
       receiptLink.href = jobId ? receiptEndpoint(jobId) : "#";
+      const qrImage = document.getElementById("verifierQrImage");
+      const qrLink = document.getElementById("verifierQrLink");
+      const qrEmpty = document.getElementById("verifierQrEmpty");
+      if (jobId) {
+        const qrUrl = verifierQrEndpoint(jobId);
+        if (qrImage) { qrImage.src = qrUrl; qrImage.classList.remove("hidden"); }
+        if (qrLink) qrLink.href = qrUrl;
+        if (qrEmpty) qrEmpty.classList.add("hidden");
+      } else {
+        if (qrImage) { qrImage.removeAttribute("src"); qrImage.classList.add("hidden"); }
+        if (qrLink) qrLink.href = "#";
+        if (qrEmpty) qrEmpty.classList.remove("hidden");
+      }
     }
 
     function setState(label, tone, text) {
