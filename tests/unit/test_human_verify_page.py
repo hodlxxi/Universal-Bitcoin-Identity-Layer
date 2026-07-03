@@ -52,6 +52,14 @@ def test_public_human_verify_page_renders_contract():
         "attestations_url",
         "reputation_url",
         "chain_health_url",
+        "QR links may open this verifier page",
+        "QR is discovery/transport only",
+        "verifier checks the receipt",
+        "QR does not replace receipt verification",
+        "not proof of payment by itself",
+        "not proof of identity",
+        "not proof of consent",
+        "not proof of authority",
     ]:
         assert marker in text
 

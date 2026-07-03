@@ -46,6 +46,12 @@ def test_receipt_verification_doc_exists_and_covers_external_contract():
         "not_found",
         "does not prove locked capital",
         "does not prove legal identity",
+        "QR verification affordance",
+        "QR can carry the verifier URL",
+        "QR does not replace receipt verification",
+        "/agent/verify/<job_id> remains the verification authority",
+        "signed receipt remains the proof artifact",
+        "discovery/transport only",
     ]
     for term in required_terms:
         assert term in doc

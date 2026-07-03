@@ -368,6 +368,14 @@
           <button type="button" id="verifyButton" onclick="verifyJob()" disabled>Verify again</button>
           <a class="btn disabled" id="receiptDownloadLink" href="#" aria-disabled="true" download>Download receipt JSON</a>
         </div>
+        <div class="card warning" aria-label="Receipt QR verification affordance">
+          <h2>QR-ready receipt verifier link</h2>
+          <p>QR opens the public verifier for this job.</p>
+          <p>The QR code is not the proof. The signed receipt and verifier response are the proof.</p>
+          <p>A QR code can carry this verifier URL; the deterministic QR image endpoint will be added separately.</p>
+          <p>Verifier URL: <a id="receiptVerifierLink" href="/agent/verify">/agent/verify</a></p>
+          <p>QR is discovery/transport only: not proof of payment by itself, not proof of identity, not proof of consent, not proof of authority, not proof of moral trustworthiness, not custody, not KYC, not global consensus, and not an investment signal.</p>
+        </div>
         <details>
           <summary>Show raw verification response</summary>
           <pre id="verifyResponse">After the receipt is issued, verify the signed receipt.</pre>
@@ -621,7 +629,20 @@
       }
     }
 
+    function verifierUrl(jobId) {
+      return jobId ? `/agent/verify/${encodeURIComponent(jobId)}` : "/agent/verify";
+    }
+
+    function updateReceiptVerifierLink() {
+      const link = document.getElementById("receiptVerifierLink");
+      if (!link) return;
+      const url = verifierUrl(currentJobId);
+      link.href = url;
+      link.textContent = url;
+    }
+
     function setReceiptDownloadEnabled(enabled) {
+      updateReceiptVerifierLink();
       const link = document.getElementById("receiptDownloadLink");
       if (!link) return;
       if (enabled && currentJobId) {
@@ -726,6 +747,7 @@
       }
 
       currentJobId = data.job_id;
+      updateReceiptVerifierLink();
       setText("jobId", currentJobId || "missing");
       setText("proofJobId", currentJobId || "missing");
       setText("proofRequester", signerPubkey);
@@ -938,6 +960,7 @@
     function resetDemo() {
       clearPolling();
       currentJobId = null;
+      updateReceiptVerifierLink();
       currentInvoice = null;
       verificationStarted = false;
       showRequesterError("");
