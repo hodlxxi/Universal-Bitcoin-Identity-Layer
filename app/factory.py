@@ -102,6 +102,15 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
         raise ValueError(f"JWT_ALGORITHM must be RS256; got {jwt_algorithm or 'unset'}")
     app.config["JWT_ALGORITHM"] = "RS256"
 
+    try:
+        from app.auth_api_core import requester_proof_storage_worker_warning
+
+        requester_proof_warning = requester_proof_storage_worker_warning()
+        if requester_proof_warning:
+            logger.warning(requester_proof_warning)
+    except Exception:
+        logger.exception("Failed to inspect Human Proof requester proof storage mode")
+
     # Set Flask secret key (required for sessions)
     app.secret_key = cfg["FLASK_SECRET_KEY"]
 

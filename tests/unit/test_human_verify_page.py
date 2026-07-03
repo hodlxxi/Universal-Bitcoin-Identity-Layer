@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from app.factory import create_app
 
 
@@ -62,3 +64,13 @@ def test_human_demo_links_to_public_verify_page():
     assert response.status_code == 200
     assert "Verify an existing receipt" in text
     assert 'href="/agent/verify"' in text
+
+
+def test_public_human_verify_page_uses_receipt_v1_requester_proof_fields():
+    template = Path("app/templates/agent/verify.html").read_text()
+
+    assert "requester proof verified" in template
+    assert "requester proof method" in template
+    assert "receipt.requester_proof.verified" in template
+    assert "receipt.requester_proof.method" in template
+    assert "requester_proof.status" not in template
