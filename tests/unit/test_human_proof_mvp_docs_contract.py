@@ -79,3 +79,15 @@ def test_human_proof_mvp_runbook_includes_required_sections():
     ]
     for section in required_sections:
         assert f"## {section}" in runbook
+
+
+def test_human_proof_mvp_runbook_links_safe_smoke_script():
+    runbook = RUNBOOK_DOC.read_text(encoding="utf-8")
+    for marker in [
+        "scripts/smoke_human_proof_public_surfaces.sh",
+        "BASE_URL=https://staging.hodlxxi.com",
+        "BASE_URL=https://hodlxxi.com",
+        "read-only",
+        "does not create jobs, invoices, payments, or database mutations",
+    ]:
+        assert marker in runbook
