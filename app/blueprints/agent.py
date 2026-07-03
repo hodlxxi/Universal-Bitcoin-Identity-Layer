@@ -226,7 +226,6 @@ def _agent_endpoints() -> dict:
         "nostr_dm_policy": "/.well-known/nostr-dm-policy.json",
         "job": "/agent/jobs/<job_id>",
         "verify": "/agent/verify/<job_id>",
-        "verify_qr_svg": "/agent/qr/verify/<job_id>.svg",
         "receipt_json": "/agent/receipts/<job_id>.json",
         "attestations": "/agent/attestations",
         "trust_events": "/agent/trust/events",
