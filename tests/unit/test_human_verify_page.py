@@ -37,6 +37,21 @@ def test_public_human_verify_page_renders_contract():
         "receipt download URL",
         "requester proof verified",
         "requester proof method",
+        "/agent/attestations",
+        "/agent/reputation",
+        "/agent/chain/health",
+        "factual runtime surfaces",
+        "not human trust scores",
+        "not a human trust score",
+        "local append-only continuity",
+        "not global consensus",
+        "not authority",
+        "not consent",
+        "not an investment signal",
+        "not token ownership",
+        "attestations_url",
+        "reputation_url",
+        "chain_health_url",
     ]:
         assert marker in text
 
@@ -73,4 +88,7 @@ def test_public_human_verify_page_uses_receipt_v1_requester_proof_fields():
     assert "requester proof method" in template
     assert "receipt.requester_proof.verified" in template
     assert "receipt.requester_proof.method" in template
+    assert "receipt.attestations_url" in template
+    assert "receipt.reputation_url" in template
+    assert "receipt.chain_health_url" in template
     assert "requester_proof.status" not in template
