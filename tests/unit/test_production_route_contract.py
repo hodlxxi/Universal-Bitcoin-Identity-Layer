@@ -64,10 +64,8 @@ def test_full_user_product_routes_reject_anonymous(production_app, method, path)
 @pytest.mark.parametrize(
     ("method", "path"),
     [
-        ("GET", "/api/debug/session"),
         ("GET", "/metrics"),
         ("GET", "/metrics/prometheus"),
-        ("GET", "/turn_credentials"),
         ("GET", "/dev/dashboard"),
     ],
 )

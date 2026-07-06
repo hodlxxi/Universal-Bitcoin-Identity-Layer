@@ -4157,11 +4157,10 @@ def register_browser_routes(
                 ? normalized
                 : [{ urls: "stun:stun.l.google.com:19302" }];
             } catch (e) {
-              console.error("❌ getIceServers failed", e);
+              console.error("❌ getIceServers failed");
               iceServersCache = [{ urls: "stun:stun.l.google.com:19302" }];
             }
 
-            console.log("🧊 ICE servers normalized:", iceServersCache);
             return iceServersCache;
           }
 
@@ -4276,15 +4275,29 @@ def register_browser_routes(
             localStream?.getTracks().forEach(track => pc.addTrack(track, localStream));
 
             peerConnections[remotePk] = pc;
-            // Flush ICE that arrived before the remote description/PC existed.
-            const queued = pendingIceCandidates[remotePk] || [];
-            if (queued.length){
-              for (const c of queued){
-                try{ await pc.addIceCandidate(new RTCIceCandidate(c)); }catch{}
-              }
-              delete pendingIceCandidates[remotePk];
-            }
             return pc;
+          }
+
+          function queueIceCandidate(remotePk, candidate){
+            if (!remotePk || !candidate) return;
+            pendingIceCandidates[remotePk] = pendingIceCandidates[remotePk] || [];
+            pendingIceCandidates[remotePk].push(candidate);
+            console.debug("Queued ICE until remote description is ready");
+          }
+
+          async function flushPendingIce(remotePk){
+            const pc = peerConnections[remotePk];
+            if (!pc || !pc.remoteDescription) return;
+            const queued = pendingIceCandidates[remotePk] || [];
+            if (!queued.length) return;
+            delete pendingIceCandidates[remotePk];
+            for (const candidate of queued){
+              try{
+                await pc.addIceCandidate(new RTCIceCandidate(candidate));
+              } catch (e){
+                console.warn("Failed to apply queued ICE candidate");
+              }
+            }
           }
 
           function closePC(remotePk){
@@ -4368,7 +4381,7 @@ def register_browser_routes(
                 await pc.setLocalDescription(offer);
                 socket.emit("rtc:signal", { room_id: currentRoomId, to: remotePk, type: "offer", payload: offer });
               } catch (e) {
-                console.error("❌ handleRoomPeers/createOffer failed", e);
+                console.error("❌ handleRoomPeers/createOffer failed");
               }
             }
           }
@@ -4383,11 +4396,12 @@ def register_browser_routes(
               if (data.type === "offer"){
                 let pc = peerConnections[remotePk];
                 if (pc && pc.signalingState !== "stable") {
-                  console.warn("Ignoring glare/duplicate offer in state", pc.signalingState, remotePk);
+                  console.warn("Ignoring glare/duplicate offer in state", pc.signalingState);
                   return;
                 }
                 if (!pc) pc = await createPC(remotePk);
                 await pc.setRemoteDescription(new RTCSessionDescription(data.payload));
+                await flushPendingIce(remotePk);
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 socket.emit("rtc:signal", { room_id: currentRoomId, to: remotePk, type: "answer", payload: answer });
@@ -4395,23 +4409,23 @@ def register_browser_routes(
                 const pc = peerConnections[remotePk];
                 if (!pc) return;
                 if (pc.signalingState !== "have-local-offer") {
-                  console.warn("Ignoring unexpected answer in state", pc.signalingState, remotePk);
+                  console.warn("Ignoring unexpected answer in state", pc.signalingState);
                   return;
                 }
                 await pc.setRemoteDescription(new RTCSessionDescription(data.payload));
+                await flushPendingIce(remotePk);
               } else if (data.type === "ice"){
                 const pc = peerConnections[remotePk];
                 if (data.payload){
-                  if (pc){
-                    await pc.addIceCandidate(new RTCIceCandidate(data.payload));
+                  if (!pc || !pc.remoteDescription){
+                    queueIceCandidate(remotePk, data.payload);
                   } else {
-                    pendingIceCandidates[remotePk] = pendingIceCandidates[remotePk] || [];
-                    pendingIceCandidates[remotePk].push(data.payload);
+                    await pc.addIceCandidate(new RTCIceCandidate(data.payload));
                   }
                 }
               }
             } catch (e) {
-              console.error("❌ handleSignal failed", e);
+              console.error("❌ handleSignal failed");
             }
           }
 
@@ -4427,7 +4441,7 @@ def register_browser_routes(
               await pc.setLocalDescription(offer);
               socket.emit("rtc:signal", { room_id: currentRoomId, to: remotePk, type: "offer", payload: offer });
             } catch (e) {
-              console.error("❌ handlePeerJoined failed", e);
+              console.error("❌ handlePeerJoined failed");
             }
           }
 

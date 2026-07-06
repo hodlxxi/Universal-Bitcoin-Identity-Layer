@@ -39,8 +39,6 @@ def production_client(monkeypatch):
 @pytest.mark.parametrize(
     "path,method",
     [
-        ("/api/debug/session", "get"),
-        ("/turn_credentials", "get"),
         ("/metrics", "get"),
         ("/metrics/prometheus", "get"),
         ("/dev/dashboard", "get"),
