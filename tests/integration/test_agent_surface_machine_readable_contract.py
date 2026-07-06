@@ -123,6 +123,9 @@ def test_public_surfaces_do_not_expose_secret_like_fields(client):
         "/agent/chain/health",
         "/agent/skills",
         "/agent/marketplace/listing",
+        "/agent/delegations",
+        "/agent/delegations/schema",
+        "/.well-known/agent-delegation.json",
     ]
     found: set[str] = set()
     for route in surfaces:
@@ -132,11 +135,16 @@ def test_public_surfaces_do_not_expose_secret_like_fields(client):
     assert not found, f"secret-like keys leaked in public surfaces: {sorted(found)}"
 
 
-def test_capabilities_do_not_advertise_qr_or_delegation_runtime_endpoints(client):
+def test_capabilities_advertise_delegations_but_not_qr_policy_or_actions(client):
     body = client.get("/agent/capabilities").get_json()
     serialized = str(body).lower()
 
     assert "/qr/" not in serialized
-    assert "/.well-known/agent-delegation.json" not in serialized
-    assert "/agent/delegations" not in serialized
+    assert body["endpoints"]["delegations"] == "/agent/delegations"
+    assert body["endpoints"]["well_known_delegation"] == "/.well-known/agent-delegation.json"
     assert "/agent/policy" not in serialized
+    assert "/agent/actions" not in serialized
+    assert "unrestricted shell access" not in serialized
+    assert "unrestricted_shell_access" not in serialized
+    assert "unrestricted wallet authority" not in serialized
+    assert "unrestricted_wallet_authority" not in serialized
