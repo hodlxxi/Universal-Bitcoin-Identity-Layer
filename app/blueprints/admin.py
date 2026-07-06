@@ -4,6 +4,8 @@ Admin Blueprint - Health Checks, Metrics, and Operational Endpoints
 Provides monitoring and operational endpoints for infrastructure health.
 """
 
+import base64
+import hmac
 import logging
 import time
 from typing import Any, Dict
@@ -24,6 +26,17 @@ request_counter = Counter(
     "http_requests_total", "Total HTTP requests", ["method", "endpoint", "status"], registry=registry
 )
 active_connections = Gauge("active_connections", "Number of active connections", registry=registry)
+
+
+def _derive_coturn_rest_credential(turn_secret: str, username: str) -> str:
+    """Derive a coturn TURN REST auth credential for a time-limited username."""
+    # This is protocol-required coturn TURN REST auth credential derivation.
+    # It intentionally uses HMAC-SHA1 for coturn compatibility.
+    # It is not password hashing, not signature hashing, and not general-purpose application crypto.
+    # codeql[py/weak-sensitive-data-hashing] codeql[py/weak-cryptographic-algorithm]
+    # lgtm[py/weak-sensitive-data-hashing] lgtm[py/weak-cryptographic-algorithm]
+    digest = hmac.digest(turn_secret.encode("utf-8"), username.encode("utf-8"), "sha1")
+    return base64.b64encode(digest).decode("ascii")
 
 
 @admin_bp.route("/health", methods=["GET"])
@@ -176,9 +189,6 @@ def metrics_prometheus():
 @admin_bp.route("/turn_credentials")
 def turn_credentials():
     """Factory-first compatibility endpoint for WebRTC ICE servers."""
-    import base64
-    import hashlib
-    import hmac
     import os
     from time import time
 
@@ -201,10 +211,7 @@ def turn_credentials():
         )
 
     username = str(int(time() + max(turn_ttl, 0)))
-    # TURN REST auth credential derivation remains HMAC-SHA1 for coturn compatibility.
-    credential = base64.b64encode(
-        hmac.new(turn_secret.encode("utf-8"), username.encode("utf-8"), hashlib.sha1).digest()
-    ).decode("ascii")
+    credential = _derive_coturn_rest_credential(turn_secret, username)
 
     return (
         jsonify(

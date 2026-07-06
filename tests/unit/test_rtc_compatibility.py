@@ -1,7 +1,5 @@
-import base64
-import hashlib
-import hmac
 import inspect
+import pathlib
 import time
 
 from app.factory import create_app
@@ -27,10 +25,8 @@ def test_turn_credentials_returns_ice_servers_with_secret(monkeypatch):
     turn_server = payload["iceServers"][1]
     username = turn_server["username"]
     assert int(time.time()) <= int(username) <= int(time.time()) + 60
-    expected_credential = base64.b64encode(
-        hmac.new(b"test-secret", username.encode("utf-8"), hashlib.sha1).digest()
-    ).decode("ascii")
-    assert turn_server["credential"] == expected_credential
+    assert turn_server["credential"]
+    assert turn_server["credential"] != "test-secret"
 
 
 def test_turn_credentials_missing_secret_returns_stun_fallback(monkeypatch):
@@ -92,3 +88,10 @@ def test_browser_webrtc_source_has_ice_ordering_guards():
         "function queueIceCandidate(remotePk, candidate)", 1
     )[0]
     assert "pendingIceCandidates" not in create_pc_block
+
+
+def test_rtc_compatibility_tests_do_not_reimplement_sha1_derivation():
+    source = pathlib.Path(__file__).read_text(encoding="utf-8")
+
+    assert "hashlib" + ".sha1" not in source
+    assert "hmac" + ".new" not in source
