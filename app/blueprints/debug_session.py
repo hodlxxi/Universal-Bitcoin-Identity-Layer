@@ -24,8 +24,6 @@ def api_debug_session():
         pubkey=pubkey,
         pubkey_tail=pubkey[-8:] if pubkey else "",
         access_level=access_level,
-        actor_type=access_level or ("guest" if pubkey else "anonymous"),
         guest_label=guest_label,
-        guestLabel=guest_label,
         login_method=login_method,
     )
