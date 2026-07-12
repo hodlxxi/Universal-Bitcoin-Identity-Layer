@@ -41,6 +41,7 @@ from app.services.trust_surface import (
     DEFAULT_COVENANT_ID,
     build_trust_report,
     build_trust_summary,
+    classify_job_outcomes,
     compute_report_hash,
     has_covenant_artifact,
     load_agent_binding,
@@ -1612,6 +1613,19 @@ def _validated_self_declared_requester_pubkey(value):
     return None
 
 
+def _requester_pubkey_format(value: object) -> str | None:
+    candidate = _validated_self_declared_requester_pubkey(value)
+    if candidate is None:
+        return None
+    if candidate.startswith("npub1"):
+        return "nostr_npub"
+    if len(candidate) == 64:
+        return "xonly_secp256k1"
+    if len(candidate) == 66 and candidate[:2] in {"02", "03"}:
+        return "compressed_secp256k1"
+    return None
+
+
 def _requester_pubkey_from_job(job: AgentJob):
     request_json = job.request_json if isinstance(job.request_json, dict) else {}
     payload = request_json.get("payload", {})
@@ -1681,6 +1695,9 @@ def _build_receipt(job: AgentJob, prev_event_hash: str | None) -> dict:
     requester_pubkey = _requester_pubkey_from_job(job)
     if requester_pubkey:
         receipt["requester_pubkey"] = requester_pubkey
+        requester_pubkey_format = _requester_pubkey_format(requester_pubkey)
+        if requester_pubkey_format:
+            receipt["requester_pubkey_format"] = requester_pubkey_format
         proof = job.request_json.get("requester_proof") if isinstance(job.request_json, dict) else None
         verified = False
         if isinstance(proof, dict) and proof.get("level") == "signature_verified" and proof.get("method") == "nostr":
@@ -1728,6 +1745,8 @@ def _event_attestation(event: AgentEvent, job: AgentJob | None) -> dict:
     }
     if "requester_pubkey" in raw:
         attestation["requester_pubkey"] = raw.get("requester_pubkey")
+    if "requester_pubkey_format" in raw:
+        attestation["requester_pubkey_format"] = raw.get("requester_pubkey_format")
     if "requester_pubkey_proof" in raw:
         attestation["requester_pubkey_proof"] = raw.get("requester_pubkey_proof")
     return attestation
@@ -2055,6 +2074,7 @@ def reputation():
         total_jobs = len(jobs)
         completed_jobs = sum(1 for j in jobs if j.status == "done")
         evidenced_job_ids = {event.job_id for event in events}
+        job_outcomes = classify_job_outcomes([job.status for job in jobs])
 
         counts_by_job_type: dict[str, int] = {}
         for j in jobs:
@@ -2096,6 +2116,8 @@ def reputation():
             {
                 "agent_pubkey": get_agent_pubkey_hex(),
                 "total_jobs": total_jobs,
+                "total_jobs_semantics": "all_persisted_job_requests",
+                "job_outcomes": job_outcomes,
                 "completed_jobs": completed_jobs,
                 "evidenced_completed_jobs": len(evidenced_job_ids),
                 "counts_by_job_type": counts_by_job_type,

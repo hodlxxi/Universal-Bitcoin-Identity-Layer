@@ -169,8 +169,8 @@ def _runtime_counts() -> tuple[int, int, int]:
     return total_jobs, completed_jobs, attestations_count
 
 
-def _job_outcome_metrics() -> dict[str, int]:
-    """Categorize job outcomes conservatively from persisted status fields."""
+def classify_job_outcomes(statuses: list[object]) -> dict[str, int]:
+    """Categorize persisted job statuses without implying execution failure."""
     metrics = {
         "completed_jobs": 0,
         "unpaid_or_expired_jobs": 0,
@@ -178,10 +178,9 @@ def _job_outcome_metrics() -> dict[str, int]:
         "expired_jobs": 0,
         "unclassified_jobs": 0,
     }
-    with session_scope() as session:
-        statuses = [str(row[0] or "").strip().lower() for row in session.query(AgentJob.status).all()]
 
-    for status in statuses:
+    for raw_status in statuses:
+        status = str(raw_status or "").strip().lower()
         if status == "done":
             metrics["completed_jobs"] += 1
         elif status in EXECUTION_FAILED_STATUSES:
@@ -189,12 +188,19 @@ def _job_outcome_metrics() -> dict[str, int]:
         elif status in EXPIRED_STATUSES:
             metrics["expired_jobs"] += 1
         elif status in INVOICE_PENDING_STATUSES:
-            # Honest fallback: persisted status does not always prove whether this is merely unpaid
-            # or already expired (without active invoice lookup here).
+            # Persisted state alone does not prove whether an invoice remains
+            # payable or has expired without a live payment-backend lookup.
             metrics["unpaid_or_expired_jobs"] += 1
         else:
             metrics["unclassified_jobs"] += 1
     return metrics
+
+
+def _job_outcome_metrics() -> dict[str, int]:
+    """Categorize job outcomes conservatively from persisted status fields."""
+    with session_scope() as session:
+        statuses = [row[0] for row in session.query(AgentJob.status).all()]
+    return classify_job_outcomes(statuses)
 
 
 def determine_trust_lane(*, covenant_backed: bool, completed_jobs: int, repeat_counterparty: bool = False) -> str:
