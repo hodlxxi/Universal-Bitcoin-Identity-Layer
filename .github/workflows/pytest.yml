@@ -24,6 +24,7 @@ jobs:
           python -m pip install --upgrade pip wheel setuptools
           python -m pip install -r requirements.txt
           python -m pip install pytest pytest-cov PyJWT
+          python -m pip install -e "packages/hodlxxi_mcp[test]"
 
       - name: Run tests
         env:
