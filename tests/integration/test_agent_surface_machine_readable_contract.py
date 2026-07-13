@@ -45,6 +45,46 @@ def test_capabilities_schema_required_top_level_keys_declared(client):
     assert {"agent_pubkey", "endpoints", "job_types", "signature", "version", "timestamp"}.issubset(required)
 
 
+def test_capabilities_schema_declares_mcp_contract(client):
+    schema = client.get("/agent/capabilities/schema").get_json()
+    mcp_schema = schema["properties"]["mcp"]
+    expected_required = {
+        "server_card",
+        "endpoint",
+        "transport",
+        "protocol_version",
+        "server_name",
+        "server_version",
+        "tool_count",
+        "enabled",
+        "access_mode",
+        "authentication",
+        "writes_enabled",
+        "payments_enabled",
+    }
+
+    assert "mcp" in schema["required"]
+    assert set(mcp_schema["required"]) == expected_required
+    assert set(mcp_schema["properties"]) == expected_required
+    assert mcp_schema["additionalProperties"] is False
+    assert mcp_schema["properties"]["authentication"]["required"] == ["type"]
+    assert mcp_schema["properties"]["authentication"]["additionalProperties"] is False
+
+
+def test_capabilities_payload_is_compatible_with_published_schema_contract(client):
+    payload = client.get("/agent/capabilities").get_json()
+    schema = client.get("/agent/capabilities/schema").get_json()
+
+    assert set(schema["required"]).issubset(payload)
+    assert not (set(payload) - set(schema["properties"]))
+
+    mcp = payload["mcp"]
+    mcp_schema = schema["properties"]["mcp"]
+    assert set(mcp_schema["required"]).issubset(mcp)
+    assert not (set(mcp) - set(mcp_schema["properties"]))
+    assert set(mcp["authentication"]) == set(mcp_schema["properties"]["authentication"]["properties"])
+
+
 def test_agent_discovery_shape_contract(client):
     body = client.get("/agent/discovery").get_json()
     assert body["schema"] == "hodlxxi.agent.discovery.v1"
