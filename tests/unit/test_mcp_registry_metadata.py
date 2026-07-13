@@ -19,10 +19,7 @@ def _metadata() -> dict[str, object]:
 def test_registry_metadata_matches_public_mcp_contract() -> None:
     metadata = _metadata()
 
-    assert (
-        metadata["$schema"]
-        == "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
-    )
+    assert metadata["$schema"] == "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
     assert metadata["name"] == "io.github.hodlxxi/hodlxxi-readonly"
     assert metadata["title"] == MCP_SERVER_NAME
     assert metadata["version"] == MCP_SERVER_VERSION
