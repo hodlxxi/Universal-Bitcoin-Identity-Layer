@@ -35,6 +35,7 @@ from app.services.agent_readiness_report import (
     load_self_readiness_report,
     save_self_readiness_report,
 )
+from app.services.mcp_discovery import mcp_contract
 from app.services.nostr_reports import configured_relays_from_env
 from app.services.trust_surface import (
     DEFAULT_AGENT_ID,
@@ -639,9 +640,11 @@ def _capabilities_schema_document() -> dict:
             "pricing",
             "job_types",
             "limits",
+            "messaging",
             "timestamp",
             "sig_scheme",
             "signature",
+            "mcp",
         ],
         "properties": {
             "agent_pubkey": {"type": "string"},
@@ -668,6 +671,7 @@ def _capabilities_schema_document() -> dict:
             "pricing": {"type": "object"},
             "job_types": {"type": "object"},
             "limits": {"type": "object"},
+            "messaging": {"type": "object"},
             "skills": {
                 "type": "object",
                 "required": ["count", "endpoint", "items"],
@@ -696,6 +700,43 @@ def _capabilities_schema_document() -> dict:
             "timestamp": {"type": "string", "format": "date-time"},
             "sig_scheme": {"type": "string"},
             "signature": {"type": "string"},
+            "mcp": {
+                "type": "object",
+                "required": [
+                    "server_card",
+                    "endpoint",
+                    "transport",
+                    "protocol_version",
+                    "server_name",
+                    "server_version",
+                    "tool_count",
+                    "enabled",
+                    "access_mode",
+                    "authentication",
+                    "writes_enabled",
+                    "payments_enabled",
+                ],
+                "properties": {
+                    "server_card": {"type": "string", "pattern": "^/"},
+                    "endpoint": {"type": "string", "pattern": "^/"},
+                    "transport": {"type": "string"},
+                    "protocol_version": {"type": "string"},
+                    "server_name": {"type": "string"},
+                    "server_version": {"type": "string"},
+                    "tool_count": {"type": "integer", "minimum": 0},
+                    "enabled": {"type": "boolean"},
+                    "access_mode": {"type": "string"},
+                    "authentication": {
+                        "type": "object",
+                        "required": ["type"],
+                        "properties": {"type": {"type": "string"}},
+                        "additionalProperties": False,
+                    },
+                    "writes_enabled": {"type": "boolean"},
+                    "payments_enabled": {"type": "boolean"},
+                },
+                "additionalProperties": False,
+            },
         },
         "additionalProperties": False,
     }
@@ -767,6 +808,7 @@ def _capabilities_payload() -> dict:
         },
         "timestamp": _iso_now(),
         "sig_scheme": "secp256k1",
+        "mcp": mcp_contract(current_app.config),
     }
     payload["signature"] = sign_message(canonical_json_bytes(payload))
     return payload
@@ -795,6 +837,7 @@ def _agent_identity_document() -> dict:
         "endpoints": endpoints,
         "skills": skills,
         "trust_model": _trust_model_document(),
+        "mcp": capabilities["mcp"],
         "discovery": {
             "well_known_agent": endpoints["well_known"],
             "capabilities": endpoints["capabilities"],
@@ -937,6 +980,7 @@ def agent_discovery():
         "agent_pubkey": get_agent_pubkey_hex(),
         "service_name": "HODLXXI Agent UBID",
         "network": "bitcoin",
+        "mcp": mcp_contract(current_app.config),
         "discovery": {
             "well_known_agent": endpoints["well_known"],
             "capabilities": endpoints["capabilities"],

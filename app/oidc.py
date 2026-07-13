@@ -11,6 +11,7 @@ from flask import Blueprint, Response, current_app, jsonify, request
 
 from .config import get_config
 from .jwks import load_jwks_document
+from .services.mcp_discovery import mcp_server_card
 
 oidc_bp = Blueprint("oidc", __name__)
 
@@ -182,17 +183,22 @@ def _agent_skill_docs(base: str) -> dict[str, str]:
     return {
         "mcp-server-card": (
             "# HODLXXI MCP Server Card\n\n"
-            "HODLXXI publishes a discovery-only MCP Server Card for agent readiness.\n\n"
+            "HODLXXI publishes a discovery contract for the dedicated read-only MCP sidecar. "
+            "The sidecar exposes 26 fixed read-only tools; the Flask monolith does not execute them.\n\n"
             "Discovery:\n"
             f"- `{base}/.well-known/mcp/server-card.json`\n"
             f"- `{base}/.well-known/mcp.json`\n"
             f"- `{base}/.well-known/mcp/server-cards.json`\n\n"
             "Transport endpoint:\n"
             f"- `{base}/agent/mcp`\n\n"
+            "Availability and routing:\n"
+            "- Public transport is disabled by default.\n"
+            "- `HODLXXI_MCP_PUBLIC_ENABLED` controls whether discovery marks the sidecar available.\n"
+            "- nginx separately controls whether `/agent/mcp` is actually routed to the sidecar.\n"
+            "- The Flask `/agent/mcp` route remains a fail-closed 501 fallback before and after Stage 10.\n\n"
             "Safety:\n"
-            "- The MCP transport endpoint is a disabled-by-default stub.\n"
-            "- No tool execution is enabled.\n"
-            "- No NIP-17/NIP-59 send, intake, or relay publishing is enabled.\n"
+            "- The sidecar is read-only and exposes no writes, payments, wallet, LND, shell, database, private-key, or arbitrary-URL access.\n"
+            "- No NIP-17/NIP-59 send, intake, or relay publishing is enabled by this discovery contract.\n"
         ),
         "agent-skills": (
             "# HODLXXI Agent Skills Discovery\n\n"
@@ -231,44 +237,7 @@ def _agent_skill_docs(base: str) -> dict[str, str]:
 @oidc_bp.get("/.well-known/mcp/server-cards.json")
 @oidc_bp.get("/.well-known/mcp.json")
 def mcp_server_card_metadata():
-    base = _public_base_url()
-    response = {
-        "$schema": "https://modelcontextprotocol.io/schemas/server-card.v1.json",
-        "serverInfo": {"name": "HODLXXI", "version": "2.2"},
-        "name": "HODLXXI",
-        "version": "2.2",
-        "description": (
-            "Bitcoin-native identity and agent runtime discovery surface. "
-            "MCP transport is advertised for discovery only and remains disabled."
-        ),
-        "protocolVersion": "2025-06-18",
-        "endpoint": f"{base}/agent/mcp",
-        "transport": {
-            "type": "streamable_http",
-            "url": f"{base}/agent/mcp",
-            "endpoint": f"{base}/agent/mcp",
-        },
-        "transports": [
-            {
-                "type": "streamable_http",
-                "url": f"{base}/agent/mcp",
-                "endpoint": f"{base}/agent/mcp",
-            }
-        ],
-        "capabilities": {
-            "tools": {"listChanged": False},
-            "resources": {},
-            "prompts": {},
-        },
-        "authentication": {
-            "type": "oauth2",
-            "authorization_server": f"{base}/.well-known/oauth-authorization-server",
-            "protected_resource": f"{base}/.well-known/oauth-protected-resource",
-        },
-        "documentation": f"{base}/docs",
-        "status": f"{base}/api/public/status",
-    }
-    return jsonify(response)
+    return jsonify(mcp_server_card(_public_base_url(), current_app.config))
 
 
 @oidc_bp.post("/agent/mcp")
@@ -276,7 +245,10 @@ def agent_mcp_transport_stub():
     response = {
         "error": "not_implemented",
         "error_description": (
-            "MCP transport is advertised for discovery but disabled until " "the operator enables MCP tool execution."
+            "The Flask monolith does not execute MCP tools. The dedicated "
+            "read-only MCP sidecar is exposed only through a separately "
+            "controlled reverse proxy when HODLXXI_MCP_PUBLIC_ENABLED is "
+            "explicitly true."
         ),
         "enabled": False,
     }

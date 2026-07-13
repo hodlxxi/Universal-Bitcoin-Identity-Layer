@@ -20,13 +20,13 @@ def test_mcp_server_card_is_available(client):
 
         assert response.status_code == 200
         assert response.content_type.startswith("application/json")
-        assert data["serverInfo"]["name"] == "HODLXXI"
+        assert data["serverInfo"]["name"] == "HODLXXI Read-Only"
         assert data["serverInfo"]["version"]
         assert data["endpoint"].endswith("/agent/mcp")
         assert data["transport"]["endpoint"].endswith("/agent/mcp")
         assert data["transports"][0]["endpoint"].endswith("/agent/mcp")
         assert "capabilities" in data
-        assert data["authentication"]["type"] == "oauth2"
+        assert data["authentication"]["type"] == "none"
 
 
 def test_mcp_transport_endpoint_is_safe_disabled_stub(client):
@@ -70,3 +70,15 @@ def test_unknown_agent_skill_document_returns_404(client):
 
     assert response.status_code == 404
     assert response.content_type.startswith("application/json")
+
+
+def test_mcp_server_card_skill_text_describes_sidecar_rollout(client):
+    response = client.get("/.well-known/agent-skills/mcp-server-card/SKILL.md")
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "26 fixed read-only tools" in body
+    assert "Public transport is disabled by default" in body
+    assert "HODLXXI_MCP_PUBLIC_ENABLED" in body
+    assert "nginx separately controls" in body
+    assert "fail-closed 501 fallback" in body
