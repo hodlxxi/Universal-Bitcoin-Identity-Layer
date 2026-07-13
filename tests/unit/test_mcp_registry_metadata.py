@@ -8,7 +8,6 @@ from app.services.mcp_discovery import (
     MCP_TRANSPORT_TYPE,
 )
 
-
 ROOT = Path(__file__).resolve().parents[2]
 SERVER_JSON = ROOT / "server.json"
 
