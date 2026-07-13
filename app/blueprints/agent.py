@@ -220,6 +220,9 @@ def _agent_endpoints() -> dict:
         "well_known": "/.well-known/agent.json",
         "capabilities": "/agent/capabilities",
         "capabilities_schema": "/agent/capabilities/schema",
+        "delegations": "/agent/delegations",
+        "delegations_schema": "/agent/delegations/schema",
+        "well_known_delegation": "/.well-known/agent-delegation.json",
         "operator_continuity": OPERATOR_CONTINUITY_ENDPOINT,
         "readiness_self_scan": "/agent/readiness/self-scan",
         "request": "/agent/request",
@@ -668,6 +671,17 @@ def _capabilities_schema_document() -> dict:
             "pricing": {"type": "object"},
             "job_types": {"type": "object"},
             "limits": {"type": "object"},
+            "delegations": {
+                "type": "object",
+                "required": ["schema", "endpoint", "schema_endpoint", "well_known", "status"],
+                "properties": {
+                    "schema": {"const": "hodlxxi.agent.delegations.v1"},
+                    "endpoint": {"type": "string", "pattern": "^/"},
+                    "schema_endpoint": {"type": "string", "pattern": "^/"},
+                    "well_known": {"type": "string", "pattern": "^/"},
+                    "status": {"type": "string"},
+                },
+            },
             "skills": {
                 "type": "object",
                 "required": ["count", "endpoint", "items"],
@@ -699,6 +713,145 @@ def _capabilities_schema_document() -> dict:
         },
         "additionalProperties": False,
     }
+
+
+def _delegations_schema_document() -> dict:
+    endpoints = _agent_endpoints()
+    base = _public_document_base()
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": f"{base}{endpoints['delegations_schema']}",
+        "title": "HODLXXI Agent Delegations v1",
+        "description": "Read-only schema for the signed HODLXXI delegated identity runtime declaration.",
+        "type": "object",
+        "required": [
+            "schema",
+            "version",
+            "service",
+            "operator",
+            "agent",
+            "delegation_model",
+            "current_delegations",
+            "supported_future_delegation_types",
+            "planned_scopes",
+            "non_goals",
+            "next_surfaces",
+            "timestamp",
+            "sig_scheme",
+            "signature",
+        ],
+        "properties": {
+            "schema": {"const": "hodlxxi.agent.delegations.v1"},
+            "version": {"type": "string"},
+            "service": {"type": "string"},
+            "operator": {"type": "object"},
+            "agent": {"type": "object"},
+            "delegation_model": {"type": "object"},
+            "current_delegations": {"type": "array", "items": {"type": "object"}},
+            "supported_future_delegation_types": {"type": "array", "items": {"type": "object"}},
+            "planned_scopes": {"type": "array", "items": {"type": "string"}},
+            "non_goals": {"type": "array", "items": {"type": "string"}},
+            "next_surfaces": {"type": "object"},
+            "timestamp": {"type": "string", "format": "date-time"},
+            "sig_scheme": {"type": "string"},
+            "signature": {"type": "string"},
+        },
+        "additionalProperties": False,
+    }
+
+
+def _delegations_payload() -> dict:
+    endpoints = _agent_endpoints()
+    agent_pubkey = get_agent_pubkey_hex()
+    payload = {
+        "schema": "hodlxxi.agent.delegations.v1",
+        "version": "1.0",
+        "service": "HODLXXI Agent UBID",
+        "operator": {
+            "operator_id": OPERATOR_ID,
+            "operator_pubkey": OPERATOR_PUBKEY,
+            "continuity_endpoint": OPERATOR_CONTINUITY_ENDPOINT,
+        },
+        "agent": {
+            "agent_pubkey": agent_pubkey,
+            "capabilities_endpoint": endpoints["capabilities"],
+            "discovery_endpoint": endpoints["discovery"],
+        },
+        "delegation_model": {
+            "status": "descriptive_read_only_v1",
+            "summary": "Delegations are published as signed runtime declarations. This v1 surface defines the authority model but does not grant mutation authority.",
+            "authority_flow": [
+                "operator_identity_declares_runtime_agent",
+                "runtime_agent_publishes_capabilities",
+                "requester_key_can_prove_control_for_human_proof_jobs",
+                "future_personal_agents_may_receive_limited_scopes",
+            ],
+        },
+        "current_delegations": [
+            {
+                "delegation_id": "operator-runtime-agent-v1",
+                "issuer": "operator",
+                "subject": "runtime_agent",
+                "subject_pubkey": agent_pubkey,
+                "status": "declared_by_runtime",
+                "proof_level": "runtime_signed_declaration",
+                "scopes": [
+                    "publish:capabilities",
+                    "issue:paid_job_receipts",
+                    "verify:receipts",
+                    "publish:trust_events",
+                ],
+                "limitations": [
+                    "does_not_prove_locked_capital",
+                    "does_not_grant_external_wallet_authority",
+                    "does_not_grant_production_mutation_authority",
+                ],
+            }
+        ],
+        "supported_future_delegation_types": [
+            {
+                "type": "human_requester_proof",
+                "description": "A requester key proves control for one Human Proof request using a signer challenge.",
+                "current_status": "supported_by_demo_flow",
+            },
+            {
+                "type": "personal_operator_agent",
+                "description": "A future personal agent may receive bounded authority from the operator.",
+                "current_status": "planned",
+            },
+            {
+                "type": "third_party_agent",
+                "description": "A third-party agent may receive a scoped, revocable delegation.",
+                "current_status": "planned",
+            },
+        ],
+        "planned_scopes": [
+            "runtime.read",
+            "job.request",
+            "receipt.verify",
+            "trust.read",
+            "nostr.draft",
+            "nostr.send_requires_approval",
+            "lightning.pay_limited_requires_policy",
+            "staging.inspect",
+            "staging.restart_requires_approval",
+            "prod.read",
+            "prod.mutate_requires_approval",
+        ],
+        "non_goals": [
+            "no_unrestricted_shell_access",
+            "no_unbounded_wallet_authority",
+            "no_automatic_production_mutation",
+            "no_claim_that_requester_key_is_legal_identity",
+            "no_claim_that_one_key_equals_one_human",
+            "no_custody",
+        ],
+        "next_surfaces": {"policy": "/agent/policy", "actions": "/agent/actions"},
+        "timestamp": _iso_now(),
+        "sig_scheme": "secp256k1",
+    }
+    payload["signature"] = sign_message(canonical_json_bytes(payload))
+    return payload
 
 
 def _operator_continuity_payload() -> dict:
@@ -760,6 +913,13 @@ def _capabilities_payload() -> dict:
         "job_types": JOB_REGISTRY,
         "limits": {"max_jobs_per_day": MAX_JOBS_PER_DAY},
         "messaging": {"nip17": get_nip17_metadata()},
+        "delegations": {
+            "schema": "hodlxxi.agent.delegations.v1",
+            "endpoint": endpoints["delegations"],
+            "schema_endpoint": endpoints["delegations_schema"],
+            "well_known": endpoints["well_known_delegation"],
+            "status": "descriptive_read_only_v1",
+        },
         "skills": {
             "count": len(skills),
             "endpoint": endpoints["skills"],
@@ -800,6 +960,9 @@ def _agent_identity_document() -> dict:
             "capabilities": endpoints["capabilities"],
             "capabilities_schema": endpoints["capabilities_schema"],
             "operator_continuity": endpoints["operator_continuity"],
+            "delegations": endpoints["delegations"],
+            "delegations_schema": endpoints["delegations_schema"],
+            "well_known_delegation": endpoints["well_known_delegation"],
             "skills": endpoints["skills"],
             "marketplace_listing": endpoints["marketplace_listing"],
         },
@@ -942,6 +1105,9 @@ def agent_discovery():
             "capabilities": endpoints["capabilities"],
             "capabilities_schema": endpoints["capabilities_schema"],
             "operator_continuity": endpoints["operator_continuity"],
+            "delegations": endpoints["delegations"],
+            "delegations_schema": endpoints["delegations_schema"],
+            "well_known_delegation": endpoints["well_known_delegation"],
             "skills": endpoints["skills"],
             "marketplace_listing": endpoints["marketplace_listing"],
             "nostr_announcement": endpoints["nostr_announcement"],
@@ -1058,6 +1224,21 @@ def nostr_announcement():
     }
     payload["signature"] = sign_message(canonical_json_bytes(payload))
     return jsonify(_sanitize_public_value(payload))
+
+
+@agent_bp.get("/agent/delegations")
+def agent_delegations():
+    return jsonify(_delegations_payload())
+
+
+@agent_bp.get("/agent/delegations/schema")
+def agent_delegations_schema():
+    return jsonify(_delegations_schema_document())
+
+
+@agent_bp.get("/.well-known/agent-delegation.json")
+def well_known_agent_delegation():
+    return jsonify(_delegations_payload())
 
 
 @agent_bp.get("/agent/capabilities")
