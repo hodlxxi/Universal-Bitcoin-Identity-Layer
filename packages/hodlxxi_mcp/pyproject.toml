@@ -21,6 +21,7 @@ test = [
 
 [project.scripts]
 hodlxxi-mcp = "hodlxxi_mcp.server:main"
+hodlxxi-mcp-http = "hodlxxi_mcp.http_server:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

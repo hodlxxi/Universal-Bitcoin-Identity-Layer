@@ -40,3 +40,13 @@ python -m hodlxxi_mcp
 ```
 
 For client configuration, point the MCP host at the virtual-environment executable and use stdio transport.
+
+## Run over localhost Streamable HTTP
+
+```bash
+hodlxxi-mcp-http
+```
+
+The endpoint is fixed at `http://127.0.0.1:8765/mcp`.
+
+The localhost transport is intentionally locked to loopback, stateless JSON responses, Host/Origin protection, and the existing 26 read-only tools. It does not create a public `/agent/mcp` route and does not modify nginx, systemd, the Flask runtime, the database, or payment behavior.
