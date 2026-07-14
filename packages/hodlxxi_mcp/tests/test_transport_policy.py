@@ -102,7 +102,7 @@ async def test_http_transport_policy_is_locked_down(
             "application/json, "
             "application/linkset+json"
         ),
-        "User-Agent": "hodlxxi-mcp/0.1.0",
+        "User-Agent": "hodlxxi-mcp/0.1.1",
     }
 
     assert request == {

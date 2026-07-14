@@ -62,7 +62,7 @@ def register_tools(mcp: FastMCP, client: HODLXXIReadOnlyClient) -> None:
 
     @mcp.tool
     async def hodlxxi_get_mcp_server_card() -> dict[str, Any]:
-        """Return the live MCP discovery server card. The advertised live /agent/mcp transport remains a separate disabled production stub."""
+        """Return the live MCP discovery server card for https://hodlxxi.com/agent/mcp, which nginx routes to the separate read-only sidecar rather than the Flask monolith."""
         return await client.get_json(Endpoint.MCP_SERVER_CARD)
 
     @mcp.tool

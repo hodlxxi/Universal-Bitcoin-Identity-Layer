@@ -126,7 +126,7 @@ async def test_streamable_http_protocol_round_trip() -> None:
                     )
 
                     assert initialization.serverInfo.name == ("HODLXXI Read-Only")
-                    assert initialization.serverInfo.version == "0.1.0"
+                    assert initialization.serverInfo.version == "0.1.1"
                     assert {tool.name for tool in tools.tools} == set(TOOL_NAMES)
                     assert len(tools.tools) == 26
                     assert getattr(result, "isError", False) is not True

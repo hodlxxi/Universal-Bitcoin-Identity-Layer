@@ -11,10 +11,12 @@ def build_server(client: HODLXXIReadOnlyClient | None = None) -> FastMCP:
     server = FastMCP(
         "HODLXXI Read-Only",
         version=__version__,
+        website_url="https://hodlxxi.com",
         instructions=(
             "Public, read-only access to the fixed HODLXXI machine-readable GET surface. "
             "No generic URL fetch, write operation, wallet access, environment access, "
-            "private-key access, payment action, or live /agent/mcp integration is provided."
+            "private-key access, payment action, or Flask-monolith tool execution is provided. "
+            "The live public endpoint is routed by nginx to this separate read-only sidecar."
         ),
         on_duplicate="error",
         strict_input_validation=True,

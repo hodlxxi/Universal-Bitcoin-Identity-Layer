@@ -23,6 +23,11 @@ def test_registry_metadata_matches_public_mcp_contract() -> None:
     assert metadata["name"] == "io.github.hodlxxi/hodlxxi-readonly"
     assert metadata["title"] == MCP_SERVER_NAME
     assert metadata["version"] == MCP_SERVER_VERSION
+
+    description = metadata["description"]
+    assert isinstance(description, str)
+    assert 1 <= len(description) <= 100
+
     assert metadata["websiteUrl"] == "https://hodlxxi.com"
     assert metadata["remotes"] == [
         {

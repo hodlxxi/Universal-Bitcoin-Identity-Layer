@@ -25,13 +25,19 @@ def _walk_for_secret_like_keys(value, found: set[str]) -> None:
             _walk_for_secret_like_keys(item, found)
 
 
-def test_well_known_contains_capabilities_endpoint(client):
+def test_well_known_contains_capabilities_and_mcp_endpoints(client):
     body = client.get("/.well-known/agent.json").get_json()
+    assert "mcp" in body
     assert body["endpoints"]["capabilities"] == "/agent/capabilities"
+    assert body["endpoints"]["mcp"] == "/agent/mcp"
+    assert body["endpoints"]["mcp_server_card"] == "/.well-known/mcp.json"
 
 
 def test_capabilities_shape_contract(client):
     body = client.get("/agent/capabilities").get_json()
+    assert "mcp" in body
+    assert body["endpoints"]["mcp"] == "/agent/mcp"
+    assert body["endpoints"]["mcp_server_card"] == "/.well-known/mcp.json"
     assert body["capability_schema"]["version"]
     assert isinstance(body["job_types"], dict)
     assert isinstance(body["endpoints"], dict)

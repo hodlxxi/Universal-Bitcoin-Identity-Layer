@@ -11,7 +11,7 @@ class ClientConfig:
     base_url: str = "https://hodlxxi.com"
     timeout_seconds: float = 10.0
     max_response_bytes: int = 2 * 1024 * 1024
-    user_agent: str = "hodlxxi-mcp/0.1.0"
+    user_agent: str = "hodlxxi-mcp/0.1.1"
 
     def __post_init__(self) -> None:
         parsed = urlsplit(self.base_url)
