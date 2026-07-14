@@ -9,7 +9,7 @@
     "source": "github",
     "subfolder": "packages/hodlxxi_mcp"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "remotes": [
     {
       "type": "streamable-http",

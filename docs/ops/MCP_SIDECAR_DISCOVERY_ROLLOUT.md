@@ -1,8 +1,8 @@
 # MCP Sidecar Discovery Rollout
 
-## Stage 9 — discovery contract merged, public transport disabled
+## Current production contract — public sidecar live
 
-This stage publishes truthful MCP discovery metadata for the dedicated read-only sidecar while keeping public transport disabled by default.
+The HODLXXI read-only MCP sidecar is live at `https://hodlxxi.com/agent/mcp`. nginx routes that public endpoint to the dedicated loopback sidecar separately from discovery metadata at `http://127.0.0.1:8765/mcp`; the Flask monolith publishes discovery metadata but does not execute MCP tools.
 
 - Flask publishes the server card aliases:
   - `/.well-known/mcp.json`
@@ -11,11 +11,13 @@ This stage publishes truthful MCP discovery metadata for the dedicated read-only
 - Flask also embeds the same bounded `mcp` contract in:
   - `/.well-known/agent.json`
   - `/agent/capabilities`
-- `HODLXXI_MCP_PUBLIC_ENABLED` defaults to `false`; only an explicit true value marks discovery as available.
-- The monolith `POST /agent/mcp` route remains a fail-closed `501` stub. It does not proxy to the sidecar and does not execute MCP tools.
+- `HODLXXI_MCP_PUBLIC_ENABLED` defaults to `false`; production explicitly sets it true so discovery marks the public read-only sidecar available. A new deployment without the flag remains fail closed.
+- The monolith `POST /agent/mcp` route remains a fail-closed `501` fallback. It does not proxy to the sidecar and does not execute MCP tools.
+- The sidecar does not receive Flask, database, wallet, LND, operator-key, or agent-key credentials.
+- Local stdio and localhost Streamable HTTP modes remain available for development and validation.
 
-## Stage 10 — route public transport to the sidecar
+## Historical rollout note
 
-After Stage 9 is deployed and verified, add nginx exact-location routing for `/agent/mcp` to the dedicated read-only sidecar. Then set `HODLXXI_MCP_PUBLIC_ENABLED=true` and restart or reload only the application process required for discovery metadata to reflect availability.
+Stage 9 originally published discovery while public transport was disabled, and Stage 10 routed public transport to the sidecar. Those stages are complete; do not treat the historical disabled-transport language as the current production contract.
 
-Do not couple this flag flip to payment, OAuth, wallet, LND, database, shell, private-key, arbitrary-URL, systemd, or MCP tool implementation changes.
+Do not couple MCP discovery metadata changes to payment, OAuth, wallet, LND, database, shell, private-key, arbitrary-URL, systemd, or MCP tool implementation changes.

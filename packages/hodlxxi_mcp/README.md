@@ -28,8 +28,8 @@ A compatible client can initialize a session, list exactly 26 tools, and call to
 - `hodlxxi_get_reputation`
 - `hodlxxi_get_attestations`
 - `hodlxxi_get_operator_continuity`
-- `hodlxxi_get_job_receipt`
-- `hodlxxi_get_verify_job`
+- `hodlxxi_get_receipt`
+- `hodlxxi_verify_receipt`
 
 The canonical MCP Registry metadata is stored at the repository root in `server.json` under the name `io.github.hodlxxi/hodlxxi-readonly`.
 

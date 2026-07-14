@@ -9,8 +9,8 @@ from app.feature_flags import config_flag
 
 MCP_PUBLIC_ENABLED_ENV = "HODLXXI_MCP_PUBLIC_ENABLED"
 MCP_SERVER_NAME = "HODLXXI Read-Only"
-MCP_SERVER_VERSION = "0.1.0"
-MCP_PROTOCOL_VERSION = "2025-06-18"
+MCP_SERVER_VERSION = "0.1.1"
+MCP_PROTOCOL_VERSION = "2025-11-25"
 MCP_TRANSPORT_TYPE = "streamable_http"
 MCP_ENDPOINT_PATH = "/agent/mcp"
 MCP_SERVER_CARD_PATH = "/.well-known/mcp.json"
@@ -19,9 +19,13 @@ MCP_ACCESS_MODE = "public_read_only"
 
 
 def mcp_public_enabled(config: Mapping[str, object] | None = None) -> bool:
-    """Return true only when the public MCP discovery gate is explicitly enabled."""
+    """Return true only when public MCP discovery is explicitly enabled."""
 
-    return config_flag(MCP_PUBLIC_ENABLED_ENV, config, default=False)
+    return config_flag(
+        MCP_PUBLIC_ENABLED_ENV,
+        config,
+        default=False,
+    )
 
 
 def public_base_url(base_url: str) -> str:

@@ -78,7 +78,7 @@ def test_mcp_server_card_skill_text_describes_sidecar_rollout(client):
 
     assert response.status_code == 200
     assert "26 fixed read-only tools" in body
-    assert "Public transport is disabled by default" in body
-    assert "HODLXXI_MCP_PUBLIC_ENABLED" in body
-    assert "nginx separately controls" in body
+    assert "live production endpoint" in body
+    assert "https://hodlxxi.com/agent/mcp" in body
+    assert "nginx routes" in body
     assert "fail-closed 501 fallback" in body

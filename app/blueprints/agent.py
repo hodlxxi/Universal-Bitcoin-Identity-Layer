@@ -221,6 +221,8 @@ def _agent_endpoints() -> dict:
         "well_known": "/.well-known/agent.json",
         "capabilities": "/agent/capabilities",
         "capabilities_schema": "/agent/capabilities/schema",
+        "mcp": "/agent/mcp",
+        "mcp_server_card": "/.well-known/mcp.json",
         "operator_continuity": OPERATOR_CONTINUITY_ENDPOINT,
         "readiness_self_scan": "/agent/readiness/self-scan",
         "request": "/agent/request",

@@ -14,9 +14,7 @@ class StubReadOnlyClient:
     """Deterministic upstream used by protocol tests."""
 
     def __init__(self) -> None:
-        self.calls: list[
-            tuple[Endpoint, dict[str, str], dict[str, int]]
-        ] = []
+        self.calls: list[tuple[Endpoint, dict[str, str], dict[str, int]]] = []
 
     async def get_json(
         self,
@@ -54,14 +52,20 @@ async def test_in_memory_mcp_protocol_round_trip() -> None:
 
         assert initialization is not None
         assert initialization.serverInfo.name == "HODLXXI Read-Only"
-        assert initialization.serverInfo.version == "0.1.0"
+        assert initialization.serverInfo.version == "0.1.1"
+        assert initialization.serverInfo.websiteUrl == "https://hodlxxi.com"
+        assert initialization.protocolVersion == "2025-11-25"
 
         await client.ping()
 
         tools = await client.list_tools()
+        resources = await client.list_resources()
+        prompts = await client.list_prompts()
         names = {tool.name for tool in tools}
 
         assert len(names) == 26
+        assert resources == []
+        assert prompts == []
         assert names == set(TOOL_NAMES)
 
         result = await client.call_tool(

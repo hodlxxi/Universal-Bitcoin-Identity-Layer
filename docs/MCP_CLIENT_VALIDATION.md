@@ -2,18 +2,24 @@
 
 Validated successfully over local stdio on 2026-07-12 and over the public remote production endpoint on 2026-07-13.
 
-## Build
+## Last externally validated production build
 
 - Repository: `hodlxxi/Universal-Bitcoin-Identity-Layer`
 - Production commit: `8d5281d49eb532187f32c81266b3beaff1069e9e`
-- Package: `hodlxxi-mcp` `0.1.0`
+- Package/server version: `hodlxxi-mcp` `0.1.0`
 - FastMCP: `3.4.4`
 - MCP Python SDK: `1.28.1`
-- Protocol revision: `2025-06-18`
+- Negotiated protocol version: `2025-11-25`
 - Tool count: `26`
 - Python: `3.12.13`
 - Public endpoint: `https://hodlxxi.com/agent/mcp`
 - Server card: `https://hodlxxi.com/.well-known/mcp.json`
+- Published Registry version: `0.1.0`
+- Pending release target: `0.1.1`
+
+## Pending release
+
+Version `0.1.1` aligns package and discovery metadata with the live protocol audit. It must be merged, deployed, and externally revalidated before this document records `0.1.1` as the last externally validated production build.
 
 ## Public deployment path
 
