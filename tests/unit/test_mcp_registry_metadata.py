@@ -18,17 +18,15 @@ def _metadata() -> dict[str, object]:
 
 def test_registry_metadata_matches_public_mcp_contract() -> None:
     metadata = _metadata()
+    description = metadata["description"]
 
     assert metadata["$schema"] == "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
     assert metadata["name"] == "io.github.hodlxxi/hodlxxi-readonly"
     assert metadata["title"] == MCP_SERVER_NAME
     assert metadata["version"] == MCP_SERVER_VERSION
-
-    description = metadata["description"]
+    assert metadata["websiteUrl"] == "https://hodlxxi.com"
     assert isinstance(description, str)
     assert 1 <= len(description) <= 100
-
-    assert metadata["websiteUrl"] == "https://hodlxxi.com"
     assert metadata["remotes"] == [
         {
             "type": MCP_TRANSPORT_TYPE.replace("_", "-"),
