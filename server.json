@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.hodlxxi/hodlxxi-readonly",
   "title": "HODLXXI Read-Only",
-  "description": "Public read-only MCP server for HODLXXI Bitcoin-native agent identity, capabilities, trust events, attestations, reputation, chain health, job verification, and operator continuity.",
+  "description": "Public read-only MCP server for HODLXXI agent identity, trust, receipts, and verification.",
   "websiteUrl": "https://hodlxxi.com",
   "repository": {
     "url": "https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer",
