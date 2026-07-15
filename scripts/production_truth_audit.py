@@ -958,6 +958,33 @@ def host_item(name: str, classification: str, summary: str, details: Mapping[str
     }
 
 
+def canonical_current_symlink_target(item: Mapping[str, Any] | None) -> str | None:
+    if not item or item.get("classification") != "direct":
+        return None
+    details = item.get("details", {})
+    path = str(details.get("path") or "")
+    target = str(details.get("target") or "")
+    if path != str(HOST_MCP_CURRENT_SYMLINK) or not target:
+        return None
+    return target
+
+
+def canonical_release_sha_from_item(item: Mapping[str, Any] | None, *, expected_target: str | None) -> str | None:
+    if not item or item.get("classification") not in {"direct", "inference"}:
+        return None
+    details = item.get("details", {})
+    target = str(details.get("target") or "")
+    release_sha = str(details.get("release_sha") or "")
+    if not target or not release_sha or not SHA_RE.fullmatch(release_sha):
+        return None
+    target_path = Path(target)
+    if target_path.parent != HOST_MCP_RELEASES_DIR or target_path.name != release_sha:
+        return None
+    if expected_target and target != expected_target:
+        return None
+    return release_sha
+
+
 def evaluate_host_check_verdict(
     *,
     items: Sequence[Mapping[str, Any]],
@@ -1006,6 +1033,27 @@ def evaluate_host_check_verdict(
     else:
         blocked_requirements.append("mcp_loopback_listener")
 
+    current_symlink_item = item_by_name.get("mcp_current_symlink")
+    current_symlink_target = canonical_current_symlink_target(current_symlink_item)
+    if current_symlink_target:
+        matched_invariants.append("mcp_current_symlink")
+        direct_invariant_count += 1
+    else:
+        blocked_requirements.append("mcp_current_symlink")
+
+    release_sha_item = item_by_name.get("mcp_release_sha")
+    observed_release_sha = canonical_release_sha_from_item(
+        release_sha_item,
+        expected_target=current_symlink_target,
+    )
+    if observed_release_sha and expected_repo_sha:
+        if observed_release_sha != expected_repo_sha:
+            mismatches.append(f"mcp_release_sha release_sha={observed_release_sha} expected={expected_repo_sha}")
+        else:
+            matched_invariants.append("mcp_release_sha")
+    else:
+        blocked_requirements.append("mcp_release_sha")
+
     version_item = item_by_name.get("mcp_sidecar_package_version")
     if version_item and version_item.get("classification") == "direct" and expected_mcp_version:
         observed_version = str((version_item.get("details") or {}).get("version") or "")
@@ -1042,6 +1090,8 @@ def evaluate_host_check_verdict(
         blocked_requirements.append("nginx_agent_mcp_route")
 
     complete_required_invariants = {f"systemd:{service}" for service in HOST_CHECK_SERVICES} | {
+        "mcp_current_symlink",
+        "mcp_release_sha",
         "mcp_loopback_listener",
         "mcp_sidecar_package_version",
         "flask_service_checkout",

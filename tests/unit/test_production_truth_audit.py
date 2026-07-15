@@ -75,6 +75,89 @@ def systemctl_show_command(service):
     return ("systemctl", "show", service, *[f"--property={item}" for item in audit.HOST_CHECK_PROPERTIES])
 
 
+def active_host_runner(expected_head):
+    return make_runner(
+        {
+            systemctl_show_command("hodlxxi.service"): result(stdout="ActiveState=active\nSubState=running\n"),
+            systemctl_show_command("hodlxxi-mcp.service"): result(stdout="ActiveState=active\nSubState=running\n"),
+            systemctl_show_command("nginx.service"): result(stdout="ActiveState=active\nSubState=running\n"),
+            ("git", "rev-parse", "HEAD"): result(stdout=f"{expected_head}\n"),
+        }
+    )
+
+
+def mock_sidecar_host_items(
+    *,
+    expected_head,
+    expected_version,
+    include_current_symlink=True,
+    include_release_sha=True,
+    release_sha=None,
+    release_target=None,
+    wildcard_listener=False,
+    include_nginx_route=True,
+):
+    observed_release_sha = release_sha or expected_head
+    observed_target = release_target or str(audit.HOST_MCP_RELEASES_DIR / observed_release_sha)
+
+    items = []
+    if include_current_symlink:
+        items.append(
+            audit.host_item(
+                "mcp_current_symlink",
+                "direct",
+                "Captured MCP current release symlink target.",
+                {"path": str(audit.HOST_MCP_CURRENT_SYMLINK), "target": observed_target},
+            )
+        )
+    if include_release_sha:
+        items.append(
+            audit.host_item(
+                "mcp_release_sha",
+                "inference",
+                "Derived MCP release SHA from current symlink target.",
+                {"target": observed_target, "release_sha": observed_release_sha},
+            )
+        )
+
+    items.extend(
+        [
+            audit.host_item(
+                "mcp_loopback_listener",
+                "direct",
+                "Collected bounded MCP loopback listener evidence.",
+                {
+                    "loopback_listener_detected": not wildcard_listener,
+                    "wildcard_listener_detected": wildcard_listener,
+                    "listener_lines": ["0.0.0.0:8765" if wildcard_listener else "127.0.0.1:8765"],
+                },
+            ),
+            audit.host_item(
+                "mcp_sidecar_package_version",
+                "direct",
+                "Read the sidecar virtualenv package version.",
+                {"version": expected_version},
+            ),
+            audit.host_item(
+                "flask_service_checkout",
+                "direct",
+                "Captured Flask service working directory, executable, and checkout SHA.",
+                {"checkout_sha": expected_head},
+            ),
+        ]
+    )
+    if include_nginx_route:
+        items.append(
+            audit.host_item(
+                "nginx_agent_mcp_route",
+                "direct",
+                "Collected bounded nginx /agent/mcp route evidence.",
+                {"matches": [{"snippets": ["/agent/mcp", "proxy_pass http://127.0.0.1:8765/mcp;"]}]},
+            )
+        )
+    return items
+
+
 def test_git_not_a_repository(tmp_path):
     runner = make_runner({("git", "rev-parse", "--show-toplevel"): result(returncode=128, stderr="fatal")})
 
@@ -764,7 +847,7 @@ def test_report_outputs_do_not_serialize_raw_public_payloads():
 
 
 def test_host_checks_one_successful_systemctl_call_does_not_auto_match(monkeypatch):
-    expected_head = "expected-head"
+    expected_head = "1" * 40
     runner = make_runner(
         {
             systemctl_show_command("hodlxxi.service"): result(stdout="ActiveState=active\nSubState=running\n"),
@@ -787,7 +870,7 @@ def test_host_checks_one_successful_systemctl_call_does_not_auto_match(monkeypat
 
 
 def test_host_checks_inactive_required_service_is_mismatch(monkeypatch):
-    expected_head = "expected-head"
+    expected_head = "1" * 40
     runner = make_runner(
         {
             systemctl_show_command("hodlxxi.service"): result(stdout="ActiveState=inactive\nSubState=dead\n"),
@@ -811,51 +894,19 @@ def test_host_checks_inactive_required_service_is_mismatch(monkeypatch):
 
 
 def test_host_checks_wildcard_listener_is_mismatch(monkeypatch):
-    expected_head = "expected-head"
+    expected_head = "1" * 40
     expected_version = real_source_details()["server_version"]
-    runner = make_runner(
-        {
-            systemctl_show_command("hodlxxi.service"): result(stdout="ActiveState=active\nSubState=running\n"),
-            systemctl_show_command("hodlxxi-mcp.service"): result(stdout="ActiveState=active\nSubState=running\n"),
-            systemctl_show_command("nginx.service"): result(stdout="ActiveState=active\nSubState=running\n"),
-            ("git", "rev-parse", "HEAD"): result(stdout=f"{expected_head}\n"),
-        }
-    )
+    runner = active_host_runner(expected_head)
     monkeypatch.setattr(audit.shutil, "which", lambda command: "/bin/systemctl" if command == "systemctl" else None)
     monkeypatch.setattr(audit, "load_canonical_contract", lambda *_: SimpleNamespace(server_version=expected_version))
     monkeypatch.setattr(
         audit,
         "collect_sidecar_host_items",
-        lambda **_: [
-            audit.host_item(
-                "mcp_loopback_listener",
-                "direct",
-                "Collected bounded MCP loopback listener evidence.",
-                {
-                    "loopback_listener_detected": False,
-                    "wildcard_listener_detected": True,
-                    "listener_lines": ["0.0.0.0:8765"],
-                },
-            ),
-            audit.host_item(
-                "mcp_sidecar_package_version",
-                "direct",
-                "Read the sidecar virtualenv package version.",
-                {"version": expected_version},
-            ),
-            audit.host_item(
-                "flask_service_checkout",
-                "direct",
-                "Captured Flask service working directory, executable, and checkout SHA.",
-                {"checkout_sha": expected_head},
-            ),
-            audit.host_item(
-                "nginx_agent_mcp_route",
-                "direct",
-                "Collected bounded nginx /agent/mcp route evidence.",
-                {"matches": [{"snippets": ["/agent/mcp", "proxy_pass http://127.0.0.1:8765/mcp;"]}]},
-            ),
-        ],
+        lambda **_: mock_sidecar_host_items(
+            expected_head=expected_head,
+            expected_version=expected_version,
+            wildcard_listener=True,
+        ),
     )
 
     evidence = audit.audit_host_checks(ROOT, runner=runner)
@@ -865,45 +916,19 @@ def test_host_checks_wildcard_listener_is_mismatch(monkeypatch):
 
 
 def test_host_checks_partial_direct_evidence_is_unknown(monkeypatch):
-    expected_head = "expected-head"
+    expected_head = "1" * 40
     expected_version = real_source_details()["server_version"]
-    runner = make_runner(
-        {
-            systemctl_show_command("hodlxxi.service"): result(stdout="ActiveState=active\nSubState=running\n"),
-            systemctl_show_command("hodlxxi-mcp.service"): result(stdout="ActiveState=active\nSubState=running\n"),
-            systemctl_show_command("nginx.service"): result(stdout="ActiveState=active\nSubState=running\n"),
-            ("git", "rev-parse", "HEAD"): result(stdout=f"{expected_head}\n"),
-        }
-    )
+    runner = active_host_runner(expected_head)
     monkeypatch.setattr(audit.shutil, "which", lambda command: "/bin/systemctl" if command == "systemctl" else None)
     monkeypatch.setattr(audit, "load_canonical_contract", lambda *_: SimpleNamespace(server_version=expected_version))
     monkeypatch.setattr(
         audit,
         "collect_sidecar_host_items",
-        lambda **_: [
-            audit.host_item(
-                "mcp_loopback_listener",
-                "direct",
-                "Collected bounded MCP loopback listener evidence.",
-                {
-                    "loopback_listener_detected": True,
-                    "wildcard_listener_detected": False,
-                    "listener_lines": ["127.0.0.1:8765"],
-                },
-            ),
-            audit.host_item(
-                "mcp_sidecar_package_version",
-                "direct",
-                "Read the sidecar virtualenv package version.",
-                {"version": expected_version},
-            ),
-            audit.host_item(
-                "flask_service_checkout",
-                "direct",
-                "Captured Flask service working directory, executable, and checkout SHA.",
-                {"checkout_sha": expected_head},
-            ),
-        ],
+        lambda **_: mock_sidecar_host_items(
+            expected_head=expected_head,
+            expected_version=expected_version,
+            include_nginx_route=False,
+        ),
     )
 
     evidence = audit.audit_host_checks(ROOT, runner=runner)
@@ -911,52 +936,94 @@ def test_host_checks_partial_direct_evidence_is_unknown(monkeypatch):
     assert evidence.status == "UNKNOWN"
 
 
-def test_host_checks_fully_mocked_all_good_contract_can_match(monkeypatch):
-    expected_head = "expected-head"
+def test_host_checks_mismatched_release_sha_is_mismatch(monkeypatch):
+    expected_head = "1" * 40
     expected_version = real_source_details()["server_version"]
-    runner = make_runner(
-        {
-            systemctl_show_command("hodlxxi.service"): result(stdout="ActiveState=active\nSubState=running\n"),
-            systemctl_show_command("hodlxxi-mcp.service"): result(stdout="ActiveState=active\nSubState=running\n"),
-            systemctl_show_command("nginx.service"): result(stdout="ActiveState=active\nSubState=running\n"),
-            ("git", "rev-parse", "HEAD"): result(stdout=f"{expected_head}\n"),
-        }
-    )
+    observed_release_sha = "2" * 40
+    runner = active_host_runner(expected_head)
     monkeypatch.setattr(audit.shutil, "which", lambda command: "/bin/systemctl" if command == "systemctl" else None)
     monkeypatch.setattr(audit, "load_canonical_contract", lambda *_: SimpleNamespace(server_version=expected_version))
     monkeypatch.setattr(
         audit,
         "collect_sidecar_host_items",
-        lambda **_: [
-            audit.host_item(
-                "mcp_loopback_listener",
-                "direct",
-                "Collected bounded MCP loopback listener evidence.",
-                {
-                    "loopback_listener_detected": True,
-                    "wildcard_listener_detected": False,
-                    "listener_lines": ["127.0.0.1:8765"],
-                },
-            ),
-            audit.host_item(
-                "mcp_sidecar_package_version",
-                "direct",
-                "Read the sidecar virtualenv package version.",
-                {"version": expected_version},
-            ),
-            audit.host_item(
-                "flask_service_checkout",
-                "direct",
-                "Captured Flask service working directory, executable, and checkout SHA.",
-                {"checkout_sha": expected_head},
-            ),
-            audit.host_item(
-                "nginx_agent_mcp_route",
-                "direct",
-                "Collected bounded nginx /agent/mcp route evidence.",
-                {"matches": [{"snippets": ["/agent/mcp", "proxy_pass http://127.0.0.1:8765/mcp;"]}]},
-            ),
-        ],
+        lambda **_: mock_sidecar_host_items(
+            expected_head=expected_head,
+            expected_version=expected_version,
+            release_sha=observed_release_sha,
+        ),
+    )
+
+    evidence = audit.audit_host_checks(ROOT, runner=runner)
+
+    assert evidence.status == "MISMATCH"
+    assert (
+        f"mcp_release_sha release_sha={observed_release_sha} expected={expected_head}"
+        in evidence.details["verdict"]["mismatches"]
+    )
+
+
+def test_host_checks_missing_current_symlink_and_release_sha_is_unknown(monkeypatch):
+    expected_head = "1" * 40
+    expected_version = real_source_details()["server_version"]
+    runner = active_host_runner(expected_head)
+    monkeypatch.setattr(audit.shutil, "which", lambda command: "/bin/systemctl" if command == "systemctl" else None)
+    monkeypatch.setattr(audit, "load_canonical_contract", lambda *_: SimpleNamespace(server_version=expected_version))
+    monkeypatch.setattr(
+        audit,
+        "collect_sidecar_host_items",
+        lambda **_: mock_sidecar_host_items(
+            expected_head=expected_head,
+            expected_version=expected_version,
+            include_current_symlink=False,
+            include_release_sha=False,
+        ),
+    )
+
+    evidence = audit.audit_host_checks(ROOT, runner=runner)
+
+    assert evidence.status == "UNKNOWN"
+    assert "mcp_current_symlink" in evidence.details["verdict"]["missing_invariants_for_match"]
+    assert "mcp_release_sha" in evidence.details["verdict"]["missing_invariants_for_match"]
+
+
+def test_host_checks_package_version_equality_alone_cannot_match(monkeypatch):
+    expected_head = "1" * 40
+    expected_version = real_source_details()["server_version"]
+    runner = active_host_runner(expected_head)
+    monkeypatch.setattr(audit.shutil, "which", lambda command: "/bin/systemctl" if command == "systemctl" else None)
+    monkeypatch.setattr(audit, "load_canonical_contract", lambda *_: SimpleNamespace(server_version=expected_version))
+    monkeypatch.setattr(
+        audit,
+        "collect_sidecar_host_items",
+        lambda **_: mock_sidecar_host_items(
+            expected_head=expected_head,
+            expected_version=expected_version,
+            include_current_symlink=False,
+            include_release_sha=False,
+        ),
+    )
+
+    evidence = audit.audit_host_checks(ROOT, runner=runner)
+
+    assert evidence.status == "UNKNOWN"
+    assert "mcp_sidecar_package_version" in evidence.details["verdict"]["matched_invariants"]
+    assert "mcp_current_symlink" in evidence.details["verdict"]["missing_invariants_for_match"]
+    assert "mcp_release_sha" in evidence.details["verdict"]["missing_invariants_for_match"]
+
+
+def test_host_checks_fully_mocked_all_good_contract_can_match(monkeypatch):
+    expected_head = "1" * 40
+    expected_version = real_source_details()["server_version"]
+    runner = active_host_runner(expected_head)
+    monkeypatch.setattr(audit.shutil, "which", lambda command: "/bin/systemctl" if command == "systemctl" else None)
+    monkeypatch.setattr(audit, "load_canonical_contract", lambda *_: SimpleNamespace(server_version=expected_version))
+    monkeypatch.setattr(
+        audit,
+        "collect_sidecar_host_items",
+        lambda **_: mock_sidecar_host_items(
+            expected_head=expected_head,
+            expected_version=expected_version,
+        ),
     )
 
     evidence = audit.audit_host_checks(ROOT, runner=runner)
@@ -964,3 +1031,5 @@ def test_host_checks_fully_mocked_all_good_contract_can_match(monkeypatch):
     assert evidence.status == "MATCH"
     assert evidence.details["verdict"]["mismatches"] == []
     assert evidence.details["verdict"]["missing_invariants_for_match"] == []
+    assert "mcp_current_symlink" in evidence.details["verdict"]["matched_invariants"]
+    assert "mcp_release_sha" in evidence.details["verdict"]["matched_invariants"]
