@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 import urllib.parse
 from dataclasses import asdict, dataclass, field
@@ -40,6 +41,8 @@ SUCCESS_STATUSES = {"VERIFIED", "MATCH", "GREEN"}
 ERROR_STATUSES = {"MISMATCH", "RED"}
 GIT_REMOTE_NAME = "origin"
 REGISTRY_SEARCH_URL = "https://registry.modelcontextprotocol.io/v0.1/servers"
+REGISTRY_MAX_ATTEMPTS = 3
+REGISTRY_RETRY_BACKOFF_SECONDS = 0.25
 PUBLIC_HTTP_PATHS = (
     "/.well-known/mcp.json",
     "/.well-known/agent.json",
@@ -96,12 +99,25 @@ ARTIFACT_DROPPED_KEYS = {"json"}
 HOST_EVIDENCE_KINDS = {"direct", "inference", "unavailable", "blocked"}
 HOST_MCP_CURRENT_SYMLINK = Path("/opt/hodlxxi-mcp/current")
 HOST_MCP_RELEASES_DIR = Path("/opt/hodlxxi-mcp/releases")
+HOST_NGINX_ROOT = Path("/etc/nginx")
 HOST_NGINX_PATHS = (
-    Path("/etc/nginx/nginx.conf"),
-    Path("/etc/nginx/conf.d"),
-    Path("/etc/nginx/sites-enabled"),
+    HOST_NGINX_ROOT / "nginx.conf",
+    HOST_NGINX_ROOT / "conf.d",
+    HOST_NGINX_ROOT / "sites-enabled" / "hodlxxi",
+    HOST_NGINX_ROOT / "sites-enabled",
 )
 HOST_MCP_PORT = 8765
+HOST_NGINX_MAX_FILES = 64
+HOST_NGINX_MAX_FILE_BYTES = 64 * 1024
+HOST_NGINX_MAX_SNIPPETS = 20
+GITHUB_CHECKS_USER_AGENT = "hodlxxi-production-truth-audit/1.0"
+MCP_COMPONENT_SCOPE_PATHS = (
+    "packages/hodlxxi_mcp/pyproject.toml",
+    "packages/hodlxxi_mcp/README.md",
+    "packages/hodlxxi_mcp/src/hodlxxi_mcp",
+    "deployment/systemd/hodlxxi-mcp.service",
+    "server.json",
+)
 SENSITIVE_HEADER_RE = re.compile(r"(?im)\b(authorization|cookie|set-cookie)\b(?:\s*[:=]\s*|\s+)[^\n]+")
 SENSITIVE_ASSIGNMENT_RE = re.compile(
     r"(?i)\b([A-Za-z0-9_-]*(?:token|secret|password|credential|cookie|macaroon|authorization)[A-Za-z0-9_-]*)\b"
@@ -109,6 +125,7 @@ SENSITIVE_ASSIGNMENT_RE = re.compile(
 )
 BEARER_TOKEN_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
 SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
+GITHUB_BAD_CREDENTIALS_RE = re.compile(r"bad credentials|requires authentication|token", re.IGNORECASE)
 DATE_CONTEXT_RE = re.compile(
     r"\b(?:20\d{2}-\d{2}-\d{2}|"
     r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
@@ -354,19 +371,29 @@ def audit_github_checks(
         )
 
     sha = head_result.stdout.strip()
+    transport = "public_http"
     try:
         if gh_available(runner, root):
-            runs = fetch_github_check_runs_via_gh(owner_repo, sha, runner=runner, root=root)
-            source = "gh"
+            try:
+                runs = fetch_github_check_runs_via_gh(owner_repo, sha, runner=runner, root=root)
+                transport = "gh"
+            except (RuntimeError, ValueError, OSError):
+                transport, runs = fetch_github_check_runs_via_http(owner_repo, sha, timeout=timeout)
         else:
-            runs = fetch_github_check_runs_via_http(owner_repo, sha, timeout=timeout)
-            source = "public_api"
+            transport, runs = fetch_github_check_runs_via_http(owner_repo, sha, timeout=timeout)
+    except VerificationError as exc:
+        return Evidence(
+            name="github_checks",
+            status="BLOCKED",
+            summary=f"Unable to query GitHub check runs: {exc.message}",
+            details={"transport": transport, "sha": sha, "error_category": exc.category},
+        )
     except Exception as exc:
         return Evidence(
             name="github_checks",
             status="BLOCKED",
             summary="Unable to query GitHub check runs.",
-            details={"error": _bounded_text(str(exc), MAX_SUMMARY_CHARS), "sha": sha},
+            details={"transport": transport, "error": _bounded_text(str(exc), MAX_SUMMARY_CHARS), "sha": sha},
         )
 
     classified = [classify_check_run(run) for run in runs]
@@ -390,11 +417,29 @@ def audit_github_checks(
         name="github_checks",
         status=status,
         summary=summary,
-        details={"source": source, "sha": sha, "check_runs": classified},
+        details={"transport": transport, "sha": sha, "check_runs": classified},
     )
 
 
 def audit_source_contract(root: Path) -> tuple[Evidence, dict[str, Any]]:
+    scope_paths = canonical_mcp_component_scope_paths()
+    missing_current_paths = current_tree_missing_mcp_component_scope_paths(root)
+    base_details: dict[str, Any] = {
+        "component_scope_paths": scope_paths,
+        "missing_current_scope_paths": missing_current_paths,
+    }
+    if missing_current_paths:
+        mismatches = ["mandatory canonical MCP component paths are missing from the source tree"]
+        details = {**base_details, "mismatches": mismatches}
+        return (
+            Evidence(
+                name="source_contract",
+                status="MISMATCH",
+                summary="Mandatory canonical MCP component paths are missing from source tree.",
+                details=details,
+            ),
+            details,
+        )
     try:
         canonical = load_canonical_contract(root)
         server_json_path = root / "server.json"
@@ -423,6 +468,7 @@ def audit_source_contract(root: Path) -> tuple[Evidence, dict[str, Any]]:
         tool_names = _load_assignment_literal(tools_path, "TOOL_NAMES")
 
         details = {
+            **base_details,
             "server_json": server_json,
             "mcp_package_version": pyproject["project"]["version"],
             "module_version": init_version,
@@ -630,7 +676,15 @@ def audit_mcp(root: Path, *, endpoint: str, timeout: float, skip_live: bool) -> 
     )
 
 
-def audit_registry(*, source_details: dict[str, Any], timeout: float, skip_live: bool) -> Evidence:
+def audit_registry(
+    *,
+    source_details: dict[str, Any],
+    timeout: float,
+    skip_live: bool,
+    http_fetch: Callable[..., dict[str, Any]] | None = None,
+    sleeper: Callable[[float], None] | None = None,
+    max_attempts: int = REGISTRY_MAX_ATTEMPTS,
+) -> Evidence:
     if skip_live:
         return Evidence(name="registry", status="PENDING", summary="Registry query skipped by --skip-live.")
 
@@ -646,23 +700,52 @@ def audit_registry(*, source_details: dict[str, Any], timeout: float, skip_live:
         return Evidence(name="registry", status="BLOCKED", summary="Source registry metadata is missing a server name.")
 
     http = StdlibHTTPTransport()
+    fetcher = http_fetch or fetch_public_json
+    sleep_fn = sleeper or time.sleep
+    attempts = max(1, max_attempts)
+    query_url = f"{REGISTRY_SEARCH_URL}?search={urllib.parse.quote(str(expected_name))}"
+    attempt_count = 0
+    final_error_category: str | None = None
+    last_transient_error_category: str | None = None
+    transient_error_count = 0
     try:
-        query_url = f"{REGISTRY_SEARCH_URL}?search={urllib.parse.quote(str(expected_name))}"
-        payload = fetch_public_json(query_url, timeout=timeout, http=http)
+        while True:
+            attempt_count += 1
+            try:
+                payload = fetcher(query_url, timeout=timeout, http=http)
+                break
+            except VerificationError as exc:
+                final_error_category = exc.category
+                if exc.category not in {"timeout", "dns", "tls", "network"} or attempt_count >= attempts:
+                    raise
+                last_transient_error_category = exc.category
+                transient_error_count += 1
+                sleep_fn(REGISTRY_RETRY_BACKOFF_SECONDS * attempt_count)
+        final_error_category = None
         versions = parse_registry_versions(payload["json"], expected_name=str(expected_name))
     except VerificationError as exc:
         return Evidence(
             name="registry",
             status="BLOCKED" if exc.category in {"timeout", "dns", "tls", "network"} else "MISMATCH",
             summary=f"Registry query failed: {exc.message}",
-            details={},
+            details={
+                "attempt_count": attempt_count or 1,
+                "final_error_category": final_error_category or exc.category,
+                "last_transient_error_category": last_transient_error_category,
+                "transient_error_count": transient_error_count,
+            },
         )
     except Exception as exc:
         return Evidence(
             name="registry",
             status="BLOCKED",
             summary=f"Registry parsing failed: {exc}",
-            details={},
+            details={
+                "attempt_count": attempt_count or 1,
+                "final_error_category": "malformed",
+                "last_transient_error_category": last_transient_error_category,
+                "transient_error_count": transient_error_count,
+            },
         )
 
     if not versions:
@@ -709,7 +792,14 @@ def audit_registry(*, source_details: dict[str, Any], timeout: float, skip_live:
         name="registry",
         status=status,
         summary=summary,
-        details={"versions": versions, "mismatches": mismatches},
+        details={
+            "attempt_count": attempt_count or 1,
+            "final_error_category": final_error_category,
+            "last_transient_error_category": last_transient_error_category,
+            "transient_error_count": transient_error_count,
+            "versions": versions,
+            "mismatches": mismatches,
+        },
     )
 
 
@@ -803,6 +893,8 @@ def audit_host_checks(root: Path, *, runner: Runner) -> Evidence:
 
     items.extend(collect_sidecar_host_items(service_properties=service_properties, runner=runner, root=root))
     verdict = evaluate_host_check_verdict(
+        root=root,
+        runner=runner,
         items=items,
         service_properties=service_properties,
         expected_mcp_version=expected_mcp_version,
@@ -985,8 +1077,141 @@ def canonical_release_sha_from_item(item: Mapping[str, Any] | None, *, expected_
     return release_sha
 
 
+def canonical_mcp_component_scope_paths(root: Path | None = None) -> list[str]:
+    del root
+    return list(MCP_COMPONENT_SCOPE_PATHS)
+
+
+def current_tree_missing_mcp_component_scope_paths(root: Path) -> list[str]:
+    return [path for path in canonical_mcp_component_scope_paths() if not (root / path).exists()]
+
+
+def evaluate_mcp_release_identity(
+    *,
+    root: Path,
+    runner: Runner,
+    expected_repo_sha: str | None,
+    observed_release_sha: str | None,
+) -> dict[str, Any]:
+    scope_paths = canonical_mcp_component_scope_paths(root)
+    missing_current_paths = current_tree_missing_mcp_component_scope_paths(root)
+    details: dict[str, Any] = {
+        "status": "UNKNOWN",
+        "matched": False,
+        "release_commit_exact_match": False,
+        "component_source_equivalent": None,
+        "component_scope_paths": scope_paths,
+        "missing_current_scope_paths": missing_current_paths,
+        "component_changed_files": [],
+        "release_commit_resolved": False,
+        "release_commit_relation": None,
+        "observed_release_sha": observed_release_sha,
+        "expected_repo_sha": expected_repo_sha,
+        "summary": "MCP release identity could not be fully verified.",
+    }
+    if not expected_repo_sha or not observed_release_sha:
+        return details
+    if missing_current_paths:
+        details.update(
+            {
+                "status": "MISMATCH",
+                "release_commit_exact_match": observed_release_sha == expected_repo_sha,
+                "component_source_equivalent": False,
+                "release_commit_resolved": observed_release_sha == expected_repo_sha,
+                "release_commit_relation": "exact" if observed_release_sha == expected_repo_sha else None,
+                "summary": "Canonical MCP build inputs are missing from the current tree.",
+            }
+        )
+        return details
+    if observed_release_sha == expected_repo_sha:
+        details.update(
+            {
+                "status": "MATCH",
+                "matched": True,
+                "release_commit_exact_match": True,
+                "component_source_equivalent": True,
+                "release_commit_resolved": True,
+                "release_commit_relation": "exact",
+                "summary": "MCP release SHA exactly matches the expected repository SHA.",
+            }
+        )
+        return details
+
+    release_commit = verify_git_commit_exists(root, runner, observed_release_sha)
+    if release_commit is None:
+        details["summary"] = f"MCP release SHA {observed_release_sha} could not be resolved as a Git commit."
+        return details
+    details["release_commit_resolved"] = True
+
+    expected_commit = verify_git_commit_exists(root, runner, expected_repo_sha)
+    if expected_commit is None:
+        details["status"] = "BLOCKED"
+        details["summary"] = f"Expected repository SHA {expected_repo_sha} could not be resolved as a Git commit."
+        return details
+
+    relation = git_commit_relation(root, runner, observed_release_sha, expected_repo_sha)
+    details["release_commit_relation"] = relation
+    if relation is None:
+        details["status"] = "BLOCKED"
+        details["summary"] = "MCP release commit could not be compared to the expected repository commit."
+        return details
+
+    diff_result = runner(
+        ["git", "diff", "--name-only", observed_release_sha, expected_repo_sha, "--", *scope_paths],
+        root,
+    )
+    if diff_result.returncode != 0:
+        details["status"] = "BLOCKED"
+        details["summary"] = "Unable to diff canonical MCP build inputs between release and expected repository SHAs."
+        return details
+
+    changed_files = [line.strip() for line in diff_result.stdout.splitlines() if line.strip()]
+    details["component_changed_files"] = changed_files[:20]
+    if not changed_files:
+        details.update(
+            {
+                "status": "MATCH",
+                "matched": True,
+                "component_source_equivalent": True,
+                "summary": "MCP release SHA differs from repository HEAD, but canonical MCP build inputs are unchanged.",
+            }
+        )
+        return details
+
+    details.update(
+        {
+            "status": "MISMATCH",
+            "component_source_equivalent": False,
+            "summary": "Canonical MCP build inputs changed after the deployed sidecar release.",
+        }
+    )
+    return details
+
+
+def verify_git_commit_exists(root: Path, runner: Runner, sha: str) -> str | None:
+    result = runner(["git", "rev-parse", "--verify", f"{sha}^{{commit}}"], root)
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def git_commit_relation(root: Path, runner: Runner, older_sha: str, newer_sha: str) -> str | None:
+    ancestor = runner(["git", "merge-base", "--is-ancestor", older_sha, newer_sha], root)
+    if ancestor.returncode == 0:
+        return "ancestor"
+    if ancestor.returncode > 1:
+        return None
+    descendant = runner(["git", "merge-base", "--is-ancestor", newer_sha, older_sha], root)
+    if descendant.returncode == 0:
+        return "descendant"
+    if descendant.returncode > 1:
+        return None
+    merge_base = runner(["git", "merge-base", older_sha, newer_sha], root)
+    return "comparable" if merge_base.returncode == 0 and merge_base.stdout.strip() else None
+
+
 def evaluate_host_check_verdict(
     *,
+    root: Path,
+    runner: Runner,
     items: Sequence[Mapping[str, Any]],
     service_properties: Mapping[str, Mapping[str, str]],
     expected_mcp_version: str | None,
@@ -1046,11 +1271,20 @@ def evaluate_host_check_verdict(
         release_sha_item,
         expected_target=current_symlink_target,
     )
-    if observed_release_sha and expected_repo_sha:
-        if observed_release_sha != expected_repo_sha:
-            mismatches.append(f"mcp_release_sha release_sha={observed_release_sha} expected={expected_repo_sha}")
-        else:
-            matched_invariants.append("mcp_release_sha")
+    release_identity = evaluate_mcp_release_identity(
+        root=root,
+        runner=runner,
+        expected_repo_sha=expected_repo_sha,
+        observed_release_sha=observed_release_sha,
+    )
+    if release_identity["matched"]:
+        matched_invariants.append("mcp_release_sha")
+    elif release_identity["status"] == "MISMATCH":
+        mismatches.append(
+            "mcp_release_sha differs from the expected component identity "
+            f"({observed_release_sha or '?'} vs {expected_repo_sha or '?'}): "
+            + str(release_identity["component_changed_files"] or release_identity["summary"])
+        )
     else:
         blocked_requirements.append("mcp_release_sha")
 
@@ -1116,6 +1350,16 @@ def evaluate_host_check_verdict(
         "missing_invariants_for_match": sorted(complete_required_invariants - matched_required),
         "blocked_requirements": sorted(set(blocked_requirements)),
         "mismatches": mismatches,
+        "release_identity_status": release_identity["status"],
+        "release_commit_exact_match": release_identity["release_commit_exact_match"],
+        "component_source_equivalent": release_identity["component_source_equivalent"],
+        "component_scope_paths": release_identity["component_scope_paths"],
+        "component_changed_files": release_identity["component_changed_files"],
+        "release_commit_resolved": release_identity["release_commit_resolved"],
+        "release_commit_relation": release_identity["release_commit_relation"],
+        "observed_release_sha": release_identity["observed_release_sha"],
+        "expected_repo_sha": release_identity["expected_repo_sha"],
+        "release_identity_summary": release_identity["summary"],
     }
 
 
@@ -1346,57 +1590,195 @@ def collect_flask_checkout_item(
     )
 
 
-def collect_nginx_route_item() -> dict[str, Any]:
+def collect_nginx_route_item(
+    *,
+    candidates: Sequence[Path] = HOST_NGINX_PATHS,
+    nginx_root: Path = HOST_NGINX_ROOT,
+    max_files: int = HOST_NGINX_MAX_FILES,
+    max_file_bytes: int = HOST_NGINX_MAX_FILE_BYTES,
+    max_snippets: int = HOST_NGINX_MAX_SNIPPETS,
+) -> dict[str, Any]:
     matches: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
     unreadable: list[str] = []
-    for candidate in HOST_NGINX_PATHS:
-        files = [candidate] if candidate.is_file() else sorted(candidate.rglob("*.conf")) if candidate.is_dir() else []
-        for path in files:
-            try:
-                text = path.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
-                unreadable.append(str(path))
-                continue
-            snippets = extract_nginx_agent_mcp_evidence(text)
-            if snippets:
-                matches.append({"path": str(path), "snippets": snippets})
+    total_snippets = 0
+    inspected_files = 0
+    for display_path, resolved_path in iter_nginx_candidate_files(
+        candidates,
+        nginx_root=nginx_root,
+        max_files=max_files,
+    ):
+        inspected_files += 1
+        try:
+            text = read_bounded_text_file(resolved_path, max_bytes=max_file_bytes)
+        except OSError:
+            unreadable.append(str(display_path))
+            continue
+        blocks = extract_nginx_agent_mcp_blocks(text)
+        if not blocks:
+            continue
+        production_candidate = is_production_nginx_path(display_path)
+        matched_block = next((block for block in blocks if block["has_upstream"]), None)
+        if matched_block and production_candidate:
+            remaining = max(0, max_snippets - total_snippets)
+            if remaining <= 0:
+                break
+            snippets = matched_block["snippets"][:remaining]
+            matches.append({"path": str(display_path), "snippets": snippets})
+            total_snippets += len(snippets)
+            continue
+        reason = "staging_candidate" if not production_candidate else "missing_same_block_upstream"
+        rejected.append(
+            {
+                "path": str(display_path),
+                "reason": reason,
+                "snippets": blocks[0]["snippets"][: min(4, max_snippets)],
+            }
+        )
     if matches:
         return host_item(
             "nginx_agent_mcp_route",
             "direct",
             "Collected bounded nginx /agent/mcp route evidence.",
-            {"matches": matches[:10]},
+            {"matches": matches[:10], "inspected_files": inspected_files, "rejected": rejected[:10]},
         )
     if unreadable:
         return host_item(
             "nginx_agent_mcp_route",
             "blocked",
             "nginx configuration paths exist but could not be fully read.",
-            {"paths": unreadable[:10]},
+            {"paths": unreadable[:10], "inspected_files": inspected_files, "rejected": rejected[:10]},
         )
     return host_item(
         "nginx_agent_mcp_route",
         "unavailable",
-        "No bounded nginx /agent/mcp route evidence was found on this host.",
-        {},
+        "No bounded production nginx /agent/mcp route evidence was found on this host.",
+        {"inspected_files": inspected_files, "rejected": rejected[:10]},
     )
 
 
-def extract_nginx_agent_mcp_evidence(text: str) -> list[str]:
-    markers = ("/agent/mcp", "127.0.0.1:8765", "proxy_pass", "upstream")
+def iter_nginx_candidate_files(
+    candidates: Sequence[Path],
+    *,
+    nginx_root: Path,
+    max_files: int,
+) -> Sequence[tuple[Path, Path]]:
+    safe_root = nginx_root.resolve(strict=False)
+    files: list[tuple[Path, Path]] = []
+    seen_targets: set[str] = set()
+    for candidate in candidates:
+        if len(files) >= max_files:
+            break
+        if not candidate.exists() and not candidate.is_symlink():
+            continue
+        if candidate.is_dir():
+            if candidate.is_symlink():
+                continue
+            for dirpath, dirnames, filenames in os.walk(candidate, followlinks=False):
+                dirnames[:] = [name for name in sorted(dirnames) if not (Path(dirpath) / name).is_symlink()]
+                for filename in sorted(filenames):
+                    if len(files) >= max_files:
+                        break
+                    maybe_file = Path(dirpath) / filename
+                    safe_file = safe_nginx_file_target(maybe_file, safe_root)
+                    if safe_file is None:
+                        continue
+                    safe_key = str(safe_file)
+                    if safe_key in seen_targets:
+                        continue
+                    seen_targets.add(safe_key)
+                    files.append((maybe_file, safe_file))
+            continue
+        safe_file = safe_nginx_file_target(candidate, safe_root)
+        if safe_file is None:
+            continue
+        safe_key = str(safe_file)
+        if safe_key in seen_targets:
+            continue
+        seen_targets.add(safe_key)
+        files.append((candidate, safe_file))
+    return files[:max_files]
+
+
+def safe_nginx_file_target(path: Path, nginx_root: Path) -> Path | None:
+    try:
+        resolved = path.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    try:
+        resolved.relative_to(nginx_root)
+    except ValueError:
+        return None
+    return resolved if resolved.is_file() else None
+
+
+def read_bounded_text_file(path: Path, *, max_bytes: int) -> str:
+    with path.open("rb") as handle:
+        payload = handle.read(max_bytes + 1)
+    return payload[:max_bytes].decode("utf-8", errors="ignore")
+
+
+def is_production_nginx_path(path: Path) -> bool:
+    return "staging" not in str(path).lower()
+
+
+def extract_nginx_agent_mcp_blocks(text: str) -> list[dict[str, Any]]:
     lines = text.splitlines()
+    blocks: list[dict[str, Any]] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if "/agent/mcp" not in line or "location" not in line:
+            index += 1
+            continue
+        block_lines = [line]
+        brace_depth = line.count("{") - line.count("}")
+        index += 1
+        while index < len(lines):
+            block_line = lines[index]
+            block_lines.append(block_line)
+            brace_depth += block_line.count("{") - block_line.count("}")
+            index += 1
+            if brace_depth <= 0:
+                break
+        blocks.append(
+            {
+                "has_location": True,
+                "has_upstream": any(
+                    "proxy_pass" in block_line and "127.0.0.1:8765/mcp" in block_line for block_line in block_lines
+                ),
+                "snippets": bounded_nginx_snippets(block_lines),
+            }
+        )
+    return blocks
+
+
+def bounded_nginx_snippets(lines: Sequence[str]) -> list[str]:
+    markers = ("/agent/mcp", "127.0.0.1:8765", "proxy_pass", "upstream", "authorization", "cookie")
     snippets: list[str] = []
     seen: set[str] = set()
-    for index, line in enumerate(lines):
-        if not any(marker in line for marker in markers):
+    for line in lines:
+        if not any(marker in line.lower() for marker in markers):
             continue
-        for candidate in lines[max(0, index - 1) : min(len(lines), index + 3)]:
-            cleaned = _bounded_text(redact_sensitive_text(candidate.strip()), 240)
-            if cleaned and cleaned not in seen:
-                seen.add(cleaned)
-                snippets.append(cleaned)
+        cleaned = _bounded_text(redact_sensitive_text(line.strip()), 240)
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            snippets.append(cleaned)
         if len(snippets) >= 12:
             break
+    return snippets
+
+
+def extract_nginx_agent_mcp_evidence(text: str) -> list[str]:
+    snippets: list[str] = []
+    seen: set[str] = set()
+    for block in extract_nginx_agent_mcp_blocks(text):
+        for snippet in block["snippets"]:
+            if snippet not in seen:
+                seen.add(snippet)
+                snippets.append(snippet)
+            if len(snippets) >= 12:
+                return snippets[:12]
     return snippets[:12]
 
 
@@ -1486,9 +1868,13 @@ def parse_github_owner_repo(repository_url: str) -> str:
 
 
 def gh_available(runner: Runner, root: Path) -> bool:
-    version = runner(["gh", "--version"], root)
-    auth = runner(["gh", "auth", "status", "-h", "github.com"], root)
-    return version.returncode == 0 and auth.returncode == 0
+    if shutil.which("gh") is None:
+        return False
+    try:
+        auth = runner(["gh", "auth", "status", "-h", "github.com"], root)
+    except (FileNotFoundError, OSError):
+        return False
+    return auth.returncode == 0
 
 
 def fetch_github_check_runs_via_gh(owner_repo: str, sha: str, *, runner: Runner, root: Path) -> list[dict[str, Any]]:
@@ -1502,10 +1888,16 @@ def fetch_github_check_runs_via_gh(owner_repo: str, sha: str, *, runner: Runner,
             "Accept: application/vnd.github+json",
             f"repos/{owner_repo}/commits/{sha}/check-runs?per_page=100&page={page}",
         ]
-        response = runner(command, root)
+        try:
+            response = runner(command, root)
+        except (FileNotFoundError, OSError) as exc:
+            raise RuntimeError(str(exc)) from exc
         if response.returncode != 0:
             raise RuntimeError(response.stderr.strip() or "gh api failed")
-        payload = json.loads(response.stdout or "{}")
+        try:
+            payload = json.loads(response.stdout or "{}")
+        except json.JSONDecodeError as exc:
+            raise ValueError("GitHub CLI returned malformed JSON") from exc
         batch = payload.get("check_runs", [])
         if not isinstance(batch, list):
             raise ValueError("GitHub check_runs payload is malformed")
@@ -1516,23 +1908,47 @@ def fetch_github_check_runs_via_gh(owner_repo: str, sha: str, *, runner: Runner,
     return results
 
 
-def fetch_github_check_runs_via_http(owner_repo: str, sha: str, *, timeout: float) -> list[dict[str, Any]]:
+def fetch_github_check_runs_via_http(owner_repo: str, sha: str, *, timeout: float) -> tuple[str, list[dict[str, Any]]]:
     http = StdlibHTTPTransport()
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        try:
+            return "authenticated_http", _fetch_github_check_runs_http_pages(
+                owner_repo,
+                sha,
+                timeout=timeout,
+                http=http,
+                token=token,
+            )
+        except VerificationError as exc:
+            if not is_github_auth_failure(exc):
+                raise
+    return "public_http", _fetch_github_check_runs_http_pages(owner_repo, sha, timeout=timeout, http=http, token=None)
+
+
+def _fetch_github_check_runs_http_pages(
+    owner_repo: str,
+    sha: str,
+    *,
+    timeout: float,
+    http: StdlibHTTPTransport,
+    token: str | None,
+) -> list[dict[str, Any]]:
     page = 1
     results: list[dict[str, Any]] = []
     while True:
         url = f"https://api.github.com/repos/{owner_repo}/commits/{sha}/check-runs?per_page=100&page={page}"
-        headers = {"Accept": "application/vnd.github+json", "User-Agent": "hodlxxi-production-truth-audit/1.0"}
-        token = os.environ.get("GITHUB_TOKEN")
+        headers = {"Accept": "application/vnd.github+json", "User-Agent": GITHUB_CHECKS_USER_AGENT}
         if token:
             headers["Authorization"] = f"Bearer {token}"
         response = http.open(method="GET", url=url, headers=headers, body=None, timeout=timeout)
         try:
+            payload_bytes = _read_limited(response)
             if response.status < 200 or response.status >= 300:
-                raise VerificationError(
-                    "http", f"GitHub API returned HTTP {response.status}", http_status=response.status
+                raise classify_github_http_error(
+                    response.status, response.headers, payload_bytes, token_present=token is not None
                 )
-            payload = _load_json_from_bytes(_read_limited(response), label="GitHub check-runs response")
+            payload = _load_json_from_bytes(payload_bytes, label="GitHub check-runs response")
         finally:
             response.close()
         batch = payload.get("check_runs", [])
@@ -1543,6 +1959,41 @@ def fetch_github_check_runs_via_http(owner_repo: str, sha: str, *, timeout: floa
             break
         page += 1
     return results
+
+
+def classify_github_http_error(
+    status: int,
+    headers: Mapping[str, str],
+    payload_bytes: bytes,
+    *,
+    token_present: bool,
+) -> VerificationError:
+    payload = try_load_json_bytes(payload_bytes)
+    message = (
+        str(payload.get("message") or f"GitHub API returned HTTP {status}")
+        if payload
+        else f"GitHub API returned HTTP {status}"
+    )
+    remaining = str(headers.get("x-ratelimit-remaining", ""))
+    if status == 429 or remaining == "0" or "rate limit" in message.lower():
+        return VerificationError("rate_limit", message, http_status=status)
+    if token_present and status in {401, 403} and GITHUB_BAD_CREDENTIALS_RE.search(message):
+        return VerificationError("auth", message, http_status=status)
+    return VerificationError("http", message, http_status=status)
+
+
+def try_load_json_bytes(payload_bytes: bytes) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(payload_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def is_github_auth_failure(exc: VerificationError) -> bool:
+    return exc.category == "auth" or (
+        exc.category == "http" and exc.http_status in {401, 403} and GITHUB_BAD_CREDENTIALS_RE.search(exc.message or "")
+    )
 
 
 def classify_check_run(run: Mapping[str, Any]) -> dict[str, Any]:
