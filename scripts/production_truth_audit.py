@@ -80,6 +80,18 @@ EXCLUDED_DIRECTORY_NAMES = {
     ".pytest_cache",
 }
 EXCLUDED_DIRECTORY_MARKERS = {"generated", "vendor", "vendors", "vendored", "third_party", "third-party"}
+STALE_SCAN_EXCLUDED_DIRECTORY_NAMES = {
+    "tests",
+    "fixtures",
+    "fixture",
+    "__fixtures__",
+    "__fixture__",
+    "testdata",
+    "test_data",
+    "mock_data",
+    "mock_responses",
+}
+STALE_SCAN_DETECTOR_ASSIGNMENTS = {"STALE_PHRASES", "STALE_DESCRIPTION_PHRASES"}
 ARTIFACT_DROPPED_KEYS = {"json"}
 HOST_EVIDENCE_KINDS = {"direct", "inference", "unavailable", "blocked"}
 HOST_MCP_CURRENT_SYMLINK = Path("/opt/hodlxxi-mcp/current")
@@ -487,7 +499,10 @@ def audit_stale_references(root: Path) -> Evidence:
     for path in iter_repo_text_files(root):
         text = path.read_text(encoding="utf-8", errors="ignore")
         lines = text.splitlines()
+        ignored_lines = stale_detector_assignment_lines(path, text)
         for index, line in enumerate(lines, start=1):
+            if index in ignored_lines:
+                continue
             lowered = line.lower()
             for phrase in STALE_PHRASES:
                 if phrase in lowered and not dated_context(lines, index - 1):
@@ -744,6 +759,7 @@ def audit_host_checks(root: Path, *, runner: Runner) -> Evidence:
 
     items: list[dict[str, Any]] = []
     service_properties: dict[str, dict[str, str]] = {}
+    systemd_direct_count = 0
     for service in HOST_CHECK_SERVICES:
         command = ["systemctl", "show", service, *[f"--property={item}" for item in HOST_CHECK_PROPERTIES]]
         result = runner(command, root)
@@ -754,6 +770,8 @@ def audit_host_checks(root: Path, *, runner: Runner) -> Evidence:
             if parsed.get(key)
         }
         service_properties[service] = properties
+        if result.returncode == 0:
+            systemd_direct_count += 1
         items.append(
             {
                 "name": f"systemd:{service}",
@@ -772,26 +790,39 @@ def audit_host_checks(root: Path, *, runner: Runner) -> Evidence:
             }
         )
 
+    expected_repo_sha = None
+    head_result = runner(["git", "rev-parse", "HEAD"], root)
+    if head_result.returncode == 0:
+        expected_repo_sha = head_result.stdout.strip()
+
+    expected_mcp_version = None
+    try:
+        expected_mcp_version = load_canonical_contract(root).server_version
+    except Exception:
+        expected_mcp_version = None
+
     items.extend(collect_sidecar_host_items(service_properties=service_properties, runner=runner, root=root))
+    verdict = evaluate_host_check_verdict(
+        items=items,
+        service_properties=service_properties,
+        expected_mcp_version=expected_mcp_version,
+        expected_repo_sha=expected_repo_sha,
+        systemd_direct_count=systemd_direct_count,
+    )
 
     classification_counts = {
         kind: sum(1 for item in items if item.get("classification") == kind) for kind in HOST_EVIDENCE_KINDS
     }
-    if classification_counts["blocked"] and not (classification_counts["direct"] or classification_counts["inference"]):
-        status = "BLOCKED"
-    elif classification_counts["direct"]:
-        status = "MATCH"
-    else:
-        status = "UNKNOWN"
     return Evidence(
         name="host_checks",
-        status=status,
+        status=verdict["status"],
         summary=(
             "Optional host checks collected bounded host evidence "
             f"(direct={classification_counts['direct']}, inference={classification_counts['inference']}, "
-            f"unavailable={classification_counts['unavailable']}, blocked={classification_counts['blocked']})."
+            f"unavailable={classification_counts['unavailable']}, blocked={classification_counts['blocked']}); "
+            f"host verdict={verdict['status']}."
         ),
-        details={"items": items},
+        details={"items": items, "verdict": verdict},
         mandatory=False,
     )
 
@@ -862,6 +893,44 @@ def public_result_for_artifact(payload: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def stale_detector_assignment_lines(path: Path, text: str) -> set[int]:
+    if path.suffix != ".py":
+        return set()
+    try:
+        tree = ast.parse(text, filename=str(path))
+    except SyntaxError:
+        return set()
+
+    ignored_lines: set[int] = set()
+    for node in tree.body:
+        target_names: set[str] = set()
+        if isinstance(node, ast.Assign):
+            target_names = {
+                target.id
+                for target in node.targets
+                if isinstance(target, ast.Name) and target.id in STALE_SCAN_DETECTOR_ASSIGNMENTS
+            }
+            value_node = node.value
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if node.target.id in STALE_SCAN_DETECTOR_ASSIGNMENTS:
+                target_names = {node.target.id}
+            value_node = node.value
+        else:
+            continue
+
+        if not target_names or value_node is None:
+            continue
+
+        for child in ast.walk(value_node):
+            if isinstance(child, ast.Constant) and isinstance(child.value, str):
+                start = getattr(child, "lineno", None)
+                end = getattr(child, "end_lineno", start)
+                if start is None:
+                    continue
+                ignored_lines.update(range(start, (end or start) + 1))
+    return ignored_lines
+
+
 def parse_systemctl_show_output(text: str) -> dict[str, str]:
     parsed: dict[str, str] = {}
     for line in text.splitlines():
@@ -886,6 +955,117 @@ def host_item(name: str, classification: str, summary: str, details: Mapping[str
         "classification": classification if classification in HOST_EVIDENCE_KINDS else "blocked",
         "summary": _bounded_text(summary, 240),
         "details": sanitize_artifact_value(dict(details)),
+    }
+
+
+def evaluate_host_check_verdict(
+    *,
+    items: Sequence[Mapping[str, Any]],
+    service_properties: Mapping[str, Mapping[str, str]],
+    expected_mcp_version: str | None,
+    expected_repo_sha: str | None,
+    systemd_direct_count: int,
+) -> dict[str, Any]:
+    mismatches: list[str] = []
+    matched_invariants: list[str] = []
+    blocked_requirements: list[str] = []
+    direct_invariant_count = 0
+
+    item_by_name = {str(item.get("name")): item for item in items}
+
+    for service in HOST_CHECK_SERVICES:
+        item_name = f"systemd:{service}"
+        item = item_by_name.get(item_name)
+        if not item or item.get("classification") != "direct":
+            blocked_requirements.append(item_name)
+            continue
+        active_state = str(service_properties.get(service, {}).get("ActiveState") or "")
+        sub_state = str(service_properties.get(service, {}).get("SubState") or "")
+        if active_state and active_state != "active":
+            mismatches.append(f"{service} ActiveState={active_state}")
+            continue
+        if sub_state in {"failed", "dead", "inactive"}:
+            mismatches.append(f"{service} SubState={sub_state}")
+            continue
+        if active_state == "active":
+            matched_invariants.append(item_name)
+            direct_invariant_count += 1
+
+    listener_item = item_by_name.get("mcp_loopback_listener")
+    if listener_item and listener_item.get("classification") == "direct":
+        details = listener_item.get("details", {})
+        wildcard_detected = bool(details.get("wildcard_listener_detected"))
+        loopback_detected = bool(details.get("loopback_listener_detected"))
+        if wildcard_detected:
+            mismatches.append("mcp_loopback_listener wildcard listener detected")
+        elif not loopback_detected:
+            mismatches.append("mcp_loopback_listener missing loopback listener evidence")
+        else:
+            matched_invariants.append("mcp_loopback_listener")
+            direct_invariant_count += 1
+    else:
+        blocked_requirements.append("mcp_loopback_listener")
+
+    version_item = item_by_name.get("mcp_sidecar_package_version")
+    if version_item and version_item.get("classification") == "direct" and expected_mcp_version:
+        observed_version = str((version_item.get("details") or {}).get("version") or "")
+        if observed_version != expected_mcp_version:
+            mismatches.append(
+                f"mcp_sidecar_package_version version={observed_version or '?'} expected={expected_mcp_version}"
+            )
+        else:
+            matched_invariants.append("mcp_sidecar_package_version")
+            direct_invariant_count += 1
+    elif expected_mcp_version:
+        blocked_requirements.append("mcp_sidecar_package_version")
+
+    checkout_item = item_by_name.get("flask_service_checkout")
+    if checkout_item and checkout_item.get("classification") == "direct" and expected_repo_sha:
+        observed_sha = str((checkout_item.get("details") or {}).get("checkout_sha") or "")
+        if observed_sha != expected_repo_sha:
+            mismatches.append(f"flask_service_checkout checkout_sha={observed_sha or '?'} expected={expected_repo_sha}")
+        else:
+            matched_invariants.append("flask_service_checkout")
+            direct_invariant_count += 1
+    elif expected_repo_sha:
+        blocked_requirements.append("flask_service_checkout")
+
+    route_item = item_by_name.get("nginx_agent_mcp_route")
+    if route_item and route_item.get("classification") == "direct":
+        serialized = json.dumps(route_item.get("details", {}), sort_keys=True)
+        if "/agent/mcp" not in serialized or "127.0.0.1:8765" not in serialized:
+            mismatches.append("nginx_agent_mcp_route missing expected /agent/mcp loopback route evidence")
+        else:
+            matched_invariants.append("nginx_agent_mcp_route")
+            direct_invariant_count += 1
+    else:
+        blocked_requirements.append("nginx_agent_mcp_route")
+
+    complete_required_invariants = {f"systemd:{service}" for service in HOST_CHECK_SERVICES} | {
+        "mcp_loopback_listener",
+        "mcp_sidecar_package_version",
+        "flask_service_checkout",
+        "nginx_agent_mcp_route",
+    }
+
+    matched_required = set(matched_invariants)
+    complete_match = complete_required_invariants.issubset(matched_required)
+
+    if mismatches:
+        status = "MISMATCH"
+    elif complete_match:
+        status = "MATCH"
+    elif systemd_direct_count == 0 and direct_invariant_count == 0:
+        status = "BLOCKED"
+    else:
+        status = "UNKNOWN"
+
+    return {
+        "status": status,
+        "matched_invariants": sorted(matched_required),
+        "missing_invariants_for_match": sorted(complete_required_invariants - matched_required),
+        "blocked_requirements": sorted(set(blocked_requirements)),
+        "mismatches": mismatches,
     }
 
 
@@ -1561,12 +1741,14 @@ def iter_repo_text_files(root: Path) -> Sequence[Path]:
     for path in root.rglob("*"):
         if not path.is_file():
             continue
-        lowered_parts = {part.lower() for part in path.parts}
+        lowered_parts = {part.lower() for part in path.relative_to(root).parts}
         if any(part in EXCLUDED_DIRECTORY_NAMES for part in lowered_parts):
             continue
         if any(part.endswith(".egg-info") for part in lowered_parts):
             continue
         if any(part in EXCLUDED_DIRECTORY_MARKERS for part in lowered_parts):
+            continue
+        if any(part in STALE_SCAN_EXCLUDED_DIRECTORY_NAMES for part in lowered_parts):
             continue
         if path.suffix == ".pyc":
             continue
