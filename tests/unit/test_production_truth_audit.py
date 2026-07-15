@@ -158,6 +158,70 @@ def mock_sidecar_host_items(
     return items
 
 
+def patch_release_identity(
+    monkeypatch,
+    *,
+    status="MATCH",
+    matched=None,
+    exact=False,
+    equivalent=True,
+    changed_files=None,
+    summary="component identity",
+):
+    monkeypatch.setattr(
+        audit,
+        "evaluate_mcp_release_identity",
+        lambda **kwargs: {
+            "status": status,
+            "matched": (status == "MATCH") if matched is None else matched,
+            "release_commit_exact_match": exact,
+            "component_source_equivalent": equivalent,
+            "component_scope_paths": audit.canonical_mcp_component_scope_paths(ROOT),
+            "component_changed_files": changed_files or [],
+            "release_commit_resolved": True,
+            "release_commit_relation": "ancestor",
+            "observed_release_sha": kwargs.get("observed_release_sha"),
+            "expected_repo_sha": kwargs.get("expected_repo_sha"),
+            "summary": summary,
+        },
+    )
+
+
+def component_identity_runner(
+    expected_head,
+    release_sha,
+    *,
+    changed_files=None,
+    relation="ancestor",
+    release_exists=True,
+    expected_exists=True,
+):
+    scope_paths = tuple(audit.canonical_mcp_component_scope_paths(ROOT))
+    mapping = {
+        ("git", "rev-parse", "--verify", f"{release_sha}^{{commit}}"): (
+            result(stdout=f"{release_sha}\n") if release_exists else result(returncode=1, stderr="unknown revision")
+        ),
+        ("git", "rev-parse", "--verify", f"{expected_head}^{{commit}}"): (
+            result(stdout=f"{expected_head}\n") if expected_exists else result(returncode=1, stderr="unknown revision")
+        ),
+        ("git", "diff", "--name-only", release_sha, expected_head, "--", *scope_paths): result(
+            stdout="".join(f"{path}\n" for path in (changed_files or []))
+        ),
+    }
+    if relation == "ancestor":
+        mapping[("git", "merge-base", "--is-ancestor", release_sha, expected_head)] = result(returncode=0)
+    elif relation == "descendant":
+        mapping[("git", "merge-base", "--is-ancestor", release_sha, expected_head)] = result(returncode=1)
+        mapping[("git", "merge-base", "--is-ancestor", expected_head, release_sha)] = result(returncode=0)
+    elif relation == "comparable":
+        mapping[("git", "merge-base", "--is-ancestor", release_sha, expected_head)] = result(returncode=1)
+        mapping[("git", "merge-base", "--is-ancestor", expected_head, release_sha)] = result(returncode=1)
+        mapping[("git", "merge-base", release_sha, expected_head)] = result(stdout="abc1234\n")
+    else:
+        mapping[("git", "merge-base", "--is-ancestor", release_sha, expected_head)] = result(returncode=2, stderr="bad")
+    return make_runner(mapping)
+
+
 def test_git_not_a_repository(tmp_path):
     runner = make_runner({("git", "rev-parse", "--show-toplevel"): result(returncode=128, stderr="fatal")})
 
@@ -253,11 +317,13 @@ def test_git_dirty_tree(tmp_path):
     assert "dirty" in evidence.summary.lower()
 
 
-def test_github_blocked(monkeypatch):
+def test_github_missing_gh_uses_public_http_fallback(monkeypatch):
     runner = make_runner({("git", "rev-parse", "HEAD"): result(stdout="abc\n")})
-    monkeypatch.setattr(audit, "gh_available", lambda *_: False)
+    monkeypatch.setattr(audit.shutil, "which", lambda command: None if command == "gh" else "/bin/other")
     monkeypatch.setattr(
-        audit, "fetch_github_check_runs_via_http", lambda *_, **__: (_ for _ in ()).throw(RuntimeError("boom"))
+        audit,
+        "fetch_github_check_runs_via_http",
+        lambda *_, **__: ("public_http", []),
     )
 
     evidence = audit.audit_github_checks(
@@ -268,16 +334,94 @@ def test_github_blocked(monkeypatch):
         timeout=1.0,
     )
 
-    assert evidence.status == "BLOCKED"
+    assert evidence.status == "UNKNOWN"
+    assert evidence.details["transport"] == "public_http"
+
+
+def test_github_unauthenticated_gh_uses_http_fallback(monkeypatch):
+    runner = make_runner(
+        {
+            ("git", "rev-parse", "HEAD"): result(stdout="abc\n"),
+            ("gh", "auth", "status", "-h", "github.com"): result(returncode=1, stderr="invalid token"),
+        }
+    )
+    monkeypatch.setattr(audit.shutil, "which", lambda command: "/opt/homebrew/bin/gh" if command == "gh" else None)
+    monkeypatch.setattr(
+        audit,
+        "fetch_github_check_runs_via_http",
+        lambda *_, **__: ("public_http", [{"name": "pytest", "status": "completed", "conclusion": "success"}]),
+    )
+
+    evidence = audit.audit_github_checks(
+        ROOT,
+        source_details=real_source_details(),
+        runner=runner,
+        skip_live=False,
+        timeout=1.0,
+    )
+
+    assert evidence.status == "GREEN"
+    assert evidence.details["transport"] == "public_http"
+
+
+def test_github_malformed_cli_response_uses_http_fallback(monkeypatch):
+    runner = make_runner(
+        {
+            ("git", "rev-parse", "HEAD"): result(stdout="abc\n"),
+            ("gh", "auth", "status", "-h", "github.com"): result(stdout="ok\n"),
+        }
+    )
+    monkeypatch.setattr(audit.shutil, "which", lambda command: "/opt/homebrew/bin/gh" if command == "gh" else None)
+    monkeypatch.setattr(
+        audit,
+        "fetch_github_check_runs_via_gh",
+        lambda *_, **__: (_ for _ in ()).throw(ValueError("malformed cli output")),
+    )
+    monkeypatch.setattr(
+        audit,
+        "fetch_github_check_runs_via_http",
+        lambda *_, **__: ("public_http", [{"name": "pytest", "status": "completed", "conclusion": "success"}]),
+    )
+
+    evidence = audit.audit_github_checks(
+        ROOT,
+        source_details=real_source_details(),
+        runner=runner,
+        skip_live=False,
+        timeout=1.0,
+    )
+
+    assert evidence.status == "GREEN"
+    assert evidence.details["transport"] == "public_http"
+
+
+def test_github_successful_http_check_runs_return_green(monkeypatch):
+    runner = make_runner({("git", "rev-parse", "HEAD"): result(stdout="abc\n")})
+    monkeypatch.setattr(audit.shutil, "which", lambda command: None if command == "gh" else "/bin/other")
+    monkeypatch.setattr(
+        audit,
+        "fetch_github_check_runs_via_http",
+        lambda *_, **__: ("public_http", [{"name": "pytest", "status": "completed", "conclusion": "success"}]),
+    )
+
+    evidence = audit.audit_github_checks(
+        ROOT,
+        source_details=real_source_details(),
+        runner=runner,
+        skip_live=False,
+        timeout=1.0,
+    )
+
+    assert evidence.status == "GREEN"
 
 
 def test_github_pending(monkeypatch):
     runner = make_runner({("git", "rev-parse", "HEAD"): result(stdout="abc\n")})
-    monkeypatch.setattr(audit, "gh_available", lambda *_: False)
+    monkeypatch.setattr(audit.shutil, "which", lambda command: None if command == "gh" else "/bin/other")
     monkeypatch.setattr(
         audit,
         "fetch_github_check_runs_via_http",
-        lambda *_, **__: [{"name": "pytest", "status": "queued", "conclusion": None}],
+        lambda *_, **__: ("public_http", [{"name": "pytest", "status": "queued", "conclusion": None}]),
     )
 
     evidence = audit.audit_github_checks(
@@ -291,13 +435,13 @@ def test_github_pending(monkeypatch):
     assert evidence.status == "PENDING"
 
 
-def test_github_red(monkeypatch):
+def test_github_failed_http_check_runs_return_red(monkeypatch):
     runner = make_runner({("git", "rev-parse", "HEAD"): result(stdout="abc\n")})
-    monkeypatch.setattr(audit, "gh_available", lambda *_: False)
+    monkeypatch.setattr(audit.shutil, "which", lambda command: None if command == "gh" else "/bin/other")
     monkeypatch.setattr(
         audit,
         "fetch_github_check_runs_via_http",
-        lambda *_, **__: [{"name": "pytest", "status": "completed", "conclusion": "failure"}],
+        lambda *_, **__: ("public_http", [{"name": "pytest", "status": "completed", "conclusion": "failure"}]),
     )
 
     evidence = audit.audit_github_checks(
@@ -311,10 +455,16 @@ def test_github_red(monkeypatch):
     assert evidence.status == "RED"
 
 
-def test_github_unknown_when_no_runs(monkeypatch):
+def test_github_rate_limiting_returns_blocked(monkeypatch):
     runner = make_runner({("git", "rev-parse", "HEAD"): result(stdout="abc\n")})
-    monkeypatch.setattr(audit, "gh_available", lambda *_: False)
-    monkeypatch.setattr(audit, "fetch_github_check_runs_via_http", lambda *_, **__: [])
+    monkeypatch.setattr(audit.shutil, "which", lambda command: None if command == "gh" else "/bin/other")
+    monkeypatch.setattr(
+        audit,
+        "fetch_github_check_runs_via_http",
+        lambda *_, **__: (_ for _ in ()).throw(
+            audit.VerificationError("rate_limit", "GitHub API rate limit exceeded", http_status=403)
+        ),
+    )
 
     evidence = audit.audit_github_checks(
         ROOT,
@@ -324,7 +474,31 @@ def test_github_unknown_when_no_runs(monkeypatch):
         timeout=1.0,
     )
 
-    assert evidence.status == "UNKNOWN"
+    assert evidence.status == "BLOCKED"
+    assert evidence.details["error_category"] == "rate_limit"
+
+
+def test_github_no_token_is_serialized(monkeypatch):
+    runner = make_runner({("git", "rev-parse", "HEAD"): result(stdout="abc\n")})
+    monkeypatch.setenv("GITHUB_TOKEN", "super-secret-token")
+    monkeypatch.setattr(audit.shutil, "which", lambda command: None if command == "gh" else "/bin/other")
+    monkeypatch.setattr(
+        audit,
+        "fetch_github_check_runs_via_http",
+        lambda *_, **__: ("authenticated_http", [{"name": "pytest", "status": "completed", "conclusion": "success"}]),
+    )
+
+    evidence = audit.audit_github_checks(
+        ROOT,
+        source_details=real_source_details(),
+        runner=runner,
+        skip_live=False,
+        timeout=1.0,
+    )
+
+    payload = json.dumps(audit.artifact_evidence_dict(evidence), sort_keys=True)
+    assert evidence.details["transport"] == "authenticated_http"
+    assert "super-secret-token" not in payload
 
 
 def test_discovery_blocked(monkeypatch):
@@ -398,6 +572,67 @@ def test_registry_blocked(monkeypatch):
     assert evidence.status == "BLOCKED"
 
 
+def test_registry_timeout_then_success_retries_once():
+    source = real_source_details()
+    payload = build_registry_payload(source, [build_registry_version(source)])
+    calls = {"count": 0}
+    sleeps = []
+
+    def fetcher(*_, **__):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise audit.VerificationError("timeout", "timed out")
+        return payload
+
+    evidence = audit.audit_registry(
+        source_details=source,
+        timeout=1.0,
+        skip_live=False,
+        http_fetch=fetcher,
+        sleeper=sleeps.append,
+    )
+
+    assert evidence.status == "MATCH"
+    assert evidence.details["attempt_count"] == 2
+    assert len(sleeps) == 1
+
+
+def test_registry_repeated_timeout_returns_blocked():
+    source = real_source_details()
+    sleeps = []
+
+    evidence = audit.audit_registry(
+        source_details=source,
+        timeout=1.0,
+        skip_live=False,
+        http_fetch=lambda *_, **__: (_ for _ in ()).throw(audit.VerificationError("timeout", "timed out")),
+        sleeper=sleeps.append,
+    )
+
+    assert evidence.status == "BLOCKED"
+    assert evidence.details["attempt_count"] == audit.REGISTRY_MAX_ATTEMPTS
+    assert evidence.details["final_error_category"] == "timeout"
+    assert len(sleeps) == audit.REGISTRY_MAX_ATTEMPTS - 1
+
+
+def test_registry_malformed_response_does_not_retry():
+    source = real_source_details()
+    sleeps = []
+
+    evidence = audit.audit_registry(
+        source_details=source,
+        timeout=1.0,
+        skip_live=False,
+        http_fetch=lambda *_, **__: {"not_json": {}},
+        sleeper=sleeps.append,
+    )
+
+    assert evidence.status == "BLOCKED"
+    assert evidence.details["attempt_count"] == 1
+    assert evidence.details["final_error_category"] == "malformed"
+    assert sleeps == []
+
+
 def test_registry_mismatch(monkeypatch):
     source = real_source_details()
     monkeypatch.setattr(
@@ -409,6 +644,24 @@ def test_registry_mismatch(monkeypatch):
     evidence = audit.audit_registry(source_details=source, timeout=1.0, skip_live=False)
 
     assert evidence.status == "MISMATCH"
+
+
+def test_registry_metadata_mismatch_does_not_retry():
+    source = real_source_details()
+    payload = build_registry_payload(source, [build_registry_version(source, is_latest=False)])
+    sleeps = []
+
+    evidence = audit.audit_registry(
+        source_details=source,
+        timeout=1.0,
+        skip_live=False,
+        http_fetch=lambda *_, **__: payload,
+        sleeper=sleeps.append,
+    )
+
+    assert evidence.status == "MISMATCH"
+    assert evidence.details["attempt_count"] == 1
+    assert sleeps == []
 
 
 def test_registry_source_version_present_but_not_latest_is_mismatch(monkeypatch):
@@ -679,6 +932,74 @@ def test_source_parsing():
     assert details["tool_count"] == len(details["tool_names"])
 
 
+def test_component_identity_exact_release_sha_matches():
+    release_sha = "97e89853d17983129acf849e8b2ad2c1d634ff4c"
+
+    evaluation = audit.evaluate_mcp_release_identity(
+        root=ROOT,
+        runner=make_runner({}),
+        expected_repo_sha=release_sha,
+        observed_release_sha=release_sha,
+    )
+
+    assert evaluation["status"] == "MATCH"
+    assert evaluation["release_commit_exact_match"] is True
+    assert evaluation["component_source_equivalent"] is True
+
+
+def test_component_identity_package_source_change_is_mismatch():
+    expected_head = "5" * 40
+    release_sha = "9" * 40
+
+    evaluation = audit.evaluate_mcp_release_identity(
+        root=ROOT,
+        runner=component_identity_runner(
+            expected_head,
+            release_sha,
+            changed_files=["packages/hodlxxi_mcp/src/hodlxxi_mcp/http_server.py"],
+        ),
+        expected_repo_sha=expected_head,
+        observed_release_sha=release_sha,
+    )
+
+    assert evaluation["status"] == "MISMATCH"
+    assert evaluation["component_source_equivalent"] is False
+
+
+def test_component_identity_systemd_unit_change_is_mismatch():
+    expected_head = "5" * 40
+    release_sha = "9" * 40
+
+    evaluation = audit.evaluate_mcp_release_identity(
+        root=ROOT,
+        runner=component_identity_runner(
+            expected_head,
+            release_sha,
+            changed_files=["deployment/systemd/hodlxxi-mcp.service"],
+        ),
+        expected_repo_sha=expected_head,
+        observed_release_sha=release_sha,
+    )
+
+    assert evaluation["status"] == "MISMATCH"
+    assert "deployment/systemd/hodlxxi-mcp.service" in evaluation["component_changed_files"]
+
+
+def test_component_identity_unknown_release_commit_is_not_match():
+    expected_head = "5" * 40
+    release_sha = "9" * 40
+
+    evaluation = audit.evaluate_mcp_release_identity(
+        root=ROOT,
+        runner=component_identity_runner(expected_head, release_sha, release_exists=False),
+        expected_repo_sha=expected_head,
+        observed_release_sha=release_sha,
+    )
+
+    assert evaluation["status"] in {"UNKNOWN", "BLOCKED"}
+    assert evaluation["matched"] is False
+
+
 def test_registry_parsing():
     payload = {
         "servers": [
@@ -812,6 +1133,117 @@ def test_extract_nginx_agent_mcp_evidence_redacts_and_bounds_route_snippets():
     assert all("abc123" not in snippet for snippet in snippets)
 
 
+def test_collect_nginx_route_item_detects_extensionless_sites_enabled_file(tmp_path):
+    nginx_root = tmp_path / "etc" / "nginx"
+    site_file = nginx_root / "sites-enabled" / "hodlxxi"
+    site_file.parent.mkdir(parents=True)
+    site_file.write_text(
+        "location = /agent/mcp {\n    proxy_pass http://127.0.0.1:8765/mcp;\n}\n",
+        encoding="utf-8",
+    )
+
+    item = audit.collect_nginx_route_item(
+        candidates=(site_file, nginx_root / "sites-enabled"),
+        nginx_root=nginx_root,
+    )
+
+    assert item["classification"] == "direct"
+    assert any(match["path"].endswith("sites-enabled/hodlxxi") for match in item["details"]["matches"])
+
+
+def test_collect_nginx_route_item_requires_same_block_route_and_upstream(tmp_path):
+    nginx_root = tmp_path / "etc" / "nginx"
+    site_file = nginx_root / "sites-enabled" / "hodlxxi"
+    site_file.parent.mkdir(parents=True)
+    site_file.write_text(
+        "server {\n" "  location = /agent/mcp {\n" "    proxy_pass http://127.0.0.1:8765/mcp;\n" "  }\n" "}\n",
+        encoding="utf-8",
+    )
+
+    item = audit.collect_nginx_route_item(candidates=(nginx_root / "sites-enabled",), nginx_root=nginx_root)
+
+    assert item["classification"] == "direct"
+
+
+def test_collect_nginx_route_item_staging_only_file_does_not_prove_production(tmp_path):
+    nginx_root = tmp_path / "etc" / "nginx"
+    staging = nginx_root / "conf.d" / "hodlxxi-mcp-staging.conf"
+    staging.parent.mkdir(parents=True)
+    staging.write_text(
+        "location = /agent/mcp {\n    proxy_pass http://127.0.0.1:8765/mcp;\n}\n",
+        encoding="utf-8",
+    )
+
+    item = audit.collect_nginx_route_item(candidates=(nginx_root / "conf.d",), nginx_root=nginx_root)
+
+    assert item["classification"] == "unavailable"
+    assert item["details"]["rejected"][0]["reason"] == "staging_candidate"
+
+
+def test_collect_nginx_route_item_does_not_mix_location_and_upstream_from_different_files(tmp_path):
+    nginx_root = tmp_path / "etc" / "nginx"
+    sites_enabled = nginx_root / "sites-enabled"
+    conf_d = nginx_root / "conf.d"
+    sites_enabled.mkdir(parents=True)
+    conf_d.mkdir(parents=True)
+    (sites_enabled / "hodlxxi").write_text(
+        "location = /agent/mcp {\n    proxy_set_header Host $host;\n}\n", encoding="utf-8"
+    )
+    (conf_d / "upstream.conf").write_text("proxy_pass http://127.0.0.1:8765/mcp;\n", encoding="utf-8")
+
+    item = audit.collect_nginx_route_item(candidates=(sites_enabled, conf_d), nginx_root=nginx_root)
+
+    assert item["classification"] == "unavailable"
+
+
+def test_collect_nginx_route_item_ignores_symlink_loops(tmp_path):
+    nginx_root = tmp_path / "etc" / "nginx"
+    sites_enabled = nginx_root / "sites-enabled"
+    sites_enabled.mkdir(parents=True)
+    (sites_enabled / "loop").symlink_to(sites_enabled, target_is_directory=True)
+
+    item = audit.collect_nginx_route_item(candidates=(sites_enabled,), nginx_root=nginx_root)
+
+    assert item["classification"] == "unavailable"
+
+
+def test_collect_nginx_route_item_redacts_sensitive_headers(tmp_path):
+    nginx_root = tmp_path / "etc" / "nginx"
+    site_file = nginx_root / "sites-enabled" / "hodlxxi"
+    site_file.parent.mkdir(parents=True)
+    site_file.write_text(
+        "location = /agent/mcp {\n"
+        "    proxy_pass http://127.0.0.1:8765/mcp;\n"
+        "    proxy_set_header Authorization Bearer secret-token;\n"
+        "    proxy_set_header Cookie session=abc123;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    item = audit.collect_nginx_route_item(candidates=(site_file,), nginx_root=nginx_root)
+    snippets = item["details"]["matches"][0]["snippets"]
+
+    assert all("secret-token" not in snippet for snippet in snippets)
+    assert all("abc123" not in snippet for snippet in snippets)
+
+
+def test_real_production_regression_release_commit_is_component_equivalent():
+    evaluation = audit.evaluate_mcp_release_identity(
+        root=ROOT,
+        runner=audit.default_runner,
+        expected_repo_sha="5b1c6e50d172ca916c67e0281c84ef043d89446a",
+        observed_release_sha="97e89853d17983129acf849e8b2ad2c1d634ff4c",
+    )
+
+    assert evaluation["status"] == "MATCH"
+    assert evaluation["release_commit_exact_match"] is False
+    assert evaluation["component_source_equivalent"] is True
+    assert evaluation["component_changed_files"] == []
+    assert "packages/hodlxxi_mcp/pyproject.toml" in evaluation["component_scope_paths"]
+    assert "deployment/systemd/hodlxxi-mcp.service" in evaluation["component_scope_paths"]
+    assert "server.json" in evaluation["component_scope_paths"]
+
+
 def test_report_outputs_do_not_serialize_raw_public_payloads():
     evidence = audit.Evidence(
         name="discovery",
@@ -899,6 +1331,7 @@ def test_host_checks_wildcard_listener_is_mismatch(monkeypatch):
     runner = active_host_runner(expected_head)
     monkeypatch.setattr(audit.shutil, "which", lambda command: "/bin/systemctl" if command == "systemctl" else None)
     monkeypatch.setattr(audit, "load_canonical_contract", lambda *_: SimpleNamespace(server_version=expected_version))
+    patch_release_identity(monkeypatch)
     monkeypatch.setattr(
         audit,
         "collect_sidecar_host_items",
@@ -921,6 +1354,7 @@ def test_host_checks_partial_direct_evidence_is_unknown(monkeypatch):
     runner = active_host_runner(expected_head)
     monkeypatch.setattr(audit.shutil, "which", lambda command: "/bin/systemctl" if command == "systemctl" else None)
     monkeypatch.setattr(audit, "load_canonical_contract", lambda *_: SimpleNamespace(server_version=expected_version))
+    patch_release_identity(monkeypatch)
     monkeypatch.setattr(
         audit,
         "collect_sidecar_host_items",
@@ -943,6 +1377,14 @@ def test_host_checks_mismatched_release_sha_is_mismatch(monkeypatch):
     runner = active_host_runner(expected_head)
     monkeypatch.setattr(audit.shutil, "which", lambda command: "/bin/systemctl" if command == "systemctl" else None)
     monkeypatch.setattr(audit, "load_canonical_contract", lambda *_: SimpleNamespace(server_version=expected_version))
+    patch_release_identity(
+        monkeypatch,
+        status="MISMATCH",
+        matched=False,
+        equivalent=False,
+        changed_files=["packages/hodlxxi_mcp/src/hodlxxi_mcp/http_server.py"],
+        summary="Canonical MCP build inputs changed after the deployed sidecar release.",
+    )
     monkeypatch.setattr(
         audit,
         "collect_sidecar_host_items",
@@ -956,10 +1398,7 @@ def test_host_checks_mismatched_release_sha_is_mismatch(monkeypatch):
     evidence = audit.audit_host_checks(ROOT, runner=runner)
 
     assert evidence.status == "MISMATCH"
-    assert (
-        f"mcp_release_sha release_sha={observed_release_sha} expected={expected_head}"
-        in evidence.details["verdict"]["mismatches"]
-    )
+    assert "http_server.py" in " ".join(evidence.details["verdict"]["mismatches"])
 
 
 def test_host_checks_missing_current_symlink_and_release_sha_is_unknown(monkeypatch):
@@ -1017,6 +1456,7 @@ def test_host_checks_fully_mocked_all_good_contract_can_match(monkeypatch):
     runner = active_host_runner(expected_head)
     monkeypatch.setattr(audit.shutil, "which", lambda command: "/bin/systemctl" if command == "systemctl" else None)
     monkeypatch.setattr(audit, "load_canonical_contract", lambda *_: SimpleNamespace(server_version=expected_version))
+    patch_release_identity(monkeypatch)
     monkeypatch.setattr(
         audit,
         "collect_sidecar_host_items",
