@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -288,6 +289,26 @@ def write_repo_file(repo: Path, relative_path: str, content: str) -> None:
     target = repo / relative_path
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
+
+
+def init_source_contract_fixture(tmp_path: Path) -> Path:
+    root = tmp_path / "fixture"
+    root.mkdir()
+    file_paths = [
+        "server.json",
+        "packages/hodlxxi_mcp/pyproject.toml",
+        "packages/hodlxxi_mcp/README.md",
+        "deployment/systemd/hodlxxi-mcp.service",
+        "app/services/mcp_discovery.py",
+        "packages/hodlxxi_mcp/src/hodlxxi_mcp/__init__.py",
+        "packages/hodlxxi_mcp/src/hodlxxi_mcp/tools.py",
+    ]
+    for relative_path in file_paths:
+        source = ROOT / relative_path
+        target = root / relative_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    return root
 
 
 def test_git_not_a_repository(tmp_path):
@@ -1012,13 +1033,37 @@ def test_source_parsing():
     assert evidence.status == "MATCH"
     assert details["mcp_package_version"] == details["module_version"]
     assert details["tool_count"] == len(details["tool_names"])
+    assert details["component_scope_paths"] == audit.canonical_mcp_component_scope_paths(ROOT)
+    assert details["missing_current_scope_paths"] == []
 
 
-def test_component_identity_exact_release_sha_matches():
-    release_sha = "97e89853d17983129acf849e8b2ad2c1d634ff4c"
+def test_source_contract_missing_package_readme_is_mismatch(tmp_path):
+    fixture_root = init_source_contract_fixture(tmp_path)
+    (fixture_root / "packages" / "hodlxxi_mcp" / "README.md").unlink()
+
+    evidence, details = audit.audit_source_contract(fixture_root)
+
+    assert evidence.status == "MISMATCH"
+    assert "packages/hodlxxi_mcp/README.md" in details["missing_current_scope_paths"]
+    assert details["component_scope_paths"] == audit.canonical_mcp_component_scope_paths(fixture_root)
+
+
+def test_source_contract_missing_sidecar_systemd_unit_is_mismatch(tmp_path):
+    fixture_root = init_source_contract_fixture(tmp_path)
+    (fixture_root / "deployment" / "systemd" / "hodlxxi-mcp.service").unlink()
+
+    evidence, details = audit.audit_source_contract(fixture_root)
+
+    assert evidence.status == "MISMATCH"
+    assert "deployment/systemd/hodlxxi-mcp.service" in details["missing_current_scope_paths"]
+    assert details["component_scope_paths"] == audit.canonical_mcp_component_scope_paths(fixture_root)
+
+
+def test_component_identity_exact_release_sha_matches(tmp_path):
+    repo, release_sha, _ = init_component_identity_repo(tmp_path)
 
     evaluation = audit.evaluate_mcp_release_identity(
-        root=ROOT,
+        root=repo,
         runner=make_runner({}),
         expected_repo_sha=release_sha,
         observed_release_sha=release_sha,
@@ -1027,6 +1072,36 @@ def test_component_identity_exact_release_sha_matches():
     assert evaluation["status"] == "MATCH"
     assert evaluation["release_commit_exact_match"] is True
     assert evaluation["component_source_equivalent"] is True
+    assert evaluation["missing_current_scope_paths"] == []
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "packages/hodlxxi_mcp/README.md",
+        "deployment/systemd/hodlxxi-mcp.service",
+    ],
+)
+def test_component_identity_exact_release_sha_with_missing_input_is_mismatch(tmp_path, relative_path):
+    repo, release_sha, _ = init_component_identity_repo(tmp_path)
+    target = repo / relative_path
+    if target.is_dir():
+        shutil.rmtree(target)
+    else:
+        target.unlink()
+
+    evaluation = audit.evaluate_mcp_release_identity(
+        root=repo,
+        runner=make_runner({}),
+        expected_repo_sha=release_sha,
+        observed_release_sha=release_sha,
+    )
+
+    assert evaluation["status"] == "MISMATCH"
+    assert evaluation["matched"] is False
+    assert evaluation["release_commit_exact_match"] is True
+    assert evaluation["component_source_equivalent"] is False
+    assert relative_path in evaluation["missing_current_scope_paths"]
 
 
 def test_canonical_mcp_component_scope_is_complete_and_static():
@@ -1135,14 +1210,12 @@ def test_component_identity_deleted_canonical_input_is_mismatch_in_real_git_repo
     assert evaluation["status"] == "MISMATCH"
     assert evaluation["component_source_equivalent"] is False
     assert relative_path in evaluation["missing_current_scope_paths"]
-    assert relative_path in evaluation["component_changed_files"]
+    assert evaluation["component_changed_files"] == []
 
 
 def test_deleted_canonical_path_remains_in_git_diff_pathspec(tmp_path):
     deleted_path = "deployment/systemd/hodlxxi-mcp.service"
     for relative_path in audit.canonical_mcp_component_scope_paths():
-        if relative_path == deleted_path:
-            continue
         target = tmp_path / relative_path
         if relative_path.endswith("src/hodlxxi_mcp"):
             target.mkdir(parents=True, exist_ok=True)
@@ -1177,7 +1250,8 @@ def test_deleted_canonical_path_remains_in_git_diff_pathspec(tmp_path):
 
     assert evaluation["status"] == "MISMATCH"
     assert deleted_path in captured_command
-    assert deleted_path in evaluation["missing_current_scope_paths"]
+    assert evaluation["missing_current_scope_paths"] == []
+    assert deleted_path in evaluation["component_changed_files"]
 
 
 @pytest.mark.parametrize(

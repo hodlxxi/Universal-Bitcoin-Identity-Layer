@@ -422,6 +422,24 @@ def audit_github_checks(
 
 
 def audit_source_contract(root: Path) -> tuple[Evidence, dict[str, Any]]:
+    scope_paths = canonical_mcp_component_scope_paths()
+    missing_current_paths = current_tree_missing_mcp_component_scope_paths(root)
+    base_details: dict[str, Any] = {
+        "component_scope_paths": scope_paths,
+        "missing_current_scope_paths": missing_current_paths,
+    }
+    if missing_current_paths:
+        mismatches = ["mandatory canonical MCP component paths are missing from the source tree"]
+        details = {**base_details, "mismatches": mismatches}
+        return (
+            Evidence(
+                name="source_contract",
+                status="MISMATCH",
+                summary="Mandatory canonical MCP component paths are missing from source tree.",
+                details=details,
+            ),
+            details,
+        )
     try:
         canonical = load_canonical_contract(root)
         server_json_path = root / "server.json"
@@ -450,6 +468,7 @@ def audit_source_contract(root: Path) -> tuple[Evidence, dict[str, Any]]:
         tool_names = _load_assignment_literal(tools_path, "TOOL_NAMES")
 
         details = {
+            **base_details,
             "server_json": server_json,
             "mcp_package_version": pyproject["project"]["version"],
             "module_version": init_version,
@@ -1092,6 +1111,18 @@ def evaluate_mcp_release_identity(
     }
     if not expected_repo_sha or not observed_release_sha:
         return details
+    if missing_current_paths:
+        details.update(
+            {
+                "status": "MISMATCH",
+                "release_commit_exact_match": observed_release_sha == expected_repo_sha,
+                "component_source_equivalent": False,
+                "release_commit_resolved": observed_release_sha == expected_repo_sha,
+                "release_commit_relation": "exact" if observed_release_sha == expected_repo_sha else None,
+                "summary": "Canonical MCP build inputs are missing from the current tree.",
+            }
+        )
+        return details
     if observed_release_sha == expected_repo_sha:
         details.update(
             {
@@ -1136,15 +1167,6 @@ def evaluate_mcp_release_identity(
 
     changed_files = [line.strip() for line in diff_result.stdout.splitlines() if line.strip()]
     details["component_changed_files"] = changed_files[:20]
-    if missing_current_paths:
-        details.update(
-            {
-                "status": "MISMATCH",
-                "component_source_equivalent": False,
-                "summary": "Canonical MCP build inputs are missing from the current tree.",
-            }
-        )
-        return details
     if not changed_files:
         details.update(
             {
