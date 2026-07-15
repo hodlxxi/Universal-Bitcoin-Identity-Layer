@@ -113,6 +113,7 @@ HOST_NGINX_MAX_SNIPPETS = 20
 GITHUB_CHECKS_USER_AGENT = "hodlxxi-production-truth-audit/1.0"
 MCP_COMPONENT_SCOPE_PATHS = (
     "packages/hodlxxi_mcp/pyproject.toml",
+    "packages/hodlxxi_mcp/README.md",
     "packages/hodlxxi_mcp/src/hodlxxi_mcp",
     "deployment/systemd/hodlxxi-mcp.service",
     "server.json",
@@ -686,6 +687,8 @@ def audit_registry(
     query_url = f"{REGISTRY_SEARCH_URL}?search={urllib.parse.quote(str(expected_name))}"
     attempt_count = 0
     final_error_category: str | None = None
+    last_transient_error_category: str | None = None
+    transient_error_count = 0
     try:
         while True:
             attempt_count += 1
@@ -696,7 +699,10 @@ def audit_registry(
                 final_error_category = exc.category
                 if exc.category not in {"timeout", "dns", "tls", "network"} or attempt_count >= attempts:
                     raise
+                last_transient_error_category = exc.category
+                transient_error_count += 1
                 sleep_fn(REGISTRY_RETRY_BACKOFF_SECONDS * attempt_count)
+        final_error_category = None
         versions = parse_registry_versions(payload["json"], expected_name=str(expected_name))
     except VerificationError as exc:
         return Evidence(
@@ -706,6 +712,8 @@ def audit_registry(
             details={
                 "attempt_count": attempt_count or 1,
                 "final_error_category": final_error_category or exc.category,
+                "last_transient_error_category": last_transient_error_category,
+                "transient_error_count": transient_error_count,
             },
         )
     except Exception as exc:
@@ -713,7 +721,12 @@ def audit_registry(
             name="registry",
             status="BLOCKED",
             summary=f"Registry parsing failed: {exc}",
-            details={"attempt_count": attempt_count or 1, "final_error_category": "malformed"},
+            details={
+                "attempt_count": attempt_count or 1,
+                "final_error_category": "malformed",
+                "last_transient_error_category": last_transient_error_category,
+                "transient_error_count": transient_error_count,
+            },
         )
 
     if not versions:
@@ -763,6 +776,8 @@ def audit_registry(
         details={
             "attempt_count": attempt_count or 1,
             "final_error_category": final_error_category,
+            "last_transient_error_category": last_transient_error_category,
+            "transient_error_count": transient_error_count,
             "versions": versions,
             "mismatches": mismatches,
         },
@@ -1043,8 +1058,13 @@ def canonical_release_sha_from_item(item: Mapping[str, Any] | None, *, expected_
     return release_sha
 
 
-def canonical_mcp_component_scope_paths(root: Path) -> list[str]:
-    return [path for path in MCP_COMPONENT_SCOPE_PATHS if (root / path).exists()]
+def canonical_mcp_component_scope_paths(root: Path | None = None) -> list[str]:
+    del root
+    return list(MCP_COMPONENT_SCOPE_PATHS)
+
+
+def current_tree_missing_mcp_component_scope_paths(root: Path) -> list[str]:
+    return [path for path in canonical_mcp_component_scope_paths() if not (root / path).exists()]
 
 
 def evaluate_mcp_release_identity(
@@ -1055,12 +1075,14 @@ def evaluate_mcp_release_identity(
     observed_release_sha: str | None,
 ) -> dict[str, Any]:
     scope_paths = canonical_mcp_component_scope_paths(root)
+    missing_current_paths = current_tree_missing_mcp_component_scope_paths(root)
     details: dict[str, Any] = {
         "status": "UNKNOWN",
         "matched": False,
         "release_commit_exact_match": False,
         "component_source_equivalent": None,
         "component_scope_paths": scope_paths,
+        "missing_current_scope_paths": missing_current_paths,
         "component_changed_files": [],
         "release_commit_resolved": False,
         "release_commit_relation": None,
@@ -1114,6 +1136,15 @@ def evaluate_mcp_release_identity(
 
     changed_files = [line.strip() for line in diff_result.stdout.splitlines() if line.strip()]
     details["component_changed_files"] = changed_files[:20]
+    if missing_current_paths:
+        details.update(
+            {
+                "status": "MISMATCH",
+                "component_source_equivalent": False,
+                "summary": "Canonical MCP build inputs are missing from the current tree.",
+            }
+        )
+        return details
     if not changed_files:
         details.update(
             {

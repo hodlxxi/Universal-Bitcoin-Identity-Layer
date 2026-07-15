@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -220,6 +221,73 @@ def component_identity_runner(
     else:
         mapping[("git", "merge-base", "--is-ancestor", release_sha, expected_head)] = result(returncode=2, stderr="bad")
     return make_runner(mapping)
+
+
+def init_component_identity_repo(tmp_path: Path) -> tuple[Path, str, str]:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    for relative_path in audit.canonical_mcp_component_scope_paths():
+        target = repo / relative_path
+        if target.suffix:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.name == "pyproject.toml":
+                target.write_text(
+                    "[project]\nname = 'hodlxxi-mcp'\nversion = '0.1.1'\nreadme = 'README.md'\n",
+                    encoding="utf-8",
+                )
+            elif target.name == "README.md":
+                target.write_text("# package readme\n", encoding="utf-8")
+            elif target.name == "server.json":
+                target.write_text('{"name":"io.github.hodlxxi/hodlxxi-readonly"}\n', encoding="utf-8")
+            elif target.name == "hodlxxi-mcp.service":
+                target.write_text(
+                    "WorkingDirectory=/opt/hodlxxi-mcp/current\n"
+                    "ExecStart=/opt/hodlxxi-mcp/current/venv/bin/hodlxxi-mcp-http\n",
+                    encoding="utf-8",
+                )
+            else:
+                target.write_text("placeholder\n", encoding="utf-8")
+        else:
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "http_server.py").write_text("def main():\n    return None\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "release"], cwd=repo, check=True, capture_output=True, text=True)
+    release_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    return repo, release_sha, str(repo / "packages" / "hodlxxi_mcp" / "src" / "hodlxxi_mcp")
+
+
+def git_commit_all(repo: Path, message: str) -> str:
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", message], cwd=repo, check=True, capture_output=True, text=True)
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def write_repo_file(repo: Path, relative_path: str, content: str) -> None:
+    target = repo / relative_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
 
 
 def test_git_not_a_repository(tmp_path):
@@ -594,6 +662,9 @@ def test_registry_timeout_then_success_retries_once():
 
     assert evidence.status == "MATCH"
     assert evidence.details["attempt_count"] == 2
+    assert evidence.details["final_error_category"] is None
+    assert evidence.details["last_transient_error_category"] == "timeout"
+    assert evidence.details["transient_error_count"] == 1
     assert len(sleeps) == 1
 
 
@@ -612,6 +683,8 @@ def test_registry_repeated_timeout_returns_blocked():
     assert evidence.status == "BLOCKED"
     assert evidence.details["attempt_count"] == audit.REGISTRY_MAX_ATTEMPTS
     assert evidence.details["final_error_category"] == "timeout"
+    assert evidence.details["last_transient_error_category"] == "timeout"
+    assert evidence.details["transient_error_count"] == audit.REGISTRY_MAX_ATTEMPTS - 1
     assert len(sleeps) == audit.REGISTRY_MAX_ATTEMPTS - 1
 
 
@@ -630,6 +703,8 @@ def test_registry_malformed_response_does_not_retry():
     assert evidence.status == "BLOCKED"
     assert evidence.details["attempt_count"] == 1
     assert evidence.details["final_error_category"] == "malformed"
+    assert evidence.details["last_transient_error_category"] is None
+    assert evidence.details["transient_error_count"] == 0
     assert sleeps == []
 
 
@@ -661,6 +736,9 @@ def test_registry_metadata_mismatch_does_not_retry():
 
     assert evidence.status == "MISMATCH"
     assert evidence.details["attempt_count"] == 1
+    assert evidence.details["final_error_category"] is None
+    assert evidence.details["last_transient_error_category"] is None
+    assert evidence.details["transient_error_count"] == 0
     assert sleeps == []
 
 
@@ -728,6 +806,10 @@ def test_registry_single_latest_active_version_matches(monkeypatch):
     evidence = audit.audit_registry(source_details=source, timeout=1.0, skip_live=False)
 
     assert evidence.status == "MATCH"
+    assert evidence.details["attempt_count"] == 1
+    assert evidence.details["final_error_category"] is None
+    assert evidence.details["last_transient_error_category"] is None
+    assert evidence.details["transient_error_count"] == 0
 
 
 def test_mcp_blocked(monkeypatch):
@@ -947,6 +1029,16 @@ def test_component_identity_exact_release_sha_matches():
     assert evaluation["component_source_equivalent"] is True
 
 
+def test_canonical_mcp_component_scope_is_complete_and_static():
+    assert audit.canonical_mcp_component_scope_paths(ROOT) == [
+        "packages/hodlxxi_mcp/pyproject.toml",
+        "packages/hodlxxi_mcp/README.md",
+        "packages/hodlxxi_mcp/src/hodlxxi_mcp",
+        "deployment/systemd/hodlxxi-mcp.service",
+        "server.json",
+    ]
+
+
 def test_component_identity_package_source_change_is_mismatch():
     expected_head = "5" * 40
     release_sha = "9" * 40
@@ -964,6 +1056,25 @@ def test_component_identity_package_source_change_is_mismatch():
 
     assert evaluation["status"] == "MISMATCH"
     assert evaluation["component_source_equivalent"] is False
+
+
+def test_component_identity_package_readme_change_is_mismatch():
+    expected_head = "5" * 40
+    release_sha = "9" * 40
+
+    evaluation = audit.evaluate_mcp_release_identity(
+        root=ROOT,
+        runner=component_identity_runner(
+            expected_head,
+            release_sha,
+            changed_files=["packages/hodlxxi_mcp/README.md"],
+        ),
+        expected_repo_sha=expected_head,
+        observed_release_sha=release_sha,
+    )
+
+    assert evaluation["status"] == "MISMATCH"
+    assert "packages/hodlxxi_mcp/README.md" in evaluation["component_changed_files"]
 
 
 def test_component_identity_systemd_unit_change_is_mismatch():
@@ -998,6 +1109,101 @@ def test_component_identity_unknown_release_commit_is_not_match():
 
     assert evaluation["status"] in {"UNKNOWN", "BLOCKED"}
     assert evaluation["matched"] is False
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "deployment/systemd/hodlxxi-mcp.service",
+        "server.json",
+        "packages/hodlxxi_mcp/pyproject.toml",
+        "packages/hodlxxi_mcp/README.md",
+    ],
+)
+def test_component_identity_deleted_canonical_input_is_mismatch_in_real_git_repo(tmp_path, relative_path):
+    repo, release_sha, _ = init_component_identity_repo(tmp_path)
+    (repo / relative_path).unlink()
+    expected_head = git_commit_all(repo, f"delete {relative_path}")
+
+    evaluation = audit.evaluate_mcp_release_identity(
+        root=repo,
+        runner=audit.default_runner,
+        expected_repo_sha=expected_head,
+        observed_release_sha=release_sha,
+    )
+
+    assert evaluation["status"] == "MISMATCH"
+    assert evaluation["component_source_equivalent"] is False
+    assert relative_path in evaluation["missing_current_scope_paths"]
+    assert relative_path in evaluation["component_changed_files"]
+
+
+def test_deleted_canonical_path_remains_in_git_diff_pathspec(tmp_path):
+    deleted_path = "deployment/systemd/hodlxxi-mcp.service"
+    for relative_path in audit.canonical_mcp_component_scope_paths():
+        if relative_path == deleted_path:
+            continue
+        target = tmp_path / relative_path
+        if relative_path.endswith("src/hodlxxi_mcp"):
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "http_server.py").write_text("def main():\n    return None\n", encoding="utf-8")
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("placeholder\n", encoding="utf-8")
+
+    expected_head = "5" * 40
+    release_sha = "9" * 40
+    captured_command: list[str] = []
+
+    def runner(command, cwd):
+        nonlocal captured_command
+        if command == ["git", "rev-parse", "--verify", f"{release_sha}^{{commit}}"]:
+            return result(stdout=f"{release_sha}\n")
+        if command == ["git", "rev-parse", "--verify", f"{expected_head}^{{commit}}"]:
+            return result(stdout=f"{expected_head}\n")
+        if command == ["git", "merge-base", "--is-ancestor", release_sha, expected_head]:
+            return result(returncode=0)
+        if command[:4] == ["git", "diff", "--name-only", release_sha]:
+            captured_command = command
+            return result(stdout=f"{deleted_path}\n")
+        return result(returncode=1, stderr="unexpected command")
+
+    evaluation = audit.evaluate_mcp_release_identity(
+        root=tmp_path,
+        runner=runner,
+        expected_repo_sha=expected_head,
+        observed_release_sha=release_sha,
+    )
+
+    assert evaluation["status"] == "MISMATCH"
+    assert deleted_path in captured_command
+    assert deleted_path in evaluation["missing_current_scope_paths"]
+
+
+@pytest.mark.parametrize(
+    "relative_path,content",
+    [
+        ("docs/guide.md", "docs-only change\n"),
+        ("tests/unit/test_placeholder.py", "def test_placeholder():\n    assert True\n"),
+        (".github/workflows/example.yml", "name: example\n"),
+        ("scripts/production_truth_audit.py", "# audit-only change\n"),
+    ],
+)
+def test_component_identity_non_component_changes_remain_equivalent_in_real_git_repo(tmp_path, relative_path, content):
+    repo, release_sha, _ = init_component_identity_repo(tmp_path)
+    write_repo_file(repo, relative_path, content)
+    expected_head = git_commit_all(repo, f"change {relative_path}")
+
+    evaluation = audit.evaluate_mcp_release_identity(
+        root=repo,
+        runner=audit.default_runner,
+        expected_repo_sha=expected_head,
+        observed_release_sha=release_sha,
+    )
+
+    assert evaluation["status"] == "MATCH"
+    assert evaluation["component_source_equivalent"] is True
+    assert evaluation["component_changed_files"] == []
 
 
 def test_registry_parsing():
@@ -1240,6 +1446,7 @@ def test_real_production_regression_release_commit_is_component_equivalent():
     assert evaluation["component_source_equivalent"] is True
     assert evaluation["component_changed_files"] == []
     assert "packages/hodlxxi_mcp/pyproject.toml" in evaluation["component_scope_paths"]
+    assert "packages/hodlxxi_mcp/README.md" in evaluation["component_scope_paths"]
     assert "deployment/systemd/hodlxxi-mcp.service" in evaluation["component_scope_paths"]
     assert "server.json" in evaluation["component_scope_paths"]
 
