@@ -291,6 +291,22 @@ def write_repo_file(repo: Path, relative_path: str, content: str) -> None:
     target.write_text(content, encoding="utf-8")
 
 
+def add_pr416_style_non_component_changes(repo: Path) -> str:
+    non_component_files = {
+        ".github/workflows/lint.yml": "name: lint\n",
+        ".github/workflows/mcp-remote-verify.yml": "name: mcp-remote-verify\n",
+        "docs/MCP_CLIENT_VALIDATION.md": "# MCP client validation\n",
+        "docs/MCP_REGISTRY_PUBLISHING.md": "# MCP registry publishing\n",
+        "scripts/mcp_remote_verify.py": "def main():\n    return None\n",
+        "scripts/production_truth_audit.py": "def main():\n    return None\n",
+        "tests/unit/test_mcp_remote_verify.py": "def test_placeholder_remote_verify():\n    assert True\n",
+        "tests/unit/test_production_truth_audit.py": "def test_placeholder_production_truth_audit():\n    assert True\n",
+    }
+    for relative_path, content in non_component_files.items():
+        write_repo_file(repo, relative_path, content)
+    return git_commit_all(repo, "non-component changes")
+
+
 def init_source_contract_fixture(tmp_path: Path) -> Path:
     root = tmp_path / "fixture"
     root.mkdir()
@@ -1171,19 +1187,21 @@ def test_component_identity_systemd_unit_change_is_mismatch():
     assert "deployment/systemd/hodlxxi-mcp.service" in evaluation["component_changed_files"]
 
 
-def test_component_identity_unknown_release_commit_is_not_match():
-    expected_head = "5" * 40
+def test_unresolvable_release_commit_returns_unknown(tmp_path):
+    repo, expected_head, _ = init_component_identity_repo(tmp_path)
     release_sha = "9" * 40
 
     evaluation = audit.evaluate_mcp_release_identity(
-        root=ROOT,
-        runner=component_identity_runner(expected_head, release_sha, release_exists=False),
+        root=repo,
+        runner=audit.default_runner,
         expected_repo_sha=expected_head,
         observed_release_sha=release_sha,
     )
 
-    assert evaluation["status"] in {"UNKNOWN", "BLOCKED"}
+    assert evaluation["status"] == "UNKNOWN"
     assert evaluation["matched"] is False
+    assert evaluation["release_commit_resolved"] is False
+    assert evaluation["component_source_equivalent"] is None
 
 
 @pytest.mark.parametrize(
@@ -1507,18 +1525,22 @@ def test_collect_nginx_route_item_redacts_sensitive_headers(tmp_path):
     assert all("abc123" not in snippet for snippet in snippets)
 
 
-def test_real_production_regression_release_commit_is_component_equivalent():
+def test_pr416_only_non_component_changes_are_component_equivalent_in_real_git_repo(tmp_path):
+    repo, release_sha, _ = init_component_identity_repo(tmp_path)
+    expected_head = add_pr416_style_non_component_changes(repo)
+
     evaluation = audit.evaluate_mcp_release_identity(
-        root=ROOT,
+        root=repo,
         runner=audit.default_runner,
-        expected_repo_sha="5b1c6e50d172ca916c67e0281c84ef043d89446a",
-        observed_release_sha="97e89853d17983129acf849e8b2ad2c1d634ff4c",
+        expected_repo_sha=expected_head,
+        observed_release_sha=release_sha,
     )
 
     assert evaluation["status"] == "MATCH"
     assert evaluation["release_commit_exact_match"] is False
     assert evaluation["component_source_equivalent"] is True
     assert evaluation["component_changed_files"] == []
+    assert evaluation["release_commit_relation"] == "ancestor"
     assert "packages/hodlxxi_mcp/pyproject.toml" in evaluation["component_scope_paths"]
     assert "packages/hodlxxi_mcp/README.md" in evaluation["component_scope_paths"]
     assert "deployment/systemd/hodlxxi-mcp.service" in evaluation["component_scope_paths"]
