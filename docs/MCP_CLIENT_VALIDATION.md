@@ -15,11 +15,8 @@ Validated successfully over local stdio on 2026-07-12 and over the public remote
 - Public endpoint: `https://hodlxxi.com/agent/mcp`
 - Server card: `https://hodlxxi.com/.well-known/mcp.json`
 - Published Registry version: `0.1.0`
-- Pending release target: `0.1.1`
 
-## Pending release
-
-Version `0.1.1` aligns package and discovery metadata with the live protocol audit. It must be merged, deployed, and externally revalidated before this document records `0.1.1` as the last externally validated production build.
+The repository now carries `0.1.1` source metadata and a dedicated remote verifier workflow, but this document must not describe `0.1.1` as externally validated production truth until that live endpoint is re-queried and the verifier result is archived.
 
 ## Public deployment path
 
@@ -34,7 +31,7 @@ external MCP client
 
 The sidecar listens only on loopback. The Flask monolith publishes discovery metadata but does not execute MCP tools.
 
-## Protocol result
+## Protocol Result
 
 A real external macOS client completed MCP initialization, `tools/list`, and `tools/call` over Streamable HTTP:
 
@@ -52,9 +49,9 @@ The same remote endpoint was connected as a Claude custom connector. Claude succ
 
 One initial Claude tool call timed out before a successful retry. Server-side inspection found no MCP exception and no nginx `499`, `502`, or `504`; the successful protocol exchange completed normally. No production rollback or server change was required.
 
-## Discovery result
+## Discovery Result
 
-The public server card advertises:
+The public server card advertised:
 
 ```text
 name=HODLXXI Read-Only
@@ -74,7 +71,7 @@ The official MCP Registry metadata lives at the repository root in `server.json`
 io.github.hodlxxi/hodlxxi-readonly
 ```
 
-## Runtime data interpretation
+## Runtime Data Interpretation
 
 The validation exposed two public-schema clarifications:
 
@@ -93,12 +90,41 @@ external_users=0
 
 Therefore, 26 of 26 completed test jobs had evidence. The ratio `26 / 261` must not be presented as a real-user conversion or runtime completion rate.
 
-## Security boundary
+## Security Boundary
 
 The server exposes exactly 26 allowlisted tools and no MCP prompts or resources. It exposes no generic URL fetch, write method, shell, filesystem, database, wallet, LND, private-key, payment-initiation, or receipt-creation tool.
 
 The production reverse proxy accepts only the MCP transport methods required by the deployment (`GET`, `POST`, and `DELETE`) and rejects unrelated methods such as `PUT` and `OPTIONS`.
 
+## Version 0.1.1 Verifier Workflow
+
+Version `0.1.1` adds a dependency-free verifier script and a manual GitHub Actions workflow:
+
+- Local verifier: `scripts/mcp_remote_verify.py`
+- Manual workflow: `.github/workflows/mcp-remote-verify.yml`
+
+The workflow is `workflow_dispatch` only, uses Python `3.12`, requires no secrets, and must fail whenever the live tool allowlist, server identity, negotiated protocol, prompts/resources exposure, or required safe tool calls diverge from repository truth.
+
+## Clean macOS Reproduction
+
+Run from a clean checkout of the intended commit:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+
+python scripts/mcp_remote_verify.py \
+  --endpoint https://hodlxxi.com/agent/mcp \
+  --json-output /tmp/hodlxxi-mcp-verification.json \
+  --markdown-output /tmp/hodlxxi-mcp-verification.md
+```
+
+Interpretation:
+
+- Exit code `0` means complete `VERIFIED`.
+- The verifier accepts either `GET 405` or a successful `GET` with `Content-Type: text/event-stream`.
+- It must negotiate protocol `2025-11-25`, confirm `HODLXXI Read-Only` `0.1.1`, paginate the full 26-tool allowlist, confirm no prompts/resources, and perform only the read-only safe calls documented in the script.
+
 ## Conclusion
 
-The HODLXXI MCP server is live, externally reachable, independently validated, and usable by remote MCP-capable agents without credentials. Registry publication is the remaining distribution step for broad ecosystem discovery.
+The dated July 12-13 evidence above remains the last archived external production validation for version `0.1.0`. The `0.1.1` source tree now includes a repeatable verifier path, but live `0.1.1` validation must be re-run and archived before this document is updated to claim a newer externally validated production build.

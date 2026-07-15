@@ -26,11 +26,11 @@ jobs:
 
     - name: Run black (code formatting check)
       run: |
-        black --check app/ tests/
+        black --check app/ scripts/ tests/
 
     - name: Run flake8 (linting)
       run: |
-        flake8 app/ tests/
+        flake8 app/ scripts/ tests/
 
     - name: Run mypy (type checking)
       run: |
@@ -40,5 +40,5 @@ jobs:
     - name: Check import ordering
       run: |
         pip install isort
-        isort --check-only --profile black app/ tests/
+        isort --check-only --profile black app/ scripts/ tests/
       continue-on-error: true
