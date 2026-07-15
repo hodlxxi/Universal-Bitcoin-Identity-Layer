@@ -37,6 +37,39 @@ def real_source_details():
     return audit.audit_source_contract(ROOT)[1]
 
 
+def load_real_covenant_payload():
+    return json.loads((ROOT / "app" / "data" / "trust" / "covenant_hodlxxi-herald-covenant-v1.json").read_text())
+
+
+def build_registry_payload(source_details, versions):
+    return {
+        "json": {
+            "servers": [
+                {
+                    "name": source_details["server_json"]["name"],
+                    "versions": versions,
+                }
+            ]
+        }
+    }
+
+
+def build_registry_version(source_details, *, version=None, is_latest=True, status="active", remote_url=None):
+    source_server = source_details["server_json"]
+    return {
+        "version": version or source_server["version"],
+        "isLatest": is_latest,
+        "status": status,
+        "publishedAt": "2026-07-14T00:00:00Z",
+        "websiteUrl": source_server["websiteUrl"],
+        "repository": {
+            "url": source_server["repository"]["url"],
+            "subfolder": source_server["repository"]["subfolder"],
+        },
+        "remotes": [{"url": remote_url or source_server["remotes"][0]["url"]}],
+    }
+
+
 def test_git_not_a_repository(tmp_path):
     runner = make_runner({("git", "rev-parse", "--show-toplevel"): result(returncode=128, stderr="fatal")})
 
@@ -290,6 +323,72 @@ def test_registry_mismatch(monkeypatch):
     assert evidence.status == "MISMATCH"
 
 
+def test_registry_source_version_present_but_not_latest_is_mismatch(monkeypatch):
+    source = real_source_details()
+    payload = build_registry_payload(source, [build_registry_version(source, is_latest=False)])
+    monkeypatch.setattr(audit, "fetch_public_json", lambda *_, **__: payload)
+
+    evidence = audit.audit_registry(source_details=source, timeout=1.0, skip_live=False)
+
+    assert evidence.status == "MISMATCH"
+    assert "not marked latest" in " ".join(evidence.details["mismatches"])
+
+
+def test_registry_other_version_marked_latest_is_mismatch(monkeypatch):
+    source = real_source_details()
+    payload = build_registry_payload(
+        source,
+        [
+            build_registry_version(source, is_latest=False),
+            build_registry_version(source, version="0.1.0", is_latest=True),
+        ],
+    )
+    monkeypatch.setattr(audit, "fetch_public_json", lambda *_, **__: payload)
+
+    evidence = audit.audit_registry(source_details=source, timeout=1.0, skip_live=False)
+
+    assert evidence.status == "MISMATCH"
+    assert "latest version 0.1.0" in " ".join(evidence.details["mismatches"])
+
+
+def test_registry_multiple_latest_versions_is_mismatch(monkeypatch):
+    source = real_source_details()
+    payload = build_registry_payload(
+        source,
+        [
+            build_registry_version(source, version=source["server_json"]["version"], is_latest=True),
+            build_registry_version(source, version="0.1.0", is_latest=True),
+        ],
+    )
+    monkeypatch.setattr(audit, "fetch_public_json", lambda *_, **__: payload)
+
+    evidence = audit.audit_registry(source_details=source, timeout=1.0, skip_live=False)
+
+    assert evidence.status == "MISMATCH"
+    assert "exactly 1" in " ".join(evidence.details["mismatches"])
+
+
+def test_registry_expected_version_inactive_is_mismatch(monkeypatch):
+    source = real_source_details()
+    payload = build_registry_payload(source, [build_registry_version(source, status="inactive")])
+    monkeypatch.setattr(audit, "fetch_public_json", lambda *_, **__: payload)
+
+    evidence = audit.audit_registry(source_details=source, timeout=1.0, skip_live=False)
+
+    assert evidence.status == "MISMATCH"
+    assert "not active" in " ".join(evidence.details["mismatches"])
+
+
+def test_registry_single_latest_active_version_matches(monkeypatch):
+    source = real_source_details()
+    payload = build_registry_payload(source, [build_registry_version(source)])
+    monkeypatch.setattr(audit, "fetch_public_json", lambda *_, **__: payload)
+
+    evidence = audit.audit_registry(source_details=source, timeout=1.0, skip_live=False)
+
+    assert evidence.status == "MATCH"
+
+
 def test_mcp_blocked(monkeypatch):
     monkeypatch.setattr(audit, "verify_remote_mcp", lambda **_: FakeVerifierReport("BLOCKED"))
 
@@ -313,6 +412,25 @@ def test_stale_reference_detection(tmp_path):
 
     assert evidence.status == "STALE"
     assert evidence.details["findings"][0]["path"] == "README.md"
+
+
+def test_stale_reference_detection_in_python_source(tmp_path):
+    (tmp_path / "stale_contract.py").write_text('MESSAGE = "disabled production stub"\n', encoding="utf-8")
+
+    evidence = audit.audit_stale_references(tmp_path)
+
+    assert evidence.status == "STALE"
+    assert evidence.details["findings"][0]["path"] == "stale_contract.py"
+
+
+def test_stale_reference_ignores_egg_info_directory(tmp_path):
+    egg_info = tmp_path / "package.egg-info"
+    egg_info.mkdir()
+    (egg_info / "PKG-INFO").write_text("disabled production stub\n", encoding="utf-8")
+
+    evidence = audit.audit_stale_references(tmp_path)
+
+    assert evidence.status == "MATCH"
 
 
 def test_stale_exclusions_ignore_dated_and_excluded_content(tmp_path):
@@ -451,7 +569,7 @@ def test_registry_parsing():
 
 
 def test_p2wsh_calculation():
-    payload = json.loads((ROOT / "app" / "data" / "trust" / "covenant_hodlxxi-herald-covenant-v1.json").read_text())
+    payload = load_real_covenant_payload()
 
     evaluation = audit.evaluate_covenant_payload(payload)
 
@@ -460,7 +578,119 @@ def test_p2wsh_calculation():
     assert evaluation["delta_144"] is True
 
 
+def test_funded_covenant_without_utxo_evidence_does_not_prove_locked_capital():
+    payload = load_real_covenant_payload()
+    payload["funding_status"] = "funded"
+    payload["status"] = "funded"
+
+    evaluation = audit.evaluate_covenant_payload(payload)
+
+    assert evaluation["status"] == "UNKNOWN"
+    assert evaluation["declared_funding_status"] == "funded"
+    assert evaluation["utxo_evidence_checked"] is False
+    assert evaluation["utxo_evidence_verified"] is False
+    assert evaluation["time_locked_capital_proof"] is False
+    assert evaluation["funding_claim_status"] == "UNVERIFIED"
+
+
+def test_cooperative_path_prevents_time_locked_capital_proof():
+    payload = load_real_covenant_payload()
+    payload["funding_status"] = "funded"
+    payload["status"] = "funded"
+
+    evaluation = audit.evaluate_covenant_payload(payload)
+
+    assert evaluation["cooperative_path_present"] is True
+    assert evaluation["time_locked_capital_proof"] is False
+
+
+def test_missing_required_lock_heights_cannot_match():
+    payload = load_real_covenant_payload()
+    payload["policy"]["future_exit_logic"] = payload["policy"]["future_exit_logic"][:1]
+
+    evaluation = audit.evaluate_covenant_payload(payload)
+
+    assert evaluation["status"] == "MISMATCH"
+    assert evaluation["timelock_structure_valid"] is False
+    assert "incomplete" in " ".join(evaluation["mismatches"]).lower()
+
+
+def test_descriptor_address_equality_alone_does_not_prove_funding():
+    payload = load_real_covenant_payload()
+    payload["funding_status"] = "funded"
+    payload["status"] = "funded"
+
+    evaluation = audit.evaluate_covenant_payload(payload)
+
+    assert evaluation["declared_address"] == evaluation["calculated_address"]
+    assert evaluation["status"] == "UNKNOWN"
+    assert evaluation["time_locked_capital_proof"] is False
+
+
 def test_output_dir_defaults_outside_repository():
     output_dir = audit.default_output_dir(ROOT)
 
     assert not str(output_dir).startswith(str(ROOT))
+
+
+def test_redact_sensitive_text_masks_credentials_and_tokens():
+    text = "Authorization: Bearer secret-token\n" "proxy_set_header Cookie session=abc123;\n" "API_TOKEN=shhh\n"
+
+    redacted = audit.redact_sensitive_text(text)
+
+    assert "secret-token" not in redacted
+    assert "abc123" not in redacted
+    assert "shhh" not in redacted
+    assert "<redacted>" in redacted
+
+
+def test_extract_nginx_agent_mcp_evidence_redacts_and_bounds_route_snippets():
+    text = """
+    location /agent/mcp {
+        proxy_pass http://127.0.0.1:8765/mcp;
+        proxy_set_header Authorization Bearer secret-token;
+        proxy_set_header Cookie session=abc123;
+    }
+    """
+
+    snippets = audit.extract_nginx_agent_mcp_evidence(text)
+
+    assert snippets
+    assert any("/agent/mcp" in snippet for snippet in snippets)
+    assert any("127.0.0.1:8765" in snippet for snippet in snippets)
+    assert all("secret-token" not in snippet for snippet in snippets)
+    assert all("abc123" not in snippet for snippet in snippets)
+
+
+def test_report_outputs_do_not_serialize_raw_public_payloads():
+    evidence = audit.Evidence(
+        name="discovery",
+        status="MATCH",
+        summary="bounded",
+        details={
+            "results": [
+                {
+                    "path": "/.well-known/mcp.json",
+                    "summary": {"name": "HODLXXI Read-Only"},
+                    "json": {"huge_blob": "X" * 5000, "irrelevant": "should-not-leak"},
+                }
+            ]
+        },
+    )
+    report = audit.AuditReport(
+        repo_root=str(ROOT),
+        output_dir="/tmp/test-report",
+        timestamp_utc="2026-07-14T00:00:00Z",
+        status="MATCH",
+        exit_code=3,
+        evidences=[evidence],
+        required_categories=["discovery"],
+    )
+
+    payload = json.dumps(report.to_dict(), sort_keys=True)
+    markdown = audit.render_markdown_report(report)
+
+    assert "huge_blob" not in payload
+    assert "should-not-leak" not in payload
+    assert "huge_blob" not in markdown
+    assert "should-not-leak" not in markdown

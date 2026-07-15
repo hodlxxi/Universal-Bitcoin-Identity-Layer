@@ -6,6 +6,7 @@ import datetime as dt
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -59,6 +60,7 @@ STALE_PHRASES = (
     "no live /agent/mcp integration",
 )
 TEXT_FILE_SUFFIXES = {
+    ".py",
     ".md",
     ".json",
     ".toml",
@@ -77,6 +79,24 @@ EXCLUDED_DIRECTORY_NAMES = {
     "__pycache__",
     ".pytest_cache",
 }
+EXCLUDED_DIRECTORY_MARKERS = {"generated", "vendor", "vendors", "vendored", "third_party", "third-party"}
+ARTIFACT_DROPPED_KEYS = {"json"}
+HOST_EVIDENCE_KINDS = {"direct", "inference", "unavailable", "blocked"}
+HOST_MCP_CURRENT_SYMLINK = Path("/opt/hodlxxi-mcp/current")
+HOST_MCP_RELEASES_DIR = Path("/opt/hodlxxi-mcp/releases")
+HOST_NGINX_PATHS = (
+    Path("/etc/nginx/nginx.conf"),
+    Path("/etc/nginx/conf.d"),
+    Path("/etc/nginx/sites-enabled"),
+)
+HOST_MCP_PORT = 8765
+SENSITIVE_HEADER_RE = re.compile(r"(?im)\b(authorization|cookie|set-cookie)\b(?:\s*[:=]\s*|\s+)[^\n]+")
+SENSITIVE_ASSIGNMENT_RE = re.compile(
+    r"(?i)\b([A-Za-z0-9_-]*(?:token|secret|password|credential|cookie|macaroon|authorization)[A-Za-z0-9_-]*)\b"
+    r"(\s*=\s*)([^ \n;]+)"
+)
+BEARER_TOKEN_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
+SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 DATE_CONTEXT_RE = re.compile(
     r"\b(?:20\d{2}-\d{2}-\d{2}|"
     r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
@@ -119,7 +139,7 @@ class AuditReport:
             "exit_code": self.exit_code,
             "partial": self.partial,
             "required_categories": self.required_categories,
-            "evidences": [evidence.to_dict() for evidence in self.evidences],
+            "evidences": [artifact_evidence_dict(evidence) for evidence in self.evidences],
         }
 
 
@@ -513,6 +533,7 @@ def audit_discovery(
     http = StdlibHTTPTransport()
     base_url = endpoint.rsplit("/agent/mcp", 1)[0] if endpoint.endswith("/agent/mcp") else "https://hodlxxi.com"
     results: list[dict[str, Any]] = []
+    artifact_results: list[dict[str, Any]] = []
     mismatches: list[str] = []
 
     try:
@@ -520,13 +541,14 @@ def audit_discovery(
             url = urllib.parse.urljoin(base_url + "/", path.lstrip("/"))
             payload = fetch_public_json(url, timeout=timeout, http=http)
             results.append(payload)
+            artifact_results.append(public_result_for_artifact(payload))
     except VerificationError as exc:
         status = "BLOCKED" if exc.category in {"timeout", "dns", "tls", "network"} else "MISMATCH"
         return Evidence(
             name="discovery",
             status=status,
             summary=f"Public HTTP discovery check failed: {exc.message}",
-            details={"results": results},
+            details={"results": artifact_results},
         )
 
     source_server = source_details.get("server_json", {})
@@ -565,13 +587,13 @@ def audit_discovery(
             name="discovery",
             status="MISMATCH",
             summary="Public HTTP discovery metadata does not match repository source truth.",
-            details={"results": results, "mismatches": mismatches},
+            details={"results": artifact_results, "mismatches": mismatches},
         )
     return Evidence(
         name="discovery",
         status="MATCH",
         summary="Public HTTP discovery metadata matches repository source truth.",
-        details={"results": results},
+        details={"results": artifact_results},
     )
 
 
@@ -637,6 +659,7 @@ def audit_registry(*, source_details: dict[str, Any], timeout: float, skip_live:
         )
 
     matching_version = next((item for item in versions if item.get("version") == expected_version), None)
+    latest_versions = [item for item in versions if item.get("isLatest") is True]
     mismatches: list[str] = []
     if not matching_version:
         mismatches.append(f"Registry does not contain source version {expected_version}")
@@ -649,10 +672,21 @@ def audit_registry(*, source_details: dict[str, Any], timeout: float, skip_live:
             mismatches.append("Registry repository URL does not match source metadata")
         if matching_version.get("subfolder") != expected_subfolder:
             mismatches.append("Registry subfolder does not match source metadata")
+        if matching_version.get("isLatest") is not True:
+            mismatches.append(f"Source version {expected_version} exists in Registry but is not marked latest")
+        if matching_version.get("status") not in {None, "", "active"}:
+            mismatches.append(f"Source version {expected_version} is not active in Registry")
+
+    if len(latest_versions) != 1:
+        mismatches.append(f"Registry latest-version count must be exactly 1, got {len(latest_versions)}")
+    elif latest_versions[0].get("version") != expected_version:
+        mismatches.append(
+            f"Registry latest version {latest_versions[0].get('version')} does not match source version {expected_version}"
+        )
 
     status = "MATCH" if not mismatches else "MISMATCH"
     summary = (
-        "Registry metadata includes the source MCP version and matching remote metadata."
+        "Registry metadata includes the source MCP version as the single latest active release."
         if not mismatches
         else "Registry metadata does not yet match the source MCP release metadata."
     )
@@ -708,19 +742,56 @@ def audit_host_checks(root: Path, *, runner: Runner) -> Evidence:
             mandatory=False,
         )
 
-    checks: list[dict[str, Any]] = []
+    items: list[dict[str, Any]] = []
+    service_properties: dict[str, dict[str, str]] = {}
     for service in HOST_CHECK_SERVICES:
         command = ["systemctl", "show", service, *[f"--property={item}" for item in HOST_CHECK_PROPERTIES]]
         result = runner(command, root)
-        entry = {"service": service, **command_details(result)}
-        if service == "nginx.service":
-            entry["stdout"] = redact_nginx_output(entry.get("stdout", ""))
-        checks.append(entry)
+        parsed = parse_systemctl_show_output(result.stdout)
+        properties = {
+            key: _bounded_text(redact_sensitive_text(str(parsed.get(key) or "")), 240)
+            for key in HOST_CHECK_PROPERTIES
+            if parsed.get(key)
+        }
+        service_properties[service] = properties
+        items.append(
+            {
+                "name": f"systemd:{service}",
+                "classification": "direct" if result.returncode == 0 else "blocked",
+                "summary": (
+                    f"Collected bounded systemd properties for {service}."
+                    if result.returncode == 0
+                    else f"Unable to inspect {service} via systemctl show."
+                ),
+                "details": {
+                    "service": service,
+                    "properties": properties,
+                    "returncode": result.returncode,
+                    "stderr": _bounded_text(redact_sensitive_text(result.stderr.strip()), 240),
+                },
+            }
+        )
+
+    items.extend(collect_sidecar_host_items(service_properties=service_properties, runner=runner, root=root))
+
+    classification_counts = {
+        kind: sum(1 for item in items if item.get("classification") == kind) for kind in HOST_EVIDENCE_KINDS
+    }
+    if classification_counts["blocked"] and not (classification_counts["direct"] or classification_counts["inference"]):
+        status = "BLOCKED"
+    elif classification_counts["direct"]:
+        status = "MATCH"
+    else:
+        status = "UNKNOWN"
     return Evidence(
         name="host_checks",
-        status="UNKNOWN",
-        summary="Optional host checks collected bounded service metadata.",
-        details={"services": checks},
+        status=status,
+        summary=(
+            "Optional host checks collected bounded host evidence "
+            f"(direct={classification_counts['direct']}, inference={classification_counts['inference']}, "
+            f"unavailable={classification_counts['unavailable']}, blocked={classification_counts['blocked']})."
+        ),
+        details={"items": items},
         mandatory=False,
     )
 
@@ -743,6 +814,360 @@ def extract_mcp_contract_shape(discovery_path: Path, discovery_values: Mapping[s
                         result["access_mode"] = discovery_values[value_node.id]
             return result
     raise ValueError("Unable to locate mcp_contract return shape")
+
+
+def artifact_evidence_dict(evidence: Evidence) -> dict[str, Any]:
+    return {
+        "name": evidence.name,
+        "status": evidence.status,
+        "summary": evidence.summary,
+        "mandatory": evidence.mandatory,
+        "details": sanitize_artifact_value(evidence.details),
+    }
+
+
+def sanitize_artifact_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        sanitized: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if key_text in ARTIFACT_DROPPED_KEYS:
+                continue
+            if sensitive_key(key_text):
+                sanitized[key_text] = "<redacted>"
+                continue
+            sanitized[key_text] = sanitize_artifact_value(item)
+        return sanitized
+    if isinstance(value, list):
+        return [sanitize_artifact_value(item) for item in value[:50]]
+    if isinstance(value, str):
+        return _bounded_text(redact_sensitive_text(value), 400)
+    return value
+
+
+def sensitive_key(key: str) -> bool:
+    lowered = key.lower()
+    return any(
+        token in lowered
+        for token in ("authorization", "cookie", "token", "secret", "password", "credential", "macaroon")
+    )
+
+
+def public_result_for_artifact(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "path": payload.get("path"),
+        "status_code": payload.get("status_code"),
+        "content_type": payload.get("content_type"),
+        "summary": sanitize_artifact_value(payload.get("summary")),
+    }
+
+
+def parse_systemctl_show_output(text: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for line in text.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key:
+            parsed[key] = value
+    return parsed
+
+
+def redact_sensitive_text(text: str) -> str:
+    redacted = SENSITIVE_HEADER_RE.sub(lambda match: f"{match.group(1)}: <redacted>", text)
+    redacted = SENSITIVE_ASSIGNMENT_RE.sub(r"\1\2<redacted>", redacted)
+    redacted = BEARER_TOKEN_RE.sub("Bearer <redacted>", redacted)
+    return redacted
+
+
+def host_item(name: str, classification: str, summary: str, details: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "name": name,
+        "classification": classification if classification in HOST_EVIDENCE_KINDS else "blocked",
+        "summary": _bounded_text(summary, 240),
+        "details": sanitize_artifact_value(dict(details)),
+    }
+
+
+def collect_sidecar_host_items(
+    *, service_properties: Mapping[str, Mapping[str, str]], runner: Runner, root: Path
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    current_target: Path | None = None
+
+    if HOST_MCP_CURRENT_SYMLINK.is_symlink():
+        current_target = HOST_MCP_CURRENT_SYMLINK.resolve(strict=False)
+        items.append(
+            host_item(
+                "mcp_current_symlink",
+                "direct",
+                "Captured MCP current release symlink target.",
+                {"path": str(HOST_MCP_CURRENT_SYMLINK), "target": str(current_target)},
+            )
+        )
+        release_sha = current_target.name if SHA_RE.fullmatch(current_target.name) else None
+        if release_sha and current_target.parent == HOST_MCP_RELEASES_DIR:
+            items.append(
+                host_item(
+                    "mcp_release_sha",
+                    "inference",
+                    "Derived MCP release SHA from current symlink target.",
+                    {"target": str(current_target), "release_sha": release_sha},
+                )
+            )
+        else:
+            items.append(
+                host_item(
+                    "mcp_release_sha",
+                    "unavailable",
+                    "Current MCP symlink target does not expose a canonical release SHA.",
+                    {"target": str(current_target)},
+                )
+            )
+    else:
+        items.append(
+            host_item(
+                "mcp_current_symlink",
+                "unavailable",
+                "Canonical MCP current symlink is not present on this host.",
+                {"path": str(HOST_MCP_CURRENT_SYMLINK)},
+            )
+        )
+
+    mcp_exec = extract_execstart_path(service_properties.get("hodlxxi-mcp.service", {}).get("ExecStart", ""))
+    if mcp_exec:
+        items.append(
+            host_item(
+                "mcp_executable",
+                "direct",
+                "Captured MCP sidecar executable path from systemd.",
+                {"executable": mcp_exec},
+            )
+        )
+    elif current_target is not None:
+        items.append(
+            host_item(
+                "mcp_executable",
+                "inference",
+                "Inferred MCP sidecar executable path from the current release layout.",
+                {"executable": str(current_target / "venv" / "bin" / "hodlxxi-mcp-http")},
+            )
+        )
+    else:
+        items.append(host_item("mcp_executable", "unavailable", "MCP executable path is not available.", {}))
+
+    items.append(collect_sidecar_venv_version_item(current_target=current_target, runner=runner, root=root))
+    items.append(collect_loopback_listener_item(runner=runner, root=root, port=HOST_MCP_PORT))
+    items.append(collect_flask_checkout_item(service_properties=service_properties, runner=runner, root=root))
+    items.append(collect_nginx_route_item())
+    return items
+
+
+def extract_execstart_path(value: str) -> str | None:
+    if not value:
+        return None
+    path_match = re.search(r"\bpath=([^ ;]+)", value)
+    if path_match:
+        return path_match.group(1)
+    argv_match = re.search(r"\bargv\[\]=([^ ;]+)", value)
+    if argv_match:
+        return argv_match.group(1)
+    try:
+        parts = shlex.split(value)
+    except ValueError:
+        parts = value.split()
+    return parts[0] if parts else None
+
+
+def collect_sidecar_venv_version_item(*, current_target: Path | None, runner: Runner, root: Path) -> dict[str, Any]:
+    if current_target is None:
+        return host_item(
+            "mcp_sidecar_package_version",
+            "unavailable",
+            "MCP sidecar virtualenv version is unavailable without a current release path.",
+            {},
+        )
+    venv_python = current_target / "venv" / "bin" / "python"
+    if not venv_python.exists():
+        return host_item(
+            "mcp_sidecar_package_version",
+            "unavailable",
+            "MCP sidecar virtualenv Python is not present.",
+            {"python": str(venv_python)},
+        )
+    result = runner(
+        [
+            str(venv_python),
+            "-c",
+            "import importlib.metadata as m; print(m.version('hodlxxi-mcp'))",
+        ],
+        root,
+    )
+    if result.returncode != 0:
+        return host_item(
+            "mcp_sidecar_package_version",
+            "blocked",
+            "Unable to read the sidecar virtualenv package version.",
+            {"python": str(venv_python), "stderr": result.stderr.strip()},
+        )
+    return host_item(
+        "mcp_sidecar_package_version",
+        "direct",
+        "Read the sidecar virtualenv package version.",
+        {"python": str(venv_python), "version": result.stdout.strip()},
+    )
+
+
+def collect_loopback_listener_item(*, runner: Runner, root: Path, port: int) -> dict[str, Any]:
+    commands = [
+        ["ss", "-ltnp"],
+        ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
+        ["netstat", "-ltn"],
+    ]
+    for command in commands:
+        if shutil.which(command[0]) is None:
+            continue
+        result = runner(command, root)
+        if result.returncode != 0:
+            return host_item(
+                "mcp_loopback_listener",
+                "blocked",
+                "Unable to inspect loopback listener state for the MCP port.",
+                {"command": command, "stderr": result.stderr.strip()},
+            )
+        listener = summarize_listener_output(result.stdout, port)
+        if listener["listener_lines"]:
+            return host_item(
+                "mcp_loopback_listener",
+                "direct",
+                "Collected bounded MCP loopback listener evidence.",
+                {"command": command, **listener},
+            )
+        return host_item(
+            "mcp_loopback_listener",
+            "unavailable",
+            "No bounded MCP loopback listener evidence was found in the selected command output.",
+            {"command": command, **listener},
+        )
+    return host_item(
+        "mcp_loopback_listener",
+        "unavailable",
+        "No supported listener-inspection command is available on this host.",
+        {"port": port},
+    )
+
+
+def summarize_listener_output(text: str, port: int) -> dict[str, Any]:
+    port_text = str(port)
+    lines = [line.strip() for line in text.splitlines() if port_text in line]
+    bounded_lines = [_bounded_text(redact_sensitive_text(line), 240) for line in lines[:10]]
+    has_loopback = any(f"127.0.0.1:{port}" in line or f"[::1]:{port}" in line for line in lines)
+    wildcard_detected = any(
+        marker in line for line in lines for marker in (f"0.0.0.0:{port}", f"[::]:{port}", f"*:{port}")
+    )
+    return {
+        "listener_lines": bounded_lines,
+        "loopback_listener_detected": has_loopback,
+        "wildcard_listener_detected": wildcard_detected,
+    }
+
+
+def collect_flask_checkout_item(
+    *, service_properties: Mapping[str, Mapping[str, str]], runner: Runner, root: Path
+) -> dict[str, Any]:
+    properties = service_properties.get("hodlxxi.service", {})
+    working_directory = properties.get("WorkingDirectory")
+    executable = extract_execstart_path(properties.get("ExecStart", ""))
+    details: dict[str, Any] = {
+        "working_directory": working_directory,
+        "cwd": working_directory,
+        "executable": executable,
+    }
+    if not working_directory:
+        return host_item(
+            "flask_service_checkout",
+            "unavailable",
+            "Flask service working directory is unavailable from systemd output.",
+            details,
+        )
+    repo_path = Path(working_directory)
+    if (repo_path / ".git").exists():
+        checkout = runner(["git", "-C", str(repo_path), "rev-parse", "HEAD"], root)
+        if checkout.returncode == 0:
+            details["checkout_sha"] = checkout.stdout.strip()
+            return host_item(
+                "flask_service_checkout",
+                "direct",
+                "Captured Flask service working directory, executable, and checkout SHA.",
+                details,
+            )
+        details["checkout_error"] = checkout.stderr.strip()
+        return host_item(
+            "flask_service_checkout",
+            "blocked",
+            "Flask service checkout SHA could not be read from the declared working directory.",
+            details,
+        )
+    return host_item(
+        "flask_service_checkout",
+        "inference",
+        "Captured Flask service working directory and executable, but no checkout SHA was directly provable.",
+        details,
+    )
+
+
+def collect_nginx_route_item() -> dict[str, Any]:
+    matches: list[dict[str, Any]] = []
+    unreadable: list[str] = []
+    for candidate in HOST_NGINX_PATHS:
+        files = [candidate] if candidate.is_file() else sorted(candidate.rglob("*.conf")) if candidate.is_dir() else []
+        for path in files:
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                unreadable.append(str(path))
+                continue
+            snippets = extract_nginx_agent_mcp_evidence(text)
+            if snippets:
+                matches.append({"path": str(path), "snippets": snippets})
+    if matches:
+        return host_item(
+            "nginx_agent_mcp_route",
+            "direct",
+            "Collected bounded nginx /agent/mcp route evidence.",
+            {"matches": matches[:10]},
+        )
+    if unreadable:
+        return host_item(
+            "nginx_agent_mcp_route",
+            "blocked",
+            "nginx configuration paths exist but could not be fully read.",
+            {"paths": unreadable[:10]},
+        )
+    return host_item(
+        "nginx_agent_mcp_route",
+        "unavailable",
+        "No bounded nginx /agent/mcp route evidence was found on this host.",
+        {},
+    )
+
+
+def extract_nginx_agent_mcp_evidence(text: str) -> list[str]:
+    markers = ("/agent/mcp", "127.0.0.1:8765", "proxy_pass", "upstream")
+    lines = text.splitlines()
+    snippets: list[str] = []
+    seen: set[str] = set()
+    for index, line in enumerate(lines):
+        if not any(marker in line for marker in markers):
+            continue
+        for candidate in lines[max(0, index - 1) : min(len(lines), index + 3)]:
+            cleaned = _bounded_text(redact_sensitive_text(candidate.strip()), 240)
+            if cleaned and cleaned not in seen:
+                seen.add(cleaned)
+                snippets.append(cleaned)
+        if len(snippets) >= 12:
+            break
+    return snippets[:12]
 
 
 def fetch_public_json(url: str, *, timeout: float, http: StdlibHTTPTransport) -> dict[str, Any]:
@@ -778,11 +1203,25 @@ def fetch_public_json(url: str, *, timeout: float, http: StdlibHTTPTransport) ->
 def summarize_public_payload(payload: Any) -> Any:
     if isinstance(payload, dict):
         summary: dict[str, Any] = {}
-        for key in ("name", "version", "protocolVersion", "schema", "status", "service_name", "tool_count"):
+        for key in (
+            "name",
+            "version",
+            "protocolVersion",
+            "schema",
+            "status",
+            "service_name",
+            "tool_count",
+            "enabled",
+            "availability",
+            "funding_status",
+            "created_at",
+        ):
             if key in payload:
                 summary[key] = payload[key]
         if "endpoint" in payload:
             summary["endpoint"] = payload["endpoint"]
+        if "anchor" in payload and isinstance(payload["anchor"], dict):
+            summary["anchor"] = {"address": payload["anchor"].get("address")}
         if "mcp" in payload and isinstance(payload["mcp"], dict):
             summary["mcp"] = {
                 key: payload["mcp"].get(key)
@@ -972,32 +1411,60 @@ def evaluate_covenant_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     script_hex = extract_raw_script_hex(descriptor_value)
     calculated_address = p2wsh_address_from_script(script_hex, hrp="bc")
     policy = payload.get("policy") if isinstance(payload.get("policy"), Mapping) else {}
-    future_exit_logic = policy.get("future_exit_logic") or []
+    future_exit_logic = policy.get("future_exit_logic") if isinstance(policy.get("future_exit_logic"), list) else []
+    timelock_paths = [
+        item
+        for item in future_exit_logic
+        if isinstance(item, Mapping) and str(item.get("type") or "") == "timelocked_path"
+    ]
     lock_heights = sorted(
-        [
-            int(item["lock_height"])
-            for item in future_exit_logic
-            if isinstance(item, Mapping) and isinstance(item.get("lock_height"), int)
-        ]
+        [int(item["lock_height"]) for item in timelock_paths if isinstance(item.get("lock_height"), int)]
     )
+    required_lock_height_count = 2 if str(policy.get("mode_now") or "") == "cooperative" or timelock_paths else 0
     delta_144 = len(lock_heights) >= 2 and (lock_heights[1] - lock_heights[0] == 144)
-    funding_status = str(payload.get("funding_status") or payload.get("status") or "unknown")
+    declared_funding_status = str(payload.get("funding_status") or payload.get("status") or "unknown")
     cooperative_path = str(policy.get("mode_now") or "") == "cooperative"
     declared_match = declared_address == calculated_address
-    capital_proof = funding_status == "funded" and declared_match and delta_144
+    utxo_evidence_checked = False
+    utxo_evidence_verified = False
+    timelock_structure_valid = (
+        declared_match
+        and len(lock_heights) >= required_lock_height_count
+        and (required_lock_height_count < 2 or delta_144)
+    )
+    declared_funding_lower = declared_funding_status.lower()
+    funding_declared = declared_funding_lower == "funded" or declared_funding_lower.startswith("funded_")
+    funding_claim_status = "UNVERIFIED" if funding_declared and not utxo_evidence_verified else "DECLARED_ONLY"
+    time_locked_capital_proof = False
 
     mismatches: list[str] = []
+    warnings: list[str] = []
     if not declared_match:
         mismatches.append("Declared anchor address does not match calculated P2WSH address")
+    if required_lock_height_count and len(lock_heights) < required_lock_height_count:
+        mismatches.append("Required covenant lock-height data is incomplete")
     if len(lock_heights) >= 2 and not delta_144:
         mismatches.append("Timelock heights are present but do not differ by 144 blocks")
+    if funding_declared and not utxo_evidence_checked:
+        warnings.append("Funding is self-declared only; no direct UTXO evidence was checked")
+    if cooperative_path:
+        warnings.append("Immediate cooperative path is present, so the capital is not exclusively time-locked")
 
-    status = "MATCH" if not mismatches else "MISMATCH"
-    summary = (
-        "Public covenant declaration is internally consistent; script/address equality is declaration evidence, not funding proof."
-        if status == "MATCH"
-        else "Public covenant declaration has mismatched script/address or timelock data."
-    )
+    if mismatches:
+        status = "MISMATCH"
+        summary = "Public covenant declaration has mismatched script/address or incomplete timelock data."
+    elif funding_declared and not utxo_evidence_verified:
+        status = "UNKNOWN"
+        summary = (
+            "Public covenant declaration is structurally consistent, but any funding claim remains unverified "
+            "without direct UTXO evidence."
+        )
+    else:
+        status = "MATCH"
+        summary = (
+            "Public covenant declaration is internally consistent; script/address equality is declaration evidence, "
+            "not funding proof."
+        )
     return {
         "status": status,
         "summary": summary,
@@ -1006,11 +1473,17 @@ def evaluate_covenant_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         "calculated_address": calculated_address,
         "script_hex": script_hex,
         "lock_heights": lock_heights,
+        "required_lock_height_count": required_lock_height_count,
         "delta_144": delta_144,
-        "funding_status": funding_status,
+        "declared_funding_status": declared_funding_status,
+        "funding_claim_status": funding_claim_status,
+        "utxo_evidence_checked": utxo_evidence_checked,
+        "utxo_evidence_verified": utxo_evidence_verified,
         "cooperative_path_present": cooperative_path,
-        "time_locked_capital_proof": capital_proof,
+        "timelock_structure_valid": timelock_structure_valid,
+        "time_locked_capital_proof": time_locked_capital_proof,
         "mismatches": mismatches,
+        "warnings": warnings,
     }
 
 
@@ -1088,9 +1561,14 @@ def iter_repo_text_files(root: Path) -> Sequence[Path]:
     for path in root.rglob("*"):
         if not path.is_file():
             continue
-        if any(part in EXCLUDED_DIRECTORY_NAMES for part in path.parts):
+        lowered_parts = {part.lower() for part in path.parts}
+        if any(part in EXCLUDED_DIRECTORY_NAMES for part in lowered_parts):
             continue
-        if path.suffix == ".pyc" or path.name.endswith(".egg-info"):
+        if any(part.endswith(".egg-info") for part in lowered_parts):
+            continue
+        if any(part in EXCLUDED_DIRECTORY_MARKERS for part in lowered_parts):
+            continue
+        if path.suffix == ".pyc":
             continue
         if path.suffix and path.suffix not in TEXT_FILE_SUFFIXES:
             continue
@@ -1176,6 +1654,7 @@ def render_markdown_report(report: AuditReport) -> str:
         "",
     ]
     for evidence in report.evidences:
+        sanitized_details = sanitize_artifact_value(evidence.details)
         lines.extend(
             [
                 f"### {evidence.name}",
@@ -1183,7 +1662,7 @@ def render_markdown_report(report: AuditReport) -> str:
                 f"- status: `{evidence.status}`",
                 f"- summary: {evidence.summary}",
                 f"- mandatory: `{evidence.mandatory}`",
-                f"- details: `{json.dumps(evidence.details, sort_keys=True)[:1500]}`",
+                f"- details: `{json.dumps(sanitized_details, sort_keys=True)[:1500]}`",
                 "",
             ]
         )

@@ -19,6 +19,7 @@ DEFAULT_MAX_PAGES = 50
 MAX_BODY_BYTES = 2_000_000
 MAX_DESCRIPTION_CHARS = 240
 MAX_SUMMARY_CHARS = 240
+USER_AGENT = "hodlxxi-production-truth-verifier/1.0"
 SAFE_REQUIRED_TOOLS = (
     "hodlxxi_get_mcp_server_card",
     "hodlxxi_get_capabilities",
@@ -91,8 +92,10 @@ class VerificationReport:
     tool_names: list[str] = field(default_factory=list)
     live_tool_descriptions: dict[str, str] = field(default_factory=dict)
     prompts_exposed: bool = False
+    prompts_capability_advertised: bool = False
     prompt_count: int = 0
     resources_exposed: bool = False
+    resources_capability_advertised: bool = False
     resource_count: int = 0
     required_calls: dict[str, dict[str, Any]] = field(default_factory=dict)
     failures: list[FailureRecord] = field(default_factory=list)
@@ -282,13 +285,14 @@ def verify_remote_mcp(
         server_info = _expect_mapping(init_result.get("serverInfo"), label="initialize.result.serverInfo")
         capabilities = _expect_mapping(init_result.get("capabilities"), label="initialize.result.capabilities")
         session_id = init_headers.get("mcp-session-id")
+        report.prompts_capability_advertised = "prompts" in capabilities
+        report.resources_capability_advertised = "resources" in capabilities
         report.initialize = {
             "negotiated_protocol_version": negotiated_protocol,
             "server_name": _expect_string(server_info.get("name"), label="initialize.result.serverInfo.name"),
             "server_version": _expect_string(server_info.get("version"), label="initialize.result.serverInfo.version"),
             "capabilities": _truncate_object(capabilities),
             "session_id_present": bool(session_id),
-            "session_id": session_id or None,
         }
 
         report.protocol_header_used = True
@@ -348,9 +352,9 @@ def verify_remote_mcp(
             protocol_version=negotiated_protocol,
             session_id=session_id,
         )
-        report.prompts_exposed = prompt_info["count"] > 0
+        report.prompts_exposed = report.prompts_capability_advertised or prompt_info["count"] > 0
         report.prompt_count = prompt_info["count"]
-        report.resources_exposed = resource_info["count"] > 0
+        report.resources_exposed = report.resources_capability_advertised or resource_info["count"] > 0
         report.resource_count = resource_info["count"]
 
         for offset, tool_name in enumerate(SAFE_REQUIRED_TOOLS, start=2000):
@@ -398,7 +402,7 @@ def _perform_get_probe(
     response = http.open(
         method="GET",
         url=endpoint,
-        headers={"Accept": "text/event-stream"},
+        headers={"Accept": "text/event-stream", "User-Agent": USER_AGENT},
         body=None,
         timeout=timeout,
     )
@@ -570,7 +574,11 @@ def _cleanup_session(
 ) -> dict[str, Any]:
     if not session_id:
         return {"attempted": False}
-    headers = {"MCP-Protocol-Version": protocol_version, "MCP-Session-Id": session_id}
+    headers = {
+        "MCP-Protocol-Version": protocol_version,
+        "MCP-Session-Id": session_id,
+        "User-Agent": USER_AGENT,
+    }
     try:
         response = http.open(
             method="DELETE",
@@ -617,9 +625,13 @@ def _collect_mismatches(report: VerificationReport, contract: CanonicalContract)
         mismatches.append(f"Missing expected tools: {', '.join(report.missing_tools)}")
     if report.unexpected_tools:
         mismatches.append(f"Unexpected live tools: {', '.join(report.unexpected_tools)}")
-    if report.prompts_exposed:
+    if report.prompts_capability_advertised:
+        mismatches.append("initialize advertised prompts capability")
+    if report.prompt_count > 0:
         mismatches.append(f"prompts exposed: count={report.prompt_count}")
-    if report.resources_exposed:
+    if report.resources_capability_advertised:
+        mismatches.append("initialize advertised resources capability")
+    if report.resource_count > 0:
         mismatches.append(f"resources exposed: count={report.resource_count}")
     if report.stale_description_tools:
         mismatches.append(f"Stale live tool descriptions: {', '.join(report.stale_description_tools)}")
@@ -653,6 +665,7 @@ def _jsonrpc_request(
     headers = {
         "Accept": "application/json, text/event-stream",
         "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
     }
     if protocol_version:
         headers["MCP-Protocol-Version"] = protocol_version
@@ -694,6 +707,7 @@ def _post_notification(
         "Accept": "application/json, text/event-stream",
         "Content-Type": "application/json",
         "MCP-Protocol-Version": protocol_version,
+        "User-Agent": USER_AGENT,
     }
     if session_id:
         headers["MCP-Session-Id"] = session_id
@@ -963,7 +977,9 @@ def render_terminal_report(report: VerificationReport) -> str:
             (
                 "tools="
                 f"{report.tool_count} total, {report.unique_tool_count} unique, "
-                f"pages={report.page_count}, prompts={report.prompt_count}, resources={report.resource_count}"
+                f"pages={report.page_count}, "
+                f"prompts={report.prompt_count}/{report.prompts_capability_advertised}, "
+                f"resources={report.resource_count}/{report.resources_capability_advertised}"
             ),
             (
                 "mismatches="
@@ -1000,8 +1016,16 @@ def render_markdown_report(report: VerificationReport) -> str:
             f"| Live server | `{report.initialize.get('server_name')}` `{report.initialize.get('server_version')}` |",
             f"| Tool count | `{report.tool_count}` total / `{report.unique_tool_count}` unique |",
             f"| Page count | `{report.page_count}` |",
-            f"| Prompts exposed | `{report.prompts_exposed}` (`{report.prompt_count}`) |",
-            f"| Resources exposed | `{report.resources_exposed}` (`{report.resource_count}`) |",
+            (
+                "| Prompts exposed | "
+                f"`{report.prompts_exposed}` (`{report.prompt_count}` listed / "
+                f"`{report.prompts_capability_advertised}` advertised) |"
+            ),
+            (
+                "| Resources exposed | "
+                f"`{report.resources_exposed}` (`{report.resource_count}` listed / "
+                f"`{report.resources_capability_advertised}` advertised) |"
+            ),
             f"| Protocol header reused | `{report.protocol_header_used}` |",
             f"| Session header reused | `{report.session_header_used}` |",
             "",

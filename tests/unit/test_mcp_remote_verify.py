@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import ssl
-from pathlib import Path
 
 import pytest
 
@@ -105,6 +103,8 @@ def build_success_transport(
     tool_pages=None,
     prompts=None,
     resources=None,
+    prompt_response=None,
+    resource_response=None,
     safe_call_overrides=None,
     session_id="session-123",
     initialize_payload=None,
@@ -128,8 +128,8 @@ def build_success_transport(
             result["nextCursor"] = f"cursor-{index + 1}"
         responses.append(json_response(rpc_result(request_id, result)))
         request_id += 1
-    responses.append(json_response(rpc_result(1001, {"prompts": prompts or []})))
-    responses.append(json_response(rpc_result(1002, {"resources": resources or []})))
+    responses.append(prompt_response or json_response(rpc_result(1001, {"prompts": prompts or []})))
+    responses.append(resource_response or json_response(rpc_result(1002, {"resources": resources or []})))
     overrides = safe_call_overrides or {}
     for offset, name in enumerate(verifier.SAFE_REQUIRED_TOOLS, start=2000):
         tool_result = overrides.get(
@@ -157,8 +157,12 @@ def test_successful_exact_verification():
     assert report.initialize["negotiated_protocol_version"] == contract.protocol_version
     assert report.initialize["server_name"] == contract.server_name
     assert report.initialize["server_version"] == contract.server_version
+    assert report.initialize["session_id_present"] is True
+    assert "session_id" not in report.initialize
     assert report.protocol_header_used is True
     assert report.session_header_used is True
+    assert report.prompts_capability_advertised is False
+    assert report.resources_capability_advertised is False
     assert report.tool_count == contract.tool_count
     assert report.unique_tool_count == contract.tool_count
     assert set(report.tool_names) == set(contract.tool_names)
@@ -170,6 +174,16 @@ def test_successful_exact_verification():
             continue
         assert request["headers"]["MCP-Protocol-Version"] == contract.protocol_version
         assert request["headers"]["MCP-Session-Id"] == "session-123"
+
+
+def test_verifier_sets_user_agent_on_all_http_requests():
+    transport = build_success_transport()
+
+    verifier.verify_remote_mcp(transport=transport)
+
+    assert transport.requests
+    for request in transport.requests:
+        assert request["headers"]["User-Agent"] == verifier.USER_AGENT
 
 
 def test_canonical_inventory_synchronization():
@@ -278,6 +292,26 @@ def test_prompts_exposure_fails():
     assert report.prompt_count == 1
 
 
+def test_advertised_prompts_capability_fails_even_when_prompt_list_is_empty():
+    transport = build_success_transport(
+        initialize_payload={
+            "protocolVersion": verifier.load_canonical_contract().protocol_version,
+            "serverInfo": {
+                "name": verifier.load_canonical_contract().server_name,
+                "version": verifier.load_canonical_contract().server_version,
+            },
+            "capabilities": {"tools": {"listChanged": False}, "prompts": {}},
+        }
+    )
+
+    report = verifier.verify_remote_mcp(transport=transport)
+
+    assert report.status == "MISMATCH"
+    assert report.prompts_capability_advertised is True
+    assert report.prompt_count == 0
+    assert report.prompts_exposed is True
+
+
 def test_resources_exposure_fails():
     transport = build_success_transport(resources=[{"name": "secret"}])
 
@@ -286,6 +320,41 @@ def test_resources_exposure_fails():
     assert report.status == "MISMATCH"
     assert report.resources_exposed is True
     assert report.resource_count == 1
+
+
+def test_advertised_resources_capability_fails_even_when_resource_list_is_empty():
+    transport = build_success_transport(
+        initialize_payload={
+            "protocolVersion": verifier.load_canonical_contract().protocol_version,
+            "serverInfo": {
+                "name": verifier.load_canonical_contract().server_name,
+                "version": verifier.load_canonical_contract().server_version,
+            },
+            "capabilities": {"tools": {"listChanged": False}, "resources": {}},
+        }
+    )
+
+    report = verifier.verify_remote_mcp(transport=transport)
+
+    assert report.status == "MISMATCH"
+    assert report.resources_capability_advertised is True
+    assert report.resource_count == 0
+    assert report.resources_exposed is True
+
+
+def test_no_prompts_or_resources_capability_advertised_with_methods_unsupported_still_verifies():
+    transport = build_success_transport(
+        prompt_response=json_response(rpc_error(1001, code=-32601, message="Method not found")),
+        resource_response=json_response(rpc_error(1002, code=-32601, message="Method not found")),
+    )
+
+    report = verifier.verify_remote_mcp(transport=transport)
+
+    assert report.status == "VERIFIED"
+    assert report.prompts_capability_advertised is False
+    assert report.resources_capability_advertised is False
+    assert report.prompt_count == 0
+    assert report.resource_count == 0
 
 
 def test_stale_descriptions_fail():
@@ -426,6 +495,14 @@ def test_json_and_markdown_report_generation(tmp_path, monkeypatch):
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     assert payload["status"] == "VERIFIED"
     assert markdown_path.read_text(encoding="utf-8").startswith("# MCP Remote Verification")
+
+
+def test_session_id_is_not_serialized_into_reports():
+    report = verifier.verify_remote_mcp(transport=build_success_transport(session_id="session-123"))
+
+    assert "session-123" not in json.dumps(report.to_dict(), sort_keys=True)
+    assert "session-123" not in verifier.render_markdown_report(report)
+    assert "session-123" not in verifier.render_terminal_report(report)
 
 
 def test_cli_returns_nonzero_for_mismatch(monkeypatch):
