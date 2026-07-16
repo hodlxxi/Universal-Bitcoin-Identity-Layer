@@ -39,15 +39,15 @@
 
     <section class="card">
       <h2>Runtime Trust</h2>
-      <p><strong>Completed jobs:</strong> {{ report.metrics.completed_jobs }}</p>
+      <p><strong>Period evidenced completed jobs:</strong> {{ report.metrics.completed_jobs }}</p>
       <p><strong>Latest receipts:</strong> <a href="{{ report.proofs.latest_receipt_url }}">{{ report.proofs.latest_receipt_url }}</a></p>
       <p><strong>Attestation trail:</strong> <a href="{{ report.proofs.attestation_url }}">{{ report.proofs.attestation_url }}</a></p>
       <p><strong>Reputation:</strong> <a href="{{ report.proofs.reputation_url }}">{{ report.proofs.reputation_url }}</a></p>
       <p><strong>Chain health:</strong> <a href="{{ report.proofs.chain_health_url }}">{{ report.proofs.chain_health_url }}</a></p>
       <p><strong>Latest report:</strong> <a href="/reports/{{ report.report_id }}">/reports/{{ report.report_id }}</a></p>
-      <p><strong>Alert/health summary:</strong> <code>{{ report.status.state }}</code> (policy surface)</p>
+      <p><strong>Daily report state:</strong> <code>{{ report.status.state }}</code></p>
       <p><strong>Trust lane:</strong> <code>{{ summary.trust_lane }}</code> <span class="small">(classification policy surface)</span></p>
-      <p class="small">Unpaid or expired requests are tracked separately from execution-failed outcomes in report metrics.</p>
+      <p class="small">Historical daily metrics are cutoff-bounded. Current job-outcome classifications remain on the live reputation surface.</p>
     </section>
   </div>
 

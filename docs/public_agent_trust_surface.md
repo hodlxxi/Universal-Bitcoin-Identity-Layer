@@ -49,16 +49,49 @@ A public package of machine-readable and human-readable artifacts intended to he
 4. Compute SHA-256 of canonical JSON bytes.
 5. Compare to `report_sha256`.
 
+The hash covers canonical JSON after removing only `report_sha256`. Daily reports contain no request-time timestamp or random identifier, so repeated requests for the same report ID produce the same canonical body and hash unless a pre-cutoff source record is retroactively changed.
+
+## Daily report IDs and fixed periods
+
+Daily trust-report IDs use this exact form:
+
+`<agent_id>-daily-YYYYMMDD`
+
+The date is the exclusive UTC period end, not the request date label for a rolling window. For example, `hodlxxi-herald-01-daily-20260716` always covers:
+
+- `period.from = 2026-07-15T00:00:00Z` (inclusive)
+- `period.to = 2026-07-16T00:00:00Z` (exclusive)
+- `created_at = 2026-07-16T00:00:00Z`
+
+The period is therefore `[period.from, period.to)`. Malformed IDs, unknown agent IDs, invalid calendar dates, arbitrary report IDs, and future period-end dates return `404`. Persisted readiness reports are resolved before daily-ID validation and retain their existing behavior.
+
+All report GET surfaces are read-only. They reconstruct a valid daily report from bounded database queries and do not persist report artifacts, create jobs or events, invoke payments, or trigger runtime work. This applies to the JSON, human, verification, and MCP `hodlxxi_get_report` paths.
+
+## Daily and lifetime metric scopes
+
+`metrics_scope` is `closed_utc_period`. The `metrics` object contains only facts reconstructable from the fixed day:
+
+- `persisted_job_requests`: jobs created at or after `period.from` and before `period.to`
+- `evidenced_completed_jobs`: distinct jobs linked to attestations created within the period
+- `completed_jobs`: compatibility alias for `evidenced_completed_jobs`, with the same period scope
+- `attestations_created`: attestations created within the period
+- `sats_evidenced`: sum of actual `AgentJob.sats` values for distinct jobs evidenced within the period
+
+`lifetime_snapshot.scope` is `lifetime_before_cutoff`, and `lifetime_snapshot.as_of` equals the fixed exclusive period end. Its job, attestation, evidenced-satoshi, and latest-event fields include only source records before that cutoff. Records created at or after the cutoff do not change either scope.
+
+The machine-readable `metric_definitions.completed_jobs` entry explicitly identifies the compatibility alias and its closed-period semantics.
+
+Mutable current job-status classifications such as unpaid, expired, execution-failed, and unclassified counts are intentionally absent from historical daily reports because the database does not preserve status history as of an old cutoff. Those live classifications remain available from `/agent/reputation`.
+
 ## Current limitations
 
 - Nostr live relay verification is currently partial/placeholder.
 - Covenant funding attachment and on-chain proof checks are not implemented in this surface yet.
 - Trust lanes are currently policy classification surface (non-enforcing).
 
-## Job outcome metrics
+## Live job outcome metrics
 
-Older `failed_jobs` aggregation was too coarse for trust interpretation.  
-The report surface now separates:
+Older `failed_jobs` aggregation was too coarse for trust interpretation. The live `/agent/reputation` surface separates:
 
 - `completed_jobs`
 - `unpaid_or_expired_jobs`
@@ -66,4 +99,4 @@ The report surface now separates:
 - `expired_jobs` (only when explicit expired/timeout status is persisted)
 - `unclassified_jobs` (for unknown legacy statuses)
 
-Unpaid requests are not treated as execution failures in this model.
+Unpaid requests are not treated as execution failures in this live model, and these current-state values are not presented as historical daily-period facts.

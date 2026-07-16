@@ -35,11 +35,17 @@ def build_trust_signal_note(trust: dict[str, Any]) -> str:
 def build_daily_longform_report(report: dict[str, Any]) -> dict[str, str | int]:
     """Return longform content payload intended for Nostr kind 30023."""
     title = f"HODLXXI Herald Daily Trust Report {report.get('report_id', '')}"
+    period = report.get("period", {})
+    metrics = report.get("metrics", {})
+    lifetime = report.get("lifetime_snapshot", {})
     body = (
         f"# {title}\n\n"
         f"- Agent ID: `{report.get('agent_id', 'unknown')}`\n"
         f"- State: `{report.get('status', {}).get('state', 'unknown')}`\n"
-        f"- Completed jobs: `{report.get('metrics', {}).get('completed_jobs', 0)}`\n"
+        f"- Fixed UTC period: `[{period.get('from', 'unknown')}, {period.get('to', 'unknown')})`\n"
+        f"- Period evidenced completed jobs: `{metrics.get('evidenced_completed_jobs', 0)}`\n"
+        f"- Period sats evidenced: `{metrics.get('sats_evidenced', 0)}`\n"
+        f"- Lifetime snapshot as of: `{lifetime.get('as_of', 'unknown')}`\n"
         f"- Covenant-backed alignment signal: `{report.get('covenant', {}).get('covenant_backed', False)}`\n"
         "\n"
         "This longform note summarizes runtime-verifiable behavior history and a Bitcoin-anchored "

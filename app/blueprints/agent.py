@@ -40,13 +40,13 @@ from app.services.nostr_reports import configured_relays_from_env
 from app.services.trust_surface import (
     DEFAULT_AGENT_ID,
     DEFAULT_COVENANT_ID,
-    build_trust_report,
     build_trust_summary,
     classify_job_outcomes,
     compute_report_hash,
     has_covenant_artifact,
     load_agent_binding,
     load_covenant,
+    resolve_trust_report,
     trust_page_context,
 )
 from app.utils import get_rpc_connection
@@ -2215,48 +2215,70 @@ def covenant_json(covenant_id: str):
     return jsonify(covenant)
 
 
-@agent_bp.get("/reports/<report_id>.json")
-def report_json(report_id: str):
+def _resolve_public_report(report_id: str) -> tuple[str, dict] | None:
+    """Resolve persisted readiness reports before supported daily trust reports."""
     readiness_report = load_self_readiness_report(report_id)
     if readiness_report is not None:
-        return jsonify(readiness_report)
+        return "readiness", readiness_report
 
-    report = build_trust_report(DEFAULT_AGENT_ID, report_id=report_id)
+    trust_report = resolve_trust_report(report_id, agent_id=DEFAULT_AGENT_ID)
+    if trust_report is not None:
+        return "trust", trust_report
+    return None
+
+
+def _report_not_found():
+    return jsonify({"error": "report_not_found"}), 404
+
+
+@agent_bp.get("/reports/<report_id>.json")
+def report_json(report_id: str):
+    resolved = _resolve_public_report(report_id)
+    if resolved is None:
+        return _report_not_found()
+
+    _, report = resolved
     return jsonify(report)
 
 
 @agent_bp.get("/reports/<report_id>")
 def report_page(report_id: str):
-    readiness_report = load_self_readiness_report(report_id)
-    if readiness_report is not None:
-        expected_hash = compute_readiness_report_hash(readiness_report)
-        hash_matches = expected_hash == readiness_report.get("report_sha256")
+    resolved = _resolve_public_report(report_id)
+    if resolved is None:
+        return _report_not_found()
+
+    report_kind, report = resolved
+    if report_kind == "readiness":
+        expected_hash = compute_readiness_report_hash(report)
+        hash_matches = expected_hash == report.get("report_sha256")
         return render_template(
             "agent/verify_readiness_report.html",
-            report=readiness_report,
+            report=report,
             canonical_hash=expected_hash,
             hash_matches=hash_matches,
         )
 
-    report = build_trust_report(DEFAULT_AGENT_ID, report_id=report_id)
     covenant = load_covenant(report["covenant"].get("covenant_id", DEFAULT_COVENANT_ID))
     return render_template("agent/report_page.html", report=report, covenant=covenant, agent_id=DEFAULT_AGENT_ID)
 
 
 @agent_bp.get("/verify/report/<report_id>")
 def verify_report_page(report_id: str):
-    readiness_report = load_self_readiness_report(report_id)
-    if readiness_report is not None:
-        expected_hash = compute_readiness_report_hash(readiness_report)
-        hash_matches = expected_hash == readiness_report.get("report_sha256")
+    resolved = _resolve_public_report(report_id)
+    if resolved is None:
+        return _report_not_found()
+
+    report_kind, report = resolved
+    if report_kind == "readiness":
+        expected_hash = compute_readiness_report_hash(report)
+        hash_matches = expected_hash == report.get("report_sha256")
         return render_template(
             "agent/verify_readiness_report.html",
-            report=readiness_report,
+            report=report,
             canonical_hash=expected_hash,
             hash_matches=hash_matches,
         )
 
-    report = build_trust_report(DEFAULT_AGENT_ID, report_id=report_id)
     expected_hash = compute_report_hash(report)
     hash_matches = expected_hash == report.get("report_sha256")
     return render_template(

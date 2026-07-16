@@ -16,29 +16,44 @@
   <div class="card">
     <h1>Public Report {{ report.report_id }}</h1>
     {% include 'agent/_covenant_badge.html' %}
-    <p class="small">Public proof artifact for runtime-verifiable behavior history and declared covenant policy surface.</p>
+    <p class="small">Immutable daily proof reconstructed from bounded historical records and a fixed UTC cutoff.</p>
   </div>
   <div class="card">
     <h2>Summary</h2>
     <p><strong>Agent:</strong> {{ report.agent_id }}</p>
     <p><strong>State:</strong> {{ report.status.state }}</p>
-    <p><strong>Period:</strong> {{ report.period.from }} → {{ report.period.to }}</p>
+    <p><strong>Created/as of:</strong> {{ report.created_at }}</p>
+    <p><strong>Fixed UTC period:</strong> [{{ report.period.from }}, {{ report.period.to }})</p>
+    <p class="small">The start is inclusive and the end is exclusive. The report ID date is the exclusive UTC period end.</p>
     <p><strong>report_sha256:</strong> <code>{{ report.report_sha256 }}</code></p>
     <p><strong>Covenant funding status:</strong> <code>{{ report.covenant.funding_status }}</code></p>
     <p><a href="/reports/{{ report.report_id }}.json">Raw JSON</a></p>
   </div>
   <div class="card">
-    <h2>Metrics</h2>
+    <h2>Period metrics</h2>
+    <p><strong>Scope:</strong> <code>{{ report.metrics_scope }}</code></p>
     <ul>
-      <li>completed_jobs: {{ report.metrics.completed_jobs }}</li>
-      <li>unpaid_or_expired_jobs: {{ report.metrics.unpaid_or_expired_jobs }}</li>
-      <li>execution_failed_jobs: {{ report.metrics.execution_failed_jobs }}</li>
-      <li>expired_jobs: {{ report.metrics.expired_jobs }}</li>
-      <li>unclassified_jobs: {{ report.metrics.unclassified_jobs }}</li>
-      <li>sats_earned: {{ report.metrics.sats_earned }}</li>
-      <li>sats_spent: {{ report.metrics.sats_spent }}</li>
+      <li>persisted_job_requests: {{ report.metrics.persisted_job_requests }}</li>
+      <li>evidenced_completed_jobs: {{ report.metrics.evidenced_completed_jobs }}</li>
+      <li>completed_jobs: {{ report.metrics.completed_jobs }} <span class="small">(compatibility alias for period evidenced completed jobs)</span></li>
+      <li>attestations_created: {{ report.metrics.attestations_created }}</li>
+      <li>sats_evidenced: {{ report.metrics.sats_evidenced }}</li>
     </ul>
-    <p class="small">Unpaid or expired requests do not necessarily indicate execution errors.</p>
+    <p class="small">These are historical period facts. Satoshi totals sum the actual values of distinct evidenced jobs.</p>
+  </div>
+  <div class="card">
+    <h2>Lifetime snapshot</h2>
+    <p><strong>Scope:</strong> <code>{{ report.lifetime_snapshot.scope }}</code></p>
+    <p><strong>As of:</strong> {{ report.lifetime_snapshot.as_of }} (exclusive cutoff)</p>
+    <ul>
+      <li>persisted_job_requests: {{ report.lifetime_snapshot.persisted_job_requests }}</li>
+      <li>evidenced_completed_jobs: {{ report.lifetime_snapshot.evidenced_completed_jobs }}</li>
+      <li>attestations_count: {{ report.lifetime_snapshot.attestations_count }}</li>
+      <li>sats_evidenced: {{ report.lifetime_snapshot.sats_evidenced }}</li>
+      <li>latest_event_timestamp: {{ report.lifetime_snapshot.latest_event_timestamp or 'null' }}</li>
+      <li>latest_event_hash: {{ report.lifetime_snapshot.latest_event_hash or 'null' }}</li>
+    </ul>
+    <p class="small">Current job-outcome classifications are a separate live surface at <a href="{{ report.proofs.reputation_url }}">/agent/reputation</a>; they are not represented as historical cutoff facts here.</p>
   </div>
   <div class="card">
     <h2>Proof links</h2>
