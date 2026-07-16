@@ -79,7 +79,7 @@ def mcp_server_card(base_url: str, config: Mapping[str, object] | None = None) -
         "endpoint": endpoint,
         "transport": {"type": MCP_TRANSPORT_TYPE, "url": endpoint, "endpoint": endpoint},
         "transports": [{"type": MCP_TRANSPORT_TYPE, "url": endpoint, "endpoint": endpoint}],
-        "capabilities": {"tools": {"listChanged": False, "count": MCP_TOOL_COUNT}, "resources": {}, "prompts": {}},
+        "capabilities": {"tools": {"listChanged": False, "count": MCP_TOOL_COUNT}},
         "tool_count": MCP_TOOL_COUNT,
         "authentication": {"type": "none"},
         "access_mode": MCP_ACCESS_MODE,

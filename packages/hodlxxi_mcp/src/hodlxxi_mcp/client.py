@@ -107,9 +107,7 @@ class HODLXXIReadOnlyClient:
 
                 content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
                 if content_type not in _ALLOWED_CONTENT_TYPES:
-                    raise UpstreamContentTypeError(
-                        f"unexpected upstream content type: {content_type or 'missing'}"
-                    )
+                    raise UpstreamContentTypeError(f"unexpected upstream content type: {content_type or 'missing'}")
 
                 chunks: list[bytes] = []
                 size = 0

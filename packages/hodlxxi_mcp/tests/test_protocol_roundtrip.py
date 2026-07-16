@@ -55,17 +55,17 @@ async def test_in_memory_mcp_protocol_round_trip() -> None:
         assert initialization.serverInfo.version == "0.1.1"
         assert initialization.serverInfo.websiteUrl == "https://hodlxxi.com"
         assert initialization.protocolVersion == "2025-11-25"
+        capabilities = initialization.capabilities.model_dump(exclude_none=True)
+        assert "tools" in capabilities
+        assert "prompts" not in capabilities
+        assert "resources" not in capabilities
 
         await client.ping()
 
         tools = await client.list_tools()
-        resources = await client.list_resources()
-        prompts = await client.list_prompts()
         names = {tool.name for tool in tools}
 
         assert len(names) == 26
-        assert resources == []
-        assert prompts == []
         assert names == set(TOOL_NAMES)
 
         result = await client.call_tool(

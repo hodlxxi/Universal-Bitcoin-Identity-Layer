@@ -66,7 +66,10 @@ def test_mcp_server_card_truthful_sidecar_contract(client):
     assert data["endpoint"].endswith("/agent/mcp")
     assert data["transport"]["type"] == "streamable_http"
     assert data["tool_count"] == 26
+    assert set(data["capabilities"]) == {"tools"}
     assert data["capabilities"]["tools"]["count"] == 26
+    assert "prompts" not in data["capabilities"]
+    assert "resources" not in data["capabilities"]
     assert data["authentication"] == {"type": "none"}
     assert data["access_mode"] == "public_read_only"
     assert data["writes_enabled"] is False
