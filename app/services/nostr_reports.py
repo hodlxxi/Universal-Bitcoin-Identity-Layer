@@ -24,26 +24,34 @@ def build_execution_summary_note(receipt: dict[str, Any]) -> str:
 
 def build_trust_signal_note(trust: dict[str, Any]) -> str:
     """Return concise trust surface note for Nostr kind 1."""
-    lane = trust.get("trust_lane", "standard")
     agent_id = trust.get("agent_id", "unknown")
+    funding_status = trust.get("funding_status", "unknown")
     return (
-        f"Trust surface update | agent={agent_id} | lane={lane} | "
-        "Bitcoin-anchored operator↔agent covenant is an alignment signal, not an uptime guarantee."
+        f"Trust surface update | agent={agent_id} | declared covenant policy signal | "
+        f"funding_status={funding_status} | does not establish on-chain capital proof."
     )
 
 
 def build_daily_longform_report(report: dict[str, Any]) -> dict[str, str | int]:
     """Return longform content payload intended for Nostr kind 30023."""
     title = f"HODLXXI Herald Daily Trust Report {report.get('report_id', '')}"
+    period = report.get("period", {})
+    metrics = report.get("metrics", {})
+    lifetime = report.get("lifetime_snapshot", {})
+    covenant = report.get("covenant", {})
     body = (
         f"# {title}\n\n"
         f"- Agent ID: `{report.get('agent_id', 'unknown')}`\n"
         f"- State: `{report.get('status', {}).get('state', 'unknown')}`\n"
-        f"- Completed jobs: `{report.get('metrics', {}).get('completed_jobs', 0)}`\n"
-        f"- Covenant-backed alignment signal: `{report.get('covenant', {}).get('covenant_backed', False)}`\n"
+        f"- Fixed UTC period: `[{period.get('from', 'unknown')}, {period.get('to', 'unknown')})`\n"
+        f"- Period evidenced completed jobs: `{metrics.get('evidenced_completed_jobs', 0)}`\n"
+        f"- Period sats evidenced: `{metrics.get('sats_evidenced', 0)}`\n"
+        f"- Lifetime snapshot as of: `{lifetime.get('as_of', 'unknown')}`\n"
+        f"- Declared covenant funding status: `{covenant.get('funding_status', 'unknown')}`\n"
         "\n"
-        "This longform note summarizes runtime-verifiable behavior history and a Bitcoin-anchored "
-        "operator↔agent covenant alignment signal. It does not by itself prove uptime, execution quality, or full autonomy."
+        "This longform note summarizes cutoff-bounded runtime evidence and a declared operator↔agent covenant policy "
+        "signal. The covenant is not presented as funded on-chain capital proof. It does not by itself prove uptime, "
+        "execution quality, or full autonomy."
     )
     return {"kind": 30023, "title": title, "content": body}
 
