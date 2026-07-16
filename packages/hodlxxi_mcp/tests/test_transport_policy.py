@@ -98,18 +98,12 @@ async def test_http_transport_policy_is_locked_down(
 
     headers = initialization["headers"]
     assert headers == {
-        "Accept": (
-            "application/json, "
-            "application/linkset+json"
-        ),
+        "Accept": ("application/json, " "application/linkset+json"),
         "User-Agent": "hodlxxi-mcp/0.1.1",
     }
 
     assert request == {
         "method": "GET",
-        "url": (
-            "https://hodlxxi.com"
-            "/agent/capabilities"
-        ),
+        "url": ("https://hodlxxi.com" "/agent/capabilities"),
         "params": {},
     }
