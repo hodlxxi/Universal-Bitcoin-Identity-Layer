@@ -49,7 +49,7 @@ A public package of machine-readable and human-readable artifacts intended to he
 4. Compute SHA-256 of canonical JSON bytes.
 5. Compare to `report_sha256`.
 
-The hash covers canonical JSON after removing only `report_sha256`. Daily reports contain no request-time timestamp or random identifier, so repeated requests for the same report ID produce the same canonical body and hash unless a pre-cutoff source record is retroactively changed.
+The hash covers canonical JSON after removing only `report_sha256`. With unchanged pre-cutoff source records and unchanged report schema and construction logic, repeated requests for the same report ID produce the same canonical body and hash. The result is independent of request time and unaffected by records timestamped at or after the cutoff. A retroactive pre-cutoff source-record change or a later schema/logic change can alter a reconstructed report; the service does not persist frozen report bytes.
 
 ## Daily report IDs and fixed periods
 
@@ -57,7 +57,7 @@ Daily trust-report IDs use this exact form:
 
 `<agent_id>-daily-YYYYMMDD`
 
-The date is the exclusive UTC period end, not the request date label for a rolling window. For example, `hodlxxi-herald-01-daily-20260716` always covers:
+The date defines the exclusive UTC period end, not the request date label for a rolling window. For example, `hodlxxi-herald-01-daily-20260716` defines these fixed boundaries:
 
 - `period.from = 2026-07-15T00:00:00Z` (inclusive)
 - `period.to = 2026-07-16T00:00:00Z` (exclusive)

@@ -208,16 +208,24 @@ def test_nostr_builder_helpers_generate_expected_shapes():
         "covenant": {"covenant_present": True, "funding_status": "unfunded_declared"},
     }
     receipt = {"job_id": "j1", "job_type": "ping", "timestamp": "2026-01-01T00:00:00Z"}
-    trust = {"agent_id": "hodlxxi-herald-01", "trust_lane": "covenant-backed"}
+    trust = {"agent_id": "hodlxxi-herald-01", "funding_status": "unfunded_declared"}
 
     assert "heartbeat" in build_heartbeat_note(report).lower()
     assert "job=j1" in build_execution_summary_note(receipt)
-    assert "alignment signal" in build_trust_signal_note(trust)
+    trust_signal = build_trust_signal_note(trust)
+    assert "declared covenant policy signal" in trust_signal
+    assert "unfunded_declared" in trust_signal
+    assert "Bitcoin-anchored" not in trust_signal
+    assert "covenant-backed" not in trust_signal.lower()
 
     longform = build_daily_longform_report(report)
     assert longform["kind"] == 30023
     assert "Period evidenced completed jobs: `3`" in longform["content"]
     assert "Period sats evidenced: `84`" in longform["content"]
+    assert "unfunded_declared" in longform["content"]
+    assert "declared" in longform["content"].lower()
+    assert "Bitcoin-anchored" not in longform["content"]
+    assert "covenant-backed" not in longform["content"].lower()
     assert "does not by itself prove uptime" in longform["content"]
 
     relay_event = build_relay_list_event(["wss://relay.damus.io"])
