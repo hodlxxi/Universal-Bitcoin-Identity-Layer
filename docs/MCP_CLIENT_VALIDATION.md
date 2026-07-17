@@ -1,8 +1,24 @@
 # HODLXXI MCP Client Validation
 
+## Current external production validation: 0.1.1
+
+- Server: `HODLXXI Read-Only`
+- Version: `0.1.1`
+- Protocol: `2025-11-25`
+- Tool count: `26`
+- `hodlxxi_get_chain_health` returned `isError=false` and `chain_ok=true`.
+- Official Registry package: `io.github.hodlxxi/hodlxxi-readonly`
+- Registry version `0.1.1` is active and `isLatest=true`.
+- Remote URL: `https://hodlxxi.com/agent/mcp`
+
+The `0.1.0` results below are preserved as historical evidence only. They are not the latest externally validated production version and are not the Registry-latest version.
+
+
+## Historical external production validation: 0.1.0
+
 Validated successfully over local stdio on 2026-07-12 and over the public remote production endpoint on 2026-07-13.
 
-## Last externally validated production build
+## Historical production build evidence
 
 - Repository: `hodlxxi/Universal-Bitcoin-Identity-Layer`
 - Production commit: `8d5281d49eb532187f32c81266b3beaff1069e9e`
@@ -15,8 +31,6 @@ Validated successfully over local stdio on 2026-07-12 and over the public remote
 - Public endpoint: `https://hodlxxi.com/agent/mcp`
 - Server card: `https://hodlxxi.com/.well-known/mcp.json`
 - Published Registry version: `0.1.0`
-
-The repository now carries `0.1.1` source metadata and a dedicated remote verifier workflow, but this document must not describe `0.1.1` as externally validated production truth until that live endpoint is re-queried and the verifier result is archived.
 
 ## Public deployment path
 
@@ -127,4 +141,4 @@ Interpretation:
 
 ## Conclusion
 
-The dated July 12-13 evidence above remains the last archived external production validation for version `0.1.0`. The `0.1.1` source tree now includes a repeatable verifier path, but live `0.1.1` validation must be re-run and archived before this document is updated to claim a newer externally validated production build.
+The dated July 12-13 evidence above remains archived historical validation for version `0.1.0`. The current externally validated production and Registry-latest version is `0.1.1`.
