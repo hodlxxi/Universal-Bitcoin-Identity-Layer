@@ -50,7 +50,15 @@ def fake_release(releases: Path, name: str = "rel", *, version: str = "0.1.1") -
     ident_path.write_text(json.dumps(ident))
     (rel / deploy.VERIFY_FILE).write_text(
         json.dumps(
-            {"status": "verified", "release_dir": str(rel.resolve()), "identity_sha256": deploy.sha256_file(ident_path)}
+            {
+                "schema_version": "1",
+                "status": "verified",
+                "release_dir": str(rel.resolve()),
+                "identity_sha256": deploy.sha256_file(ident_path),
+                "installed_distributions_sha256": deploy.sha256_file(freeze),
+                "dependency_lock_sha256": deploy.sha256_file(ROOT / deploy.DEFAULT_DEP_LOCK),
+                "source_commit": deploy.git(["rev-parse", "HEAD"], ROOT),
+            }
         )
     )
     return rel
@@ -60,8 +68,15 @@ def patch_verify_runtime(monkeypatch):
     monkeypatch.setattr(deploy, "service_user_ids", lambda: (65534, 65534))
     monkeypatch.setattr(deploy, "assert_root_owned_not_service_writable", lambda *a, **k: None)
     monkeypatch.setattr(deploy, "run_as_service_user", lambda *a, **k: None)
-    monkeypatch.setattr(deploy, "run", lambda *a, **k: type("R", (), {"stdout": "0"})())
+    monkeypatch.setattr(
+        deploy,
+        "run",
+        lambda *a, **k: type(
+            "R", (), {"stdout": "hodlxxi-mcp==0.1.1\n" if "freeze" in [str(x) for x in a[0]] else "0"}
+        )(),
+    )
     monkeypatch.setattr(deploy, "verify_identity", lambda *a, **k: None)
+    monkeypatch.setattr(deploy, "parse_dependency_lock", lambda *a, **k: {"hodlxxi-mcp": "0.1.1"})
 
 
 def activate_args(tmp_path: Path, rel: Path, current: Path):
@@ -111,6 +126,22 @@ def test_chmod_never_follows_external_symlink(tmp_path):
     assert stat.S_IMODE(external.stat().st_mode) == 0o600
 
 
+def test_lock_entry_without_hash_rejected(tmp_path):
+    lock = tmp_path / "lock"
+    lock.write_text("demo==1.0\n")
+    with pytest.raises(deploy.FailClosed, match="lacks artifact hash"):
+        deploy.parse_dependency_lock(lock)
+
+
+def test_lock_file_symlink_rejected(tmp_path):
+    real = tmp_path / "real.lock"
+    real.write_text("demo==1.0 --hash=sha256:" + "0" * 64 + "\n")
+    link = tmp_path / "link.lock"
+    link.symlink_to(real)
+    with pytest.raises(deploy.FailClosed, match="dependency lock"):
+        deploy.dependency_lock_path(tmp_path, link)
+
+
 def test_missing_wheelhouse_fails_before_release_creation(tmp_path):
     lock = ROOT / deploy.DEFAULT_DEP_LOCK
     with pytest.raises(deploy.FailClosed, match="wheelhouse"):
@@ -129,7 +160,7 @@ def test_wheel_hash_mismatch_fails(tmp_path):
 
 def test_dependency_lock_rejects_duplicate_names(tmp_path):
     lock = tmp_path / "lock"
-    lock.write_text("demo==1.0\nDemo==1.0\n")
+    lock.write_text("demo==1.0 --hash=sha256:" + "0" * 64 + "\nDemo==1.0 --hash=sha256:" + "1" * 64 + "\n")
     with pytest.raises(deploy.FailClosed, match="duplicate"):
         deploy.parse_dependency_lock(lock)
 
@@ -289,7 +320,7 @@ def test_dependency_lock_absence_and_mismatch(tmp_path):
     with pytest.raises(deploy.FailClosed, match="dependency lock"):
         deploy.dependency_lock_path(ROOT, tmp_path / "missing.lock")
     bad = tmp_path / "bad.lock"
-    bad.write_text("httpx>=0.27\n")
+    bad.write_text("httpx>=0.27 --hash=sha256:" + "0" * 64 + "\n")
     with pytest.raises(deploy.FailClosed, match="non-exact"):
         deploy.dependency_lock_path(tmp_path, bad)
 
@@ -340,7 +371,7 @@ def test_candidate_equal_to_previous_rejected(tmp_path, monkeypatch):
 
 def test_loopback_only_listener_enforcement(monkeypatch):
     monkeypatch.setattr(deploy, "listener_ports", lambda: {"0.0.0.0:8765", "127.0.0.1:8765"})
-    with pytest.raises(deploy.FailClosed, match="non-loopback"):
+    with pytest.raises(deploy.FailClosed, match="unexpected MCP listener"):
         deploy.assert_loopback_listener()
 
 

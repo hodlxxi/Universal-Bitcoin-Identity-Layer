@@ -110,7 +110,11 @@ def parse_dependency_lock(lock: Path) -> dict[str, str]:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        requirement = line.split(" --hash=", 1)[0].strip()
+        parts = line.split()
+        requirement = parts[0]
+        hashes = [part for part in parts[1:] if part.startswith("--hash=sha256:")]
+        if not hashes:
+            raise FailClosed(f"dependency lock entry lacks artifact hash: {line}")
         if "==" not in requirement:
             raise FailClosed(f"dependency lock contains non-exact requirement: {line}")
         name, version = requirement.split("==", 1)
@@ -142,13 +146,19 @@ def validate_wheelhouse(wheelhouse: str | None, lock: Path) -> Path:
     ]
     if bad:
         raise FailClosed("wheelhouse contains unsupported or unsafe artifacts: " + ", ".join(sorted(bad)[:5]))
-    # If hashes are present in the lock, every referenced hash must be present in the wheelhouse.
     expected_hashes = {
-        line.split("sha256:", 1)[1].strip() for line in lock.read_text().splitlines() if "--hash=sha256:" in line
+        token.split("sha256:", 1)[1]
+        for line in lock.read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+        for token in line.split()
+        if token.startswith("--hash=sha256:")
     }
+    if not expected_hashes:
+        raise FailClosed("dependency lock does not contain artifact hashes")
     actual_hashes = {sha256_file(p) for p in files}
     missing = expected_hashes - actual_hashes
-    if missing:
+    extra = actual_hashes - expected_hashes
+    if missing or extra:
         raise FailClosed("wheelhouse artifact hash mismatch")
     return root
 
@@ -287,7 +297,7 @@ def build(args):
     run([sys.executable, "-m", "venv", "--copies", venv], timeout=120)
     pip = venv / "bin/pip"
     py = venv / "bin/python"
-    pip_base = [pip, "install", "--no-index", "--no-deps", "--find-links", wheelhouse]
+    pip_base = [pip, "install", "--require-hashes", "--no-index", "--no-deps", "--find-links", wheelhouse]
     run([*pip_base, "-r", lock_path], timeout=300, capture=not args.verbose)
     built_wheels = target / "built-wheels"
     built_wheels.mkdir(mode=0o755)
@@ -406,8 +416,7 @@ def verify_release(release, *, source, current, releases_dir, dependency_lock=DE
     source = source.resolve()
     releases = releases_dir.resolve()
     release = require_direct_release_child(Path(release), releases)
-    parse_dependency_lock(dependency_lock_path(source, dependency_lock))
-    harden_release_permissions(release)
+    locked_versions = parse_dependency_lock(dependency_lock_path(source, dependency_lock))
     current_path = Path(current).absolute()
     if current_path.is_symlink() and release == current_path.resolve():
         raise FailClosed("candidate release is already current")
@@ -422,6 +431,25 @@ def verify_release(release, *, source, current, releases_dir, dependency_lock=DE
     if os.geteuid() == 0:
         assert_root_owned_not_service_writable(release)
     verify_identity(ident, release=release, source=source, dep_lock=dependency_lock, py=py)
+    regenerated_freeze = run([py, "-m", "pip", "freeze", "--all"], timeout=60).stdout
+    normalized_freeze = "\n".join(sorted(line for line in regenerated_freeze.splitlines() if line.strip())) + "\n"
+    recorded_freeze = (release / FREEZE_FILE).read_text()
+    if normalized_freeze != recorded_freeze:
+        raise FailClosed("installed distributions manifest does not match regenerated pip freeze")
+    installed_versions = {}
+    for line in normalized_freeze.splitlines():
+        if "==" in line:
+            name, version = line.split("==", 1)
+            installed_versions[name.lower().replace("_", "-")] = version
+    expected_versions = dict(locked_versions)
+    expected_versions["hodlxxi-mcp"] = package_version(source)
+    for name, version in expected_versions.items():
+        if installed_versions.get(name) != version:
+            raise FailClosed(f"installed distribution mismatch for {name}")
+    unexpected = set(installed_versions) - set(expected_versions)
+    if unexpected:
+        raise FailClosed("unexpected installed distributions: " + ", ".join(sorted(unexpected)[:5]))
+    run([py, "-m", "pip", "check"], timeout=60)
     required_files = [entry, py, ident_path, release / FREEZE_FILE]
     for path in required_files:
         run_as_service_user(["test", "-r", path], timeout=10)
@@ -432,9 +460,13 @@ def verify_release(release, *, source, current, releases_dir, dependency_lock=DE
     run([py, "-c", _server_probe_code(package_version(source))], cwd=Path("/tmp"), timeout=30)
     identity_digest = sha256_file(ident_path)
     result = {
+        "schema_version": "1",
         "status": "verified",
         "release_dir": str(release),
         "identity_sha256": identity_digest,
+        "installed_distributions_sha256": sha256_file(release / FREEZE_FILE),
+        "dependency_lock_sha256": sha256_file(dependency_lock_path(source, dependency_lock)),
+        "source_commit": git(["rev-parse", "HEAD"], source),
         "verified_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
     }
     if write:
@@ -465,6 +497,8 @@ def verify_stored_verification(release: Path) -> None:
     if not verify_path.is_file() or verify_path.is_symlink():
         raise FailClosed("release has not been previously verified")
     verify = json.loads(verify_path.read_text())
+    if verify.get("schema_version") not in ("1", 1) or verify.get("status") != "verified":
+        raise FailClosed("VERIFY.json has unsupported schema or status")
     if verify.get("identity_sha256") != sha256_file(ident_path):
         raise FailClosed("VERIFY.json does not match RELEASE_IDENTITY.json")
     if verify.get("release_dir") != str(release):
@@ -497,18 +531,20 @@ def systemctl(args):
 
 
 def listener_ports() -> set[str]:
-    if shutil.which("ss"):
-        result = run(["ss", "-ltnH"], timeout=10)
-        return {line.split()[3] for line in result.stdout.splitlines() if len(line.split()) >= 4}
-    return set()
+    if not shutil.which("ss"):
+        raise FailClosed("socket listener inspector ss is unavailable")
+    result = run(["ss", "-ltnH"], timeout=10)
+    return {
+        line.split()[3]
+        for line in result.stdout.splitlines()
+        if len(line.split()) >= 4 and line.split()[3].endswith(":8765")
+    }
 
 
 def assert_loopback_listener() -> None:
     ports = listener_ports()
-    if ports and "127.0.0.1:8765" not in ports:
-        raise FailClosed("127.0.0.1:8765 listener is absent")
-    if "0.0.0.0:8765" in ports or "[::]:8765" in ports or "*:8765" in ports:
-        raise FailClosed("unsafe non-loopback MCP listener is present")
+    if ports != {"127.0.0.1:8765"}:
+        raise FailClosed("unexpected MCP listener set: " + ", ".join(sorted(ports)))
     with socket.create_connection(("127.0.0.1", 8765), timeout=3):
         return
 
@@ -605,7 +641,17 @@ def health_check(release: Path, *, previous_restarts: int | None = None, timeout
 @contextlib.contextmanager
 def deployment_lock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as handle:
+    flags = os.O_CREAT | os.O_RDWR
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags, 0o600)
+    except OSError as exc:
+        raise FailClosed("deployment lock file is unsafe") from exc
+    with os.fdopen(fd, "w") as handle:
+        st = os.fstat(handle.fileno())
+        if not stat.S_ISREG(st.st_mode) or st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+            raise FailClosed("deployment lock file has unsafe type or permissions")
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
