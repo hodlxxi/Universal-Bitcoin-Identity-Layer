@@ -18,7 +18,7 @@ import subprocess
 import sys
 import time
 import tomllib
-import urllib.request
+import zipfile
 from pathlib import Path
 
 DEFAULT_SOURCE = Path("/srv/ubid")
@@ -37,6 +37,8 @@ EXPECTED_PROTOCOL = "2025-11-25"
 EXPECTED_TOOLS = 26
 EXPECTED_RESOURCES = 0
 EXPECTED_PROMPTS = 0
+VERIFY_SCHEMA = "hodlxxi-mcp-release-verification"
+VERIFY_SCHEMA_VERSION = 2
 HEALTH_TIMEOUT = 30.0
 HEALTH_INTERVAL = 1.0
 
@@ -104,26 +106,30 @@ def dependency_lock_path(source: Path, dep_lock: Path) -> Path:
     return path
 
 
-def parse_dependency_lock(lock: Path) -> dict[str, str]:
-    entries: dict[str, str] = {}
+def normalize_distribution_name(name: str) -> str:
+    return name.lower().replace("_", "-").replace(".", "-")
+
+
+def parse_dependency_lock(lock: Path) -> dict[str, tuple[str, str]]:
+    entries: dict[str, tuple[str, str]] = {}
     for raw in lock.read_text().splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         parts = line.split()
         requirement = parts[0]
-        hashes = [part for part in parts[1:] if part.startswith("--hash=sha256:")]
-        if not hashes:
-            raise FailClosed(f"dependency lock entry lacks artifact hash: {line}")
+        hashes = [part.removeprefix("--hash=sha256:") for part in parts[1:] if part.startswith("--hash=sha256:")]
+        if len(hashes) != 1 or len(hashes[0]) != 64 or any(c not in "0123456789abcdef" for c in hashes[0]):
+            raise FailClosed(f"dependency lock entry must have exactly one valid artifact hash: {line}")
         if "==" not in requirement:
             raise FailClosed(f"dependency lock contains non-exact requirement: {line}")
         name, version = requirement.split("==", 1)
-        key = name.lower().replace("_", "-")
-        if key in entries and entries[key] != version:
+        key = normalize_distribution_name(name)
+        if key in entries and entries[key][0] != version:
             raise FailClosed(f"dependency lock has conflicting duplicate entry for {name}")
         if key in entries:
             raise FailClosed(f"dependency lock has duplicate entry for {name}")
-        entries[key] = version
+        entries[key] = (version, hashes[0])
     if not entries:
         raise FailClosed("dependency lock is empty")
     return entries
@@ -132,34 +138,61 @@ def parse_dependency_lock(lock: Path) -> dict[str, str]:
 def validate_wheelhouse(wheelhouse: str | None, lock: Path) -> Path:
     if not wheelhouse:
         raise FailClosed("--wheelhouse is required for production release builds")
-    root = Path(wheelhouse).resolve()
-    if not root.is_dir() or root.is_symlink():
+    supplied = Path(wheelhouse)
+    try:
+        supplied_stat = supplied.lstat()
+    except OSError as exc:
+        raise FailClosed("wheelhouse must be an existing non-symlink directory") from exc
+    if stat.S_ISLNK(supplied_stat.st_mode):
+        raise FailClosed("operator-supplied wheelhouse path must not be a symlink")
+    root = supplied.resolve(strict=True)
+    if not stat.S_ISDIR(supplied_stat.st_mode) or not root.is_dir():
         raise FailClosed("wheelhouse must be an existing non-symlink directory")
-    allowed = {".whl", ".tar.gz", ".zip"}
-    files = [p for p in root.iterdir() if p.is_file() and not p.is_symlink()]
+    expected_owner = 0 if os.geteuid() == 0 else os.geteuid()
+    if supplied_stat.st_uid != expected_owner or supplied_stat.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise FailClosed("wheelhouse has unsafe ownership or permissions")
+    children = list(root.iterdir())
+    files = [p for p in children if p.is_file() and not p.is_symlink()]
     if not files:
         raise FailClosed("wheelhouse contains no artifacts")
-    bad = [
-        p.name
-        for p in root.iterdir()
-        if p.is_symlink() or (p.is_file() and not any(p.name.endswith(ext) for ext in allowed))
-    ]
+    bad = [p.name for p in children if p.is_symlink() or not p.is_file() or p.suffix != ".whl"]
     if bad:
         raise FailClosed("wheelhouse contains unsupported or unsafe artifacts: " + ", ".join(sorted(bad)[:5]))
-    expected_hashes = {
-        token.split("sha256:", 1)[1]
-        for line in lock.read_text().splitlines()
-        if line.strip() and not line.startswith("#")
-        for token in line.split()
-        if token.startswith("--hash=sha256:")
-    }
-    if not expected_hashes:
-        raise FailClosed("dependency lock does not contain artifact hashes")
-    actual_hashes = {sha256_file(p) for p in files}
-    missing = expected_hashes - actual_hashes
-    extra = actual_hashes - expected_hashes
-    if missing or extra:
-        raise FailClosed("wheelhouse artifact hash mismatch")
+    expected = parse_dependency_lock(lock)
+    actual: dict[str, tuple[str, str]] = {}
+    for artifact in files:
+        artifact_stat = artifact.lstat()
+        if artifact_stat.st_uid != expected_owner or artifact_stat.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+            raise FailClosed(f"wheelhouse artifact has unsafe ownership or permissions: {artifact.name}")
+        try:
+            with zipfile.ZipFile(artifact) as wheel:
+                metadata_names = [
+                    name for name in wheel.namelist() if name.endswith(".dist-info/METADATA") and name.count("/") == 1
+                ]
+                if len(metadata_names) != 1:
+                    raise FailClosed(f"wheel has ambiguous distribution metadata: {artifact.name}")
+                metadata = wheel.read(metadata_names[0]).decode("utf-8")
+        except (OSError, UnicodeError, zipfile.BadZipFile) as exc:
+            raise FailClosed(f"wheel is malformed: {artifact.name}") from exc
+        fields = {}
+        for line in metadata.splitlines():
+            if ": " in line:
+                key, value = line.split(": ", 1)
+                fields.setdefault(key, value)
+        name = normalize_distribution_name(fields.get("Name", ""))
+        version = fields.get("Version", "")
+        if not name or not version:
+            raise FailClosed(f"wheel lacks distribution identity: {artifact.name}")
+        if name in actual:
+            raise FailClosed(f"wheelhouse has duplicate or ambiguous artifacts for {name}")
+        actual[name] = (version, sha256_file(artifact))
+    if set(actual) != set(expected):
+        missing = sorted(set(expected) - set(actual))
+        extra = sorted(set(actual) - set(expected))
+        raise FailClosed(f"wheelhouse dependency set mismatch (missing={missing}, extra={extra})")
+    for name, locked in expected.items():
+        if actual[name] != locked:
+            raise FailClosed(f"wheelhouse artifact version or hash mismatch for {name}")
     return root
 
 
@@ -215,6 +248,16 @@ def service_user_ids() -> tuple[int, int]:
     return info.pw_uid, info.pw_gid
 
 
+def service_user_credentials() -> tuple[int, set[int]]:
+    uid, primary_gid = service_user_ids()
+    try:
+        gids = set(os.getgrouplist(SERVICE_USER, primary_gid))
+    except OSError as exc:
+        raise FailClosed(f"cannot determine all supplementary groups for {SERVICE_USER}") from exc
+    gids.add(primary_gid)
+    return uid, gids
+
+
 def is_writable_by(uid: int, gids: set[int], st_mode: int, st_uid: int, st_gid: int) -> bool:
     if uid == 0:
         return True
@@ -244,8 +287,9 @@ def harden_release_permissions(root: Path) -> None:
 
 
 def assert_root_owned_not_service_writable(root: Path, *, allow_non_root_owner: bool = False) -> None:
-    uid, gid = service_user_ids() if os.geteuid() == 0 else (os.geteuid(), os.getegid())
-    gids = {gid}
+    uid, gids = (
+        service_user_credentials() if os.geteuid() == 0 else (os.geteuid(), set(os.getgroups()) | {os.getegid()})
+    )
     for p in [root, *root.rglob("*")]:
         st = p.lstat()
         if stat.S_ISLNK(st.st_mode):
@@ -254,6 +298,20 @@ def assert_root_owned_not_service_writable(root: Path, *, allow_non_root_owner: 
             raise FailClosed(f"release path is not root-owned: {p}")
         if is_writable_by(uid, gids, st.st_mode, st.st_uid, st.st_gid):
             raise FailClosed(f"release path is writable by {SERVICE_USER}: {p}")
+
+
+def assert_release_accessible_as_service_user(root: Path) -> None:
+    for path in [root, *root.rglob("*")]:
+        st = path.lstat()
+        if stat.S_ISLNK(st.st_mode):
+            continue
+        if stat.S_ISDIR(st.st_mode):
+            run_as_service_user(["test", "-x", path], timeout=10)
+            run_as_service_user(["test", "-r", path], timeout=10)
+        elif stat.S_ISREG(st.st_mode):
+            run_as_service_user(["test", "-r", path], timeout=10)
+        else:
+            raise FailClosed(f"unsupported release file type: {path}")
 
 
 def run_as_service_user(cmd, *, cwd=Path("/tmp"), timeout=30):
@@ -324,7 +382,9 @@ def build(args):
         raise FailClosed("expected exactly one built hodlxxi-mcp wheel")
     built_wheel = local_wheels[0]
     built_wheel_sha256 = sha256_file(built_wheel)
-    run([*pip_base, built_wheel], timeout=300, capture=not args.verbose)
+    local_wheel_lock = built_wheels / "hodlxxi-mcp.lock"
+    local_wheel_lock.write_text(f"hodlxxi-mcp @ {built_wheel.as_uri()} --hash=sha256:{built_wheel_sha256}\n")
+    run([*pip_base, "-r", local_wheel_lock], timeout=300, capture=not args.verbose)
     run([py, "-m", "pip", "check"], timeout=60)
     freeze_digest = write_installed_manifest(py, target / FREEZE_FILE)
     evidence = {
@@ -393,6 +453,7 @@ def verify_identity(ident: dict, *, release: Path, source: Path, dep_lock: Path,
         "fastmcp_version": run([py, "-c", "import fastmcp; print(fastmcp.__version__)"]).stdout.strip(),
         "mcp_sdk_version": run([py, "-c", 'import importlib.metadata as m; print(m.version("mcp"))']).stdout.strip(),
         "build_input_digest_sha256": digest_inputs(source, dep_lock),
+        "dependency_lock": str(dependency_lock_path(source, dep_lock).relative_to(source)),
         "dependency_lock_sha256": sha256_file(dependency_lock_path(source, dep_lock)),
         "source_tree": str(source.resolve()),
         "release_dir": str(release.resolve()),
@@ -408,6 +469,8 @@ def verify_identity(ident: dict, *, release: Path, source: Path, dep_lock: Path,
     if not freeze.is_file() or ident.get("installed_distributions_sha256") != sha256_file(freeze):
         raise FailClosed("installed distribution manifest mismatch")
     built_wheel = release / str(ident.get("built_wheel", ""))
+    if release.resolve() not in built_wheel.resolve().parents:
+        raise FailClosed("built wheel path escapes release directory")
     if not built_wheel.is_file() or ident.get("built_wheel_sha256") != sha256_file(built_wheel):
         raise FailClosed("built wheel identity mismatch")
 
@@ -440,8 +503,10 @@ def verify_release(release, *, source, current, releases_dir, dependency_lock=DE
     for line in normalized_freeze.splitlines():
         if "==" in line:
             name, version = line.split("==", 1)
-            installed_versions[name.lower().replace("_", "-")] = version
-    expected_versions = dict(locked_versions)
+            installed_versions[normalize_distribution_name(name)] = version
+        elif line.startswith("hodlxxi-mcp @ "):
+            installed_versions["hodlxxi-mcp"] = package_version(source)
+    expected_versions = {name: version for name, (version, _hash) in locked_versions.items()}
     expected_versions["hodlxxi-mcp"] = package_version(source)
     for name, version in expected_versions.items():
         if installed_versions.get(name) != version:
@@ -450,22 +515,28 @@ def verify_release(release, *, source, current, releases_dir, dependency_lock=DE
     if unexpected:
         raise FailClosed("unexpected installed distributions: " + ", ".join(sorted(unexpected)[:5]))
     run([py, "-m", "pip", "check"], timeout=60)
-    required_files = [entry, py, ident_path, release / FREEZE_FILE]
-    for path in required_files:
-        run_as_service_user(["test", "-r", path], timeout=10)
+    assert_release_accessible_as_service_user(release)
     run_as_service_user(["test", "-x", entry], timeout=10)
+    run_as_service_user(["test", "-x", py], timeout=10)
     run_as_service_user(["test", "!", "-w", release], timeout=10)
     run([py, "-c", "import hodlxxi_mcp, hodlxxi_mcp.server, hodlxxi_mcp.http_server"], timeout=30)
     run_as_service_user([py, "-c", "import hodlxxi_mcp, hodlxxi_mcp.server, hodlxxi_mcp.http_server"], timeout=30)
     run([py, "-c", _server_probe_code(package_version(source))], cwd=Path("/tmp"), timeout=30)
     identity_digest = sha256_file(ident_path)
+    built_wheel = release / ident["built_wheel"]
     result = {
-        "schema_version": "1",
+        "schema": VERIFY_SCHEMA,
+        "schema_version": VERIFY_SCHEMA_VERSION,
         "status": "verified",
         "release_dir": str(release),
-        "identity_sha256": identity_digest,
+        "release_identity_path": IDENTITY_FILE,
+        "release_identity_sha256": identity_digest,
+        "installed_distributions_path": FREEZE_FILE,
         "installed_distributions_sha256": sha256_file(release / FREEZE_FILE),
+        "dependency_lock_path": ident["dependency_lock"],
         "dependency_lock_sha256": sha256_file(dependency_lock_path(source, dependency_lock)),
+        "built_wheel_path": ident["built_wheel"],
+        "built_wheel_sha256": sha256_file(built_wheel),
         "source_commit": git(["rev-parse", "HEAD"], source),
         "verified_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
     }
@@ -496,13 +567,34 @@ def verify_stored_verification(release: Path) -> None:
     ident_path = release / IDENTITY_FILE
     if not verify_path.is_file() or verify_path.is_symlink():
         raise FailClosed("release has not been previously verified")
-    verify = json.loads(verify_path.read_text())
-    if verify.get("schema_version") not in ("1", 1) or verify.get("status") != "verified":
-        raise FailClosed("VERIFY.json has unsupported schema or status")
-    if verify.get("identity_sha256") != sha256_file(ident_path):
-        raise FailClosed("VERIFY.json does not match RELEASE_IDENTITY.json")
-    if verify.get("release_dir") != str(release):
-        raise FailClosed("VERIFY.json release_dir does not match candidate")
+    try:
+        verify = json.loads(verify_path.read_text())
+        ident = json.loads(ident_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise FailClosed("VERIFY.json or RELEASE_IDENTITY.json is malformed") from exc
+    expected = {
+        "schema": VERIFY_SCHEMA,
+        "schema_version": VERIFY_SCHEMA_VERSION,
+        "status": "verified",
+        "release_dir": str(release),
+        "release_identity_path": IDENTITY_FILE,
+        "release_identity_sha256": sha256_file(ident_path),
+        "installed_distributions_path": FREEZE_FILE,
+        "installed_distributions_sha256": sha256_file(release / FREEZE_FILE),
+        "dependency_lock_path": ident.get("dependency_lock"),
+        "dependency_lock_sha256": ident.get("dependency_lock_sha256"),
+        "built_wheel_path": ident.get("built_wheel"),
+        "built_wheel_sha256": ident.get("built_wheel_sha256"),
+        "source_commit": ident.get("source_commit"),
+    }
+    for key, value in expected.items():
+        if value is None or verify.get(key) != value:
+            raise FailClosed(f"VERIFY.json is missing, stale, or differently scoped for {key}")
+    wheel = release / str(expected["built_wheel_path"])
+    if release.resolve() not in wheel.resolve().parents:
+        raise FailClosed("VERIFY.json built wheel path escapes release directory")
+    if not wheel.is_file() or sha256_file(wheel) != expected["built_wheel_sha256"]:
+        raise FailClosed("VERIFY.json built wheel evidence is stale")
 
 
 def atomic_point(current: Path, target: Path) -> None:
@@ -549,55 +641,115 @@ def assert_loopback_listener() -> None:
         return
 
 
-def _post_json(method: str, params: dict | None = None, session_id: str | None = None) -> tuple[dict, dict]:
-    body = json.dumps({"jsonrpc": "2.0", "id": method, "method": method, "params": params or {}}).encode()
-    headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
-    if session_id:
-        headers["MCP-Session-Id"] = session_id
-        headers["MCP-Protocol-Version"] = EXPECTED_PROTOCOL
-    req = urllib.request.Request("http://127.0.0.1:8765/mcp", data=body, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=5) as response:
-        raw = response.read().decode("utf-8", errors="replace")
-        out_headers = dict(response.headers.items())
-    if raw.startswith("event:"):
-        data_lines = [line.removeprefix("data: ") for line in raw.splitlines() if line.startswith("data:")]
-        raw = "\n".join(data_lines)
-    return json.loads(raw), out_headers
+def _sdk_smoke_code(expected_version: str | None) -> str:
+    return f"""
+import anyio
+import httpx
+import json
+from datetime import timedelta
+from mcp import ClientSession, types
+from mcp.client.streamable_http import streamable_http_client
+
+EXPECTED_PROTOCOL = {EXPECTED_PROTOCOL!r}
+EXPECTED_VERSION = {expected_version!r}
+
+async def collect(session, method, field):
+    values = []
+    cursor = None
+    seen = set()
+    for _ in range(100):
+        result = await getattr(session, method)(cursor) if cursor else await getattr(session, method)()
+        values.extend(getattr(result, field))
+        cursor = result.nextCursor
+        if not cursor:
+            return values
+        if cursor in seen:
+            raise RuntimeError(f'pagination cursor loop in {{method}}')
+        seen.add(cursor)
+    raise RuntimeError(f'pagination limit exceeded in {{method}}')
+
+async def main():
+    if str(types.LATEST_PROTOCOL_VERSION) != EXPECTED_PROTOCOL:
+        raise RuntimeError('candidate MCP SDK does not initialize with required protocol')
+    timeout = httpx.Timeout(5.0, read=5.0, write=5.0, connect=3.0, pool=3.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+      with anyio.fail_after(20):
+       async with streamable_http_client('http://127.0.0.1:8765/mcp', http_client=client) as streams:
+        async with ClientSession(streams[0], streams[1], read_timeout_seconds=timedelta(seconds=5)) as session:
+         initialized = await session.initialize()
+         info = initialized.serverInfo
+         if str(initialized.protocolVersion) != EXPECTED_PROTOCOL:
+             raise RuntimeError('protocol mismatch')
+         if info.name != {EXPECTED_NAME!r}:
+             raise RuntimeError('server name mismatch')
+         if EXPECTED_VERSION is not None and info.version != EXPECTED_VERSION:
+             raise RuntimeError('server version mismatch')
+         tools = await collect(session, 'list_tools', 'tools')
+         resources = await collect(session, 'list_resources', 'resources')
+         prompts = await collect(session, 'list_prompts', 'prompts')
+         names = [tool.name for tool in tools]
+         if len(names) != {EXPECTED_TOOLS} or len(set(names)) != {EXPECTED_TOOLS}:
+             raise RuntimeError('tool count or uniqueness mismatch')
+         if len(resources) != {EXPECTED_RESOURCES} or len(prompts) != {EXPECTED_PROMPTS}:
+             raise RuntimeError('resource or prompt count mismatch')
+         for name in ('hodlxxi_get_capabilities', 'hodlxxi_get_chain_health', 'hodlxxi_get_reputation'):
+             result = await session.call_tool(name, {{}})
+             if result.isError:
+                 raise RuntimeError(f'{{name}} returned isError=true')
+         print(json.dumps({{
+             'protocol_version': str(initialized.protocolVersion),
+             'server_name': info.name,
+             'package_version': info.version,
+             'tool_count': len(names),
+         }}, sort_keys=True))
+
+anyio.run(main)
+"""
 
 
-def smoke_mcp_protocol(expected_version: str) -> None:
-    init, headers = _post_json(
-        "initialize",
-        {
-            "protocolVersion": EXPECTED_PROTOCOL,
-            "capabilities": {},
-            "clientInfo": {"name": "hodlxxi-release-activator", "version": "1.0.0"},
-        },
-    )
-    result = init.get("result", {})
-    info = result.get("serverInfo", {})
-    if (
-        result.get("protocolVersion") != EXPECTED_PROTOCOL
-        or info.get("name") != EXPECTED_NAME
-        or info.get("version") != expected_version
-    ):
-        raise FailClosed("MCP initialize smoke test returned unexpected server identity")
-    session = headers.get("Mcp-Session-Id") or headers.get("MCP-Session-Id")
-    tools, _ = _post_json("tools/list", session_id=session)
-    resources, _ = _post_json("resources/list", session_id=session)
-    prompts, _ = _post_json("prompts/list", session_id=session)
-    if len(tools.get("result", {}).get("tools", [])) != EXPECTED_TOOLS:
-        raise FailClosed("MCP tools/list count mismatch")
-    if len(resources.get("result", {}).get("resources", [])) != EXPECTED_RESOURCES:
-        raise FailClosed("MCP resources/list count mismatch")
-    if len(prompts.get("result", {}).get("prompts", [])) != EXPECTED_PROMPTS:
-        raise FailClosed("MCP prompts/list count mismatch")
+def smoke_mcp_protocol(candidate_python: Path, expected_version: str | None = None) -> dict[str, object]:
+    try:
+        result = run_as_service_user(
+            [candidate_python, "-c", _sdk_smoke_code(expected_version)], cwd=Path("/tmp"), timeout=25
+        )
+        evidence = json.loads(result.stdout.strip())
+    except (json.JSONDecodeError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise FailClosed(f"official MCP SDK smoke verification failed: {exc}") from exc
+    expected = {
+        "protocol_version": EXPECTED_PROTOCOL,
+        "server_name": EXPECTED_NAME,
+        "tool_count": EXPECTED_TOOLS,
+    }
+    if any(evidence.get(key) != value for key, value in expected.items()):
+        raise FailClosed("official MCP SDK smoke evidence has an unexpected shape or value")
+    if not isinstance(evidence.get("package_version"), str) or not evidence["package_version"]:
+        raise FailClosed("official MCP SDK smoke evidence lacks package version")
+    return evidence
 
 
-def health_check(release: Path, *, previous_restarts: int | None = None, timeout: float = HEALTH_TIMEOUT) -> int:
+def release_version(release: Path) -> str | None:
+    identity = release / IDENTITY_FILE
+    if not identity.is_file() or identity.is_symlink():
+        return None
+    try:
+        version = json.loads(identity.read_text()).get("package_version")
+    except (OSError, json.JSONDecodeError) as exc:
+        raise FailClosed("current release identity is malformed") from exc
+    if not isinstance(version, str) or not version:
+        raise FailClosed("current release identity lacks package version")
+    return version
+
+
+def health_check(
+    release: Path,
+    *,
+    expected_evidence: dict[str, object] | None = None,
+    previous_restarts: int | None = None,
+    timeout: float = HEALTH_TIMEOUT,
+) -> dict[str, object]:
     deadline = time.monotonic() + timeout
     last_error = "not started"
-    expected_version = json.loads((release / IDENTITY_FILE).read_text())["package_version"]
+    expected_version = release_version(release)
     while time.monotonic() < deadline:
         try:
             props = parse_systemctl_show(
@@ -630,8 +782,11 @@ def health_check(release: Path, *, previous_restarts: int | None = None, timeout
             if previous_restarts is not None and restarts > previous_restarts:
                 raise FailClosed("NRestarts increased unexpectedly")
             assert_loopback_listener()
-            smoke_mcp_protocol(expected_version)
-            return restarts
+            evidence = smoke_mcp_protocol(release / "venv/bin/python", expected_version)
+            evidence["nrestarts"] = restarts
+            if expected_evidence is not None and evidence != expected_evidence:
+                raise FailClosed("restored service does not match captured pre-switch evidence")
+            return evidence
         except Exception as exc:
             last_error = str(exc)
             time.sleep(HEALTH_INTERVAL)
@@ -690,9 +845,8 @@ def activate(args):
                 )
             )
             return
-        before = int(
-            parse_systemctl_show(systemctl(["show", SERVICE, "-p", "NRestarts"]).stdout).get("NRestarts", "0") or "0"
-        )
+        previous_evidence = health_check(previous)
+        before = int(previous_evidence["nrestarts"])
         atomic_point(current, release)
         try:
             systemctl(["restart", SERVICE])
@@ -702,7 +856,7 @@ def activate(args):
             try:
                 atomic_point(current, previous)
                 systemctl(["restart", SERVICE])
-                health_check(previous)
+                health_check(previous, expected_evidence=previous_evidence)
             except Exception as exc:  # preserve original activation error below
                 rollback_error = exc
             if rollback_error is not None:

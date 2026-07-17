@@ -51,12 +51,18 @@ def fake_release(releases: Path, name: str = "rel", *, version: str = "0.1.1") -
     (rel / deploy.VERIFY_FILE).write_text(
         json.dumps(
             {
-                "schema_version": "1",
+                "schema": deploy.VERIFY_SCHEMA,
+                "schema_version": deploy.VERIFY_SCHEMA_VERSION,
                 "status": "verified",
                 "release_dir": str(rel.resolve()),
-                "identity_sha256": deploy.sha256_file(ident_path),
+                "release_identity_path": deploy.IDENTITY_FILE,
+                "release_identity_sha256": deploy.sha256_file(ident_path),
+                "installed_distributions_path": deploy.FREEZE_FILE,
                 "installed_distributions_sha256": deploy.sha256_file(freeze),
+                "dependency_lock_path": str(deploy.DEFAULT_DEP_LOCK),
                 "dependency_lock_sha256": deploy.sha256_file(ROOT / deploy.DEFAULT_DEP_LOCK),
+                "built_wheel_path": str(built_wheel.relative_to(rel)),
+                "built_wheel_sha256": deploy.sha256_file(built_wheel),
                 "source_commit": deploy.git(["rev-parse", "HEAD"], ROOT),
             }
         )
@@ -76,7 +82,8 @@ def patch_verify_runtime(monkeypatch):
         )(),
     )
     monkeypatch.setattr(deploy, "verify_identity", lambda *a, **k: None)
-    monkeypatch.setattr(deploy, "parse_dependency_lock", lambda *a, **k: {"hodlxxi-mcp": "0.1.1"})
+    monkeypatch.setattr(deploy, "assert_release_accessible_as_service_user", lambda *a, **k: None)
+    monkeypatch.setattr(deploy, "parse_dependency_lock", lambda *a, **k: {"hodlxxi-mcp": ("0.1.1", "0" * 64)})
 
 
 def activate_args(tmp_path: Path, rel: Path, current: Path):
@@ -129,7 +136,7 @@ def test_chmod_never_follows_external_symlink(tmp_path):
 def test_lock_entry_without_hash_rejected(tmp_path):
     lock = tmp_path / "lock"
     lock.write_text("demo==1.0\n")
-    with pytest.raises(deploy.FailClosed, match="lacks artifact hash"):
+    with pytest.raises(deploy.FailClosed, match="artifact hash"):
         deploy.parse_dependency_lock(lock)
 
 
@@ -154,8 +161,30 @@ def test_wheel_hash_mismatch_fails(tmp_path):
     (wheelhouse / "demo-1.0-py3-none-any.whl").write_bytes(b"not expected")
     lock = tmp_path / "lock"
     lock.write_text("demo==1.0 --hash=sha256:" + "0" * 64 + "\n")
-    with pytest.raises(deploy.FailClosed, match="hash mismatch"):
+    with pytest.raises(deploy.FailClosed, match="malformed"):
         deploy.validate_wheelhouse(str(wheelhouse), lock)
+
+
+def test_symlinked_operator_wheelhouse_path_rejected(tmp_path):
+    wheelhouse = tmp_path / "wheelhouse"
+    wheelhouse.mkdir()
+    link = tmp_path / "wheelhouse-link"
+    link.symlink_to(wheelhouse, target_is_directory=True)
+    lock = tmp_path / "lock"
+    lock.write_text("demo==1.0 --hash=sha256:" + "0" * 64 + "\n")
+    with pytest.raises(deploy.FailClosed, match="operator-supplied.*symlink"):
+        deploy.validate_wheelhouse(str(link), lock)
+
+
+def test_supplementary_group_writability_rejected(tmp_path, monkeypatch):
+    release = tmp_path / "release"
+    release.mkdir(mode=0o755)
+    writable = release / "group-writable"
+    writable.write_text("x")
+    writable.chmod(0o664)
+    monkeypatch.setattr(deploy, "service_user_credentials", lambda: (12345, {writable.stat().st_gid}))
+    with pytest.raises(deploy.FailClosed, match="writable"):
+        deploy.assert_root_owned_not_service_writable(release, allow_non_root_owner=True)
 
 
 def test_dependency_lock_rejects_duplicate_names(tmp_path):
@@ -247,13 +276,19 @@ def test_post_switch_health_failure_restores_previous_target(tmp_path, monkeypat
         calls.append(release.name)
         if release == rel:
             raise deploy.FailClosed("boom")
-        return 0
+        return {
+            "protocol_version": deploy.EXPECTED_PROTOCOL,
+            "server_name": deploy.EXPECTED_NAME,
+            "package_version": "0.1.1",
+            "tool_count": deploy.EXPECTED_TOOLS,
+            "nrestarts": 0,
+        }
 
     monkeypatch.setattr(deploy, "health_check", health)
     with pytest.raises(deploy.FailClosed, match="rollback recovery succeeded"):
         deploy.activate(activate_args(tmp_path, rel, current))
     assert current.resolve() == old
-    assert calls == ["new", "old"]
+    assert calls == ["old", "new", "old"]
 
 
 def test_rollback_recovery_failure_is_distinct(tmp_path, monkeypatch):
@@ -264,7 +299,15 @@ def test_rollback_recovery_failure_is_distinct(tmp_path, monkeypatch):
     current.symlink_to(old)
     patch_verify_runtime(monkeypatch)
     monkeypatch.setattr(deploy, "systemctl", lambda *a, **k: type("R", (), {"stdout": "NRestarts=0\n"})())
-    monkeypatch.setattr(deploy, "health_check", lambda *a, **k: (_ for _ in ()).throw(deploy.FailClosed("bad")))
+    attempts = {"count": 0}
+
+    def health(*args, **kwargs):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            return {"nrestarts": 0}
+        raise deploy.FailClosed("bad")
+
+    monkeypatch.setattr(deploy, "health_check", health)
     with pytest.raises(deploy.RollbackRecoveryFailed):
         deploy.activate(activate_args(tmp_path, rel, current))
     assert current.resolve() == old
@@ -381,7 +424,16 @@ def test_nrestarts_increase_rejected(tmp_path, monkeypatch):
     props = "ActiveState=active\nSubState=running\nResult=success\nNRestarts=2\nExecMainStatus=0\n"
     monkeypatch.setattr(deploy, "systemctl", lambda *a, **k: type("R", (), {"stdout": props})())
     monkeypatch.setattr(deploy, "assert_loopback_listener", lambda: None)
-    monkeypatch.setattr(deploy, "smoke_mcp_protocol", lambda *a, **k: None)
+    monkeypatch.setattr(
+        deploy,
+        "smoke_mcp_protocol",
+        lambda *a, **k: {
+            "protocol_version": deploy.EXPECTED_PROTOCOL,
+            "server_name": deploy.EXPECTED_NAME,
+            "package_version": "0.1.1",
+            "tool_count": deploy.EXPECTED_TOOLS,
+        },
+    )
     with pytest.raises(deploy.FailClosed, match="NRestarts"):
         deploy.health_check(rel, previous_restarts=1, timeout=0.01)
 
@@ -401,9 +453,18 @@ def test_bounded_startup_retries(tmp_path, monkeypatch):
 
     monkeypatch.setattr(deploy, "systemctl", fake_systemctl)
     monkeypatch.setattr(deploy, "assert_loopback_listener", lambda: None)
-    monkeypatch.setattr(deploy, "smoke_mcp_protocol", lambda *a, **k: None)
+    monkeypatch.setattr(
+        deploy,
+        "smoke_mcp_protocol",
+        lambda *a, **k: {
+            "protocol_version": deploy.EXPECTED_PROTOCOL,
+            "server_name": deploy.EXPECTED_NAME,
+            "package_version": "0.1.1",
+            "tool_count": deploy.EXPECTED_TOOLS,
+        },
+    )
     monkeypatch.setattr(deploy, "HEALTH_INTERVAL", 0)
-    assert deploy.health_check(rel, previous_restarts=0, timeout=1) == 0
+    assert deploy.health_check(rel, previous_restarts=0, timeout=1)["nrestarts"] == 0
     assert attempts["n"] == 2
 
 
@@ -428,7 +489,64 @@ def test_current_symlink_path_is_not_lost_through_resolve(tmp_path, monkeypatch)
     current.symlink_to(old)
     patch_verify_runtime(monkeypatch)
     monkeypatch.setattr(deploy, "systemctl", lambda *a, **k: type("R", (), {"stdout": "NRestarts=0\n"})())
-    monkeypatch.setattr(deploy, "health_check", lambda *a, **k: 0)
+    monkeypatch.setattr(deploy, "health_check", lambda *a, **k: {"nrestarts": 0})
     deploy.activate(activate_args(tmp_path, rel, current))
     assert current.is_symlink()
     assert current.resolve() == rel
+
+
+def test_unhealthy_current_blocks_before_symlink_change(tmp_path, monkeypatch):
+    releases = tmp_path / "releases"
+    old = fake_release(releases, "old")
+    rel = fake_release(releases, "new")
+    current = tmp_path / "current"
+    current.symlink_to(old)
+    patch_verify_runtime(monkeypatch)
+    monkeypatch.setattr(
+        deploy, "health_check", lambda *a, **k: (_ for _ in ()).throw(deploy.FailClosed("current unhealthy"))
+    )
+    with pytest.raises(deploy.FailClosed, match="current unhealthy"):
+        deploy.activate(activate_args(tmp_path, rel, current))
+    assert current.resolve() == old
+
+
+def test_rollback_to_legacy_release_without_identity_uses_live_evidence(tmp_path, monkeypatch):
+    releases = tmp_path / "releases"
+    old = fake_release(releases, "legacy")
+    (old / deploy.IDENTITY_FILE).unlink()
+    (old / deploy.VERIFY_FILE).unlink()
+    rel = fake_release(releases, "new")
+    current = tmp_path / "current"
+    current.symlink_to(old)
+    patch_verify_runtime(monkeypatch)
+    evidence = {
+        "protocol_version": deploy.EXPECTED_PROTOCOL,
+        "server_name": deploy.EXPECTED_NAME,
+        "package_version": "0.1.0",
+        "tool_count": deploy.EXPECTED_TOOLS,
+        "nrestarts": 4,
+    }
+    calls = []
+
+    def health(release, **kwargs):
+        calls.append((release.name, kwargs.get("expected_evidence")))
+        if release == old:
+            assert deploy.release_version(old) is None
+            return evidence
+        raise deploy.FailClosed("candidate failed")
+
+    monkeypatch.setattr(deploy, "health_check", health)
+    monkeypatch.setattr(deploy, "systemctl", lambda *a, **k: type("R", (), {"stdout": ""})())
+    with pytest.raises(deploy.FailClosed, match="rollback recovery succeeded"):
+        deploy.activate(activate_args(tmp_path, rel, current))
+    assert current.resolve() == old
+    assert calls == [("legacy", None), ("new", None), ("legacy", evidence)]
+
+
+def test_sdk_smoke_contract_covers_protocol_pagination_and_required_calls():
+    code = deploy._sdk_smoke_code("0.1.1")
+    assert deploy.EXPECTED_PROTOCOL in code
+    assert "notifications/initialized" not in code  # ClientSession.initialize sends it.
+    assert "nextCursor" in code
+    for name in ("hodlxxi_get_capabilities", "hodlxxi_get_chain_health", "hodlxxi_get_reputation"):
+        assert name in code
