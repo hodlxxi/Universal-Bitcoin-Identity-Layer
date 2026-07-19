@@ -12,8 +12,8 @@ def test_oauth_authorization_server_metadata_is_available(client):
     assert data["token_endpoint"].endswith("/oauth/token")
     assert data["jwks_uri"].endswith("/oauth/jwks.json")
     assert "authorization_code" in data["grant_types_supported"]
-    assert "urn:ietf:params:oauth:grant-type:jwt-bearer" in data["grant_types_supported"]
-    assert "urn:workos:agent-auth:grant-type:claim" in data["grant_types_supported"]
+    assert data["grant_types_supported"] == ["authorization_code"]
+    assert data["token_endpoint_auth_methods_supported"] == ["client_secret_post"]
     assert "S256" in data["code_challenge_methods_supported"]
     assert "agent_auth" in data
     agent_auth = data["agent_auth"]

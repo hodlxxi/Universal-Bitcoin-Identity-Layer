@@ -214,7 +214,7 @@ class TestAuthorizationFlow:
                 "client_id": registered_client["client_id"],
                 "redirect_uri": registered_client["redirect_uris"][0],
                 "state": "random_state",
-                "code_challenge": "abc123",
+                "code_challenge": "A" * 43,
                 "code_challenge_method": "S256",
             },
         )
@@ -271,7 +271,7 @@ class TestAuthorizationFlow:
                 "response_type": "token",  # Implicit flow not supported
                 "client_id": registered_client["client_id"],
                 "redirect_uri": registered_client["redirect_uris"][0],
-                "code_challenge": "abc123",
+                "code_challenge": "A" * 43,
                 "code_challenge_method": "S256",
             },
         )
@@ -656,7 +656,7 @@ class TestTokenIntrospection:
                 "sub": "forged-user",
                 "iat": now,
                 "exp": now + 3600,
-                "scope": "read",
+                "scope": "self:read",
             },
             "attacker-secret",
             algorithm="HS256",
@@ -683,9 +683,9 @@ class TestJWTTokens:
     def test_jwt_token_structure(self, client, registered_client):
         """Opaque access_token + introspection works (with PKCE)."""
         with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = "test_pubkey"
+            sess["logged_in_pubkey"] = "02" + "a" * 64
 
-        verifier = "test_verifier_opaque_access"
+        verifier = "test_verifier_opaque_access_123456789012345678"
         digest = hashlib.sha256(verifier.encode("utf-8")).digest()
         challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
@@ -695,7 +695,7 @@ class TestJWTTokens:
                 "response_type": "code",
                 "client_id": registered_client["client_id"],
                 "redirect_uri": registered_client["redirect_uris"][0],
-                "scope": "read_limited",
+                "scope": "self:read",
                 "state": "s1",
                 "code_challenge": challenge,
                 "code_challenge_method": "S256",
@@ -741,7 +741,7 @@ class TestJWTTokens:
         with client.session_transaction() as sess:
             sess["logged_in_pubkey"] = "02" + "a" * 64
 
-        verifier = "test_verifier_id_token"
+        verifier = "test_verifier_id_token_123456789012345678901"
         digest = hashlib.sha256(verifier.encode("utf-8")).digest()
         challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
@@ -751,7 +751,7 @@ class TestJWTTokens:
                 "response_type": "code",
                 "client_id": registered_client["client_id"],
                 "redirect_uri": registered_client["redirect_uris"][0],
-                "scope": "openid read_limited",
+                "scope": "openid self:read",
                 "nonce": "n1",
                 "state": "s2",
                 "code_challenge": challenge,

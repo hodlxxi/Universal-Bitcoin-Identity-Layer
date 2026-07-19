@@ -12,6 +12,7 @@ from flask import Blueprint, Response, current_app, jsonify, request
 from .config import get_config
 from .jwks import load_jwks_document
 from .services.mcp_discovery import mcp_server_card
+from .services.oauth_scope_policy import issuable_discovery_scopes
 
 oidc_bp = Blueprint("oidc", __name__)
 
@@ -32,20 +33,9 @@ def well_known_configuration():
         "token_endpoint": f"{base}/oauth/token",
         "jwks_uri": f"{base}/oauth/jwks.json",
         "response_types_supported": ["code"],
-        "grant_types_supported": [
-            "authorization_code",
-            "refresh_token",
-            "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            "urn:workos:agent-auth:grant-type:claim",
-        ],
-        "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
-        "scopes_supported": [
-            "read",
-            "write",
-            "covenant_read",
-            "covenant_create",
-            "read_limited",
-        ],
+        "grant_types_supported": ["authorization_code"],
+        "token_endpoint_auth_methods_supported": ["client_secret_post"],
+        "scopes_supported": issuable_discovery_scopes(),
         "code_challenge_methods_supported": ["S256"],
         "id_token_signing_alg_values_supported": ["RS256"],
         "subject_types_supported": ["public"],
@@ -64,23 +54,9 @@ def oauth_authorization_server_metadata():
         "token_endpoint": f"{base}/oauth/token",
         "jwks_uri": f"{base}/oauth/jwks.json",
         "response_types_supported": ["code"],
-        "grant_types_supported": [
-            "authorization_code",
-            "refresh_token",
-            "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            "urn:workos:agent-auth:grant-type:claim",
-        ],
-        "token_endpoint_auth_methods_supported": [
-            "client_secret_post",
-            "client_secret_basic",
-        ],
-        "scopes_supported": [
-            "read",
-            "write",
-            "covenant_read",
-            "covenant_create",
-            "read_limited",
-        ],
+        "grant_types_supported": ["authorization_code"],
+        "token_endpoint_auth_methods_supported": ["client_secret_post"],
+        "scopes_supported": issuable_discovery_scopes(),
         "code_challenge_methods_supported": ["S256"],
         "agent_auth": {
             "skill": f"{base}/auth.md",
@@ -100,7 +76,6 @@ def oauth_authorization_server_metadata():
             ],
             "credential_types_supported": [
                 "access_token",
-                "client_secret_basic",
                 "client_secret_post",
                 "pkce_authorization_code",
             ],
@@ -108,7 +83,6 @@ def oauth_authorization_server_metadata():
                 "claim_uri": f"{base}/agent/identity/claim",
                 "credential_types_supported": [
                     "access_token",
-                    "client_secret_basic",
                     "client_secret_post",
                     "pkce_authorization_code",
                 ],
@@ -124,7 +98,6 @@ def oauth_authorization_server_metadata():
                 ],
                 "credential_types_supported": [
                     "access_token",
-                    "client_secret_basic",
                     "client_secret_post",
                     "pkce_authorization_code",
                 ],

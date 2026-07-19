@@ -9,6 +9,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy import update
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import get_redis, session_scope
@@ -137,7 +138,7 @@ def store_oauth_client(client_id: str, client_data: Dict) -> None:
             init_data = dict(init_data)
             init_data.pop("client_id", None)
             # Only pass model-known fields to SQLAlchemy (prevents invalid kwarg crashes)
-            allowed = set(OAuthClient.__table__.columns.keys())
+            allowed = {column.key for column in OAuthClient.__mapper__.column_attrs}
             init_data = {k: v for k, v in init_data.items() if k in allowed}
             client = OAuthClient(client_id=client_id, **init_data)
             session.add(client)
@@ -280,6 +281,32 @@ def delete_oauth_code(code: str) -> None:
             oauth_code.is_used = True
 
 
+def consume_oauth_code(code: str) -> bool:
+    """Atomically mark one valid, unexpired authorization code used."""
+    with session_scope() as session:
+        result = session.execute(
+            update(OAuthCode)
+            .where(
+                OAuthCode.code == code,
+                OAuthCode.is_used.is_(False),
+                OAuthCode.expires_at >= datetime.utcnow(),
+            )
+            .values(is_used=True)
+        )
+        return result.rowcount == 1
+
+
+def update_oauth_client_secret(client_id: str, expected: str, replacement: str) -> bool:
+    """Compare-and-replace a legacy client secret after successful verification."""
+    with session_scope() as session:
+        result = session.execute(
+            update(OAuthClient)
+            .where(OAuthClient.client_id == client_id, OAuthClient.client_secret == expected)
+            .values(client_secret=replacement)
+        )
+        return result.rowcount == 1
+
+
 # ============================================================================
 # OAuth Token Management
 # ============================================================================
@@ -350,6 +377,62 @@ def get_oauth_token(access_token: str) -> Optional[Dict]:
             "refresh_token_expires_at": (
                 token.refresh_token_expires_at.isoformat() if token.refresh_token_expires_at else None
             ),
+            "metadata": token.metadata_json,
+        }
+
+
+def store_canonical_jwt_record(
+    *, jti: str, digest: str, client_id: str, user_id: str, scope: str, expires_at: datetime, metadata: Dict
+) -> None:
+    """Persist a JWT issuance record; the encoded JWT is never stored."""
+    with session_scope() as session:
+        session.add(
+            OAuthToken(
+                id=jti,
+                access_token=digest,
+                token_type="Bearer",
+                client_id=client_id,
+                user_id=user_id,
+                scope=scope,
+                access_token_expires_at=expires_at,
+                is_revoked=False,
+                metadata_json=metadata,
+            )
+        )
+
+
+def get_canonical_jwt_record_by_jti(jti: str) -> Optional[Dict]:
+    """Load a canonical issuance record without changing legacy token lookup."""
+    with session_scope() as session:
+        token = session.query(OAuthToken).filter_by(id=jti).first()
+        if not token:
+            return None
+        return {
+            "jti": token.id,
+            "digest": token.access_token,
+            "client_id": token.client_id,
+            "user_id": token.user_id,
+            "scope": token.scope,
+            "expires_at": token.access_token_expires_at,
+            "is_revoked": token.is_revoked,
+            "metadata": token.metadata_json,
+        }
+
+
+def get_canonical_jwt_record_by_digest(digest: str) -> Optional[Dict]:
+    """Load a canonical issuance record by SHA-256 digest."""
+    with session_scope() as session:
+        token = session.query(OAuthToken).filter_by(access_token=digest).first()
+        if not token:
+            return None
+        return {
+            "jti": token.id,
+            "digest": token.access_token,
+            "client_id": token.client_id,
+            "user_id": token.user_id,
+            "scope": token.scope,
+            "expires_at": token.access_token_expires_at,
+            "is_revoked": token.is_revoked,
             "metadata": token.metadata_json,
         }
 
