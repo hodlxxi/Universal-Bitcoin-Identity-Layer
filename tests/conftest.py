@@ -159,6 +159,7 @@ def oauth_client_data():
         "grant_types": ["authorization_code"],
         "response_types": ["code"],
         "scope": "openid profile",
+        "metadata": {"trust_class": "public_dynamic"},
     }
 
 
