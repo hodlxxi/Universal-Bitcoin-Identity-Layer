@@ -194,7 +194,7 @@ def test_rejects_invalid_signature(canonical_token_factory):
     "claims",
     [
         {"iss": "https://wrong.test"}, {"aud": "wrong-client"}, {"aud": ["client"]},
-        {"exp": 1}, {"iat": int((datetime.now(timezone.utc) + timedelta(minutes=2)).timestamp())},
+        {"exp": 1},
         *[{name: _MISSING} for name in ("iss", "aud", "sub", "iat", "exp", "jti", "scope", "token_use", "token_contract")],
         {"jti": ""}, {"jti": "x" * (MAX_JTI_LENGTH + 1)}, {"token_use": "refresh"},
         {"token_contract": "other"}, {"sub": "02" + SUBJECT}, {"sub": SUBJECT.upper()}, {"sub": "bad"},
@@ -205,6 +205,13 @@ def test_rejects_invalid_signature(canonical_token_factory):
 )
 def test_rejects_invalid_claim_contract(canonical_token_factory, claims):
     token, _, _, config = canonical_token_factory(claims=claims, persist=False)
+    with pytest.raises(BearerValidationError):
+        validate_canonical_access_token_with_config(token, config=config)
+
+
+def test_rejects_future_iat_computed_at_execution_time(canonical_token_factory):
+    future_iat = int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp())
+    token, _, _, config = canonical_token_factory(claims={"iat": future_iat}, persist=False)
     with pytest.raises(BearerValidationError):
         validate_canonical_access_token_with_config(token, config=config)
 
