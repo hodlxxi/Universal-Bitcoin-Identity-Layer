@@ -4,24 +4,21 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import jwt
 from cryptography.hazmat.primitives import serialization
-from flask import current_app
-
 from app.auth_api_core import canonical_xonly_pubkey
 from app.db_storage import get_canonical_jwt_record_by_jti
 from app.jwks import get_key_by_kid
+from app.services.bearer_credentials import DEFAULT_MAX_BEARER_LENGTH, has_compact_jwt_shape
 from app.services.oauth_scope_policy import RESERVED_SCOPES, SCOPE_POLICY_VERSION, parse_scopes, serialize_scopes
 
 TOKEN_CONTRACT = "hodlxxi.oauth.access-token.v1"
-MAX_BEARER_LENGTH = 16 * 1024
+MAX_BEARER_LENGTH = DEFAULT_MAX_BEARER_LENGTH
 MAX_JTI_LENGTH = 128
 MAX_KID_LENGTH = 255
-_SEGMENT = re.compile(r"^[A-Za-z0-9_-]+$")
 _REQUIRED = ("iss", "aud", "sub", "iat", "exp", "jti", "scope", "token_use", "token_contract")
 
 
@@ -41,6 +38,16 @@ class BearerPrincipal:
     token_contract: str
 
 
+@dataclass(frozen=True)
+class BearerValidationConfig:
+    """Immutable runtime inputs for canonical bearer validation."""
+
+    issuer: str
+    jwks_dir: str
+    leeway_seconds: int = 30
+    max_bearer_length: int = MAX_BEARER_LENGTH
+
+
 def _reject() -> None:
     raise BearerValidationError("invalid canonical access token")
 
@@ -51,15 +58,17 @@ def _integer_date(value: object) -> int:
     return value
 
 
-def validate_canonical_access_token(
-    encoded_token: str, *, expected_client_id: str | None = None
+def validate_canonical_access_token_with_config(
+    encoded_token: str,
+    *,
+    config: BearerValidationConfig,
+    expected_client_id: str | None = None,
 ) -> BearerPrincipal:
-    """Validate one locally issued canonical JWT without writing state."""
+    """Validate one locally issued canonical JWT without Flask state."""
     try:
-        if not isinstance(encoded_token, str) or not encoded_token or len(encoded_token) > MAX_BEARER_LENGTH:
+        if not isinstance(encoded_token, str) or not encoded_token or len(encoded_token) > config.max_bearer_length:
             _reject()
-        segments = encoded_token.split(".")
-        if len(segments) != 3 or not all(segments) or not all(_SEGMENT.fullmatch(part) for part in segments):
+        if not has_compact_jwt_shape(encoded_token):
             _reject()
 
         header = jwt.get_unverified_header(encoded_token)
@@ -88,12 +97,9 @@ def validate_canonical_access_token(
         if expected_client_id is not None and expected_client_id != record_client:
             _reject()
 
-        cfg = current_app.config.get("APP_CONFIG")
-        if not isinstance(cfg, dict):
-            _reject()
-        issuer = str(cfg.get("JWT_ISSUER") or "").rstrip("/")
-        jwks_dir = cfg.get("JWKS_DIR")
-        if not issuer or not isinstance(jwks_dir, (str, bytes)):
+        issuer = config.issuer.rstrip("/")
+        jwks_dir = config.jwks_dir
+        if not issuer or not isinstance(jwks_dir, str) or not jwks_dir:
             _reject()
         key = get_key_by_kid(str(jwks_dir), kid)
         if key is None:
@@ -108,7 +114,7 @@ def validate_canonical_access_token(
             algorithms=["RS256"],
             audience=record_client,
             issuer=issuer,
-            leeway=30,
+            leeway=config.leeway_seconds,
             options={"require": list(_REQUIRED), "verify_iat": True},
         )
         if not isinstance(claims.get("aud"), str) or claims["aud"] != record_client:
@@ -165,6 +171,31 @@ def validate_canonical_access_token(
         ):
             _reject()
         return BearerPrincipal(subject, user_id, record_client, scopes, jti, issued_at, expires_at, TOKEN_CONTRACT)
+    except BearerValidationError:
+        raise
+    except Exception as exc:
+        raise BearerValidationError("invalid canonical access token") from exc
+
+
+def validate_canonical_access_token(
+    encoded_token: str, *, expected_client_id: str | None = None
+) -> BearerPrincipal:
+    """Flask adapter for canonical bearer validation."""
+    from flask import current_app
+
+    try:
+        cfg = current_app.config.get("APP_CONFIG")
+        if not isinstance(cfg, dict):
+            _reject()
+        config = BearerValidationConfig(
+            issuer=str(cfg.get("JWT_ISSUER") or ""),
+            jwks_dir=str(cfg.get("JWKS_DIR") or ""),
+            leeway_seconds=int(cfg.get("JWT_LEEWAY_SECONDS", 30)),
+            max_bearer_length=int(cfg.get("MAX_BEARER_LENGTH", MAX_BEARER_LENGTH)),
+        )
+        return validate_canonical_access_token_with_config(
+            encoded_token, config=config, expected_client_id=expected_client_id
+        )
     except BearerValidationError:
         raise
     except Exception as exc:

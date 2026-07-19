@@ -355,10 +355,11 @@ def get_oauth_token(access_token: str) -> Optional[Dict]:
     Returns:
         Token data dictionary or None
     """
-    if not isinstance(access_token, str) or not access_token or len(access_token) > 16384:
+    from app.services.bearer_credentials import DEFAULT_MAX_BEARER_LENGTH, has_compact_jwt_shape
+
+    if not isinstance(access_token, str) or not access_token or len(access_token) > DEFAULT_MAX_BEARER_LENGTH:
         return None
-    segments = access_token.split(".")
-    if len(segments) == 3 and all(segments):
+    if has_compact_jwt_shape(access_token):
         return None
 
     with session_scope() as session:

@@ -7,6 +7,7 @@ from functools import wraps
 from flask import g, jsonify, request
 
 from app.db_storage import get_oauth_token, get_user_by_id
+from app.services.bearer_credentials import BearerHeaderError, parse_bearer_authorization_header
 
 
 def require_oauth_token(required_scope: str | None = None):
@@ -17,12 +18,10 @@ def require_oauth_token(required_scope: str | None = None):
     def decorator(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
-            auth_header = request.headers.get("Authorization", "")
-            parts = auth_header.split(" ")
-            if len(parts) != 2 or parts[0] != "Bearer" or not parts[1]:
+            try:
+                token_str = parse_bearer_authorization_header(request.headers.get("Authorization", ""))
+            except BearerHeaderError:
                 return jsonify({"error": "unauthorized", "detail": "Missing Bearer token"}), 401
-
-            token_str = parts[1]
             try:
                 token_data = get_oauth_token(token_str)
             except Exception:
@@ -37,7 +36,10 @@ def require_oauth_token(required_scope: str | None = None):
                     403,
                 )
 
-            user = get_user_by_id(token_data.get("user_id")) if token_data.get("user_id") else None
+            try:
+                user = get_user_by_id(token_data.get("user_id")) if token_data.get("user_id") else None
+            except Exception:
+                user = None
             if not user or user.get("is_active") is not True:
                 return jsonify({"error": "invalid_token"}), 401
             request.oauth_payload = token_data
@@ -81,13 +83,15 @@ def require_canonical_bearer(*, required_scope: str, required_action=None):
                 validate_canonical_access_token,
             )
 
-            header = request.headers.get("Authorization", "")
-            parts = header.split(" ")
-            if len(parts) != 2 or parts[0] != "Bearer" or not parts[1]:
+            try:
+                credential = parse_bearer_authorization_header(request.headers.get("Authorization", ""))
+            except BearerHeaderError:
                 return _bearer_error("invalid_token", 401)
             try:
-                principal = validate_canonical_access_token(parts[1])
+                principal = validate_canonical_access_token(credential)
             except BearerValidationError:
+                return _bearer_error("invalid_token", 401)
+            except Exception:
                 return _bearer_error("invalid_token", 401)
             if required_scope not in principal.scopes:
                 return _bearer_error("insufficient_scope", 403, scope=required_scope)
@@ -97,15 +101,20 @@ def require_canonical_bearer(*, required_scope: str, required_action=None):
                 return jsonify({"error": "insufficient_entitlement"}), 403
             except EntitlementUnavailable:
                 return jsonify({"error": "authorization_unavailable"}), 503
+            except Exception:
+                return jsonify({"error": "authorization_unavailable"}), 503
             if required_action is not None:
-                policy = authorize_action(
-                    ActionRequest(
-                        actor_pubkey=principal.subject,
-                        action=required_action,
-                        granted_scopes=principal.scopes,
-                    ),
-                    CurrentEntitlementResolver(entitlement),
-                )
+                try:
+                    policy = authorize_action(
+                        ActionRequest(
+                            actor_pubkey=principal.subject,
+                            action=required_action,
+                            granted_scopes=principal.scopes,
+                        ),
+                        CurrentEntitlementResolver(entitlement),
+                    )
+                except Exception:
+                    return jsonify({"error": "authorization_unavailable"}), 503
                 if not policy.allowed:
                     return jsonify({"error": "insufficient_entitlement"}), 403
             g.oauth_principal = principal
