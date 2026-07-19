@@ -16,14 +16,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlsplit
 
-from cryptography.hazmat.primitives import serialization
 from flask import Blueprint, current_app, jsonify, redirect, request, session
 
 from app.audit_logger import get_audit_logger
 from app.auth_api_core import canonical_xonly_pubkey
 from app.db_storage import (
     consume_oauth_code,
-    get_canonical_jwt_record_by_jti,
     get_oauth_client,
     get_oauth_code,
     get_user_by_id,
@@ -41,6 +39,7 @@ from app.services.oauth_scope_policy import (
     serialize_scopes,
     validate_client_scopes,
 )
+from app.services.oauth_bearer_validation import validate_canonical_access_token
 from app.security import limiter as _limiter
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -616,98 +615,23 @@ def introspect():
     except Exception:
         return jsonify({"active": False}), 200
 
-    # Decode token with signature verification and strict algorithm pinning.
     try:
-        import jwt
-
-        from app.jwks import get_key_by_kid
-
-        cfg = current_app.config.get("APP_CONFIG")
-        if not cfg:
-            return jsonify({"active": False}), 200
-
-        allowed_algs = ["RS256"]
-
-        header = jwt.get_unverified_header(token)
-        kid = header.get("kid")
-        if not kid:
-            return jsonify({"active": False}), 200
-
-        jwks_dir = cfg.get("JWKS_DIR")
-        if not jwks_dir:
-            return jsonify({"active": False}), 200
-
-        key = get_key_by_kid(str(jwks_dir), str(kid))
-        if key is None:
-            return jsonify({"active": False}), 200
-
-        public_key = key.public_key().public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo,
-        )
-
-        issuer = str(cfg.get("JWT_ISSUER") or "").rstrip("/")
-        if not issuer:
-            return jsonify({"active": False}), 200
-
-        try:
-            claims = jwt.decode(
-                token,
-                public_key,
-                algorithms=allowed_algs,
-                audience=client_id,
-                issuer=issuer,
-                options={"require": ["exp", "iat", "sub", "iss", "aud", "jti", "scope", "token_use", "token_contract"]},
-            )
-        except jwt.InvalidIssuerError:
-            return jsonify({"active": False}), 200
-
-        scope = serialize_scopes(parse_scopes(claims["scope"]))
-        if claims.get("token_use") != "access" or claims.get("token_contract") != TOKEN_CONTRACT:
-            return jsonify({"active": False}), 200
-        record = get_canonical_jwt_record_by_jti(claims["jti"])
-        user = get_user_by_id(record["user_id"]) if record else None
-        metadata = record.get("metadata") if record else None
-        expected_metadata = {
-            "token_contract": TOKEN_CONTRACT,
-            "token_use": "access",
-            "issuer": issuer,
-            "audience": client_id,
-            "kid": str(kid),
-            "digest_algorithm": "sha256",
-            "scope_policy_version": SCOPE_POLICY_VERSION,
-        }
-        expiry = datetime.fromtimestamp(claims["exp"], timezone.utc).replace(tzinfo=None)
-        subject = canonical_xonly_pubkey(user["pubkey"]) if user else None
-        if not record or not all(
-            [
-                hmac.compare_digest(record["digest"], hashlib.sha256(token.encode("ascii")).hexdigest()),
-                record["client_id"] == client_id,
-                subject == claims["sub"],
-                record["scope"] == scope,
-                record["expires_at"] == expiry,
-                record["is_revoked"] is False,
-                metadata == expected_metadata,
-            ]
-        ):
-            return jsonify({"active": False}), 200
+        principal = validate_canonical_access_token(token, expected_client_id=client_id)
         return (
             jsonify(
                 {
                     "active": True,
-                    "client_id": client_id,
-                    "sub": claims.get("sub"),
-                    "exp": claims.get("exp"),
-                    "iat": claims.get("iat"),
-                    "jti": claims.get("jti"),
-                    "scope": scope,
+                    "client_id": principal.client_id,
+                    "sub": principal.subject,
+                    "exp": int(principal.expires_at.replace(tzinfo=timezone.utc).timestamp()),
+                    "iat": int(principal.issued_at.timestamp()),
+                    "jti": principal.jti,
+                    "scope": serialize_scopes(principal.scopes),
                     "token_type": "Bearer",
                     "token_contract": TOKEN_CONTRACT,
                 }
             ),
             200,
         )
-
     except Exception:
-        logger.warning("Token introspection failed closed")
         return jsonify({"active": False}), 200

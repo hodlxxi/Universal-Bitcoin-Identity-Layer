@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import update
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import joinedload
 
 from app.database import get_redis, session_scope
 from app.models import (
@@ -354,10 +355,31 @@ def get_oauth_token(access_token: str) -> Optional[Dict]:
     Returns:
         Token data dictionary or None
     """
+    if not isinstance(access_token, str) or not access_token or len(access_token) > 16384:
+        return None
+    segments = access_token.split(".")
+    if len(segments) == 3 and all(segments):
+        return None
+
     with session_scope() as session:
-        token = session.query(OAuthToken).filter_by(access_token=access_token, is_revoked=False).first()
+        token = (
+            session.query(OAuthToken)
+            .options(joinedload(OAuthToken.user))
+            .filter_by(access_token=access_token, is_revoked=False)
+            .first()
+        )
 
         if not token:
+            return None
+
+        metadata = token.metadata_json
+        if isinstance(metadata, dict) and any(
+            key in metadata for key in ("token_contract", "token_use", "digest_algorithm")
+        ):
+            return None
+
+        user = token.user
+        if not user or user.is_active is not True:
             return None
 
         # Check if expired
@@ -378,6 +400,7 @@ def get_oauth_token(access_token: str) -> Optional[Dict]:
                 token.refresh_token_expires_at.isoformat() if token.refresh_token_expires_at else None
             ),
             "metadata": token.metadata_json,
+            "user_pubkey": user.pubkey,
         }
 
 
@@ -404,7 +427,7 @@ def store_canonical_jwt_record(
 def get_canonical_jwt_record_by_jti(jti: str) -> Optional[Dict]:
     """Load a canonical issuance record without changing legacy token lookup."""
     with session_scope() as session:
-        token = session.query(OAuthToken).filter_by(id=jti).first()
+        token = session.query(OAuthToken).options(joinedload(OAuthToken.user)).filter_by(id=jti).first()
         if not token:
             return None
         return {
@@ -416,6 +439,11 @@ def get_canonical_jwt_record_by_jti(jti: str) -> Optional[Dict]:
             "expires_at": token.access_token_expires_at,
             "is_revoked": token.is_revoked,
             "metadata": token.metadata_json,
+            "user": (
+                {"id": token.user.id, "pubkey": token.user.pubkey, "is_active": token.user.is_active}
+                if token.user
+                else None
+            ),
         }
 
 

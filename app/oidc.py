@@ -280,13 +280,7 @@ def oauth_protected_resource_metadata():
         "resource": base,
         "authorization_servers": [base],
         "jwks_uri": f"{base}/oauth/jwks.json",
-        "scopes_supported": [
-            "read",
-            "write",
-            "covenant_read",
-            "covenant_create",
-            "read_limited",
-        ],
+        "scopes_supported": issuable_discovery_scopes(),
         "bearer_methods_supported": ["header"],
         "resource_documentation": f"{base}/docs",
         "service_documentation": f"{base}/oauthx/docs",
@@ -325,11 +319,9 @@ HODLXXI exposes Bitcoin-native identity and agent runtime surfaces for public di
 
 ## Supported scopes
 
-- `read`
-- `write`
-- `covenant_read`
-- `covenant_create`
-- `read_limited`
+The canonical finite issuable scope registry is published by
+`/.well-known/oauth-protected-resource`. Reserved covenant scopes are not
+advertised or issuable.
 
 ## Supported client authentication
 

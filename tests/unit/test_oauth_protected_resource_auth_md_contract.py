@@ -49,8 +49,12 @@ def test_oauth_protected_resource_metadata_is_available(client):
     assert data["resource"]
     assert data["authorization_servers"] == [data["resource"]]
     assert data["jwks_uri"].endswith("/oauth/jwks.json")
-    assert "read" in data["scopes_supported"]
-    assert "covenant_read" in data["scopes_supported"]
+    assert "openid" in data["scopes_supported"]
+    assert "self:read" in data["scopes_supported"]
+    assert not {"read", "write", "covenant_read", "covenant_create", "read_limited"} & set(
+        data["scopes_supported"]
+    )
+    assert not {"covenant:draft:create", "covenant:draft:read:self"} & set(data["scopes_supported"])
     assert "header" in data["bearer_methods_supported"]
     assert data["resource_documentation"].endswith("/docs")
 
