@@ -11,6 +11,7 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     Float,
@@ -513,3 +514,43 @@ class AgentEvent(Base):
     event_json = Column(JSON, nullable=False)
     signature = Column(Text, nullable=False)
     created_at = Column(DateTime, default=utc_now, nullable=False, index=True)
+
+
+class ActionStepUpChallenge(Base):
+    """Durable, bounded state for one canonical action step-up challenge."""
+
+    __tablename__ = "action_step_up_challenges"
+
+    challenge_id = Column(String(64), primary_key=True)
+    contract_version = Column(String(64), nullable=False)
+    signature_domain = Column(String(64), nullable=False)
+    actor_pubkey = Column(String(64), nullable=False, index=True)
+    oauth_client_id = Column(String(256), nullable=False, index=True)
+    token_jti = Column(String(128), nullable=False, index=True)
+    action = Column(String(64), nullable=False)
+    resource_id = Column(String(256))
+    request_sha256 = Column(String(64), nullable=False)
+    nonce = Column(String(64), nullable=False, unique=True)
+    issued_at = Column(DateTime(timezone=True), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    consumed_at = Column(DateTime(timezone=True), index=True)
+
+    __table_args__ = (
+        CheckConstraint("length(challenge_id) = 32", name="ck_action_step_up_challenge_id_length"),
+        CheckConstraint("length(actor_pubkey) = 64", name="ck_action_step_up_actor_pubkey_length"),
+        CheckConstraint("length(oauth_client_id) BETWEEN 1 AND 256", name="ck_action_step_up_client_id_length"),
+        CheckConstraint("length(token_jti) BETWEEN 1 AND 128", name="ck_action_step_up_token_jti_length"),
+        CheckConstraint("length(action) BETWEEN 1 AND 64", name="ck_action_step_up_action_length"),
+        CheckConstraint(
+            "resource_id IS NULL OR length(resource_id) BETWEEN 1 AND 256", name="ck_action_step_up_resource_id_length"
+        ),
+        CheckConstraint("length(request_sha256) = 64", name="ck_action_step_up_request_hash_length"),
+        CheckConstraint("length(nonce) = 64", name="ck_action_step_up_nonce_length"),
+        CheckConstraint("issued_at < expires_at", name="ck_action_step_up_time_order"),
+        CheckConstraint(
+            "consumed_at IS NULL OR (consumed_at >= issued_at AND consumed_at < expires_at)",
+            name="ck_action_step_up_consumed_time",
+        ),
+        Index("idx_action_step_up_actor_action", "actor_pubkey", "action"),
+        Index("idx_action_step_up_unconsumed_expiry", "consumed_at", "expires_at"),
+    )
