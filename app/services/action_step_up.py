@@ -211,6 +211,44 @@ def canonical_signed_bytes(challenge: StepUpChallenge) -> bytes:
     return json.dumps(envelope, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
 
 
+def canonical_verification_bytes(verification: VerifiedStepUp) -> bytes:
+    """Return canonical audit evidence bytes, never an authorization credential."""
+    try:
+        if (
+            type(verification) is not VerifiedStepUp
+            or verification.verified is not True
+            or verification.reason_code is not StepUpReason.VERIFIED
+            or verification.verification_schema != VERIFICATION_SCHEMA
+            or verification.evidence_source != EVIDENCE_SOURCE
+            or verification.evidence_version != "v1"
+        ):
+            raise ValueError("invalid verification")
+        _canonical_challenge_id(verification.challenge_id)
+        _canonical_actor(verification.actor_pubkey)
+        _bounded_identifier(verification.oauth_client_id, MAX_CLIENT_ID_LENGTH)
+        _bounded_identifier(verification.token_jti, MAX_TOKEN_JTI_LENGTH)
+        _action(verification.action, require_step_up=False)
+        _bounded_identifier(verification.resource_id, MAX_RESOURCE_ID_LENGTH, optional=True)
+        if (
+            not isinstance(verification.request_sha256, str)
+            or _LOWER_HEX_64.fullmatch(verification.request_sha256) is None
+        ):
+            raise ValueError("invalid verification")
+        issued = _utc(verification.issued_at)
+        expires = _utc(verification.expires_at)
+        verified = _utc(verification.verified_at)
+        consumed = _utc(verification.consumed_at)
+        if expires <= issued or verified != consumed:
+            raise ValueError("invalid verification")
+    except (AttributeError, StepUpError, TypeError, ValueError):
+        raise ValueError("invalid verification") from None
+    return json.dumps(verification.to_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+
+
+def step_up_verification_sha256(verification: VerifiedStepUp) -> str:
+    return hashlib.sha256(canonical_verification_bytes(verification)).hexdigest()
+
+
 def parse_step_up_proof(payload: object) -> StepUpProof:
     """Parse an exact proof object with syntax ceilings before verification."""
     if not isinstance(payload, dict) or set(payload) != {"schema", "challenge_id", "signature", "signature_format"}:
@@ -228,6 +266,128 @@ def parse_step_up_proof(payload: object) -> StepUpProof:
     if not isinstance(signature, str) or _LOWER_HEX_128.fullmatch(signature) is None:
         raise StepUpError(StepUpReason.INVALID_SIGNATURE)
     return StepUpProof(schema, challenge_id, signature, signature_format)
+
+
+def _validate_persisted_challenge(challenge: StepUpChallenge, now: datetime) -> StepUpReason | None:
+    try:
+        if type(challenge) is not StepUpChallenge:
+            return StepUpReason.INVALID_REQUEST
+        issued = _utc(challenge.issued_at)
+        expires = _utc(challenge.expires_at)
+        if challenge.schema != CHALLENGE_SCHEMA or challenge.signature_domain != SIGNATURE_DOMAIN:
+            return StepUpReason.INVALID_REQUEST
+        _canonical_challenge_id(challenge.challenge_id)
+        _canonical_actor(challenge.actor_pubkey)
+        _bounded_identifier(challenge.oauth_client_id, MAX_CLIENT_ID_LENGTH)
+        _bounded_identifier(challenge.token_jti, MAX_TOKEN_JTI_LENGTH)
+        _action(challenge.action, require_step_up=True)
+        _bounded_identifier(challenge.resource_id, MAX_RESOURCE_ID_LENGTH, optional=True)
+        if not isinstance(challenge.request_sha256, str) or _LOWER_HEX_64.fullmatch(challenge.request_sha256) is None:
+            return StepUpReason.INVALID_REQUEST
+        if not isinstance(challenge.nonce, str) or _LOWER_HEX_64.fullmatch(challenge.nonce) is None:
+            return StepUpReason.INVALID_REQUEST
+        if expires <= issued or expires - issued > timedelta(seconds=MAX_CHALLENGE_LIFETIME_SECONDS):
+            return StepUpReason.INVALID_REQUEST
+        if issued > now + timedelta(seconds=MAX_CLOCK_SKEW_SECONDS):
+            return StepUpReason.INVALID_REQUEST
+        if challenge.consumed_at is not None:
+            consumed = _utc(challenge.consumed_at)
+            if consumed < issued or consumed >= expires:
+                return StepUpReason.INVALID_REQUEST
+            return StepUpReason.CHALLENGE_CONSUMED
+        if now < issued:
+            return StepUpReason.CHALLENGE_NOT_YET_VALID
+        if expires <= now:
+            return StepUpReason.CHALLENGE_EXPIRED
+    except (KeyError, TypeError, ValueError, StepUpError):
+        return StepUpReason.INVALID_REQUEST
+    return None
+
+
+def _validate_step_up_proof(proof: StepUpProof) -> StepUpReason | None:
+    if type(proof) is not StepUpProof or proof.schema != PROOF_SCHEMA or proof.signature_format != SIGNATURE_FORMAT:
+        return StepUpReason.INVALID_REQUEST
+    try:
+        _canonical_challenge_id(proof.challenge_id)
+    except (TypeError, ValueError):
+        return StepUpReason.INVALID_REQUEST
+    signature_hex = proof.signature.hex() if isinstance(proof.signature, bytes) else proof.signature
+    if not isinstance(signature_hex, str) or _LOWER_HEX_128.fullmatch(signature_hex) is None:
+        return StepUpReason.INVALID_SIGNATURE
+    return None
+
+
+def _verify_step_up_candidate(
+    challenge: StepUpChallenge,
+    proof: StepUpProof,
+    *,
+    actor_pubkey: str,
+    oauth_client_id: str,
+    token_jti: str,
+    action: ActionName | str,
+    resource_id: str | None,
+    request_sha256: str,
+    verified_at: datetime,
+) -> VerifiedStepUp:
+    """Verify an already-loaded candidate without persistence side effects."""
+    try:
+        now = _utc(verified_at)
+        proof_reason = _validate_step_up_proof(proof)
+        if proof_reason is not None:
+            return VerifiedStepUp(False, proof_reason)
+        signature_hex = proof.signature.hex() if isinstance(proof.signature, bytes) else proof.signature
+        try:
+            expected = (
+                _canonical_actor(actor_pubkey),
+                _bounded_identifier(oauth_client_id, MAX_CLIENT_ID_LENGTH),
+                _bounded_identifier(token_jti, MAX_TOKEN_JTI_LENGTH),
+                _action(action, require_step_up=False).value,
+                _bounded_identifier(resource_id, MAX_RESOURCE_ID_LENGTH, optional=True),
+                request_sha256,
+            )
+            if not isinstance(request_sha256, str) or _LOWER_HEX_64.fullmatch(request_sha256) is None:
+                raise ValueError("invalid digest")
+        except (StepUpError, TypeError, ValueError):
+            return VerifiedStepUp(False, StepUpReason.BINDING_MISMATCH)
+        state_reason = _validate_persisted_challenge(challenge, now)
+        if state_reason:
+            return VerifiedStepUp(False, state_reason, challenge_id=challenge.challenge_id)
+        if challenge.challenge_id != proof.challenge_id:
+            return VerifiedStepUp(False, StepUpReason.BINDING_MISMATCH, challenge_id=challenge.challenge_id)
+        actual = (
+            challenge.actor_pubkey,
+            challenge.oauth_client_id,
+            challenge.token_jti,
+            challenge.action,
+            challenge.resource_id,
+            challenge.request_sha256,
+        )
+        if actual != expected:
+            return VerifiedStepUp(False, StepUpReason.BINDING_MISMATCH, challenge_id=challenge.challenge_id)
+        digest = hashlib.sha256(canonical_signed_bytes(challenge)).digest()
+        try:
+            valid = PublicKeyXOnly(bytes.fromhex(challenge.actor_pubkey)).verify(bytes.fromhex(signature_hex), digest)
+        except Exception:
+            valid = False
+        if not valid:
+            return VerifiedStepUp(False, StepUpReason.INVALID_SIGNATURE, challenge_id=challenge.challenge_id)
+        return VerifiedStepUp(
+            True,
+            StepUpReason.VERIFIED,
+            challenge.challenge_id,
+            challenge.actor_pubkey,
+            challenge.oauth_client_id,
+            challenge.token_jti,
+            challenge.action,
+            challenge.resource_id,
+            challenge.request_sha256,
+            challenge.issued_at,
+            challenge.expires_at,
+            now,
+            now,
+        )
+    except Exception:
+        return VerifiedStepUp(False, StepUpReason.INVALID_REQUEST)
 
 
 class ActionStepUpService:
@@ -297,62 +457,28 @@ class ActionStepUpService:
     ) -> VerifiedStepUp:
         try:
             now = _utc(self._clock()).replace(microsecond=0)
-            if (
-                type(proof) is not StepUpProof
-                or proof.schema != PROOF_SCHEMA
-                or proof.signature_format != SIGNATURE_FORMAT
-            ):
-                return VerifiedStepUp(False, StepUpReason.INVALID_REQUEST)
-            try:
-                _canonical_challenge_id(proof.challenge_id)
-            except (TypeError, ValueError):
-                return VerifiedStepUp(False, StepUpReason.INVALID_REQUEST)
-            signature_hex = proof.signature.hex() if isinstance(proof.signature, bytes) else proof.signature
-            if not isinstance(signature_hex, str) or _LOWER_HEX_128.fullmatch(signature_hex) is None:
-                return VerifiedStepUp(False, StepUpReason.INVALID_SIGNATURE)
-            try:
-                expected = (
-                    _canonical_actor(actor_pubkey),
-                    _bounded_identifier(oauth_client_id, MAX_CLIENT_ID_LENGTH),
-                    _bounded_identifier(token_jti, MAX_TOKEN_JTI_LENGTH),
-                    _action(action, require_step_up=False).value,
-                    _bounded_identifier(resource_id, MAX_RESOURCE_ID_LENGTH, optional=True),
-                    request_sha256,
-                )
-                if _LOWER_HEX_64.fullmatch(request_sha256) is None:
-                    raise ValueError("invalid digest")
-            except StepUpError:
-                return VerifiedStepUp(False, StepUpReason.BINDING_MISMATCH)
-            except (TypeError, ValueError):
-                return VerifiedStepUp(False, StepUpReason.BINDING_MISMATCH)
+            proof_reason = _validate_step_up_proof(proof)
+            if proof_reason is not None:
+                return VerifiedStepUp(False, proof_reason)
             try:
                 challenge = self._repository.get(proof.challenge_id)
             except Exception:
                 return VerifiedStepUp(False, StepUpReason.STORAGE_UNAVAILABLE)
             if challenge is None:
                 return VerifiedStepUp(False, StepUpReason.CHALLENGE_NOT_FOUND)
-            state_reason = self._validate_persisted(challenge, now)
-            if state_reason:
-                return VerifiedStepUp(False, state_reason, challenge_id=challenge.challenge_id)
-            actual = (
-                challenge.actor_pubkey,
-                challenge.oauth_client_id,
-                challenge.token_jti,
-                challenge.action,
-                challenge.resource_id,
-                challenge.request_sha256,
+            verification = _verify_step_up_candidate(
+                challenge,
+                proof,
+                actor_pubkey=actor_pubkey,
+                oauth_client_id=oauth_client_id,
+                token_jti=token_jti,
+                action=action,
+                resource_id=resource_id,
+                request_sha256=request_sha256,
+                verified_at=now,
             )
-            if actual != expected:
-                return VerifiedStepUp(False, StepUpReason.BINDING_MISMATCH, challenge_id=challenge.challenge_id)
-            digest = hashlib.sha256(canonical_signed_bytes(challenge)).digest()
-            try:
-                valid = PublicKeyXOnly(bytes.fromhex(challenge.actor_pubkey)).verify(
-                    bytes.fromhex(signature_hex), digest
-                )
-            except Exception:
-                valid = False
-            if not valid:
-                return VerifiedStepUp(False, StepUpReason.INVALID_SIGNATURE, challenge_id=challenge.challenge_id)
+            if not verification.verified:
+                return verification
             try:
                 consumed = self._repository.consume(challenge, now)
                 if not consumed:
@@ -365,59 +491,10 @@ class ActionStepUpService:
                     return VerifiedStepUp(False, reason, challenge_id=challenge.challenge_id)
             except Exception:
                 return VerifiedStepUp(False, StepUpReason.STORAGE_UNAVAILABLE, challenge_id=challenge.challenge_id)
-            return VerifiedStepUp(
-                True,
-                StepUpReason.VERIFIED,
-                challenge.challenge_id,
-                challenge.actor_pubkey,
-                challenge.oauth_client_id,
-                challenge.token_jti,
-                challenge.action,
-                challenge.resource_id,
-                challenge.request_sha256,
-                challenge.issued_at,
-                challenge.expires_at,
-                now,
-                now,
-            )
+            return verification
         except Exception:
             return VerifiedStepUp(False, StepUpReason.INVALID_REQUEST)
 
     @staticmethod
     def _validate_persisted(challenge: StepUpChallenge, now: datetime) -> StepUpReason | None:
-        try:
-            if type(challenge) is not StepUpChallenge:
-                return StepUpReason.INVALID_REQUEST
-            issued = _utc(challenge.issued_at)
-            expires = _utc(challenge.expires_at)
-            if challenge.schema != CHALLENGE_SCHEMA or challenge.signature_domain != SIGNATURE_DOMAIN:
-                return StepUpReason.INVALID_REQUEST
-            _canonical_challenge_id(challenge.challenge_id)
-            _canonical_actor(challenge.actor_pubkey)
-            _bounded_identifier(challenge.oauth_client_id, MAX_CLIENT_ID_LENGTH)
-            _bounded_identifier(challenge.token_jti, MAX_TOKEN_JTI_LENGTH)
-            _action(challenge.action, require_step_up=True)
-            _bounded_identifier(challenge.resource_id, MAX_RESOURCE_ID_LENGTH, optional=True)
-            if (
-                not isinstance(challenge.request_sha256, str)
-                or _LOWER_HEX_64.fullmatch(challenge.request_sha256) is None
-            ):
-                return StepUpReason.INVALID_REQUEST
-            if not isinstance(challenge.nonce, str) or _LOWER_HEX_64.fullmatch(challenge.nonce) is None:
-                return StepUpReason.INVALID_REQUEST
-            if expires <= issued or expires - issued > timedelta(seconds=MAX_CHALLENGE_LIFETIME_SECONDS):
-                return StepUpReason.INVALID_REQUEST
-            if issued > now + timedelta(seconds=MAX_CLOCK_SKEW_SECONDS):
-                return StepUpReason.INVALID_REQUEST
-            if challenge.consumed_at is not None:
-                consumed = _utc(challenge.consumed_at)
-                if consumed < issued or consumed >= expires:
-                    return StepUpReason.INVALID_REQUEST
-                return StepUpReason.CHALLENGE_CONSUMED
-            if now < issued:
-                return StepUpReason.CHALLENGE_NOT_YET_VALID
-            if expires <= now:
-                return StepUpReason.CHALLENGE_EXPIRED
-        except (KeyError, TypeError, ValueError, StepUpError):
-            return StepUpReason.INVALID_REQUEST
-        return None
+        return _validate_persisted_challenge(challenge, now)

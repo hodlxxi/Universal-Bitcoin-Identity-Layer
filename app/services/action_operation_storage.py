@@ -84,6 +84,35 @@ class ReserveResult:
         return self.status == "new"
 
 
+def validate_reservation(reservation: Reservation) -> None:
+    """Validate the exact canonical reservation contract."""
+    try:
+        if type(reservation) is not Reservation or reservation.contract_version != OPERATION_CONTRACT_VERSION:
+            raise InvalidReservationError()
+        if not isinstance(reservation.idempotency_key_sha256, str) or not re.fullmatch(
+            r"[0-9a-f]{64}", reservation.idempotency_key_sha256
+        ):
+            raise InvalidReservationError()
+        expected_token_reference = token_reference_sha256(reservation.token_jti)
+        expected_fingerprint = request_fingerprint_sha256(
+            contract_version=reservation.contract_version,
+            actor_pubkey=reservation.actor_pubkey,
+            oauth_client_id=reservation.oauth_client_id,
+            token_jti=reservation.token_jti,
+            action=reservation.action,
+            resource_id=reservation.resource_id,
+            request_sha256=reservation.request_sha256,
+            step_up_challenge_id=reservation.step_up_challenge_id,
+        )
+        if (
+            reservation.token_reference_sha256 != expected_token_reference
+            or reservation.request_fingerprint_sha256 != expected_fingerprint
+        ):
+            raise InvalidReservationError()
+    except (AttributeError, IdempotencyError, TypeError):
+        raise InvalidReservationError() from None
+
+
 class SqlAlchemyActionOperationRepository:
     def __init__(self, session_factory):
         self._session_factory = session_factory
@@ -97,7 +126,7 @@ class SqlAlchemyActionOperationRepository:
             raise ActionOperationStorageError() from None
 
     def reserve(self, reservation: Reservation) -> ReserveResult:
-        self._validate_reservation(reservation)
+        validate_reservation(reservation)
 
         def work():
             with self._session_factory() as session:
@@ -127,34 +156,6 @@ class SqlAlchemyActionOperationRepository:
                     return ReserveResult("idempotency_conflict", existing)
 
         return self._safe(work)
-
-    @staticmethod
-    def _validate_reservation(reservation: Reservation) -> None:
-        try:
-            if reservation.contract_version != OPERATION_CONTRACT_VERSION:
-                raise InvalidReservationError()
-            if not isinstance(reservation.idempotency_key_sha256, str) or not re.fullmatch(
-                r"[0-9a-f]{64}", reservation.idempotency_key_sha256
-            ):
-                raise InvalidReservationError()
-            expected_token_reference = token_reference_sha256(reservation.token_jti)
-            expected_fingerprint = request_fingerprint_sha256(
-                contract_version=reservation.contract_version,
-                actor_pubkey=reservation.actor_pubkey,
-                oauth_client_id=reservation.oauth_client_id,
-                token_jti=reservation.token_jti,
-                action=reservation.action,
-                resource_id=reservation.resource_id,
-                request_sha256=reservation.request_sha256,
-                step_up_challenge_id=reservation.step_up_challenge_id,
-            )
-            if (
-                reservation.token_reference_sha256 != expected_token_reference
-                or reservation.request_fingerprint_sha256 != expected_fingerprint
-            ):
-                raise InvalidReservationError()
-        except (IdempotencyError, TypeError):
-            raise InvalidReservationError() from None
 
     def get_by_operation_id(self, operation_id: str):
         return self._safe(lambda: self._get(operation_id=operation_id))
