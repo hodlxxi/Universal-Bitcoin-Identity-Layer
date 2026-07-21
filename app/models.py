@@ -21,8 +21,11 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.sql.expression import ColumnElement
 
 Base = declarative_base()
 
@@ -35,6 +38,20 @@ def generate_uuid():
 def utc_now():
     """Generate timezone-aware UTC datetime."""
     return datetime.now(timezone.utc)
+
+
+class _ActionOperationUuidDefault(ColumnElement):
+    inherit_cache = True
+
+
+@compiles(_ActionOperationUuidDefault)
+def _compile_action_operation_uuid_default(_element, _compiler, **_kwargs):
+    return "(gen_random_uuid())::text"
+
+
+@compiles(_ActionOperationUuidDefault, "sqlite")
+def _compile_action_operation_uuid_default_sqlite(_element, _compiler, **_kwargs):
+    return "''"
 
 
 class User(Base):
@@ -553,4 +570,119 @@ class ActionStepUpChallenge(Base):
         ),
         Index("idx_action_step_up_actor_action", "actor_pubkey", "action"),
         Index("idx_action_step_up_unconsumed_expiry", "consumed_at", "expires_at"),
+    )
+
+
+class ActionOperation(Base):
+    """Dormant durable reservation and final-receipt state for an action."""
+
+    __tablename__ = "action_operations"
+
+    operation_id = Column(
+        String(36), primary_key=True, default=generate_uuid, server_default=_ActionOperationUuidDefault()
+    )
+    contract_version = Column(String(64), nullable=False)
+    actor_pubkey = Column(String(64), nullable=False)
+    oauth_client_id = Column(String(256), nullable=False)
+    token_jti = Column(String(128), nullable=False)
+    token_reference_sha256 = Column(String(64), nullable=False)
+    action = Column(String(64), nullable=False)
+    resource_id = Column(String(256))
+    request_sha256 = Column(String(64), nullable=False)
+    idempotency_key_sha256 = Column(String(64), nullable=False)
+    request_fingerprint_sha256 = Column(String(64), nullable=False)
+    step_up_challenge_id = Column(String(32))
+    step_up_verification_sha256 = Column(String(64))
+    policy_version = Column(String(64), nullable=False)
+    authorization_decision_sha256 = Column(String(64), nullable=False)
+    state = Column(String(32), nullable=False)
+    reserved_at = Column(DateTime(timezone=True), nullable=False)
+    started_at = Column(DateTime(timezone=True))
+    completed_at = Column(DateTime(timezone=True))
+    failure_code = Column(String(64))
+    result_sha256 = Column(String(64))
+    receipt_json = Column(JSON)
+    receipt_sha256 = Column(String(64))
+    receipt_signature = Column(Text)
+    signer_public_key = Column(String(66))
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "actor_pubkey",
+            "oauth_client_id",
+            "idempotency_key_sha256",
+            name="uq_action_operations_idempotency_namespace",
+        ),
+        CheckConstraint("length(operation_id) = 36", name="ck_action_operations_operation_id_length"),
+        CheckConstraint("length(actor_pubkey) = 64", name="ck_action_operations_actor_pubkey_length"),
+        CheckConstraint("length(oauth_client_id) BETWEEN 1 AND 256", name="ck_action_operations_client_id_length"),
+        CheckConstraint("length(token_jti) BETWEEN 1 AND 128", name="ck_action_operations_token_jti_length"),
+        CheckConstraint("length(action) BETWEEN 1 AND 64", name="ck_action_operations_action_length"),
+        CheckConstraint(
+            "resource_id IS NULL OR length(resource_id) BETWEEN 1 AND 256",
+            name="ck_action_operations_resource_id_length",
+        ),
+        CheckConstraint("length(token_reference_sha256) = 64", name="ck_action_operations_token_reference_hash_length"),
+        CheckConstraint("length(request_sha256) = 64", name="ck_action_operations_request_hash_length"),
+        CheckConstraint("length(idempotency_key_sha256) = 64", name="ck_action_operations_idempotency_hash_length"),
+        CheckConstraint("length(request_fingerprint_sha256) = 64", name="ck_action_operations_fingerprint_hash_length"),
+        CheckConstraint(
+            "length(authorization_decision_sha256) = 64", name="ck_action_operations_authorization_hash_length"
+        ),
+        CheckConstraint(
+            "step_up_challenge_id IS NULL OR length(step_up_challenge_id) = 32",
+            name="ck_action_operations_step_up_challenge_length",
+        ),
+        CheckConstraint(
+            "step_up_verification_sha256 IS NULL OR length(step_up_verification_sha256) = 64",
+            name="ck_action_operations_step_up_hash_length",
+        ),
+        CheckConstraint(
+            "result_sha256 IS NULL OR length(result_sha256) = 64", name="ck_action_operations_result_hash_length"
+        ),
+        CheckConstraint(
+            "receipt_sha256 IS NULL OR length(receipt_sha256) = 64", name="ck_action_operations_receipt_hash_length"
+        ),
+        CheckConstraint(
+            "signer_public_key IS NULL OR length(signer_public_key) = 66", name="ck_action_operations_signer_key_length"
+        ),
+        CheckConstraint(
+            "state IN ('reserved','executing','completed','failed','indeterminate')", name="ck_action_operations_state"
+        ),
+        CheckConstraint(
+            "(step_up_challenge_id IS NULL) = (step_up_verification_sha256 IS NULL)",
+            name="ck_action_operations_step_up_pair",
+        ),
+        CheckConstraint("started_at IS NULL OR started_at >= reserved_at", name="ck_action_operations_started_order"),
+        CheckConstraint(
+            "completed_at IS NULL OR (started_at IS NOT NULL AND completed_at >= started_at)",
+            name="ck_action_operations_completed_order",
+        ),
+        CheckConstraint(
+            "(state = 'reserved' AND started_at IS NULL) OR (state != 'reserved' AND started_at IS NOT NULL)",
+            name="ck_action_operations_state_started_at",
+        ),
+        CheckConstraint(
+            "state != 'completed' OR (result_sha256 IS NOT NULL AND failure_code IS NULL)",
+            name="ck_action_operations_completed_result",
+        ),
+        CheckConstraint(
+            "state != 'failed' OR (failure_code IS NOT NULL AND length(failure_code) BETWEEN 1 AND 64 AND result_sha256 IS NULL)",
+            name="ck_action_operations_failed_code",
+        ),
+        CheckConstraint(
+            "state NOT IN ('reserved','executing','indeterminate') OR (completed_at IS NULL AND failure_code IS NULL AND result_sha256 IS NULL AND receipt_json IS NULL AND receipt_sha256 IS NULL AND receipt_signature IS NULL AND signer_public_key IS NULL)",
+            name="ck_action_operations_nonterminal_no_receipt",
+        ),
+        CheckConstraint(
+            "state NOT IN ('completed','failed') OR (completed_at IS NOT NULL AND receipt_json IS NOT NULL AND receipt_sha256 IS NOT NULL AND receipt_signature IS NOT NULL AND signer_public_key IS NOT NULL)",
+            name="ck_action_operations_terminal_receipt",
+        ),
+        CheckConstraint(
+            "(receipt_json IS NULL AND receipt_sha256 IS NULL AND receipt_signature IS NULL AND signer_public_key IS NULL) OR (receipt_json IS NOT NULL AND receipt_sha256 IS NOT NULL AND receipt_signature IS NOT NULL AND signer_public_key IS NOT NULL)",
+            name="ck_action_operations_receipt_all_or_none",
+        ),
+        Index("idx_action_operations_operation_state", "state"),
+        Index("idx_action_operations_updated_at", "updated_at"),
     )
