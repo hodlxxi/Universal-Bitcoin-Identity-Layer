@@ -44,6 +44,7 @@ class StepUpReason(str, Enum):
     UNKNOWN_ACTION = "unknown_action"
     STEP_UP_NOT_REQUIRED = "step_up_not_required"
     CHALLENGE_NOT_FOUND = "challenge_not_found"
+    CHALLENGE_NOT_YET_VALID = "challenge_not_yet_valid"
     CHALLENGE_EXPIRED = "challenge_expired"
     CHALLENGE_CONSUMED = "challenge_consumed"
     BINDING_MISMATCH = "binding_mismatch"
@@ -413,6 +414,8 @@ class ActionStepUpService:
                 if consumed < issued or consumed >= expires:
                     return StepUpReason.INVALID_REQUEST
                 return StepUpReason.CHALLENGE_CONSUMED
+            if now < issued:
+                return StepUpReason.CHALLENGE_NOT_YET_VALID
             if expires <= now:
                 return StepUpReason.CHALLENGE_EXPIRED
         except (KeyError, TypeError, ValueError, StepUpError):
