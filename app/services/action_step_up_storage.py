@@ -85,6 +85,7 @@ class SqlAlchemyActionStepUpRepository:
                     ActionStepUpChallenge.nonce == challenge.nonce,
                     ActionStepUpChallenge.issued_at == challenge.issued_at,
                     ActionStepUpChallenge.expires_at == challenge.expires_at,
+                    ActionStepUpChallenge.issued_at <= consumed_at,
                     ActionStepUpChallenge.expires_at > consumed_at,
                     ActionStepUpChallenge.consumed_at.is_(None),
                 )

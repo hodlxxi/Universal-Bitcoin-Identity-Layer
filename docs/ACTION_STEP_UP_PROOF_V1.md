@@ -18,7 +18,7 @@ A challenge contains `schema`, `challenge_id`, the canonical lowercase 64-hex x-
 
 `resource_id: null` is the only representation of no resource. A present resource identifier, client ID, and token JTI must be nonempty, have no surrounding whitespace or control characters, and fit their declared ceilings. The request digest is mandatory even for create operations and is the SHA-256 digest of the exact canonical future action request; the raw request is not stored.
 
-The default lifetime is 300 seconds and the hard maximum is 600 seconds. Service clocks are injected and must return timezone-aware UTC-compatible values. Expiration is exclusive: `now >= expires_at` is expired, and atomic consumption requires `expires_at > consumed_at`. Verification rejects expired state, invalid time ordering, lifetime over 600 seconds, issuance more than 60 seconds in the future, malformed persisted bindings, and invalid or already-consumed state.
+The default lifetime is 300 seconds and the hard maximum is 600 seconds. Service clocks are injected and must return timezone-aware UTC-compatible values. A challenge is active at `issued_at`: `now < issued_at` returns `challenge_not_yet_valid`, while `now == issued_at` may be verified and consumed. The 60-second future-clock-skew allowance only makes persisted state structurally valid; it does not activate the challenge early. Issuance more than 60 seconds in the future remains invalid persisted state. Expiration is exclusive: `now >= expires_at` is expired. Atomic consumption requires `issued_at <= consumed_at`, `expires_at > consumed_at`, and `consumed_at IS NULL`, and records the real consumption time without normalizing it into the future. Verification also rejects invalid time ordering, lifetime over 600 seconds, malformed persisted bindings, and invalid or already-consumed state.
 
 Issuance accepts only an `ActionName` from the immutable `hodlxxi.action-policy.v1` requirement table whose `step_up_required` value is true. It does not maintain a second action registry. At present, only `covenant_draft_create` qualifies.
 
@@ -38,7 +38,7 @@ The verifier computes SHA-256 over those canonical bytes and verifies the digest
 
 `action_step_up_challenges` stores only the challenge contract version, domain, exact bindings, nonce, issue/expiry times, and nullable consumption time. It stores no bearer token, OAuth client secret, private key, arbitrary request body, or proof signature.
 
-After signature verification, one conditional database update matches the challenge ID, every persisted binding, both timestamps, nonce, contract identifiers, unexpired state, and `consumed_at IS NULL`. Success requires exactly one affected row. Concurrent valid attempts therefore yield one verified result and one consumed/replay denial. Invalid signatures and binding mismatches do not update state. Database read, insert, update, commit, or ambiguous-result failures fail closed as `storage_unavailable`; database exception text is never included in evidence.
+After signature verification, one conditional database update matches the challenge ID, every persisted binding, both timestamps, nonce, contract identifiers, active and unexpired state (`issued_at <= consumed_at` and `expires_at > consumed_at`), and `consumed_at IS NULL`. Success requires exactly one affected row. Concurrent valid attempts therefore yield one verified result and one consumed/replay denial. Not-yet-valid challenges are rejected before signature verification and repository consumption. Invalid signatures and binding mismatches do not update state. Database read, insert, update, commit, or ambiguous-result failures fail closed as `storage_unavailable`; database exception text is never included in evidence.
 
 The repository-native migration is the dated SQL artifact `migrations/2026-07-20_action_step_up_challenges.sql`. Like the repository's existing production migrations, operators apply it directly with `psql -f migrations/2026-07-20_action_step_up_challenges.sql` during the database-migration deployment step. It creates only this table, portable integrity constraints, and its lookup/uniqueness indexes. The repository has no executable Alembic environment or supported automatic downgrade mechanism, so PR4 does not invent one. Operational rollback is to revert the application release while retaining this additive, inert table; destructive table removal requires a separately reviewed data-removal operation.
 
@@ -54,6 +54,7 @@ Stable reason codes are:
 - `unknown_action`
 - `step_up_not_required`
 - `challenge_not_found`
+- `challenge_not_yet_valid`
 - `challenge_expired`
 - `challenge_consumed`
 - `binding_mismatch`

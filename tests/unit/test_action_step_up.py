@@ -34,6 +34,7 @@ class MemoryRepository:
         self.rows = {}
         self.fail_read = False
         self.fail_consume = False
+        self.consume_calls = 0
 
     def create(self, challenge):
         self.rows[challenge.challenge_id] = challenge
@@ -44,6 +45,7 @@ class MemoryRepository:
         return self.rows.get(challenge_id)
 
     def consume(self, challenge, consumed_at):
+        self.consume_calls += 1
         if self.fail_consume:
             raise RuntimeError("secret database detail")
         current = self.rows.get(challenge.challenge_id)
@@ -265,6 +267,91 @@ def test_expired_future_and_invalid_time_challenges_fail_closed():
         )
 
 
+def test_future_challenge_within_clock_skew_is_valid_but_not_yet_active(monkeypatch):
+    repository = MemoryRepository()
+    key = PrivateKey()
+    challenge = issue(ActionStepUpService(repository, clock=lambda: NOW), key)
+    future = replace(
+        challenge,
+        issued_at=NOW + timedelta(seconds=1),
+        expires_at=challenge.expires_at + timedelta(seconds=1),
+    )
+    repository.rows[challenge.challenge_id] = future
+    verification_calls = 0
+
+    def observe_verification(*args, **kwargs):
+        nonlocal verification_calls
+        verification_calls += 1
+        return True
+
+    monkeypatch.setattr(PublicKeyXOnly, "verify", observe_verification)
+    result = verify(ActionStepUpService(repository, clock=lambda: NOW), future, proof(future, key))
+
+    assert result.reason_code is StepUpReason.CHALLENGE_NOT_YET_VALID
+    assert repository.consume_calls == 0
+    assert verification_calls == 0
+    assert repository.rows[challenge.challenge_id].consumed_at is None
+
+
+def test_future_issued_consumed_challenge_is_reported_as_consumed():
+    repository = MemoryRepository()
+    key = PrivateKey()
+    challenge = issue(ActionStepUpService(repository, clock=lambda: NOW), key)
+    future = replace(
+        challenge,
+        issued_at=NOW + timedelta(seconds=1),
+        expires_at=challenge.expires_at + timedelta(seconds=1),
+        consumed_at=NOW + timedelta(seconds=2),
+    )
+    repository.rows[challenge.challenge_id] = future
+
+    result = verify(ActionStepUpService(repository, clock=lambda: NOW), future, proof(future, key))
+
+    assert result.reason_code is StepUpReason.CHALLENGE_CONSUMED
+    assert repository.consume_calls == 0
+
+
+def test_future_issued_invalid_consumption_timestamp_fails_as_invalid_request():
+    repository = MemoryRepository()
+    key = PrivateKey()
+    challenge = issue(ActionStepUpService(repository, clock=lambda: NOW), key)
+    future = replace(
+        challenge,
+        issued_at=NOW + timedelta(seconds=1),
+        expires_at=challenge.expires_at + timedelta(seconds=1),
+        consumed_at=NOW,
+    )
+    repository.rows[challenge.challenge_id] = future
+
+    result = verify(ActionStepUpService(repository, clock=lambda: NOW), future, proof(future, key))
+
+    assert result.reason_code is StepUpReason.INVALID_REQUEST
+    assert repository.consume_calls == 0
+
+
+def test_exact_issued_at_boundary_is_valid_and_consumed():
+    repository = MemoryRepository()
+    key = PrivateKey()
+    challenge = issue(ActionStepUpService(repository, clock=lambda: NOW), key)
+
+    result = verify(ActionStepUpService(repository, clock=lambda: challenge.issued_at), challenge, proof(challenge, key))
+
+    assert result.reason_code is StepUpReason.VERIFIED
+    assert result.consumed_at == challenge.issued_at
+
+
+def test_valid_proof_after_issued_at_succeeds():
+    repository = MemoryRepository()
+    key = PrivateKey()
+    challenge = issue(ActionStepUpService(repository, clock=lambda: NOW), key)
+    verified_at = challenge.issued_at + timedelta(seconds=1)
+
+    result = verify(ActionStepUpService(repository, clock=lambda: verified_at), challenge, proof(challenge, key))
+
+    assert result.reason_code is StepUpReason.VERIFIED
+    assert result.consumed_at == verified_at
+
+
 def test_exact_expiration_boundary_is_expired_and_not_consumed():
     repository = MemoryRepository()
     key = PrivateKey()
@@ -336,3 +423,11 @@ def test_documentation_states_authorization_non_claims():
         "must not accept a client-supplied boolean or reconstructed result object",
     ):
         assert statement in text
+
+
+def test_documentation_constants_and_reason_codes_match_implementation():
+    text = open("docs/ACTION_STEP_UP_PROOF_V1.md", encoding="utf-8").read()
+    for constant in (CHALLENGE_SCHEMA, PROOF_SCHEMA, VERIFICATION_SCHEMA, SIGNATURE_DOMAIN, SIGNATURE_FORMAT):
+        assert f"`{constant}`" in text
+    for reason in StepUpReason:
+        assert f"`{reason.value}`" in text

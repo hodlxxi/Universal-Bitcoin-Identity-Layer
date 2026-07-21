@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from coincurve import PrivateKey, PublicKeyXOnly
 from pathlib import Path
@@ -80,5 +80,28 @@ def test_atomic_storage_expiration_predicate_is_exclusive():
     import inspect as python_inspect
 
     source = python_inspect.getsource(SqlAlchemyActionStepUpRepository.consume)
+    assert "ActionStepUpChallenge.issued_at <= consumed_at" in source
     assert "ActionStepUpChallenge.expires_at > consumed_at" in source
     assert "ActionStepUpChallenge.expires_at >= consumed_at" not in source
+
+
+def test_atomic_storage_not_before_predicate_rejects_early_consumption(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'not-before.db'}")
+    ActionStepUpChallenge.__table__.create(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    repository = SqlAlchemyActionStepUpRepository(factory)
+    issued_at = datetime(2026, 7, 20, 12, 0, 1, tzinfo=timezone.utc)
+    service = ActionStepUpService(repository, clock=lambda: issued_at)
+    private_key = PrivateKey()
+    challenge = service.issue_challenge(
+        actor_pubkey=PublicKeyXOnly.from_secret(private_key.secret).format().hex(),
+        oauth_client_id="client",
+        token_jti="jti",
+        action="covenant_draft_create",
+        resource_id=None,
+        request_sha256=hashlib.sha256(b"request").hexdigest(),
+    )
+
+    assert repository.consume(challenge, issued_at - timedelta(seconds=1)) is False
+    with factory() as session:
+        assert session.get(ActionStepUpChallenge, challenge.challenge_id).consumed_at is None
