@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
-import math
 import re
 import uuid
 from collections.abc import Callable, Mapping
@@ -30,6 +28,7 @@ from app.services.action_idempotency import (
 )
 from app.services.action_operation_storage import Reservation, stored_receipt_bytes
 from app.services.action_receipt import ActionReceiptError, canonical_timestamp, create_action_receipt
+from app.services.action_request_canonicalization import MAX_REQUEST_BYTES, canonical_payload_bytes
 from app.services.action_step_up import StepUpProof
 from app.services.action_step_up_operation_storage import (
     AtomicStepUpReserveResult,
@@ -43,16 +42,13 @@ from app.services.current_entitlement import (
 )
 from app.services.oauth_bearer_validation import BearerPrincipal, BearerValidationError
 
-MAX_REQUEST_BYTES = 65_536
 MAX_BEARER_BYTES = 16_384
 MAX_CLIENT_ID_LENGTH = 256
 MAX_RESOURCE_ID_LENGTH = 256
 MAX_FAILURE_CODE_LENGTH = 64
 _SAFE_IDENTIFIER = re.compile(r"^[\x21-\x7e]+$")
 _SAFE_FAILURE = re.compile(r"^[a-z0-9][a-z0-9_.-]*$")
-_ELIGIBLE_ACTIONS = frozenset(
-    {ActionName.SELF_READ, ActionName.JOB_CREATE, ActionName.COVENANT_DRAFT_CREATE}
-)
+_ELIGIBLE_ACTIONS = frozenset({ActionName.SELF_READ, ActionName.JOB_CREATE, ActionName.COVENANT_DRAFT_CREATE})
 
 
 class GatewayReason(str, Enum):
@@ -139,47 +135,6 @@ BearerValidator = Callable[[str], BearerPrincipal]
 EntitlementResolverCallback = Callable[[str], EntitlementDecision]
 ActionHandler = Callable[[bytes], HandlerResult]
 OwnershipResolver = Callable[[ActionName, str, str], str | None]
-
-
-def _validate_json_value(value: object, active_containers: set[int]) -> None:
-    value_type = type(value)
-    if value is None or value_type in {bool, int, str}:
-        return
-    if value_type is float:
-        if not math.isfinite(value):
-            raise ValueError("invalid_request")
-        return
-    if value_type not in {list, dict}:
-        raise ValueError("invalid_request")
-
-    identity = id(value)
-    if identity in active_containers:
-        raise ValueError("invalid_request")
-    active_containers.add(identity)
-    try:
-        if value_type is list:
-            for item in value:
-                _validate_json_value(item, active_containers)
-        else:
-            for key, item in value.items():
-                if type(key) is not str:
-                    raise ValueError("invalid_request")
-                _validate_json_value(item, active_containers)
-    finally:
-        active_containers.remove(identity)
-
-
-def canonical_payload_bytes(value: object, *, maximum: int = MAX_REQUEST_BYTES) -> bytes:
-    _validate_json_value(value, set())
-    try:
-        encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode(
-            "utf-8"
-        )
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError("invalid_request") from exc
-    if len(encoded) > maximum:
-        raise ValueError("invalid_request")
-    return encoded
 
 
 def authorization_decision_sha256(decision: ActionDecision) -> str:
@@ -296,9 +251,7 @@ class InternalActionGateway:
         decision_hash = authorization_decision_sha256(decision)
         try:
             reserved_at = _utc(self._clock())
-            step_up_challenge_id = (
-                invocation.step_up_proof.challenge_id if requirement.step_up_required else None
-            )
+            step_up_challenge_id = invocation.step_up_proof.challenge_id if requirement.step_up_required else None
             reservation = Reservation(
                 contract_version=OPERATION_CONTRACT_VERSION,
                 actor_pubkey=principal.subject,

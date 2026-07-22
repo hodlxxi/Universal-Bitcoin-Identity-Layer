@@ -499,8 +499,10 @@ def test_documentation_states_authorization_non_claims():
     for statement in (
         "does not integrate step-up proof into action authorization",
         "audit and application data, not an unforgeable credential",
-        "must call `verify_and_consume()` directly",
         "must not accept a client-supplied boolean or reconstructed result object",
+        "trusted challenge issuance calls\n`actionstepupservice.issue_challenge()`",
+        "gateway execution calls\n`sqlalchemyatomicstepupoperationrepository.reserve_with_step_up()`",
+        "it is not the gateway execution path",
     ):
         assert statement in text
 
