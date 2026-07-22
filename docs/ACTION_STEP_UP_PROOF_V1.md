@@ -63,7 +63,15 @@ Stable reason codes are:
 
 PR4 does not integrate step-up proof into action authorization. `VerifiedStepUp` is audit and application data, not an unforgeable credential: it is a publicly constructible result dataclass and must never establish authorization provenance by itself.
 
-A future trusted orchestration layer must call `verify_and_consume()` directly and keep proof verification, binding checks, and policy invocation in one trusted control flow. Callers must not accept a client-supplied boolean or reconstructed result object as proof. This PR therefore exposes no helper that converts `VerifiedStepUp` into the policy model's `step_up_verified` boolean and makes no authorization claim.
+That earlier future-looking orchestration statement is superseded by the later
+two-stage architecture. Trusted challenge issuance calls
+`ActionStepUpService.issue_challenge()`. Gateway execution calls
+`SqlAlchemyAtomicStepUpOperationRepository.reserve_with_step_up()`, which keeps
+proof verification, challenge consumption, verification hashing, and operation
+reservation in one transaction. `verify_and_consume()` remains a lower-level
+standalone primitive and test contract; it is not the gateway execution path.
+Callers must not accept a client-supplied boolean or reconstructed result object
+as proof.
 
 ## Boundary from later roadmap work
 
