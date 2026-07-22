@@ -574,6 +574,56 @@ class ActionStepUpChallenge(Base):
     )
 
 
+class CurrentEntitlementEvidence(Base):
+    """Append-only persisted evidence for a subject's current entitlement."""
+
+    __tablename__ = "current_entitlement_evidence"
+
+    evidence_id = Column(String(36), primary_key=True)
+    contract_version = Column(String(64), nullable=False)
+    subject_pubkey = Column(String(64), nullable=False)
+    identity_class = Column(String(7), nullable=False)
+    current_full_relation_satisfied = Column(Boolean, nullable=False)
+    evidence_source = Column(String(128), nullable=False)
+    evidence_version = Column(String(64), nullable=False)
+    source_evidence_sha256 = Column(String(64), nullable=False)
+    observed_at = Column(DateTime(timezone=True), nullable=False)
+    valid_until = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("length(evidence_id) = 36", name="ck_current_entitlement_evidence_id_length"),
+        CheckConstraint(
+            "contract_version = 'hodlxxi.current_entitlement_evidence.v1'",
+            name="ck_current_entitlement_contract_version",
+        ),
+        CheckConstraint("length(subject_pubkey) = 64", name="ck_current_entitlement_subject_length"),
+        CheckConstraint("identity_class IN ('limited','full')", name="ck_current_entitlement_identity_class"),
+        CheckConstraint(
+            "(identity_class = 'full' AND current_full_relation_satisfied = true) OR "
+            "(identity_class = 'limited' AND current_full_relation_satisfied = false)",
+            name="ck_current_entitlement_identity_relation",
+        ),
+        CheckConstraint("length(evidence_source) BETWEEN 1 AND 128", name="ck_current_entitlement_source_length"),
+        CheckConstraint("evidence_source = trim(evidence_source)", name="ck_current_entitlement_source_canonical"),
+        CheckConstraint("length(evidence_version) BETWEEN 1 AND 64", name="ck_current_entitlement_version_length"),
+        CheckConstraint("evidence_version = trim(evidence_version)", name="ck_current_entitlement_version_canonical"),
+        CheckConstraint("length(source_evidence_sha256) = 64", name="ck_current_entitlement_hash_length"),
+        CheckConstraint("observed_at < valid_until", name="ck_current_entitlement_validity_order"),
+        CheckConstraint("observed_at <= created_at", name="ck_current_entitlement_created_order"),
+        CheckConstraint(
+            "revoked_at IS NULL OR (revoked_at >= observed_at AND revoked_at <= created_at)",
+            name="ck_current_entitlement_revoked_order",
+        ),
+        Index("idx_current_entitlement_subject", "subject_pubkey"),
+        Index("idx_current_entitlement_valid_until", "valid_until"),
+        Index("idx_current_entitlement_revoked_at", "revoked_at"),
+        Index("idx_current_entitlement_subject_observed", "subject_pubkey", "observed_at"),
+        Index("idx_current_entitlement_subject_created", "subject_pubkey", "created_at"),
+    )
+
+
 class ActionOperation(Base):
     """Dormant durable reservation and final-receipt state for an action."""
 
