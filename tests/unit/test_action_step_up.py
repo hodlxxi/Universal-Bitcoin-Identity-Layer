@@ -22,7 +22,9 @@ from app.services.action_step_up import (
     StepUpReason,
     VerifiedStepUp,
     canonical_signed_bytes,
+    canonical_verification_bytes,
     parse_step_up_proof,
+    step_up_verification_sha256,
 )
 
 NOW = datetime(2026, 7, 20, 12, 0, tzinfo=timezone.utc)
@@ -192,6 +194,82 @@ def test_canonical_signed_bytes_are_deterministic_and_bind_all_fields():
         assert canonical_signed_bytes(replace(challenge, **{field: value})) != canonical_signed_bytes(challenge)
 
 
+def test_canonical_verification_hash_is_deterministic_and_binds_every_field():
+    key = PrivateKey()
+    other_key = PrivateKey()
+    verification = VerifiedStepUp(
+        True,
+        StepUpReason.VERIFIED,
+        "0123456789abcdef0123456789abcdef",
+        actor(key),
+        "client-1",
+        "token-1",
+        "covenant_draft_create",
+        None,
+        "1" * 64,
+        NOW,
+        NOW + timedelta(minutes=5),
+        NOW + timedelta(seconds=1),
+        NOW + timedelta(seconds=1),
+    )
+    digest = step_up_verification_sha256(verification)
+    assert digest == step_up_verification_sha256(verification)
+    assert len(digest) == 64 and digest == digest.lower()
+    assert canonical_verification_bytes(verification) == canonical_verification_bytes(verification)
+    changes = (
+        {"challenge_id": "1123456789abcdef0123456789abcdef"},
+        {"actor_pubkey": actor(other_key)},
+        {"oauth_client_id": "client-2"},
+        {"token_jti": "token-2"},
+        {"action": "covenant_draft_read_self"},
+        {"resource_id": "resource"},
+        {"request_sha256": "2" * 64},
+        {"issued_at": NOW - timedelta(seconds=1)},
+        {"expires_at": NOW + timedelta(minutes=6)},
+        {
+            "verified_at": NOW + timedelta(seconds=2),
+            "consumed_at": NOW + timedelta(seconds=2),
+        },
+    )
+    for changed in changes:
+        assert step_up_verification_sha256(replace(verification, **changed)) != digest
+
+
+def test_canonical_verification_rejects_failed_inconsistent_and_reconstructed_values():
+    valid = VerifiedStepUp(
+        True,
+        StepUpReason.VERIFIED,
+        "0123456789abcdef0123456789abcdef",
+        actor(PrivateKey()),
+        "client",
+        "jti",
+        "covenant_draft_create",
+        None,
+        "1" * 64,
+        NOW,
+        NOW + timedelta(minutes=5),
+        NOW,
+        NOW,
+    )
+    invalid = (
+        replace(valid, verified=False),
+        replace(valid, reason_code=StepUpReason.INVALID_SIGNATURE),
+        replace(valid, verified_at=NOW + timedelta(seconds=1)),
+        replace(valid, verification_schema="legacy"),
+        replace(valid, evidence_source="reconstructed"),
+        replace(valid, challenge_id=None),
+    )
+    for value in invalid:
+        with pytest.raises(ValueError, match="invalid verification"):
+            canonical_verification_bytes(value)
+
+    class Reconstructed(VerifiedStepUp):
+        pass
+
+    with pytest.raises(ValueError, match="invalid verification"):
+        canonical_verification_bytes(Reconstructed(**vars(valid)))
+
+
 def test_real_schnorr_proof_verifies_and_consumes_once():
     repository = MemoryRepository()
     service = ActionStepUpService(repository, clock=lambda: NOW)
@@ -334,7 +412,9 @@ def test_exact_issued_at_boundary_is_valid_and_consumed():
     key = PrivateKey()
     challenge = issue(ActionStepUpService(repository, clock=lambda: NOW), key)
 
-    result = verify(ActionStepUpService(repository, clock=lambda: challenge.issued_at), challenge, proof(challenge, key))
+    result = verify(
+        ActionStepUpService(repository, clock=lambda: challenge.issued_at), challenge, proof(challenge, key)
+    )
 
     assert result.reason_code is StepUpReason.VERIFIED
     assert result.consumed_at == challenge.issued_at
