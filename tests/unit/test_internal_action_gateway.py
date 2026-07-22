@@ -16,6 +16,8 @@ from app.services.action_authorization import (
     ActionRequest,
 )
 from app.services.action_receipt import parse_action_receipt, verify_action_receipt
+from app.services.action_step_up import PROOF_SCHEMA, SIGNATURE_FORMAT, StepUpProof, StepUpReason, VerifiedStepUp
+from app.services.action_step_up_operation_storage import AtomicStepUpReserveResult, AtomicStepUpReserveStatus
 from app.services.current_entitlement import EntitlementDecision, EntitlementDenied, EntitlementUnavailable
 from app.services.internal_action_gateway import (
     GatewayReason,
@@ -114,6 +116,36 @@ class FakeRepository:
         return deepcopy(row) if row else None
 
 
+class FakeAtomicRepository:
+    def __init__(self, operation_repository, status=AtomicStepUpReserveStatus.NEW):
+        self.operation_repository = operation_repository
+        self.status = status
+        self.calls = []
+        self.verification_hash = "a" * 64
+
+    def reserve_with_step_up(self, reservation, proof, consumed_at):
+        self.calls.append((reservation, proof, consumed_at))
+        if self.status is AtomicStepUpReserveStatus.STEP_UP_REJECTED:
+            return AtomicStepUpReserveResult(
+                self.status,
+                None,
+                VerifiedStepUp(False, StepUpReason.INVALID_SIGNATURE, challenge_id=proof.challenge_id),
+            )
+        ordinary = self.operation_repository.reserve(reservation)
+        operation = ordinary.operation
+        if self.status is AtomicStepUpReserveStatus.IDEMPOTENCY_CONFLICT:
+            return AtomicStepUpReserveResult(self.status, operation, None)
+        if self.status is AtomicStepUpReserveStatus.REPLAY:
+            return AtomicStepUpReserveResult(self.status, operation, None)
+        operation.step_up_verification_sha256 = self.verification_hash
+        self.operation_repository.operations[operation.operation_id].step_up_verification_sha256 = self.verification_hash
+        return AtomicStepUpReserveResult(
+            self.status,
+            operation,
+            VerifiedStepUp(True, StepUpReason.VERIFIED, challenge_id=proof.challenge_id),
+        )
+
+
 class Clock:
     def __init__(self):
         self.value = NOW
@@ -146,7 +178,10 @@ def invocation(**changes):
     return InternalActionInvocation(**values)
 
 
-def make_gateway(*, repo=None, validator=None, resolver=None, handler=None, signer=None, handlers=None, ownership=None):
+def make_gateway(
+    *, repo=None, validator=None, resolver=None, handler=None, signer=None, handlers=None,
+    ownership=None, atomic_repo=None, handler_action=ActionName.SELF_READ
+):
     repo = repo or FakeRepository()
     calls = {"handler": 0, "signer": 0}
 
@@ -163,13 +198,32 @@ def make_gateway(*, repo=None, validator=None, resolver=None, handler=None, sign
         bearer_validator=validator or (lambda _: principal()),
         entitlement_resolver=resolver or (lambda _: entitlement()),
         operation_repository=repo,
-        handlers=handlers if handlers is not None else {ActionName.SELF_READ: selected_handler},
+        handlers=handlers if handlers is not None else {handler_action: selected_handler},
         receipt_signer=signer or default_signer,
         signer_public_key=SIGNER_PUBLIC,
         clock=Clock(),
         ownership_resolver=ownership,
+        atomic_step_up_repository=atomic_repo,
     )
     return gateway, repo, calls
+
+
+def step_up_proof(challenge_id="1234567890abcdef1234567890abcdef"):
+    return StepUpProof(PROOF_SCHEMA, challenge_id, "00" * 64, SIGNATURE_FORMAT)
+
+
+def make_step_up_gateway(*, repo=None, atomic_repo=None, validator=None, resolver=None, handler=None):
+    repo = repo or FakeRepository()
+    atomic_repo = atomic_repo or FakeAtomicRepository(repo)
+    return make_gateway(
+        repo=repo,
+        atomic_repo=atomic_repo,
+        validator=validator
+        or (lambda _: principal(scopes=frozenset({"covenant:draft:create"}))),
+        resolver=resolver or (lambda _: EntitlementDecision(ACTOR, IdentityClass.FULL, True, "test")),
+        handler=handler,
+        handler_action=ActionName.COVENANT_DRAFT_CREATE,
+    )
 
 
 @pytest.mark.parametrize("case", ["invalid_bearer", "client_mismatch", "denied", "unavailable"])
@@ -443,3 +497,198 @@ def test_registry_is_immutable_and_module_has_no_runtime_or_transport_dependenci
     forbidden = ("current_app", "Blueprint", "@app.route", "mcp", "Bitcoin", "LND", "getenv", "private_key")
     assert not any(value in source for value in forbidden)
     assert "handler(invocation.request_payload)" not in source
+
+
+def test_step_up_dependencies_and_proof_fail_closed_without_persistence():
+    request = invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=step_up_proof())
+    no_repository, repo, _ = make_gateway(
+        validator=lambda _: principal(scopes=frozenset({"covenant:draft:create"})),
+        resolver=lambda _: EntitlementDecision(ACTOR, IdentityClass.FULL, True, "test"),
+        handlers={ActionName.COVENANT_DRAFT_CREATE: lambda _: HandlerResult.completed({})},
+    )
+    assert no_repository.invoke(request).reason is GatewayReason.GATEWAY_ACTION_UNAVAILABLE
+    atomic = FakeAtomicRepository(repo)
+    no_handler, _, _ = make_gateway(
+        repo=repo,
+        atomic_repo=atomic,
+        validator=lambda _: principal(scopes=frozenset({"covenant:draft:create"})),
+        resolver=lambda _: EntitlementDecision(ACTOR, IdentityClass.FULL, True, "test"),
+        handlers={},
+    )
+    assert no_handler.invoke(request).reason is GatewayReason.GATEWAY_ACTION_UNAVAILABLE
+    gateway, repo, _ = make_step_up_gateway(repo=repo, atomic_repo=atomic)
+    assert gateway.invoke(invocation(action=ActionName.COVENANT_DRAFT_CREATE)).reason is GatewayReason.STEP_UP_REJECTED
+    assert (
+        gateway.invoke(invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof={"proof": True})).reason
+        is GatewayReason.STEP_UP_REJECTED
+    )
+    assert atomic.calls == [] and repo.reservations == []
+    assert (
+        gateway.invoke(
+            invocation(
+                action=ActionName.COVENANT_DRAFT_CREATE,
+                step_up_proof=step_up_proof(),
+                request_payload={"bad": object()},
+            )
+        ).reason
+        is GatewayReason.INVALID_REQUEST
+    )
+    assert atomic.calls == [] and repo.reservations == []
+
+
+@pytest.mark.parametrize(
+    ("validator", "resolver", "expected"),
+    [
+        (
+            lambda _: (_ for _ in ()).throw(BearerValidationError("secret")),
+            None,
+            GatewayReason.INVALID_TOKEN,
+        ),
+        (lambda _: principal(client="other"), None, GatewayReason.INVALID_TOKEN),
+        (None, lambda _: (_ for _ in ()).throw(EntitlementDenied("secret")), GatewayReason.ENTITLEMENT_DENIED),
+        (
+            None,
+            lambda _: (_ for _ in ()).throw(EntitlementUnavailable("secret")),
+            GatewayReason.ENTITLEMENT_UNAVAILABLE,
+        ),
+    ],
+)
+def test_step_up_authentication_and_entitlement_precede_atomic_reservation(validator, resolver, expected):
+    repo = FakeRepository()
+    atomic = FakeAtomicRepository(repo)
+    gateway, _, _ = make_step_up_gateway(repo=repo, atomic_repo=atomic, validator=validator, resolver=resolver)
+    result = gateway.invoke(
+        invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=step_up_proof())
+    )
+    assert result.reason is expected
+    assert atomic.calls == [] and repo.reservations == []
+
+
+@pytest.mark.parametrize(
+    ("identity", "relation", "scopes"),
+    [
+        (IdentityClass.LIMITED, False, frozenset({"covenant:draft:create"})),
+        (IdentityClass.FULL, False, frozenset({"covenant:draft:create"})),
+        (IdentityClass.FULL, True, frozenset()),
+    ],
+)
+def test_step_up_ordinary_policy_denials_precede_atomic_reservation(identity, relation, scopes):
+    repo = FakeRepository()
+    atomic = FakeAtomicRepository(repo)
+    gateway, _, _ = make_step_up_gateway(
+        repo=repo,
+        atomic_repo=atomic,
+        validator=lambda _: principal(scopes=scopes),
+        resolver=lambda _: EntitlementDecision(ACTOR, identity, relation, "test"),
+    )
+    result = gateway.invoke(
+        invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=step_up_proof())
+    )
+    assert result.reason is GatewayReason.AUTHORIZATION_DENIED
+    assert atomic.calls == [] and repo.reservations == []
+
+
+def test_atomic_new_dispatches_once_and_receipts_use_persisted_step_up_evidence():
+    repo = FakeRepository()
+    atomic = FakeAtomicRepository(repo)
+    gateway, _, calls = make_step_up_gateway(repo=repo, atomic_repo=atomic)
+    proof = step_up_proof()
+    result = gateway.invoke(
+        invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=proof)
+    )
+    receipt = parse_action_receipt(result.receipt)
+    assert result.reason is GatewayReason.COMPLETED and calls["handler"] == 1
+    assert len(atomic.calls) == 1 and repo.reservations[0].step_up_verification_sha256 is None
+    assert repo.reservations[0].step_up_challenge_id == proof.challenge_id
+    assert receipt["step_up_challenge_id"] == repo.operations[result.operation_id].step_up_challenge_id
+    assert receipt["step_up_verification_sha256"] == atomic.verification_hash
+    atomic.status = AtomicStepUpReserveStatus.REPLAY
+    replay = gateway.invoke(
+        invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=proof)
+    )
+    assert replay.reason is GatewayReason.REPLAY and replay.receipt == result.receipt
+    assert calls["handler"] == 1
+
+
+@pytest.mark.parametrize(
+    ("state", "reason"),
+    [
+        ("reserved", GatewayReason.OPERATION_IN_PROGRESS),
+        ("executing", GatewayReason.OPERATION_IN_PROGRESS),
+        ("indeterminate", GatewayReason.OPERATION_INDETERMINATE),
+    ],
+)
+def test_atomic_replay_nonterminal_states_never_dispatch(state, reason):
+    repo = FakeRepository()
+    atomic = FakeAtomicRepository(repo)
+    gateway, _, calls = make_step_up_gateway(repo=repo, atomic_repo=atomic)
+    request = invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=step_up_proof())
+    completed = gateway.invoke(request)
+    row = repo.operations[completed.operation_id]
+    row.state = state
+    row.receipt_json = None
+    atomic.status = AtomicStepUpReserveStatus.REPLAY
+    calls["handler"] = calls["signer"] = 0
+    result = gateway.invoke(request)
+    assert result.reason is reason
+    assert calls == {"handler": 0, "signer": 0}
+
+
+def test_atomic_explicit_failure_receipt_uses_persisted_step_up_evidence():
+    gateway, _, _ = make_step_up_gateway(handler=lambda _: HandlerResult.failed("rejected_by_handler"))
+    result = gateway.invoke(
+        invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=step_up_proof())
+    )
+    receipt = parse_action_receipt(result.receipt)
+    assert result.reason is GatewayReason.FAILED
+    assert receipt["step_up_challenge_id"] == step_up_proof().challenge_id
+    assert receipt["step_up_verification_sha256"] == "a" * 64
+
+
+@pytest.mark.parametrize(
+    ("status", "reason"),
+    [
+        (AtomicStepUpReserveStatus.IDEMPOTENCY_CONFLICT, GatewayReason.IDEMPOTENCY_CONFLICT),
+        (AtomicStepUpReserveStatus.STEP_UP_REJECTED, GatewayReason.STEP_UP_REJECTED),
+    ],
+)
+def test_atomic_non_new_results_never_dispatch(status, reason):
+    repo = FakeRepository()
+    atomic = FakeAtomicRepository(repo, status)
+    gateway, _, calls = make_step_up_gateway(repo=repo, atomic_repo=atomic)
+    result = gateway.invoke(
+        invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=step_up_proof())
+    )
+    assert result.reason is reason and calls["handler"] == 0 and calls["signer"] == 0
+
+
+def test_atomic_exception_and_malformed_result_fail_closed_without_dispatch():
+    class BrokenAtomic:
+        def __init__(self, result):
+            self.result = result
+
+        def reserve_with_step_up(self, reservation, proof, consumed_at):
+            if isinstance(self.result, Exception):
+                raise self.result
+            return self.result
+
+    for atomic in (BrokenAtomic(RuntimeError("database detail")), BrokenAtomic(SimpleNamespace(status="new"))):
+        gateway, repo, calls = make_step_up_gateway(atomic_repo=atomic)
+        result = gateway.invoke(
+            invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=step_up_proof())
+        )
+        assert result.reason is GatewayReason.STORAGE_UNAVAILABLE
+        assert calls["handler"] == 0 and calls["signer"] == 0 and repo.reservations == []
+
+
+def test_ordinary_actions_never_use_atomic_repository_and_receipt_evidence_remains_null():
+    class ForbiddenAtomic:
+        def reserve_with_step_up(self, *args):
+            raise AssertionError("ordinary action touched atomic repository")
+
+    gateway, repo, _ = make_gateway(atomic_repo=ForbiddenAtomic())
+    result = gateway.invoke(invocation())
+    receipt = parse_action_receipt(result.receipt)
+    assert result.reason is GatewayReason.COMPLETED and len(repo.reservations) == 1
+    assert receipt["step_up_challenge_id"] is None
+    assert receipt["step_up_verification_sha256"] is None

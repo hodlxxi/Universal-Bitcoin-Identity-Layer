@@ -30,6 +30,11 @@ from app.services.action_idempotency import (
 )
 from app.services.action_operation_storage import Reservation, stored_receipt_bytes
 from app.services.action_receipt import ActionReceiptError, canonical_timestamp, create_action_receipt
+from app.services.action_step_up import StepUpProof
+from app.services.action_step_up_operation_storage import (
+    AtomicStepUpReserveResult,
+    AtomicStepUpReserveStatus,
+)
 from app.services.current_entitlement import (
     CurrentEntitlementResolver,
     EntitlementDecision,
@@ -45,7 +50,9 @@ MAX_RESOURCE_ID_LENGTH = 256
 MAX_FAILURE_CODE_LENGTH = 64
 _SAFE_IDENTIFIER = re.compile(r"^[\x21-\x7e]+$")
 _SAFE_FAILURE = re.compile(r"^[a-z0-9][a-z0-9_.-]*$")
-_ELIGIBLE_ACTIONS = frozenset({ActionName.SELF_READ, ActionName.JOB_CREATE})
+_ELIGIBLE_ACTIONS = frozenset(
+    {ActionName.SELF_READ, ActionName.JOB_CREATE, ActionName.COVENANT_DRAFT_CREATE}
+)
 
 
 class GatewayReason(str, Enum):
@@ -60,6 +67,7 @@ class GatewayReason(str, Enum):
     GATEWAY_ACTION_UNAVAILABLE = "gateway_action_unavailable"
     OWNERSHIP_UNAVAILABLE = "ownership_unavailable"
     IDEMPOTENCY_CONFLICT = "idempotency_conflict"
+    STEP_UP_REJECTED = "step_up_rejected"
     OPERATION_IN_PROGRESS = "operation_in_progress"
     OPERATION_INDETERMINATE = "operation_indeterminate"
     STORAGE_UNAVAILABLE = "storage_unavailable"
@@ -116,6 +124,15 @@ class OperationRepository(Protocol):
     def finalize_failed(self, operation_id: str, receipt: dict) -> bool: ...
     def mark_indeterminate(self, operation_id: str, updated_at: datetime) -> bool: ...
     def get_by_operation_id(self, operation_id: str): ...
+
+
+class AtomicStepUpOperationRepository(Protocol):
+    def reserve_with_step_up(
+        self,
+        reservation: Reservation,
+        proof: StepUpProof,
+        consumed_at: datetime,
+    ) -> AtomicStepUpReserveResult: ...
 
 
 BearerValidator = Callable[[str], BearerPrincipal]
@@ -202,6 +219,7 @@ class InternalActionGateway:
         signer_public_key: str,
         clock: Callable[[], datetime],
         ownership_resolver: OwnershipResolver | None = None,
+        atomic_step_up_repository: AtomicStepUpOperationRepository | None = None,
     ):
         normalized: dict[ActionName, ActionHandler] = {}
         for key, handler in handlers.items():
@@ -216,6 +234,7 @@ class InternalActionGateway:
         self._signer_public_key = signer_public_key
         self._clock = clock
         self._ownership_resolver = ownership_resolver
+        self._atomic_step_up_repository = atomic_step_up_repository
 
     def invoke(self, invocation: InternalActionInvocation) -> GatewayResult:
         try:
@@ -240,9 +259,13 @@ class InternalActionGateway:
         entitlement = entitlement_result
 
         requirement = ACTION_REQUIREMENTS[action]
+        handler = self._handlers.get(action)
         if requirement.step_up_required:
-            return GatewayResult(GatewayReason.GATEWAY_ACTION_UNAVAILABLE)
-        if IdentityClass.LIMITED not in requirement.allowed_identities or requirement.current_full_relation_required:
+            if action not in _ELIGIBLE_ACTIONS or handler is None or self._atomic_step_up_repository is None:
+                return GatewayResult(GatewayReason.GATEWAY_ACTION_UNAVAILABLE)
+            if type(invocation.step_up_proof) is not StepUpProof:
+                return GatewayResult(GatewayReason.STEP_UP_REJECTED)
+        elif IdentityClass.LIMITED not in requirement.allowed_identities or requirement.current_full_relation_required:
             return GatewayResult(GatewayReason.GATEWAY_ACTION_UNAVAILABLE)
         owner = None
         if requirement.ownership_required:
@@ -254,12 +277,16 @@ class InternalActionGateway:
                 return GatewayResult(GatewayReason.OWNERSHIP_UNAVAILABLE)
             if owner is None:
                 return GatewayResult(GatewayReason.OWNERSHIP_UNAVAILABLE)
-        handler = self._handlers.get(action)
         if action not in _ELIGIBLE_ACTIONS or handler is None:
             return GatewayResult(GatewayReason.GATEWAY_ACTION_UNAVAILABLE)
-
         decision = authorize_action(
-            ActionRequest(principal.subject, action, principal.scopes, owner, step_up_verified=False),
+            ActionRequest(
+                principal.subject,
+                action,
+                principal.scopes,
+                owner,
+                step_up_verified=requirement.step_up_required,
+            ),
             CurrentEntitlementResolver(entitlement),
         )
         if not decision.allowed:
@@ -269,6 +296,9 @@ class InternalActionGateway:
         decision_hash = authorization_decision_sha256(decision)
         try:
             reserved_at = _utc(self._clock())
+            step_up_challenge_id = (
+                invocation.step_up_proof.challenge_id if requirement.step_up_required else None
+            )
             reservation = Reservation(
                 contract_version=OPERATION_CONTRACT_VERSION,
                 actor_pubkey=principal.subject,
@@ -287,25 +317,46 @@ class InternalActionGateway:
                     action=action.value,
                     resource_id=resource_id,
                     request_sha256=request_hash,
-                    step_up_challenge_id=None,
+                    step_up_challenge_id=step_up_challenge_id,
                 ),
-                step_up_challenge_id=None,
+                step_up_challenge_id=step_up_challenge_id,
                 step_up_verification_sha256=None,
                 policy_version=decision.policy_version,
                 authorization_decision_sha256=decision_hash,
                 reserved_at=reserved_at,
             )
-            reserve_result = self._repository.reserve(reservation)
+            if requirement.step_up_required:
+                reserve_result = self._atomic_step_up_repository.reserve_with_step_up(
+                    reservation,
+                    invocation.step_up_proof,
+                    reserved_at,
+                )
+            else:
+                reserve_result = self._repository.reserve(reservation)
         except Exception:
             return GatewayResult(GatewayReason.STORAGE_UNAVAILABLE)
 
+        if requirement.step_up_required:
+            if type(reserve_result) is not AtomicStepUpReserveResult:
+                return GatewayResult(GatewayReason.STORAGE_UNAVAILABLE)
+            if reserve_result.status is AtomicStepUpReserveStatus.STEP_UP_REJECTED:
+                return GatewayResult(GatewayReason.STEP_UP_REJECTED)
+            if reserve_result.status is AtomicStepUpReserveStatus.IDEMPOTENCY_CONFLICT:
+                return GatewayResult(GatewayReason.IDEMPOTENCY_CONFLICT)
+            if reserve_result.status is AtomicStepUpReserveStatus.REPLAY:
+                return self._replay(reserve_result.operation)
+            if reserve_result.status is not AtomicStepUpReserveStatus.NEW:
+                return GatewayResult(GatewayReason.STORAGE_UNAVAILABLE)
+        else:
+            if reserve_result.status == "idempotency_conflict":
+                return GatewayResult(GatewayReason.IDEMPOTENCY_CONFLICT)
+            if reserve_result.status != "new":
+                if reserve_result.operation is None:
+                    return GatewayResult(GatewayReason.STORAGE_UNAVAILABLE)
+                return self._replay(reserve_result.operation)
         operation = reserve_result.operation
         if operation is None:
             return GatewayResult(GatewayReason.STORAGE_UNAVAILABLE)
-        if reserve_result.status == "idempotency_conflict":
-            return GatewayResult(GatewayReason.IDEMPOTENCY_CONFLICT)
-        if reserve_result.status != "new":
-            return self._replay(operation)
 
         try:
             started_at = _utc(self._clock())
@@ -339,8 +390,8 @@ class InternalActionGateway:
                 request_sha256=request_hash,
                 policy_version=decision.policy_version,
                 authorization_decision_sha256=decision_hash,
-                step_up_challenge_id=None,
-                step_up_verification_sha256=None,
+                step_up_challenge_id=operation.step_up_challenge_id,
+                step_up_verification_sha256=operation.step_up_verification_sha256,
                 state=handler_result.state,
                 started_at=canonical_timestamp(started_at),
                 completed_at=canonical_timestamp(completed_at),
