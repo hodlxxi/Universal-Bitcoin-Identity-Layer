@@ -1,8 +1,17 @@
 # Canonical Mirrored Covenant Pair Validator V1
 
+> **Status: IMPLEMENTED_DORMANT.** Synchronization basis: Canon commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`; runtime base `7df976c59742aa84fd79cfd41f12a34a33915259`.
+
 This pure-domain validator parses authorization-grade raw Bitcoin Script hex. One leg is
 not one mirrored pair: in a directed leg the receiver has the earlier unilateral CLTV
 path, the sender has the later fallback, and direction is sender → receiver.
+
+For `legacy_777` Human Membership V1, sponsor -> child means sponsor is sender,
+child is receiver, child/receiver is earlier, and sponsor/sender is later. The
+mirrored child -> sponsor leg makes child the sender and sponsor the receiver,
+with sponsor/receiver earlier and child/sender later. `current_144` is separate
+operator-agent delegation/continuity; profiles must not be mixed in a human
+lineage.
 
 The leg schema is `hodlxxi.mirrored_covenant_leg.v1`; the pair schema is
 `hodlxxi.mirrored_covenant_pair.v1`; the validator version is
@@ -42,6 +51,9 @@ full pair revalidation.
 The one declared, unfunded operator-agent script is one leg, not a pair. An unfunded
 declaration is not funding; put exactly: **unfunded declaration is not funding**.
 Script validation is not UTXO observation, and **pair validation is not entitlement**.
+Pair validation is also not admission by itself: exact funded outpoint binding,
+an effective genesis record, unique ancestry, and current lineage state are
+separate requirements. FULL/LIMITED are not CRT membership states.
 In particular this validator does not:
 
 - inspect blockchain state, Bitcoin Core, explorers, wallets, descriptors, balances,
@@ -56,3 +68,7 @@ In particular this validator does not:
 Trusted registration and outpoint binding belong to future PR6.8. That later boundary
 may connect exact declarations to trusted observations; this validator deliberately
 makes no claim about funding, UTXOs, balances, or entitlement.
+
+See [CRT Covenant Profile V1](CRT_COVENANT_PROFILE_V1.md), [CRT Runtime
+Bridge](CRT_RUNTIME_BRIDGE.md), and [CRT Membership Implementation
+Status](CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md).

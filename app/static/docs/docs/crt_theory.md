@@ -1,5 +1,7 @@
 # Cryptographic Reciprocity Theory (CRT)
 
+> **Status: HISTORICAL / CONCEPTUAL.** This page is superseded for normative CRT membership, admission, cascade, covenant-profile, and agent-membership semantics by the merged CRT Canon in `hodlxxi/hodlxxi-cryptographic-reciprocity` at commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`. Runtime inventory basis: `7df976c59742aa84fd79cfd41f12a34a33915259`. This page is not runtime authorization documentation and must not be used to infer FULL, LIMITED, membership, sponsor status, or production enforcement. FULL/LIMITED are not CRT membership states. Repository documentation paths: [`docs/CRT_RUNTIME_BRIDGE.md`](/docs/CRT_RUNTIME_BRIDGE.md), [`docs/CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md`](/docs/CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md), and [`docs/CRT_COVENANT_PROFILE_V1.md`](/docs/CRT_COVENANT_PROFILE_V1.md), which distinguish human `legacy_777` from operator-agent `current_144`.
+
 Cryptographic Reciprocity Theory (CRT) is a framework for constructing systems in which cooperation emerges from rational self-interest over extended time horizons.
 
 This document describes the theory without philosophical interpretation.
