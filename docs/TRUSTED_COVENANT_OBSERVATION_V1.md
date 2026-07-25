@@ -2,12 +2,12 @@
 
 ## Status and boundary
 
-> **Status: IMPLEMENTED_DORMANT.** Synchronization basis: Canon commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`; runtime base `7df976c59742aa84fd79cfd41f12a34a33915259`.
+> **Status: IMPLEMENTED_DORMANT.** Canon basis: `152c87522a7d89cd5c0e7014d7915a19bf074e1a`; PR6.8 implementation branch base: `fe333cdb5068a73b4dc57b875e1b0223b01855f7`.
 
-This is a dormant adapter and evidence materializer. Nothing registers trusted
-outpoints, invokes the adapter automatically, or composes it into production.
-Future trusted-outpoint registration and production dependency composition
-remain outside this PR and must be explicit, separately reviewed work. Future
+This is a dormant adapter and evidence materializer. PR6.8 now provides a
+dormant, independently constructible exact registration source, but nothing
+invokes the adapter automatically or composes either layer into production.
+Production dependency composition remains explicit, separately reviewed work. Future
 production entitlement-resolver wiring also remains outside this PR. In
 particular, the public operator-agent covenant in the `unfunded_declared` state
 is not registered and cannot grant FULL.
@@ -90,14 +90,17 @@ not grant FULL before `observed_at`, because the evidence remains not yet active
 until the current time reaches the preserved observation time. The source
 evidence hash is copied unchanged from the pure evaluator's canonical decision.
 
-PR6.8 trusted registration and exact outpoint binding is the next boundary. It
+PR6.8 trusted registration and exact outpoint binding is IMPLEMENTED_DORMANT. Only
+active registrations can materialize definitions; lifecycle transition
+orchestration is not implemented. It
 does not complete genesis, admission, lineage, membership-state evaluation, or
 authorization enforcement. Exact registration/outpoint binding alone also does
 not fix PR6.5's amount-policy mismatch. A future admission layer must enforce
 exact equality independently, or the relation policy must be separately revised
 and reviewed. See [CRT Runtime Bridge](CRT_RUNTIME_BRIDGE.md),
 [CRT Membership Implementation Status](CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md),
-and [CRT Covenant Profile V1](CRT_COVENANT_PROFILE_V1.md).
+[CRT Covenant Profile V1](CRT_COVENANT_PROFILE_V1.md), and
+[Trusted Covenant Registration V1](TRUSTED_COVENANT_REGISTRATION_V1.md).
 
 ## Non-claims
 

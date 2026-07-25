@@ -624,6 +624,166 @@ class CurrentEntitlementEvidence(Base):
     )
 
 
+class TrustedCovenantRegistration(Base):
+    """Dormant append-only trusted binding for one validated mirrored pair."""
+
+    __tablename__ = "trusted_covenant_registrations"
+
+    registration_id = Column(String(36), primary_key=True)
+    schema = Column(String(48), nullable=False)
+    registration_version = Column(String(56), nullable=False)
+    network = Column(String(7), nullable=False)
+    pair_sha256 = Column(String(64), nullable=False)
+    registration_sha256 = Column(String(64), nullable=False, unique=True)
+    validator_version = Column(String(56), nullable=False)
+    subject_pubkey = Column(String(66), nullable=False)
+    subject_xonly_pubkey = Column(String(64), nullable=False)
+    counterparty_pubkey = Column(String(66), nullable=False)
+    counterparty_xonly_pubkey = Column(String(64), nullable=False)
+    template_family = Column(String(25), nullable=False)
+    delta_profile = Column(String(11), nullable=False)
+    delta_blocks = Column(Integer, nullable=False)
+    lifecycle_state = Column(String(10), nullable=False)
+    registered_at = Column(DateTime(timezone=True), nullable=False)
+    lifecycle_changed_at = Column(DateTime(timezone=True), nullable=False)
+    superseded_by_registration_id = Column(String(36))
+    earlier_leg_script_hex = Column(Text, nullable=False)
+    later_leg_script_hex = Column(Text, nullable=False)
+
+    outpoints = relationship(
+        "TrustedCovenantRegisteredOutpoint",
+        back_populates="registration",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    __table_args__ = (
+        CheckConstraint("length(registration_id) = 36 AND registration_id = lower(registration_id)", name="ck_trusted_registration_id_canonical"),
+        CheckConstraint("schema = 'hodlxxi.trusted_covenant_registration.v1'", name="ck_trusted_registration_schema"),
+        CheckConstraint(
+            "registration_version = 'hodlxxi.trusted_covenant_registration_service.v1'",
+            name="ck_trusted_registration_version",
+        ),
+        CheckConstraint("network = 'bitcoin'", name="ck_trusted_registration_network"),
+        CheckConstraint("length(pair_sha256) = 64 AND pair_sha256 = lower(pair_sha256)", name="ck_trusted_registration_pair_hash"),
+        CheckConstraint(
+            "length(registration_sha256) = 64 AND registration_sha256 = lower(registration_sha256)",
+            name="ck_trusted_registration_hash",
+        ),
+        CheckConstraint(
+            "validator_version = 'hodlxxi.mirrored_covenant_pair_validator.v1'",
+            name="ck_trusted_registration_validator",
+        ),
+        CheckConstraint("length(subject_pubkey) = 66 AND subject_pubkey = lower(subject_pubkey)", name="ck_trusted_registration_subject"),
+        CheckConstraint(
+            "length(subject_xonly_pubkey) = 64 AND subject_xonly_pubkey = lower(subject_xonly_pubkey)",
+            name="ck_trusted_registration_subject_xonly",
+        ),
+        CheckConstraint(
+            "length(counterparty_pubkey) = 66 AND counterparty_pubkey = lower(counterparty_pubkey)",
+            name="ck_trusted_registration_counterparty",
+        ),
+        CheckConstraint(
+            "length(counterparty_xonly_pubkey) = 64 AND counterparty_xonly_pubkey = lower(counterparty_xonly_pubkey)",
+            name="ck_trusted_registration_counterparty_xonly",
+        ),
+        CheckConstraint(
+            "subject_pubkey != counterparty_pubkey AND subject_xonly_pubkey != counterparty_xonly_pubkey",
+            name="ck_trusted_registration_distinct_participants",
+        ),
+        CheckConstraint(
+            "template_family IN ('cltv_only','cooperative_2_of_2_cltv')",
+            name="ck_trusted_registration_family",
+        ),
+        CheckConstraint(
+            "(delta_profile = 'current_144' AND delta_blocks = 144) OR "
+            "(delta_profile = 'legacy_777' AND delta_blocks = 777)",
+            name="ck_trusted_registration_profile_delta",
+        ),
+        CheckConstraint(
+            "lifecycle_state IN ('active','revoked','superseded','disputed')",
+            name="ck_trusted_registration_lifecycle",
+        ),
+        CheckConstraint(
+            "lifecycle_changed_at >= registered_at",
+            name="ck_trusted_registration_lifecycle_time",
+        ),
+        CheckConstraint(
+            "(lifecycle_state = 'superseded' AND superseded_by_registration_id IS NOT NULL) OR "
+            "(lifecycle_state != 'superseded' AND superseded_by_registration_id IS NULL)",
+            name="ck_trusted_registration_superseded_consistency",
+        ),
+        CheckConstraint(
+            "superseded_by_registration_id IS NULL OR "
+            "(length(superseded_by_registration_id) = 36 AND superseded_by_registration_id = lower(superseded_by_registration_id) "
+            "AND superseded_by_registration_id != registration_id)",
+            name="ck_trusted_registration_superseded_id",
+        ),
+        CheckConstraint(
+            "length(earlier_leg_script_hex) > 0 AND length(earlier_leg_script_hex) % 2 = 0 "
+            "AND earlier_leg_script_hex = lower(earlier_leg_script_hex)",
+            name="ck_trusted_registration_earlier_script",
+        ),
+        CheckConstraint(
+            "length(later_leg_script_hex) > 0 AND length(later_leg_script_hex) % 2 = 0 "
+            "AND later_leg_script_hex = lower(later_leg_script_hex)",
+            name="ck_trusted_registration_later_script",
+        ),
+        CheckConstraint(
+            "earlier_leg_script_hex != later_leg_script_hex",
+            name="ck_trusted_registration_distinct_scripts",
+        ),
+        Index("idx_trusted_registration_pair", "pair_sha256"),
+        Index("idx_trusted_registration_lifecycle", "lifecycle_state"),
+        Index("idx_trusted_registration_subject", "subject_xonly_pubkey"),
+        Index("idx_trusted_registration_counterparty", "counterparty_xonly_pubkey"),
+    )
+
+
+class TrustedCovenantRegisteredOutpoint(Base):
+    """One subject-relative exact outpoint binding owned by a registration."""
+
+    __tablename__ = "trusted_covenant_registered_outpoints"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    registration_id = Column(
+        String(36),
+        ForeignKey("trusted_covenant_registrations.registration_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    direction = Column(String(8), nullable=False)
+    txid = Column(String(64), nullable=False)
+    vout = Column(Integer, nullable=False)
+    amount_sats = Column(BigInteger, nullable=False)
+    witness_script_sha256 = Column(String(64), nullable=False)
+    descriptor_sha256 = Column(String(64))
+
+    registration = relationship("TrustedCovenantRegistration", back_populates="outpoints")
+
+    __table_args__ = (
+        UniqueConstraint("registration_id", "direction", name="uq_trusted_outpoint_registration_direction"),
+        UniqueConstraint("txid", "vout", name="uq_trusted_outpoint_global_identity"),
+        CheckConstraint("direction IN ('incoming','outgoing')", name="ck_trusted_outpoint_direction"),
+        CheckConstraint("length(txid) = 64 AND txid = lower(txid)", name="ck_trusted_outpoint_txid"),
+        CheckConstraint("vout >= 0 AND vout <= 4294967295", name="ck_trusted_outpoint_vout"),
+        CheckConstraint(
+            "amount_sats > 0 AND amount_sats <= 2100000000000000",
+            name="ck_trusted_outpoint_amount",
+        ),
+        CheckConstraint(
+            "length(witness_script_sha256) = 64 AND witness_script_sha256 = lower(witness_script_sha256)",
+            name="ck_trusted_outpoint_witness_script_hash",
+        ),
+        CheckConstraint(
+            "descriptor_sha256 IS NULL OR "
+            "(length(descriptor_sha256) = 64 AND descriptor_sha256 = lower(descriptor_sha256))",
+            name="ck_trusted_outpoint_descriptor_hash",
+        ),
+        Index("idx_trusted_outpoint_registration", "registration_id"),
+        Index("idx_trusted_outpoint_identity", "txid", "vout"),
+    )
+
+
 class ActionOperation(Base):
     """Dormant durable reservation and final-receipt state for an action."""
 

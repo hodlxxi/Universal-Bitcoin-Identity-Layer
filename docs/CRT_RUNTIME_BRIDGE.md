@@ -4,7 +4,7 @@
 
 ## Synchronization basis and authority
 
-This bridge synchronizes the normative CRT Canon in `hodlxxi/hodlxxi-cryptographic-reciprocity` at commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a` (merged PR #42) with implementation truth inventoried from this runtime repository at base commit `7df976c59742aa84fd79cfd41f12a34a33915259`.
+This bridge synchronizes the normative CRT Canon in `hodlxxi/hodlxxi-cryptographic-reciprocity` at commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a` (merged PR #42) with PR6.8 implemented from branch base `fe333cdb5068a73b4dc57b875e1b0223b01855f7`. The older commit `7df976c59742aa84fd79cfd41f12a34a33915259` is the active-runtime audit basis, not the PR6.8 source basis.
 
 The authority order is:
 
@@ -17,7 +17,7 @@ The authority order is:
 | Canon claim | Normative subject | Runtime evidence or component | Current implementation status |
 | --- | --- | --- | --- |
 | `CRT-MEMBERSHIP-001` | Current human membership is an active, uniquely rooted evidence state. | Dormant pair relation, observation/materialization, and current-entitlement evidence components. | No CRT membership-state evaluator, lineage evaluator, or authorization mapping is wired. |
-| `CRT-ADMISSION-001` | One human admission edge is an exact funded `legacy_777` mirrored pair. | Dormant strict raw-script pair validator, pure exact-pair relation evaluator, and trusted observation adapter. | Strict components exist but no trusted registration/exact-outpoint binding or admission registry is wired. |
+| `CRT-ADMISSION-001` | One human admission edge is an exact funded `legacy_777` mirrored pair. | Dormant strict raw-script pair validator, PR6.8 exact registration, pure exact-pair relation evaluator, and trusted observation adapter. | Exact binding is implemented dormant, but no admission registry, equality decision, or production wiring exists. |
 | `CRT-CASCADE-001` | Active ancestry is unique, acyclic, rooted at E923, and propagates inactivity. | No runtime cascade component. | Cascade depth, ancestry validation, and descendant propagation are missing. |
 | `CRT-GENESIS-001` | E923 is depth 0 only through an effective canonical genesis record for the named V1 graph. | Public operator continuity declaration is operational evidence only. | No canonical genesis record evaluator is wired; no sponsor or admission edge may be invented for genesis. |
 
@@ -51,7 +51,7 @@ The `current_144` profile is separate operator-agent delegation/continuity evide
 
 ## Current runtime mismatch
 
-At runtime base `7df976c59742aa84fd79cfd41f12a34a33915259`, active legacy paths still derive session FULL/LIMITED in some flows from wallet-wide incoming/outgoing balance ratio, and `SPECIAL_USERS` paths also exist. These are active legacy non-Canon authorization behaviors. Wallet-wide aggregation, balance ratios, session state, and administrator allowlists are not Canon-conformant CRT admission, lineage, or membership proof, and this documentation does not silently relabel them.
+At active-runtime audit basis `7df976c59742aa84fd79cfd41f12a34a33915259`, active legacy paths still derive session FULL/LIMITED in some flows from wallet-wide incoming/outgoing balance ratio, and `SPECIAL_USERS` paths also exist. These are active legacy non-Canon authorization behaviors. Wallet-wide aggregation, balance ratios, session state, and administrator allowlists are not Canon-conformant CRT admission, lineage, or membership proof, and this documentation does not silently relabel them.
 
 ## Dormant strict layers
 
@@ -66,16 +66,21 @@ At runtime base `7df976c59742aa84fd79cfd41f12a34a33915259`, active legacy paths 
   they do not independently repair its amount-policy mismatch.
 - Persisted current entitlement evidence provides a dormant resolver/evidence layer.
 - PR6.7 provides a dormant strict canonical mirrored covenant raw-script validator.
+- PR6.8 provides dormant exact registration and normalized append-only storage.
+  Only active registrations materialize trusted observation definitions.
+  Unequal positive amounts are preserved, so registration is not admission or
+  Canon equality proof. Lifecycle transition orchestration is not implemented.
 
-No trusted registration/outpoint-binding layer currently connects declarations to the adapter. These strict layers are not production enforcement.
-PR6.8 exact registration and outpoint binding alone would not fix the PR6.5
+The registration layer is independently constructible but is not composed into
+the adapter or any production path. These strict layers are not production
+enforcement. PR6.8 exact registration and outpoint binding does not fix the PR6.5
 amount-policy mismatch. A future admission layer must independently enforce exact
 amount equality, or the relation policy must be separately revised and reviewed.
 
 ## Implementation sequence
 
 A. This documentation synchronization.
-B. PR6.8 trusted registration and exact outpoint binding.
+B. PR6.8 trusted registration and exact outpoint binding. (IMPLEMENTED_DORMANT)
 C. Canonical E923 genesis-record publication, lifecycle, and fail-closed evaluation.
 D. Authoritative sponsor/admission registry plus cascade lineage validation and inactivity propagation.
 E. CRT membership-state evaluator.
@@ -97,4 +102,5 @@ This bridge does not assert that Canon membership is implemented, enforced, depl
 - [Trusted Covenant Observation V1](TRUSTED_COVENANT_OBSERVATION_V1.md)
 - [Current Entitlement Evidence V1](CURRENT_ENTITLEMENT_EVIDENCE_V1.md)
 - [Mirrored Covenant Pair V1](MIRRORED_COVENANT_PAIR_V1.md)
+- [Trusted Covenant Registration V1](TRUSTED_COVENANT_REGISTRATION_V1.md)
 - [Operator Continuity E923](OPERATOR_CONTINUITY_E923.md)
