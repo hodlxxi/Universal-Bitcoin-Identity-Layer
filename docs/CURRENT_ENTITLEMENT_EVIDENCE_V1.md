@@ -1,6 +1,10 @@
 # Persisted Current Entitlement Evidence V1
 
+> **Status: IMPLEMENTED_DORMANT.** Synchronization basis: Canon commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`; runtime base `7df976c59742aa84fd79cfd41f12a34a33915259`.
+
 This dormant layer supplies an append-only, read-only-at-resolution source for a subject's current covenant-relation entitlement. It closes the gap between an active local account and authoritative, time-bounded FULL evidence without consulting browser state or a wallet RPC.
+
+FULL/LIMITED in this document are runtime authorization evidence outcomes, not CRT membership states. No Canon membership-state evaluator, lineage evaluator, or Canon-conformant policy mapping is wired. A current FULL evidence record must not be described as proof of CRT membership. The human `legacy_777` and operator-agent `current_144` profiles remain separate.
 
 ## Distinct concepts
 
@@ -17,6 +21,8 @@ Validity starts at `observed_at` and expires exclusively at `valid_until`; windo
 ## Boundary and status
 
 A future offline materializer may verify covenant state and append observations. That verifier is outside this PR. This PR adds no materializer, application-factory construction, route, MCP surface, background job, configuration flag, or production dependency wiring; the resolver is independently constructible and dormant.
+
+See [CRT Runtime Bridge](CRT_RUNTIME_BRIDGE.md) and [CRT Membership Implementation Status](CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md).
 
 ## Non-claims
 

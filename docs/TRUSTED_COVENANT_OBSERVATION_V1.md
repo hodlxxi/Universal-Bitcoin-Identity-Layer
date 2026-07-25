@@ -2,13 +2,26 @@
 
 ## Status and boundary
 
-This is a **dormant** adapter and evidence materializer. Nothing registers trusted
+> **Status: IMPLEMENTED_DORMANT.** Synchronization basis: Canon commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`; runtime base `7df976c59742aa84fd79cfd41f12a34a33915259`.
+
+This is a dormant adapter and evidence materializer. Nothing registers trusted
 outpoints, invokes the adapter automatically, or composes it into production.
 Future trusted-outpoint registration and production dependency composition
 remain outside this PR and must be explicit, separately reviewed work. Future
 production entitlement-resolver wiring also remains outside this PR. In
 particular, the public operator-agent covenant in the `unfunded_declared` state
 is not registered and cannot grant FULL.
+
+Exact UTXO observation is necessary evidence but is not admission, membership,
+lineage, or authorization by itself. Materialized FULL/LIMITED are runtime
+authorization evidence outcomes, not CRT membership states. The `legacy_777`
+human profile and `current_144` operator-agent profile must remain separate.
+The upstream PR6.5 relation boolean uses positive totals plus
+`outgoing_sats >= incoming_sats`, which is broader than Canon V1 admission's
+exact equal-positive-amount rule. A positive decision is not admission,
+membership, or a Canon-conformant equality proof. This adapter and the PR6.6
+materializer preserve that decision; they do not independently repair the
+amount-policy mismatch.
 
 ## exact-outpoint trust model
 
@@ -76,6 +89,15 @@ source observation without changing that observation. Future observations do
 not grant FULL before `observed_at`, because the evidence remains not yet active
 until the current time reaches the preserved observation time. The source
 evidence hash is copied unchanged from the pure evaluator's canonical decision.
+
+PR6.8 trusted registration and exact outpoint binding is the next boundary. It
+does not complete genesis, admission, lineage, membership-state evaluation, or
+authorization enforcement. Exact registration/outpoint binding alone also does
+not fix PR6.5's amount-policy mismatch. A future admission layer must enforce
+exact equality independently, or the relation policy must be separately revised
+and reviewed. See [CRT Runtime Bridge](CRT_RUNTIME_BRIDGE.md),
+[CRT Membership Implementation Status](CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md),
+and [CRT Covenant Profile V1](CRT_COVENANT_PROFILE_V1.md).
 
 ## Non-claims
 

@@ -1,5 +1,14 @@
 # HODLXXI Covenant System
 
+> **Status: HISTORICAL / LEGACY RUNTIME DESCRIPTION — REWRITE REQUIRED.**
+> This page is retained for historical explorer/UI context and is not
+> authoritative current implementation documentation. Individual technical
+> claims require revalidation against active source and live runtime. It is not
+> the normative CRT membership specification and must not be used as
+> production-readiness evidence for CRT admission, lineage, membership, or
+> authorization. See [CRT Runtime Bridge](CRT_RUNTIME_BRIDGE.md) and
+> [CRT Covenant Profile V1](CRT_COVENANT_PROFILE_V1.md).
+
 ## Overview
 
 The HODLXXI Covenant System enables **21-year Bitcoin contracts** using descriptor-based wallets and Bitcoin script covenants. This is a **core feature** that bridges Bitcoin's programmability with long-term trust agreements.
@@ -93,4 +102,7 @@ GET /export_wallet
 
 ---
 
-**Status:** Core feature ✅ Production-ready UI ✅ Active development
+**Status:** This historical explorer/UI description is non-authoritative and
+requires source-by-source revalidation and rewrite. It makes no current
+production-readiness claim and is not evidence for CRT admission, lineage,
+membership-state evaluation, or authorization enforcement.
