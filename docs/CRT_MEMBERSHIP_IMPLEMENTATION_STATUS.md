@@ -11,7 +11,7 @@ The only status terms used here are `IMPLEMENTED_DORMANT`, `ACTIVE_LEGACY_NON_CA
 | Requirement | Canon rule | Runtime component/evidence | Status | Gap/next boundary |
 | --- | --- | --- | --- | --- |
 | Canon bridge docs | Canon is normative; runtime records implementation truth. | This document, [bridge](CRT_RUNTIME_BRIDGE.md), and [profile](CRT_COVENANT_PROFILE_V1.md). | DOCUMENTED | Documentation is not code or enforcement. |
-| Canonical genesis record | E923 is depth 0 only through an effective record for the named V1 graph, with no sponsor or invented edge. | No evaluator is wired. | MISSING | Define, publish, and evaluate an effective canonical genesis record. |
+| Canonical genesis record | E923 is depth 0 only through an effective record for the named V1 graph, with no sponsor or invented edge. | PR6.9 exact source publication, pure fail-closed evaluator, and injected append-only persistence. | IMPLEMENTED_DORMANT | No production composition; succession policy remains unavailable. |
 | Exact mirrored raw-script validator | Admission requires two strict `legacy_777` CLTV-only mirrored legs. | PR6.7 canonical mirrored covenant pair validator. | IMPLEMENTED_DORMANT | Connect only through trusted registration and observation; validation alone is not admission. |
 | Exact pair relation evaluator | Evaluate one exact subject/counterparty pair without wallet-wide aggregation; Canon admission separately requires equal positive leg amounts. | PR6.5 pure canonical covenant relation evaluator. | IMPLEMENTED_DORMANT | Its positive policy is `outgoing_sats >= incoming_sats`, so it is broader than Canon equality and is not admission, membership, or equality proof. |
 | Trusted exact-outpoint observation | Exact outpoints must be confirmed, unspent, amount-bound, and script-bound. | PR6.6 trusted observation adapter. | IMPLEMENTED_DORMANT | PR6.8 can materialize definitions only from active registrations, but nothing is production-composed; observation does not repair PR6.5 amount semantics. |
@@ -32,7 +32,10 @@ The only status terms used here are `IMPLEMENTED_DORMANT`, `ACTIVE_LEGACY_NON_CA
 
 PR6.8 establishes a dormant trusted registration source that binds an exact validated pair to exact `txid:vout`, subject and counterparty identities, sender -> receiver direction, roles, expected integer satoshi amount, exact script digest, profile/family, and lifecycle state needed by the observation adapter. It fails closed for duplicates, ambiguity, mixed counterparties, mixed profiles, or missing bindings. Only active registrations materialize definitions; lifecycle transition orchestration is not implemented.
 
-Acceptance of PR6.8 does not establish an effective genesis record, sponsor uniqueness, a complete admission edge, cascade ancestry, inactivity propagation, CRT membership state, a FULL/LIMITED policy mapping, or a public “why FULL” proof. Those remain separate boundaries.
+Acceptance of PR6.9 establishes only dormant exact E923 genesis publication and
+pure evaluation. It does not establish sponsor uniqueness, a complete admission
+edge, cascade ancestry, ordinary-participant membership state, a FULL/LIMITED
+policy mapping, or a public “why FULL” proof.
 Exact registration and outpoint binding also do not fix PR6.5's broader
 `outgoing_sats >= incoming_sats` policy. A future admission layer must enforce
 exact equality independently, or the relation policy must be separately revised
@@ -42,7 +45,7 @@ and reviewed.
 
 A. Documentation synchronization.
 B. PR6.8 trusted registration/exact outpoint binding. (IMPLEMENTED_DORMANT)
-C. Canonical E923 genesis-record publication, lifecycle, and fail-closed evaluation.
+C. Canonical E923 genesis-record publication, lifecycle, and fail-closed evaluation. (IMPLEMENTED_DORMANT)
 D. Authoritative sponsor/admission registry plus cascade lineage validation and inactivity propagation.
 E. CRT membership-state evaluator.
 F. Separately governed FULL/LIMITED authorization mapping.

@@ -19,7 +19,7 @@ The authority order is:
 | `CRT-MEMBERSHIP-001` | Current human membership is an active, uniquely rooted evidence state. | Dormant pair relation, observation/materialization, and current-entitlement evidence components. | No CRT membership-state evaluator, lineage evaluator, or authorization mapping is wired. |
 | `CRT-ADMISSION-001` | One human admission edge is an exact funded `legacy_777` mirrored pair. | Dormant strict raw-script pair validator, PR6.8 exact registration, pure exact-pair relation evaluator, and trusted observation adapter. | Exact binding is implemented dormant, but no admission registry, equality decision, or production wiring exists. |
 | `CRT-CASCADE-001` | Active ancestry is unique, acyclic, rooted at E923, and propagates inactivity. | No runtime cascade component. | Cascade depth, ancestry validation, and descendant propagation are missing. |
-| `CRT-GENESIS-001` | E923 is depth 0 only through an effective canonical genesis record for the named V1 graph. | Public operator continuity declaration is operational evidence only. | No canonical genesis record evaluator is wired; no sponsor or admission edge may be invented for genesis. |
+| `CRT-GENESIS-001` | E923 is depth 0 only through an effective canonical genesis record for the named V1 graph. | PR6.9 exact source publication and pure evaluator; operator continuity remains supporting evidence only. | IMPLEMENTED_DORMANT; no production wiring, sponsor, admission edge, or succession authority. |
 
 ## Distinct domains
 
@@ -81,7 +81,7 @@ amount equality, or the relation policy must be separately revised and reviewed.
 
 A. This documentation synchronization.
 B. PR6.8 trusted registration and exact outpoint binding. (IMPLEMENTED_DORMANT)
-C. Canonical E923 genesis-record publication, lifecycle, and fail-closed evaluation.
+C. Canonical E923 genesis-record publication, lifecycle, and fail-closed evaluation. (IMPLEMENTED_DORMANT)
 D. Authoritative sponsor/admission registry plus cascade lineage validation and inactivity propagation.
 E. CRT membership-state evaluator.
 F. Separately governed mapping from CRT membership state to participant-facing FULL/LIMITED authorization.
@@ -92,7 +92,11 @@ or authorization.
 
 ## Explicit non-claims
 
-This bridge does not assert that Canon membership is implemented, enforced, deployed, funded, or active. It does not assert a canonical genesis record, trusted admission registry, lineage graph, membership evaluator, participant-facing mapping, or public proof surface exists. It changes no runtime behavior and makes no deployment claim.
+This bridge does not assert that ordinary-participant Canon membership is
+implemented, enforced, deployed, funded, or active. The dormant canonical E923
+genesis record is not a trusted admission registry, lineage graph, membership
+evaluator, participant-facing mapping, or public proof surface. It changes no
+runtime behavior and makes no deployment claim. No production wiring was added.
 
 ## Related runtime documents
 
@@ -104,3 +108,4 @@ This bridge does not assert that Canon membership is implemented, enforced, depl
 - [Mirrored Covenant Pair V1](MIRRORED_COVENANT_PAIR_V1.md)
 - [Trusted Covenant Registration V1](TRUSTED_COVENANT_REGISTRATION_V1.md)
 - [Operator Continuity E923](OPERATOR_CONTINUITY_E923.md)
+- [Canonical E923 Genesis Record V1](CANONICAL_E923_GENESIS_RECORD_V1.md)

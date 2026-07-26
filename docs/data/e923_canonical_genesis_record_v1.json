@@ -1,0 +1,78 @@
+{
+  "amendment_succession_policy": "evidence_preserving_future_policy_required",
+  "anchor_middle_height": 1777777,
+  "claim": "The named HODLXXI CRT graph declares E923, bound to the stated cryptographic anchor, as its depth-0 genesis participant under the exact Bitcoin legacy_777 parameters and the stated record-verification rule.",
+  "contradiction_context": {
+    "evidence_reference_ids": [],
+    "reason": null,
+    "unresolved_controlling_dispute": false
+  },
+  "created_at": "2026-07-26T07:12:51Z",
+  "delta_blocks": 777,
+  "effective_at": "2026-07-26T07:12:51Z",
+  "evidence_references": [
+    {
+      "content_sha256": "fea957f51ad9a8c1962afa56f1e3da07ed533cc80368f9fd720fa52bede78b46",
+      "context": "Normative Genesis Bootstrap V1 source; the digest is of the exact raw bytes at the pinned Canon commit and does not prove universal authority, current key possession, or independent legitimacy.",
+      "integrity_basis": "content_sha256",
+      "location": "https://github.com/hodlxxi/hodlxxi-cryptographic-reciprocity/blob/152c87522a7d89cd5c0e7014d7915a19bf074e1a/canon/mechanisms/genesis-bootstrap-v1.md",
+      "reference_id": "canon_genesis_bootstrap_v1",
+      "reference_kind": "canon_source_at_commit"
+    },
+    {
+      "content_sha256": "1b22f6b4a3ba882d26efb7469e867bee8e12b52e74625ac318fd7f16c7c28488",
+      "context": "Source-controlled continuity declaration containing the exact compressed key; the digest is of the exact repository file bytes and is not current private-key-possession proof.",
+      "integrity_basis": "content_sha256",
+      "location": "docs/OPERATOR_CONTINUITY_E923.md",
+      "reference_id": "e923_operator_continuity",
+      "reference_kind": "repository_document"
+    },
+    {
+      "content_sha256": null,
+      "context": "Source publication locator for this bounded unsigned record. Its canonical digest is pinned externally in the primary documentation and publication-contract tests; this item does not pretend to contain its own content hash, and the repository path is a locator, not a content digest.",
+      "integrity_basis": "self_canonical_digest_externally_pinned",
+      "location": "docs/data/e923_canonical_genesis_record_v1.json",
+      "reference_id": "source_publication",
+      "reference_kind": "repository_publication"
+    }
+  ],
+  "explicit_non_claims": [
+    "no FULL/LIMITED authorization grant",
+    "no decentralization proof",
+    "no independent reciprocal trust proof",
+    "no legal identity, KYC or complete personhood proof",
+    "no moral authority or permanent authority proof",
+    "no ownership, custody or guardianship proof",
+    "no permission to bypass later admission or lineage rules",
+    "no proof that source-controlled record validity establishes current private-key possession",
+    "no reciprocal admission proof",
+    "no runtime administration or server-privilege grant",
+    "no universal legitimacy proof"
+  ],
+  "genesis_depth": 0,
+  "genesis_participant_id": "E923",
+  "graph_or_protocol_id": "hodlxxi.crt_membership_graph.v1",
+  "human_interpretation_required": true,
+  "human_profile": "legacy_777",
+  "identity_anchor": {
+    "anchor_type": "secp256k1_public_key",
+    "compressed_public_key": "023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923",
+    "encoding": "SEC1_compressed",
+    "evidence_reference_ids": [
+      "e923_operator_continuity"
+    ],
+    "key_purpose": "genesis_participant_identity",
+    "x_only_public_key": "3d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923"
+  },
+  "issuer_context": "HODLXXI source-controlled bounded genesis declaration under the stated verification rule; unsigned",
+  "lifecycle_changed_at": "2026-07-26T07:12:51Z",
+  "lifecycle_state": "effective",
+  "network": "bitcoin",
+  "privacy_scope": "public",
+  "record_id": "e9230000-0000-4000-8000-000000000001",
+  "record_version": "hodlxxi.canonical_genesis_record_service.v1",
+  "retention_policy": "append_preserved_no_silent_erasure",
+  "schema": "hodlxxi.canonical_genesis_record.v1",
+  "superseded_by_record_id": null,
+  "verification_rule": "hodlxxi.canonical_genesis_record_verification.v1"
+}
