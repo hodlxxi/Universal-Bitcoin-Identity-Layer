@@ -18,7 +18,7 @@ The only status terms used here are `IMPLEMENTED_DORMANT`, `ACTIVE_LEGACY_NON_CA
 | Entitlement materializer | Materialize relation decisions as runtime authorization evidence. | PR6.6 evidence materializer. | IMPLEMENTED_DORMANT | FULL/LIMITED are authorization evidence outcomes, not membership states; materialization does not turn the PR6.5 boolean into Canon admission. |
 | Persisted current entitlement evidence | Preserve bounded current authorization evidence with fail-closed latest-state resolution. | Current entitlement evidence store/resolver. | IMPLEMENTED_DORMANT | No production membership evaluation or policy mapping is wired. |
 | Trusted registration/outpoint binding | Bind validated pairs to exact trusted `txid:vout`, roles, amounts, and scripts. | PR6.8 pure registration and injected append-only storage. | IMPLEMENTED_DORMANT | Exact registration is not admission and no production composition or lifecycle transition orchestration exists. |
-| Unique sponsor/admission registry | Each non-genesis child has at most one active sponsor and one exact active admission edge. | No registry is wired. | MISSING | Add authoritative uniqueness and lifecycle semantics after exact binding. |
+| Unique sponsor/admission registry | Each non-genesis child has at most one effective sponsor and one exact registered admission edge. | PR6.10 append-only canonical registry and pure depth-1 current-edge evaluator. | IMPLEMENTED_DORMANT | No production composition; deeper edges fail closed pending complete lineage traversal. |
 | Cascade depth and acyclic lineage validation | `child_depth = sponsor_depth + 1`; no self-sponsorship, cycles, repeated identifiers, or repeated role-bound keys; all active paths terminate at E923. | No graph evaluator is wired. | MISSING | Build fail-closed lineage traversal against effective genesis and registered edges. |
 | Ancestor inactivity propagation | Inactive edges produce `edge_inactive` and dependent `lineage_inactive` states while preserving history. | No cascade propagation component is wired. | MISSING | Add observation-context evaluation and descendant propagation. |
 | CRT membership-state evaluator | Emit only `genesis_active`, `active`, `provisional`, `edge_inactive`, `lineage_inactive`, `disputed`, or `unknown`. | No evaluator is wired. | MISSING | Compose genesis, admission, current UTXO evidence, and complete ancestry. |
@@ -46,10 +46,11 @@ and reviewed.
 A. Documentation synchronization.
 B. PR6.8 trusted registration/exact outpoint binding. (IMPLEMENTED_DORMANT)
 C. Canonical E923 genesis-record publication, lifecycle, and fail-closed evaluation. (IMPLEMENTED_DORMANT)
-D. Authoritative sponsor/admission registry plus cascade lineage validation and inactivity propagation.
-E. CRT membership-state evaluator.
-F. Separately governed FULL/LIMITED authorization mapping.
-G. Public “why FULL” proof.
+D. PR6.10 authoritative admission-edge registry and depth-1 current edge evaluation. (IMPLEMENTED_DORMANT)
+E. Future complete lineage traversal and ancestor inactivity propagation.
+F. Future CRT membership-state composition.
+G. Future FULL/LIMITED policy mapping.
+H. Future public “why FULL” proof.
 
 PR6.8 does not establish genesis, a complete admission edge, lineage, membership,
 or authorization.

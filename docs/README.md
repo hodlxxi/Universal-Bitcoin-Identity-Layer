@@ -15,6 +15,7 @@ The normative theory and protocol source is `hodlxxi/hodlxxi-cryptographic-recip
 - **[CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md](CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md)** — current component and gap inventory.
 - **[CRT_COVENANT_PROFILE_V1.md](CRT_COVENANT_PROFILE_V1.md)** — exact `legacy_777` human-admission and `current_144` operator-agent profile mapping.
 - **[CANONICAL_E923_GENESIS_RECORD_V1.md](CANONICAL_E923_GENESIS_RECORD_V1.md)** — dormant exact E923 depth-0 source publication, evaluator, and append-only persistence boundary.
+- **[CANONICAL_ADMISSION_EDGE_REGISTRY_V1.md](CANONICAL_ADMISSION_EDGE_REGISTRY_V1.md)** — PR6.10 dormant authoritative admission-edge registry and depth-1 current-edge evaluation boundary.
 - **[TRUSTED_COVENANT_REGISTRATION_V1.md](TRUSTED_COVENANT_REGISTRATION_V1.md)** — dormant exact validated-pair registration, lifecycle gating, and normalized outpoint binding.
 
 0. **[DOCUMENTATION_MAP.md](DOCUMENTATION_MAP.md)** - Start here for the docs status map: current, historical, experimental, and archive-candidate documentation.

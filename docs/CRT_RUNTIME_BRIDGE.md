@@ -17,7 +17,7 @@ The authority order is:
 | Canon claim | Normative subject | Runtime evidence or component | Current implementation status |
 | --- | --- | --- | --- |
 | `CRT-MEMBERSHIP-001` | Current human membership is an active, uniquely rooted evidence state. | Dormant pair relation, observation/materialization, and current-entitlement evidence components. | No CRT membership-state evaluator, lineage evaluator, or authorization mapping is wired. |
-| `CRT-ADMISSION-001` | One human admission edge is an exact funded `legacy_777` mirrored pair. | Dormant strict raw-script pair validator, PR6.8 exact registration, pure exact-pair relation evaluator, and trusted observation adapter. | Exact binding is implemented dormant, but no admission registry, equality decision, or production wiring exists. |
+| `CRT-ADMISSION-001` | One human admission edge is an exact funded `legacy_777` mirrored pair. | PR6.10 dormant append-only registry and pure depth-1 edge evaluator over PR6.8 registration and trusted observations. | Exact equality and effective-child uniqueness are implemented dormant; no production wiring or complete lineage traversal exists. |
 | `CRT-CASCADE-001` | Active ancestry is unique, acyclic, rooted at E923, and propagates inactivity. | No runtime cascade component. | Cascade depth, ancestry validation, and descendant propagation are missing. |
 | `CRT-GENESIS-001` | E923 is depth 0 only through an effective canonical genesis record for the named V1 graph. | PR6.9 exact source publication and pure evaluator; operator continuity remains supporting evidence only. | IMPLEMENTED_DORMANT; no production wiring, sponsor, admission edge, or succession authority. |
 
@@ -76,16 +76,19 @@ the adapter or any production path. These strict layers are not production
 enforcement. PR6.8 exact registration and outpoint binding does not fix the PR6.5
 amount-policy mismatch. A future admission layer must independently enforce exact
 amount equality, or the relation policy must be separately revised and reviewed.
+Considered by itself, PR6.8 provides no admission registry; PR6.10 is the separate
+dormant registry and equality boundary.
 
 ## Implementation sequence
 
 A. This documentation synchronization.
 B. PR6.8 trusted registration and exact outpoint binding. (IMPLEMENTED_DORMANT)
 C. Canonical E923 genesis-record publication, lifecycle, and fail-closed evaluation. (IMPLEMENTED_DORMANT)
-D. Authoritative sponsor/admission registry plus cascade lineage validation and inactivity propagation.
-E. CRT membership-state evaluator.
-F. Separately governed mapping from CRT membership state to participant-facing FULL/LIMITED authorization.
-G. Public “why FULL” proof surface.
+D. PR6.10 authoritative admission-edge registry and depth-1 current edge evaluation. (IMPLEMENTED_DORMANT)
+E. Future complete lineage traversal and ancestor inactivity propagation.
+F. Future CRT membership-state composition.
+G. Future FULL/LIMITED policy mapping.
+H. Future public “why FULL” proof surface.
 
 PR6.8 does not establish genesis, a complete admission edge, lineage, membership,
 or authorization.
