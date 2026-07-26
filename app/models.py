@@ -658,14 +658,19 @@ class TrustedCovenantRegistration(Base):
     )
 
     __table_args__ = (
-        CheckConstraint("length(registration_id) = 36 AND registration_id = lower(registration_id)", name="ck_trusted_registration_id_canonical"),
+        CheckConstraint(
+            "length(registration_id) = 36 AND registration_id = lower(registration_id)",
+            name="ck_trusted_registration_id_canonical",
+        ),
         CheckConstraint("schema = 'hodlxxi.trusted_covenant_registration.v1'", name="ck_trusted_registration_schema"),
         CheckConstraint(
             "registration_version = 'hodlxxi.trusted_covenant_registration_service.v1'",
             name="ck_trusted_registration_version",
         ),
         CheckConstraint("network = 'bitcoin'", name="ck_trusted_registration_network"),
-        CheckConstraint("length(pair_sha256) = 64 AND pair_sha256 = lower(pair_sha256)", name="ck_trusted_registration_pair_hash"),
+        CheckConstraint(
+            "length(pair_sha256) = 64 AND pair_sha256 = lower(pair_sha256)", name="ck_trusted_registration_pair_hash"
+        ),
         CheckConstraint(
             "length(registration_sha256) = 64 AND registration_sha256 = lower(registration_sha256)",
             name="ck_trusted_registration_hash",
@@ -674,7 +679,10 @@ class TrustedCovenantRegistration(Base):
             "validator_version = 'hodlxxi.mirrored_covenant_pair_validator.v1'",
             name="ck_trusted_registration_validator",
         ),
-        CheckConstraint("length(subject_pubkey) = 66 AND subject_pubkey = lower(subject_pubkey)", name="ck_trusted_registration_subject"),
+        CheckConstraint(
+            "length(subject_pubkey) = 66 AND subject_pubkey = lower(subject_pubkey)",
+            name="ck_trusted_registration_subject",
+        ),
         CheckConstraint(
             "length(subject_xonly_pubkey) = 64 AND subject_xonly_pubkey = lower(subject_xonly_pubkey)",
             name="ck_trusted_registration_subject_xonly",
@@ -737,6 +745,91 @@ class TrustedCovenantRegistration(Base):
         Index("idx_trusted_registration_lifecycle", "lifecycle_state"),
         Index("idx_trusted_registration_subject", "subject_xonly_pubkey"),
         Index("idx_trusted_registration_counterparty", "counterparty_xonly_pubkey"),
+    )
+
+
+class CanonicalGenesisRecordRow(Base):
+    """Dormant append-only canonical genesis record publication."""
+
+    __tablename__ = "canonical_genesis_records"
+
+    record_id = Column(String(36), primary_key=True)
+    schema = Column(String(44), nullable=False)
+    record_version = Column(String(48), nullable=False)
+    graph_or_protocol_id = Column(String(64), nullable=False)
+    genesis_participant_id = Column(String(4), nullable=False)
+    compressed_public_key = Column(String(66), nullable=False)
+    x_only_public_key = Column(String(64), nullable=False)
+    lifecycle_state = Column(String(10), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    lifecycle_changed_at = Column(DateTime(timezone=True), nullable=False)
+    effective_at = Column(DateTime(timezone=True))
+    superseded_by_record_id = Column(String(36))
+    canonical_record_sha256 = Column(String(64), nullable=False, unique=True)
+    canonical_record_json = Column(Text, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(record_id) = 36 AND record_id = lower(record_id)",
+            name="ck_canonical_genesis_id",
+        ),
+        CheckConstraint(
+            "schema = 'hodlxxi.canonical_genesis_record.v1'",
+            name="ck_canonical_genesis_schema",
+        ),
+        CheckConstraint(
+            "record_version = 'hodlxxi.canonical_genesis_record_service.v1'",
+            name="ck_canonical_genesis_version",
+        ),
+        CheckConstraint(
+            "graph_or_protocol_id = 'hodlxxi.crt_membership_graph.v1'",
+            name="ck_canonical_genesis_graph",
+        ),
+        CheckConstraint(
+            "genesis_participant_id = 'E923'",
+            name="ck_canonical_genesis_participant",
+        ),
+        CheckConstraint(
+            "compressed_public_key = " "'023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923'",
+            name="ck_canonical_genesis_compressed_key",
+        ),
+        CheckConstraint(
+            "x_only_public_key = " "'3d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923'",
+            name="ck_canonical_genesis_xonly_key",
+        ),
+        CheckConstraint(
+            "lifecycle_state IN ('proposed','effective','disputed','superseded','revoked')",
+            name="ck_canonical_genesis_lifecycle",
+        ),
+        CheckConstraint(
+            "lifecycle_changed_at >= created_at",
+            name="ck_canonical_genesis_changed_order",
+        ),
+        CheckConstraint(
+            "(lifecycle_state = 'effective' AND effective_at IS NOT NULL "
+            "AND effective_at >= created_at AND lifecycle_changed_at >= effective_at "
+            "AND superseded_by_record_id IS NULL) OR "
+            "(lifecycle_state = 'proposed' AND effective_at IS NULL "
+            "AND superseded_by_record_id IS NULL) OR "
+            "(lifecycle_state = 'superseded' AND superseded_by_record_id IS NOT NULL) OR "
+            "(lifecycle_state IN ('disputed','revoked') "
+            "AND superseded_by_record_id IS NULL)",
+            name="ck_canonical_genesis_lifecycle_consistency",
+        ),
+        CheckConstraint(
+            "superseded_by_record_id IS NULL OR "
+            "(length(superseded_by_record_id) = 36 "
+            "AND superseded_by_record_id = lower(superseded_by_record_id) "
+            "AND superseded_by_record_id != record_id)",
+            name="ck_canonical_genesis_successor",
+        ),
+        CheckConstraint(
+            "length(canonical_record_sha256) = 64 " "AND canonical_record_sha256 = lower(canonical_record_sha256)",
+            name="ck_canonical_genesis_digest",
+        ),
+        Index("idx_canonical_genesis_graph", "graph_or_protocol_id"),
+        Index("idx_canonical_genesis_lifecycle", "lifecycle_state"),
+        Index("idx_canonical_genesis_identity", "genesis_participant_id", "x_only_public_key"),
     )
 
 
