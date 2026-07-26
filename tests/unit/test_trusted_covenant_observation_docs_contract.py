@@ -24,11 +24,12 @@ def test_documentation_contains_required_contract_and_safety_terms():
         "5 seconds",
         "created_at = max(materializer clock, observed_at)",
         "do not grant FULL before `observed_at`",
-        "Future trusted-outpoint registration",
+        "PR6.8 trusted registration and exact outpoint binding is IMPLEMENTED_DORMANT",
         "Future production entitlement-resolver wiring also remains outside this PR",
         "dormant",
     )
     assert not [term for term in required if term not in text]
+    assert "Future trusted-outpoint registration" not in text
     assert "whether, how, or when an output was spent" in text
 
 

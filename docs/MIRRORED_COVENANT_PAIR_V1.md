@@ -1,6 +1,6 @@
 # Canonical Mirrored Covenant Pair Validator V1
 
-> **Status: IMPLEMENTED_DORMANT.** Synchronization basis: Canon commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`; runtime base `7df976c59742aa84fd79cfd41f12a34a33915259`.
+> **Status: IMPLEMENTED_DORMANT.** Canon basis: `152c87522a7d89cd5c0e7014d7915a19bf074e1a`; PR6.8 implementation branch base: `fe333cdb5068a73b4dc57b875e1b0223b01855f7`.
 
 This pure-domain validator parses authorization-grade raw Bitcoin Script hex. One leg is
 not one mirrored pair: in a directed leg the receiver has the earlier unilateral CLTV
@@ -65,9 +65,10 @@ In particular this validator does not:
 - expose a route, CLI command, scheduled job, or MCP surface;
 - deploy, migrate, restart services, or alter production declarations.
 
-Trusted registration and outpoint binding belong to future PR6.8. That later boundary
-may connect exact declarations to trusted observations; this validator deliberately
-makes no claim about funding, UTXOs, balances, or entitlement.
+Trusted registration and outpoint binding are IMPLEMENTED_DORMANT in PR6.8.
+That separate layer may materialize trusted observation definitions only for
+active exact registrations; it is not production-composed and this validator
+still makes no claim about funding, UTXOs, balances, or entitlement.
 
 See [CRT Covenant Profile V1](CRT_COVENANT_PROFILE_V1.md), [CRT Runtime
 Bridge](CRT_RUNTIME_BRIDGE.md), and [CRT Membership Implementation

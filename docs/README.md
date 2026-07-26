@@ -1,6 +1,6 @@
 # HODLXXI Documentation
 
-**Last Updated:** July 24, 2026
+**Last Updated:** July 25, 2026
 **Status:** Current documentation index; implementation and historical status vary by document
 
 ---
@@ -9,11 +9,12 @@
 
 ### CRT Canon and runtime bridge
 
-The normative theory and protocol source is `hodlxxi/hodlxxi-cryptographic-reciprocity` at commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`. These runtime documents record implementation truth inventoried at runtime base `7df976c59742aa84fd79cfd41f12a34a33915259`; they do not assert current CRT Membership Protocol V1 enforcement.
+The normative theory and protocol source is `hodlxxi/hodlxxi-cryptographic-reciprocity` at commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`. PR6.8 uses implementation branch base `fe333cdb5068a73b4dc57b875e1b0223b01855f7`; the older `7df976c59742aa84fd79cfd41f12a34a33915259` is explicitly the active-runtime audit basis. These documents do not assert current CRT Membership Protocol V1 enforcement.
 
 - **[CRT_RUNTIME_BRIDGE.md](CRT_RUNTIME_BRIDGE.md)** — authority boundaries, Canon claims, runtime mismatch, and implementation sequence.
 - **[CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md](CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md)** — current component and gap inventory.
 - **[CRT_COVENANT_PROFILE_V1.md](CRT_COVENANT_PROFILE_V1.md)** — exact `legacy_777` human-admission and `current_144` operator-agent profile mapping.
+- **[TRUSTED_COVENANT_REGISTRATION_V1.md](TRUSTED_COVENANT_REGISTRATION_V1.md)** — dormant exact validated-pair registration, lifecycle gating, and normalized outpoint binding.
 
 0. **[DOCUMENTATION_MAP.md](DOCUMENTATION_MAP.md)** - Start here for the docs status map: current, historical, experimental, and archive-candidate documentation.
 1. **[READINESS_EVALUATION.md](READINESS_EVALUATION.md)** - Current external evaluation path for public HODLXXI agent/runtime readiness.

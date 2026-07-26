@@ -2,7 +2,7 @@
 
 ## Status and purpose
 
-> **Status: IMPLEMENTED_DORMANT.** Synchronization basis: Canon commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`; runtime base `7df976c59742aa84fd79cfd41f12a34a33915259`.
+> **Status: IMPLEMENTED_DORMANT.** Canon basis: `152c87522a7d89cd5c0e7014d7915a19bf074e1a`; PR6.8 implementation branch base: `fe333cdb5068a73b4dc57b875e1b0223b01855f7`.
 
 PR6.5 defines a dormant, pure-domain evaluation contract. It does not gather observations or authorize a caller. The evaluator is deterministic over trusted normalized observations. The future adapter is responsible for making those observations authoritative. This relation evaluator is one component, not CRT membership. It has no canonical genesis record evaluation, sponsor registry, lineage traversal, cascade propagation, CRT membership-state evaluation, or participant-facing authorization wiring. FULL/LIMITED are not CRT membership states.
 
@@ -63,7 +63,12 @@ The future trusted observation adapter is responsible for script validation, des
 
 The future entitlement materializer may map a positive boolean to FULL evidence and a negative boolean to LIMITED evidence. This PR neither writes evidence nor performs that mapping. Until trusted adaptation and materialization are separately implemented, this contract remains dormant.
 
-Future PR6.8 trusted registration and exact outpoint binding is the next boundary. PR6.8 does not by itself complete admission, genesis, lineage, cascade propagation, membership evaluation, or authorization. Exact registration/outpoint binding alone also does not fix the amount-policy mismatch: a future admission layer must enforce exact equality independently, or the relation policy must be separately revised and reviewed.
+PR6.8 trusted registration and exact outpoint binding is IMPLEMENTED_DORMANT.
+It does not by itself complete admission, genesis, lineage, cascade propagation,
+membership evaluation, or authorization. Exact registration/outpoint binding
+alone also does not fix the amount-policy mismatch: a future admission layer
+must enforce exact equality independently, or the relation policy must be
+separately revised and reviewed.
 
 See [CRT Runtime Bridge](CRT_RUNTIME_BRIDGE.md), [CRT Membership Implementation Status](CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md), and [CRT Covenant Profile V1](CRT_COVENANT_PROFILE_V1.md) for the `legacy_777` human-admission and `current_144` operator-agent separation.
 

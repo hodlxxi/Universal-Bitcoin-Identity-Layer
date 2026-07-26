@@ -2,7 +2,7 @@
 
 > **Status: CURRENT CANON-TO-RUNTIME PROFILE MAPPING — documentation only.**
 
-Synchronization basis: CRT Canon commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`; runtime base commit `7df976c59742aa84fd79cfd41f12a34a33915259`.
+Canon basis: CRT Canon commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`; PR6.8 implementation branch base: `fe333cdb5068a73b4dc57b875e1b0223b01855f7`.
 
 ## Profile comparison
 
@@ -56,10 +56,11 @@ Evaluation fails closed for duplicate legs; a single leg; mixed counterparties; 
 ## Separate evaluation layers
 
 1. **Pair validation:** parse and validate the two exact mirrored raw scripts and their roles/profile.
-2. **Observation:** verify registered exact outpoints, amount, script, confirmations, and current unspent state.
-3. **Relation decision:** evaluate the exact subject/counterparty evidence without wallet-wide aggregation.
-4. **Membership:** evaluate effective genesis, unique admission, complete ancestry, cascade activity, and one of the Canon membership states.
-5. **Authorization:** under a separately governed policy, map evaluated state to participant-facing runtime access.
+2. **Registration:** bind one validated pair to two distinct exact outpoints; only active registrations materialize observation definitions.
+3. **Observation:** verify registered exact outpoints, amount, script, confirmations, and current unspent state.
+4. **Relation decision:** evaluate the exact subject/counterparty evidence without wallet-wide aggregation.
+5. **Membership:** evaluate effective genesis, unique admission, complete ancestry, cascade activity, and one of the Canon membership states.
+6. **Authorization:** under a separately governed policy, map evaluated state to participant-facing runtime access.
 
 FULL and LIMITED are authorization outcomes, not CRT membership states. Success at an earlier layer does not imply success at a later layer.
 In particular, dormant PR6.5 currently returns a positive relation decision when
@@ -67,14 +68,15 @@ both totals are positive and `outgoing_sats >= incoming_sats`. That policy is
 broader than Canon V1 admission's exact equal-positive-amount requirement. A
 positive PR6.5 decision is not admission, membership, or a Canon-conformant
 equality proof, and PR6.6 observation/materialization does not repair the
-mismatch. PR6.8 exact registration/outpoint binding alone would not repair it
+mismatch. PR6.8 exact registration/outpoint binding is IMPLEMENTED_DORMANT and
+does not repair it
 either. A future admission layer must enforce exact equality independently, or
 the relation policy must be separately revised and reviewed.
 
 ## Implementation sequence
 
 A. Documentation synchronization.
-B. PR6.8 trusted registration and exact outpoint binding.
+B. PR6.8 trusted registration and exact outpoint binding. (IMPLEMENTED_DORMANT)
 C. Canonical E923 genesis-record publication, lifecycle, and fail-closed evaluation.
 D. Authoritative sponsor/admission registry plus cascade lineage validation and inactivity propagation.
 E. CRT membership-state evaluator.
@@ -96,6 +98,7 @@ This mapping does not claim that either profile is funded, that the public decla
 
 - [Mirrored Covenant Pair V1](MIRRORED_COVENANT_PAIR_V1.md)
 - [Trusted Covenant Observation V1](TRUSTED_COVENANT_OBSERVATION_V1.md)
+- [Trusted Covenant Registration V1](TRUSTED_COVENANT_REGISTRATION_V1.md)
 - [Canonical Covenant Relation V1](CANONICAL_COVENANT_RELATION_V1.md)
 - [CRT Runtime Bridge](CRT_RUNTIME_BRIDGE.md)
 - [CRT Membership Implementation Status](CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md)
