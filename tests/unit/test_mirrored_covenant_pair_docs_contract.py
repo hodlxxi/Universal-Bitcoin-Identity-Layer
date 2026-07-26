@@ -26,10 +26,11 @@ def test_documented_contract_and_boundaries():
         "cannot be supplied independently",
         "direct leg and pair dataclass construction is",
         "canonical pair bytes are produced only after",
-        "future PR6.8",
+        "Trusted registration and outpoint binding are IMPLEMENTED_DORMANT in PR6.8",
         "outpoint binding",
         "does not",
         "grant FULL access",
         "deploy, migrate, restart",
     )
     assert not [term for term in required if term not in text]
+    assert "future PR6.8" not in text
