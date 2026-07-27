@@ -877,6 +877,242 @@ class TrustedCovenantRegisteredOutpoint(Base):
     )
 
 
+class CanonicalAdmissionEdgeRow(Base):
+    """Dormant append-only canonical human admission edge."""
+
+    __tablename__ = "canonical_admission_edges"
+
+    edge_id = Column(String(36), primary_key=True)
+    schema = Column(String(64), nullable=False)
+    edge_version = Column(String(64), nullable=False)
+    graph_or_protocol_id = Column(String(64), nullable=False)
+    network = Column(String(16), nullable=False)
+    human_profile = Column(String(16), nullable=False)
+    template_family = Column(String(16), nullable=False)
+    delta_blocks = Column(Integer, nullable=False)
+    sponsor_participant_id = Column(String(64), nullable=False)
+    sponsor_compressed_public_key = Column(String(66), nullable=False)
+    sponsor_x_only_public_key = Column(String(64), nullable=False)
+    sponsor_depth = Column(Integer, nullable=False)
+    child_participant_id = Column(String(64), nullable=False)
+    child_compressed_public_key = Column(String(66), nullable=False)
+    child_x_only_public_key = Column(String(64), nullable=False)
+    child_depth = Column(Integer, nullable=False)
+    early_height = Column(Integer, nullable=False)
+    middle_height = Column(Integer, nullable=False)
+    late_height = Column(Integer, nullable=False)
+    trusted_registration_id = Column(String(36), nullable=False, unique=True)
+    trusted_registration_sha256 = Column(String(64), nullable=False, unique=True)
+    pair_sha256 = Column(String(64), nullable=False)
+    validator_version = Column(String(64), nullable=False)
+    sponsor_basis_kind = Column(String(32), nullable=False)
+    sponsor_basis_record_id = Column(String(36), nullable=False)
+    sponsor_basis_record_sha256 = Column(String(64), nullable=False)
+    lifecycle_state = Column(String(10), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    lifecycle_changed_at = Column(DateTime(timezone=True), nullable=False)
+    effective_at = Column(DateTime(timezone=True))
+    superseded_by_edge_id = Column(String(36))
+    canonical_edge_sha256 = Column(String(64), nullable=False, unique=True)
+    canonical_record_json = Column(Text, nullable=False)
+
+    legs = relationship(
+        "CanonicalAdmissionEdgeLegRow",
+        back_populates="edge",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "schema = 'hodlxxi.canonical_admission_edge.v1'",
+            name="ck_admission_edge_schema",
+        ),
+        CheckConstraint(
+            "edge_version = 'hodlxxi.canonical_admission_edge_service.v1'",
+            name="ck_admission_edge_version",
+        ),
+        CheckConstraint(
+            "graph_or_protocol_id = 'hodlxxi.crt_membership_graph.v1'",
+            name="ck_admission_edge_graph",
+        ),
+        CheckConstraint("network = 'bitcoin'", name="ck_admission_edge_network"),
+        CheckConstraint(
+            "human_profile = 'legacy_777' AND template_family = 'cltv_only' AND delta_blocks = 777",
+            name="ck_admission_edge_profile",
+        ),
+        CheckConstraint(
+            "sponsor_depth >= 0 AND child_depth = sponsor_depth + 1",
+            name="ck_admission_edge_depth",
+        ),
+        CheckConstraint(
+            "early_height > 0 AND middle_height = 1777777 - 777 * (child_depth - 1) AND early_height = middle_height - 777 AND late_height = middle_height + 777",
+            name="ck_admission_edge_heights",
+        ),
+        CheckConstraint(
+            "sponsor_participant_id != child_participant_id AND sponsor_compressed_public_key != child_compressed_public_key AND sponsor_x_only_public_key != child_x_only_public_key",
+            name="ck_admission_edge_distinct_participants",
+        ),
+        CheckConstraint(
+            "child_participant_id = child_x_only_public_key",
+            name="ck_admission_edge_child_participant_convention",
+        ),
+        CheckConstraint(
+            "(sponsor_depth = 0 AND sponsor_participant_id = 'E923' "
+            "AND sponsor_compressed_public_key = "
+            "'023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923' "
+            "AND sponsor_x_only_public_key = "
+            "'3d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923' "
+            "AND sponsor_basis_kind = 'canonical_genesis_record') OR "
+            "(sponsor_depth > 0 AND sponsor_participant_id = sponsor_x_only_public_key "
+            "AND sponsor_basis_kind = 'canonical_admission_edge')",
+            name="ck_admission_edge_sponsor_convention",
+        ),
+        CheckConstraint(
+            "length(edge_id) = 36 AND edge_id = lower(edge_id)",
+            name="ck_admission_edge_id",
+        ),
+        CheckConstraint(
+            "length(sponsor_compressed_public_key) = 66 "
+            "AND substr(sponsor_compressed_public_key, 1, 2) IN ('02','03') "
+            "AND sponsor_compressed_public_key = lower(sponsor_compressed_public_key) "
+            "AND substr(sponsor_compressed_public_key, 3) = sponsor_x_only_public_key "
+            "AND length(child_compressed_public_key) = 66 "
+            "AND substr(child_compressed_public_key, 1, 2) IN ('02','03') "
+            "AND child_compressed_public_key = lower(child_compressed_public_key) "
+            "AND substr(child_compressed_public_key, 3) = child_x_only_public_key",
+            name="ck_admission_edge_compressed_keys",
+        ),
+        CheckConstraint(
+            "length(sponsor_x_only_public_key) = 64 AND sponsor_x_only_public_key = lower(sponsor_x_only_public_key) AND length(child_x_only_public_key) = 64 AND child_x_only_public_key = lower(child_x_only_public_key)",
+            name="ck_admission_edge_xonly_keys",
+        ),
+        CheckConstraint(
+            "lifecycle_state IN ('proposed','effective','disputed','superseded','revoked')",
+            name="ck_admission_edge_lifecycle",
+        ),
+        CheckConstraint("lifecycle_changed_at >= created_at", name="ck_admission_edge_changed_order"),
+        CheckConstraint(
+            "(lifecycle_state = 'effective' AND effective_at IS NOT NULL AND effective_at >= created_at AND lifecycle_changed_at >= effective_at AND superseded_by_edge_id IS NULL) OR (lifecycle_state = 'proposed' AND effective_at IS NULL AND superseded_by_edge_id IS NULL) OR (lifecycle_state = 'superseded' AND superseded_by_edge_id IS NOT NULL) OR (lifecycle_state IN ('disputed','revoked') AND superseded_by_edge_id IS NULL)",
+            name="ck_admission_edge_lifecycle_consistency",
+        ),
+        CheckConstraint(
+            "sponsor_basis_kind IN ('canonical_genesis_record','canonical_admission_edge')",
+            name="ck_admission_edge_basis_kind",
+        ),
+        CheckConstraint(
+            "length(trusted_registration_id) = 36 AND trusted_registration_id = lower(trusted_registration_id) "
+            "AND length(sponsor_basis_record_id) = 36 AND sponsor_basis_record_id = lower(sponsor_basis_record_id)",
+            name="ck_admission_edge_source_ids",
+        ),
+        CheckConstraint(
+            "length(trusted_registration_sha256) = 64 AND trusted_registration_sha256 = lower(trusted_registration_sha256) "
+            "AND length(pair_sha256) = 64 AND pair_sha256 = lower(pair_sha256) "
+            "AND length(sponsor_basis_record_sha256) = 64 AND sponsor_basis_record_sha256 = lower(sponsor_basis_record_sha256) "
+            "AND length(canonical_edge_sha256) = 64 AND canonical_edge_sha256 = lower(canonical_edge_sha256)",
+            name="ck_admission_edge_digests",
+        ),
+        CheckConstraint(
+            "superseded_by_edge_id IS NULL OR "
+            "(length(superseded_by_edge_id) = 36 AND superseded_by_edge_id = lower(superseded_by_edge_id) "
+            "AND superseded_by_edge_id != edge_id)",
+            name="ck_admission_edge_successor",
+        ),
+        Index("idx_admission_edge_graph", "graph_or_protocol_id"),
+        Index(
+            "idx_admission_edge_child",
+            "graph_or_protocol_id",
+            "child_x_only_public_key",
+        ),
+        Index(
+            "idx_admission_edge_sponsor",
+            "graph_or_protocol_id",
+            "sponsor_x_only_public_key",
+        ),
+        Index(
+            "uq_admission_edge_effective_child_id",
+            "graph_or_protocol_id",
+            "child_participant_id",
+            unique=True,
+            sqlite_where=text("lifecycle_state = 'effective'"),
+            postgresql_where=text("lifecycle_state = 'effective'"),
+        ),
+        Index(
+            "uq_admission_edge_effective_child_key",
+            "graph_or_protocol_id",
+            "child_x_only_public_key",
+            unique=True,
+            sqlite_where=text("lifecycle_state = 'effective'"),
+            postgresql_where=text("lifecycle_state = 'effective'"),
+        ),
+    )
+
+
+class CanonicalAdmissionEdgeLegRow(Base):
+    """One normalized exact leg of a canonical admission edge."""
+
+    __tablename__ = "canonical_admission_edge_legs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    edge_id = Column(
+        String(36),
+        ForeignKey("canonical_admission_edges.edge_id"),
+        nullable=False,
+    )
+    direction = Column(String(32), nullable=False)
+    sender_participant_id = Column(String(64), nullable=False)
+    sender_compressed_public_key = Column(String(66), nullable=False)
+    sender_x_only_public_key = Column(String(64), nullable=False)
+    receiver_participant_id = Column(String(64), nullable=False)
+    receiver_compressed_public_key = Column(String(66), nullable=False)
+    receiver_x_only_public_key = Column(String(64), nullable=False)
+    receiver_cltv_height = Column(Integer, nullable=False)
+    sender_cltv_height = Column(Integer, nullable=False)
+    raw_script_hex = Column(Text, nullable=False)
+    txid = Column(String(64), nullable=False)
+    vout = Column(Integer, nullable=False)
+    amount_sats = Column(BigInteger, nullable=False)
+    witness_script_sha256 = Column(String(64), nullable=False)
+    descriptor_sha256 = Column(String(64))
+
+    edge = relationship("CanonicalAdmissionEdgeRow", back_populates="legs")
+
+    __table_args__ = (
+        UniqueConstraint("edge_id", "direction", name="uq_admission_leg_edge_direction"),
+        UniqueConstraint("txid", "vout", name="uq_admission_leg_global_outpoint"),
+        CheckConstraint(
+            "direction IN ('sponsor_to_child','child_to_sponsor')",
+            name="ck_admission_leg_direction",
+        ),
+        CheckConstraint(
+            "sender_participant_id != receiver_participant_id AND sender_compressed_public_key != receiver_compressed_public_key AND sender_x_only_public_key != receiver_x_only_public_key",
+            name="ck_admission_leg_distinct_participants",
+        ),
+        CheckConstraint(
+            "receiver_cltv_height > 0 AND sender_cltv_height > receiver_cltv_height",
+            name="ck_admission_leg_heights",
+        ),
+        CheckConstraint(
+            "length(raw_script_hex) > 0 AND length(raw_script_hex) % 2 = 0 AND raw_script_hex = lower(raw_script_hex)",
+            name="ck_admission_leg_script",
+        ),
+        CheckConstraint("length(txid) = 64 AND txid = lower(txid)", name="ck_admission_leg_txid"),
+        CheckConstraint("vout >= 0 AND vout <= 4294967295", name="ck_admission_leg_vout"),
+        CheckConstraint(
+            "amount_sats > 0 AND amount_sats <= 2100000000000000",
+            name="ck_admission_leg_amount",
+        ),
+        CheckConstraint(
+            "length(witness_script_sha256) = 64 AND witness_script_sha256 = lower(witness_script_sha256)",
+            name="ck_admission_leg_hash",
+        ),
+        CheckConstraint(
+            "descriptor_sha256 IS NULL OR "
+            "(length(descriptor_sha256) = 64 AND descriptor_sha256 = lower(descriptor_sha256))",
+            name="ck_admission_leg_descriptor",
+        ),
+        Index("idx_admission_leg_edge", "edge_id"),
+    )
+
+
 class ActionOperation(Base):
     """Dormant durable reservation and final-receipt state for an action."""
 
