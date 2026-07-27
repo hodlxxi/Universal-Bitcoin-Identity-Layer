@@ -588,6 +588,99 @@ class CanonicalGenesisEvaluation:
             raise InvalidCanonicalGenesisRecord("selected relevance")
 
 
+def _genesis_evaluation_dict(value: CanonicalGenesisEvaluation) -> dict:
+    return {
+        "claim": value.claim,
+        "compressed_public_key": value.compressed_public_key,
+        "evaluated_at": _timestamp(value.evaluated_at),
+        "evaluator_version": value.evaluator_version,
+        "explicit_non_claims": list(value.explicit_non_claims),
+        "genesis_participant_id": value.genesis_participant_id,
+        "graph_or_protocol_id": value.graph_or_protocol_id,
+        "human_interpretation_required": value.human_interpretation_required,
+        "reason_code": value.reason_code,
+        "relevant_records": [list(item) for item in value.relevant_records],
+        "selected_effective_record_id": value.selected_effective_record_id,
+        "selected_effective_record_sha256": value.selected_effective_record_sha256,
+        "state": value.state.value,
+        "x_only_public_key": value.x_only_public_key,
+    }
+
+
+def canonical_genesis_evaluation_bytes(value: CanonicalGenesisEvaluation) -> bytes:
+    """Return the exact canonical identity of one genesis evaluation."""
+    if type(value) is not CanonicalGenesisEvaluation:
+        raise InvalidCanonicalGenesisRecord("evaluation type")
+    try:
+        value = CanonicalGenesisEvaluation(
+            *(getattr(value, field) for field in CanonicalGenesisEvaluation.__dataclass_fields__)
+        )
+    except InvalidCanonicalGenesisRecord:
+        raise
+    except Exception:
+        raise InvalidCanonicalGenesisRecord("evaluation value") from None
+    return json.dumps(
+        _genesis_evaluation_dict(value),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    ).encode("ascii")
+
+
+def canonical_genesis_evaluation_sha256(value: CanonicalGenesisEvaluation) -> str:
+    return sha256(canonical_genesis_evaluation_bytes(value)).hexdigest()
+
+
+def parse_canonical_genesis_evaluation(value: bytes | str) -> CanonicalGenesisEvaluation:
+    """Strictly parse an exact canonical genesis-evaluation identity."""
+    if type(value) is bytes:
+        try:
+            value = value.decode("ascii")
+        except UnicodeDecodeError:
+            raise InvalidCanonicalGenesisRecord("ASCII") from None
+    if type(value) is not str:
+        raise InvalidCanonicalGenesisRecord("evaluation JSON")
+    try:
+        def reject_duplicate_keys(pairs):
+            result = {}
+            for key, item in pairs:
+                if key in result:
+                    raise ValueError("duplicate key")
+                result[key] = item
+            return result
+
+        reject_number = lambda _: (_ for _ in ()).throw(ValueError())
+        data = json.loads(
+            value,
+            parse_float=reject_number,
+            parse_constant=reject_number,
+            object_pairs_hook=reject_duplicate_keys,
+        )
+        if (
+            type(data) is not dict
+            or set(data) != set(CanonicalGenesisEvaluation.__dataclass_fields__)
+            or type(data["relevant_records"]) is not list
+            or type(data["explicit_non_claims"]) is not list
+            or any(type(item) is not list or len(item) != 2 for item in data["relevant_records"])
+        ):
+            raise ValueError()
+        result = CanonicalGenesisEvaluation(
+            **{
+                **data,
+                "state": CanonicalGenesisEvaluationState(data["state"]),
+                "evaluated_at": _parse_time(data["evaluated_at"], "evaluated_at"),
+                "relevant_records": tuple(tuple(item) for item in data["relevant_records"]),
+                "explicit_non_claims": tuple(data["explicit_non_claims"]),
+            }
+        )
+    except Exception:
+        raise InvalidCanonicalGenesisRecord("evaluation JSON") from None
+    if canonical_genesis_evaluation_bytes(result).decode("ascii") != value:
+        raise InvalidCanonicalGenesisRecord("noncanonical evaluation JSON")
+    return result
+
+
 def evaluate_canonical_genesis(
     records, *, graph_or_protocol_id: str, evaluated_at: datetime
 ) -> CanonicalGenesisEvaluation:
