@@ -37,6 +37,7 @@ from app.services.trusted_covenant_registration import (
 EDGE_SCHEMA = "hodlxxi.canonical_admission_edge.v1"
 EDGE_VERSION = "hodlxxi.canonical_admission_edge_service.v1"
 EVALUATOR_VERSION = "hodlxxi.canonical_admission_edge_evaluator.v1"
+CURRENT_EVALUATOR_VERSION = "hodlxxi.canonical_admission_edge_current_evaluator.v1"
 VERIFICATION_RULE = "hodlxxi.canonical_admission_edge_verification.v1"
 GRAPH_ID = "hodlxxi.crt_membership_graph.v1"
 NETWORK = "bitcoin"
@@ -125,6 +126,24 @@ class AdmissionEdgeReason(Enum):
     OBSERVATION_BINDING_MISMATCH = "observation_binding_mismatch"
     UNEQUAL_LEG_AMOUNTS = "unequal_leg_amounts"
     SPONSOR_LINEAGE_EVALUATOR_UNAVAILABLE = "sponsor_lineage_evaluator_unavailable"
+    MALFORMED_OR_UNTRUSTED_INPUT = "malformed_or_untrusted_input"
+
+
+class AdmissionEdgeCurrentReason(Enum):
+    EXACT_CURRENT_EDGE_ACTIVE = "exact_current_edge_active"
+    RECORD_PROPOSED = "record_proposed"
+    RECORD_DISPUTED = "record_disputed"
+    RECORD_REVOKED = "record_revoked"
+    RECORD_SUPERSEDED = "record_superseded"
+    REGISTRATION_REVOKED = "registration_revoked"
+    REGISTRATION_SUPERSEDED = "registration_superseded"
+    REGISTRATION_DISPUTED = "registration_disputed"
+    REGISTRATION_BINDING_MISMATCH = "registration_binding_mismatch"
+    MISSING_REQUIRED_LEG = "missing_required_leg"
+    SPENT_REQUIRED_LEG = "spent_required_leg"
+    INSUFFICIENT_CONFIRMATIONS = "insufficient_confirmations"
+    OBSERVATION_BINDING_MISMATCH = "observation_binding_mismatch"
+    UNEQUAL_LEG_AMOUNTS = "unequal_leg_amounts"
     MALFORMED_OR_UNTRUSTED_INPUT = "malformed_or_untrusted_input"
 
 
@@ -876,13 +895,214 @@ class CanonicalAdmissionEdgeEvaluation:
                 _fail("active relevant records")
 
 
-def evaluate_canonical_admission_edge(
+@dataclass(frozen=True, slots=True)
+class CanonicalAdmissionEdgeCurrentEvaluation:
+    evaluator_version: str
+    graph_or_protocol_id: str
+    edge_id: str
+    edge_sha256: str
+    sponsor_participant_id: str
+    sponsor_compressed_public_key: str
+    sponsor_x_only_public_key: str
+    sponsor_depth: int
+    child_participant_id: str
+    child_compressed_public_key: str
+    child_x_only_public_key: str
+    child_depth: int
+    early_height: int
+    middle_height: int
+    late_height: int
+    evaluated_at: datetime
+    state: AdmissionEdgeEvaluationState
+    reason_code: AdmissionEdgeCurrentReason
+    selected_registration_id: str | None
+    selected_registration_sha256: str | None
+    selected_sponsor_basis_record_id: str | None
+    selected_sponsor_basis_record_sha256: str | None
+    observation_source_sha256: str | None
+    relevant_records: tuple[tuple[str, str], ...]
+    explicit_non_claims: tuple[str, ...]
+    human_interpretation_required: bool
+
+    def __post_init__(self):
+        if (
+            self.evaluator_version != CURRENT_EVALUATOR_VERSION
+            or self.graph_or_protocol_id != GRAPH_ID
+            or type(self.state) is not AdmissionEdgeEvaluationState
+            or type(self.reason_code) is not AdmissionEdgeCurrentReason
+            or self.explicit_non_claims != MANDATORY_NON_CLAIMS
+            or self.human_interpretation_required is not True
+        ):
+            _fail("current evaluation contract")
+        _uuid(self.edge_id, "edge id")
+        _digest(self.edge_sha256, "edge digest")
+        _time(self.evaluated_at, "evaluated")
+        for participant in (self.sponsor_participant_id, self.child_participant_id):
+            if type(participant) is not str or not participant:
+                _fail("current evaluation participant")
+        for key in (self.sponsor_compressed_public_key, self.child_compressed_public_key):
+            if type(key) is not str or _HEX66.fullmatch(key) is None:
+                _fail("current evaluation compressed key")
+        for key in (self.sponsor_x_only_public_key, self.child_x_only_public_key):
+            _digest(key, "current evaluation x-only key")
+        if (
+            self.sponsor_compressed_public_key[2:] != self.sponsor_x_only_public_key
+            or self.child_compressed_public_key[2:] != self.child_x_only_public_key
+            or self.sponsor_participant_id == self.child_participant_id
+            or type(self.sponsor_depth) is not int
+            or type(self.child_depth) is not int
+            or self.child_depth != self.sponsor_depth + 1
+            or (self.early_height, self.middle_height, self.late_height)
+            != cascade_heights(self.child_depth)
+            or self.child_participant_id != self.child_x_only_public_key
+            or (
+                self.sponsor_depth == 0
+                and (
+                    self.sponsor_participant_id != GENESIS_PARTICIPANT_ID
+                    or self.sponsor_compressed_public_key != GENESIS_COMPRESSED_KEY
+                    or self.sponsor_x_only_public_key != GENESIS_XONLY_KEY
+                )
+            )
+            or (
+                self.sponsor_depth > 0
+                and self.sponsor_participant_id != self.sponsor_x_only_public_key
+            )
+        ):
+            _fail("current evaluation identity or arithmetic")
+        expected = {
+            AdmissionEdgeEvaluationState.ACTIVE: {
+                AdmissionEdgeCurrentReason.EXACT_CURRENT_EDGE_ACTIVE
+            },
+            AdmissionEdgeEvaluationState.PROVISIONAL: {
+                AdmissionEdgeCurrentReason.RECORD_PROPOSED
+            },
+            AdmissionEdgeEvaluationState.DISPUTED: {
+                AdmissionEdgeCurrentReason.RECORD_DISPUTED,
+                AdmissionEdgeCurrentReason.REGISTRATION_DISPUTED,
+            },
+            AdmissionEdgeEvaluationState.EDGE_INACTIVE: {
+                AdmissionEdgeCurrentReason.RECORD_REVOKED,
+                AdmissionEdgeCurrentReason.RECORD_SUPERSEDED,
+                AdmissionEdgeCurrentReason.REGISTRATION_REVOKED,
+                AdmissionEdgeCurrentReason.REGISTRATION_SUPERSEDED,
+                AdmissionEdgeCurrentReason.MISSING_REQUIRED_LEG,
+                AdmissionEdgeCurrentReason.SPENT_REQUIRED_LEG,
+                AdmissionEdgeCurrentReason.INSUFFICIENT_CONFIRMATIONS,
+                AdmissionEdgeCurrentReason.UNEQUAL_LEG_AMOUNTS,
+            },
+            AdmissionEdgeEvaluationState.UNKNOWN: {
+                AdmissionEdgeCurrentReason.REGISTRATION_BINDING_MISMATCH,
+                AdmissionEdgeCurrentReason.OBSERVATION_BINDING_MISMATCH,
+                AdmissionEdgeCurrentReason.MALFORMED_OR_UNTRUSTED_INPUT,
+            },
+        }
+        if self.state not in expected or self.reason_code not in expected[self.state]:
+            _fail("current evaluation state reason")
+        refs = (
+            self.selected_registration_id,
+            self.selected_registration_sha256,
+            self.selected_sponsor_basis_record_id,
+            self.selected_sponsor_basis_record_sha256,
+            self.observation_source_sha256,
+        )
+        for record_id, digest in (
+            (self.selected_registration_id, self.selected_registration_sha256),
+            (
+                self.selected_sponsor_basis_record_id,
+                self.selected_sponsor_basis_record_sha256,
+            ),
+        ):
+            if (record_id is None) != (digest is None):
+                _fail("current evaluation selected reference")
+            if record_id is not None:
+                _uuid(record_id, "current evaluation selected id")
+                _digest(digest, "current evaluation selected digest")
+        if self.observation_source_sha256 is not None:
+            _digest(self.observation_source_sha256, "current observation digest")
+        active = self.state is AdmissionEdgeEvaluationState.ACTIVE
+        if active and any(x is None for x in refs):
+            _fail("current active references")
+        if not active and any(x is not None for x in refs[:4]):
+            _fail("current non-active selected references")
+        if (
+            type(self.relevant_records) is not tuple
+            or self.relevant_records != tuple(sorted(self.relevant_records))
+            or len(set(self.relevant_records)) != len(self.relevant_records)
+            or len({item[0] for item in self.relevant_records}) != len(self.relevant_records)
+        ):
+            _fail("current relevant records")
+        for item in self.relevant_records:
+            if type(item) is not tuple or len(item) != 2:
+                _fail("current relevant record")
+            _uuid(item[0], "current relevant record id")
+            _digest(item[1], "current relevant record digest")
+        required = {
+            (self.edge_id, self.edge_sha256),
+            (self.selected_registration_id, self.selected_registration_sha256),
+            (
+                self.selected_sponsor_basis_record_id,
+                self.selected_sponsor_basis_record_sha256,
+            ),
+        }
+        if active and set(self.relevant_records) != required:
+            _fail("current active relevant records")
+
+
+def validate_immediate_sponsor_basis(
+    record: CanonicalAdmissionEdge,
+    *,
+    genesis_evaluation: CanonicalGenesisEvaluation | None = None,
+    parent_edge: CanonicalAdmissionEdge | None = None,
+) -> CanonicalAdmissionEdge:
+    """Validate immutable immediate-basis identity without parent lifecycle policy."""
+    record = _validated_record(record)
+    if record.child_depth == 1:
+        if type(genesis_evaluation) is not CanonicalGenesisEvaluation or parent_edge is not None:
+            _fail("genesis source")
+        genesis_evaluation = CanonicalGenesisEvaluation(
+            *(getattr(genesis_evaluation, f) for f in CanonicalGenesisEvaluation.__dataclass_fields__)
+        )
+        if genesis_evaluation.state is CanonicalGenesisEvaluationState.GENESIS_ACTIVE:
+            controlling = (
+                genesis_evaluation.selected_effective_record_id,
+                genesis_evaluation.selected_effective_record_sha256,
+            )
+        elif len(genesis_evaluation.relevant_records) == 1:
+            (controlling,) = genesis_evaluation.relevant_records
+        else:
+            _fail("genesis source")
+        if controlling != (
+            record.sponsor_basis_record_id,
+            record.sponsor_basis_record_sha256,
+        ):
+            _fail("genesis source")
+    else:
+        if genesis_evaluation is not None or type(parent_edge) is not CanonicalAdmissionEdge:
+            _fail("parent source")
+        parent_edge = _validated_record(parent_edge)
+        if (
+            parent_edge.edge_id != record.sponsor_basis_record_id
+            or canonical_admission_edge_sha256(parent_edge) != record.sponsor_basis_record_sha256
+            or parent_edge.graph_or_protocol_id != record.graph_or_protocol_id
+            or parent_edge.human_profile != record.human_profile
+            or parent_edge.child_participant_id != record.sponsor_participant_id
+            or parent_edge.child_compressed_public_key != record.sponsor_compressed_public_key
+            or parent_edge.child_x_only_public_key != record.sponsor_x_only_public_key
+            or parent_edge.child_depth != record.sponsor_depth
+        ):
+            _fail("parent source")
+    return record
+
+
+def _evaluate_canonical_admission_edge(
     record: CanonicalAdmissionEdge,
     *,
     trusted_registration: TrustedCovenantRegistration,
     observation_evaluation: CovenantRelationEvaluation,
-    genesis_evaluation: CanonicalGenesisEvaluation,
+    genesis_evaluation: CanonicalGenesisEvaluation | None,
+    parent_edge: CanonicalAdmissionEdge | None,
     evaluated_at: datetime,
+    current_only: bool,
 ) -> CanonicalAdmissionEdgeEvaluation:
     """Pure fail-closed current evaluation; deeper lineage is deliberately unavailable."""
     evaluated_at = _time(evaluated_at, "evaluated")
@@ -900,14 +1120,18 @@ def evaluate_canonical_admission_edge(
     )
     observation_digest = None
     try:
-        if record.sponsor_depth == 0:
+        if current_only:
+            validate_immediate_sponsor_basis(
+                record, genesis_evaluation=genesis_evaluation, parent_edge=parent_edge
+            )
+        elif record.child_depth == 1:
             validate_admission_sources(
                 record,
                 registration,
                 genesis_evaluation=genesis_evaluation,
                 require_active=False,
             )
-        else:
+        if record.sponsor_depth > 0:
             # The record itself proves only its exact immutable immediate-parent
             # binding; current ancestry is deliberately outside this evaluator.
             _validated_record(record)
@@ -982,27 +1206,27 @@ def evaluate_canonical_admission_edge(
                 AdmissionEdgeEvaluationState.EDGE_INACTIVE,
                 AdmissionEdgeReason.REGISTRATION_SUPERSEDED,
             )
-        elif record.child_depth > 1:
+        elif record.child_depth > 1 and not current_only:
             state, reason = (
                 AdmissionEdgeEvaluationState.UNKNOWN,
                 AdmissionEdgeReason.SPONSOR_LINEAGE_EVALUATOR_UNAVAILABLE,
             )
-        elif genesis_evaluation.state is CanonicalGenesisEvaluationState.PROVISIONAL:
+        elif not current_only and genesis_evaluation.state is CanonicalGenesisEvaluationState.PROVISIONAL:
             state, reason = (
                 AdmissionEdgeEvaluationState.PROVISIONAL,
                 AdmissionEdgeReason.GENESIS_PROVISIONAL,
             )
-        elif genesis_evaluation.state is CanonicalGenesisEvaluationState.DISPUTED:
+        elif not current_only and genesis_evaluation.state is CanonicalGenesisEvaluationState.DISPUTED:
             state, reason = (
                 AdmissionEdgeEvaluationState.DISPUTED,
                 AdmissionEdgeReason.GENESIS_DISPUTED,
             )
-        elif genesis_evaluation.state is CanonicalGenesisEvaluationState.LINEAGE_INACTIVE:
+        elif not current_only and genesis_evaluation.state is CanonicalGenesisEvaluationState.LINEAGE_INACTIVE:
             state, reason = (
                 AdmissionEdgeEvaluationState.LINEAGE_INACTIVE,
                 AdmissionEdgeReason.GENESIS_LINEAGE_INACTIVE,
             )
-        elif genesis_evaluation.state is CanonicalGenesisEvaluationState.UNKNOWN:
+        elif not current_only and genesis_evaluation.state is CanonicalGenesisEvaluationState.UNKNOWN:
             state, reason = (
                 AdmissionEdgeEvaluationState.UNKNOWN,
                 AdmissionEdgeReason.GENESIS_UNKNOWN,
@@ -1118,8 +1342,22 @@ def evaluate_canonical_admission_edge(
                 (record.sponsor_basis_record_id, record.sponsor_basis_record_sha256),
             )
         )
-    return CanonicalAdmissionEdgeEvaluation(
-        EVALUATOR_VERSION,
+    result_type = (
+        CanonicalAdmissionEdgeCurrentEvaluation
+        if current_only
+        else CanonicalAdmissionEdgeEvaluation
+    )
+    result_reason = (
+        AdmissionEdgeCurrentReason(
+            "exact_current_edge_active"
+            if state is AdmissionEdgeEvaluationState.ACTIVE
+            else reason.value
+        )
+        if current_only
+        else reason
+    )
+    return result_type(
+        CURRENT_EVALUATOR_VERSION if current_only else EVALUATOR_VERSION,
         GRAPH_ID,
         record.edge_id,
         digest,
@@ -1136,7 +1374,7 @@ def evaluate_canonical_admission_edge(
         record.late_height,
         evaluated_at,
         state,
-        reason,
+        result_reason,
         registration.registration_id if active else None,
         trusted_registration_sha256(registration) if active else None,
         record.sponsor_basis_record_id if active else None,
@@ -1146,3 +1384,136 @@ def evaluate_canonical_admission_edge(
         MANDATORY_NON_CLAIMS,
         True,
     )
+
+
+def evaluate_canonical_admission_edge_current(
+    record: CanonicalAdmissionEdge,
+    *,
+    trusted_registration: TrustedCovenantRegistration,
+    observation_evaluation: CovenantRelationEvaluation,
+    evaluated_at: datetime,
+    genesis_evaluation: CanonicalGenesisEvaluation | None = None,
+    parent_edge: CanonicalAdmissionEdge | None = None,
+) -> CanonicalAdmissionEdgeCurrentEvaluation:
+    """Evaluate one exact edge's current local evidence, without ancestry claims."""
+    return _evaluate_canonical_admission_edge(
+        record,
+        trusted_registration=trusted_registration,
+        observation_evaluation=observation_evaluation,
+        genesis_evaluation=genesis_evaluation,
+        parent_edge=parent_edge,
+        evaluated_at=evaluated_at,
+        current_only=True,
+    )
+
+
+def evaluate_canonical_admission_edge(
+    record: CanonicalAdmissionEdge,
+    *,
+    trusted_registration: TrustedCovenantRegistration,
+    observation_evaluation: CovenantRelationEvaluation,
+    genesis_evaluation: CanonicalGenesisEvaluation,
+    evaluated_at: datetime,
+) -> CanonicalAdmissionEdgeEvaluation:
+    """Preserved PR6.10 wrapper; complete lineage remains deliberately unavailable."""
+    return _evaluate_canonical_admission_edge(
+        record,
+        trusted_registration=trusted_registration,
+        observation_evaluation=observation_evaluation,
+        genesis_evaluation=genesis_evaluation,
+        parent_edge=None,
+        evaluated_at=evaluated_at,
+        current_only=False,
+    )
+
+
+def _current_evaluation_dict(
+    value: CanonicalAdmissionEdgeCurrentEvaluation,
+) -> dict:
+    payload = {field: getattr(value, field) for field in value.__dataclass_fields__}
+    payload["evaluated_at"] = _timestamp(value.evaluated_at)
+    payload["state"] = value.state.value
+    payload["reason_code"] = value.reason_code.value
+    payload["relevant_records"] = [list(item) for item in value.relevant_records]
+    payload["explicit_non_claims"] = list(value.explicit_non_claims)
+    return payload
+
+
+def canonical_admission_edge_current_evaluation_bytes(
+    value: CanonicalAdmissionEdgeCurrentEvaluation,
+) -> bytes:
+    if type(value) is not CanonicalAdmissionEdgeCurrentEvaluation:
+        _fail("current evaluation type")
+    value = CanonicalAdmissionEdgeCurrentEvaluation(
+        *(getattr(value, field) for field in value.__dataclass_fields__)
+    )
+    return json.dumps(
+        _current_evaluation_dict(value),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    ).encode("ascii")
+
+
+def canonical_admission_edge_current_evaluation_sha256(
+    value: CanonicalAdmissionEdgeCurrentEvaluation,
+) -> str:
+    return sha256(canonical_admission_edge_current_evaluation_bytes(value)).hexdigest()
+
+
+def parse_canonical_admission_edge_current_evaluation(
+    value: bytes | str,
+) -> CanonicalAdmissionEdgeCurrentEvaluation:
+    if type(value) is bytes:
+        try:
+            value = value.decode("ascii")
+        except UnicodeDecodeError:
+            _fail("current evaluation ASCII")
+    if type(value) is not str:
+        _fail("current evaluation JSON")
+
+    def pairs(items):
+        result = {}
+        for key, item in items:
+            if key in result:
+                raise ValueError
+            result[key] = item
+        return result
+
+    try:
+        data = json.loads(
+            value,
+            object_pairs_hook=pairs,
+            parse_float=lambda _: (_ for _ in ()).throw(ValueError()),
+            parse_constant=lambda _: (_ for _ in ()).throw(ValueError()),
+        )
+        if (
+            type(data) is not dict
+            or set(data) != set(CanonicalAdmissionEdgeCurrentEvaluation.__dataclass_fields__)
+            or type(data["evaluated_at"]) is not str
+            or not data["evaluated_at"].endswith("Z")
+            or type(data["relevant_records"]) is not list
+            or any(type(item) is not list or len(item) != 2 for item in data["relevant_records"])
+            or type(data["explicit_non_claims"]) is not list
+        ):
+            raise ValueError
+        result = CanonicalAdmissionEdgeCurrentEvaluation(
+            **{
+                **data,
+                "evaluated_at": datetime.fromisoformat(
+                    data["evaluated_at"][:-1] + "+00:00"
+                ),
+                "state": AdmissionEdgeEvaluationState(data["state"]),
+                "reason_code": AdmissionEdgeCurrentReason(data["reason_code"]),
+                "relevant_records": tuple(
+                    tuple(item) for item in data["relevant_records"]
+                ),
+                "explicit_non_claims": tuple(data["explicit_non_claims"]),
+            }
+        )
+    except Exception:
+        _fail("current evaluation JSON")
+    if canonical_admission_edge_current_evaluation_bytes(result).decode("ascii") != value:
+        _fail("current evaluation noncanonical JSON")
+    return result
