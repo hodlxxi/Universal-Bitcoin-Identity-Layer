@@ -52,5 +52,5 @@ This service performs no storage lookup, database access, Bitcoin RPC, LND,
 HTTP, subprocess, route, API, MCP, CLI, scheduler, cache, model, migration, or
 runtime composition. It grants no FULL/LIMITED role, entitlement, invite or
 sponsor permission, administration privilege, or authorization write.
-PR6.13 remains responsible for the separate membership-to-FULL/LIMITED policy
-mapping.
+PR6.13 implements the separate membership-to-FULL/LIMITED policy mapping as a
+dormant pure layer; it does not change this PR6.12 contract or runtime access.
