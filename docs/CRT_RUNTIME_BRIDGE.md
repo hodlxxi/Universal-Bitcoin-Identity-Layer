@@ -16,7 +16,7 @@ The authority order is:
 
 | Canon claim | Normative subject | Runtime evidence or component | Current implementation status |
 | --- | --- | --- | --- |
-| `CRT-MEMBERSHIP-001` | Current human membership is an active, uniquely rooted evidence state. | PR6.12 dormant pure composition over the PR6.9 genesis evaluation or PR6.11 sponsor-lineage evaluation. | IMPLEMENTED_DORMANT; production composition and authorization mapping remain unavailable. |
+| `CRT-MEMBERSHIP-001` | Current human membership is an active, uniquely rooted evidence state. | PR6.12 dormant pure composition over the PR6.9 genesis evaluation or PR6.11 sponsor-lineage evaluation; PR6.13 separately classifies its exact result. | IMPLEMENTED_DORMANT; no production composition, entitlement adapter, action integration, or public proof is wired. |
 | `CRT-ADMISSION-001` | One human admission edge is an exact funded `legacy_777` mirrored pair. | PR6.10 dormant append-only registry and pure depth-1 edge evaluator over PR6.8 registration and trusted observations. | Exact equality and effective-child uniqueness are implemented dormant; within PR6.10, no production wiring or complete lineage traversal exists. PR6.11 is a separate explicit-snapshot evaluator. |
 | `CRT-CASCADE-001` | Active ancestry is unique, acyclic, rooted at E923, and propagates inactivity. | PR6.11 pure explicit-snapshot evaluator. | IMPLEMENTED_DORMANT; no automatic lookup, runtime cascade wiring, route, API, MCP, CLI, or scheduler. |
 | `CRT-GENESIS-001` | E923 is depth 0 only through an effective canonical genesis record for the named V1 graph. | PR6.9 exact source publication and pure evaluator; operator continuity remains supporting evidence only. | IMPLEMENTED_DORMANT; no production wiring, sponsor, admission edge, or succession authority. |
@@ -87,16 +87,17 @@ C. Canonical E923 genesis-record publication, lifecycle, and fail-closed evaluat
 D. PR6.10 authoritative admission-edge registry and depth-1 current edge evaluation. (IMPLEMENTED_DORMANT)
 E. PR6.11 complete selected sponsor-lineage traversal and ancestor inactivity propagation. (IMPLEMENTED_DORMANT)
 F. PR6.12 canonical CRT membership-state composition. (IMPLEMENTED_DORMANT)
-G. Future FULL/LIMITED policy mapping.
-H. Future public “why FULL” proof surface.
+G. PR6.13 canonical FULL/LIMITED policy mapping. (IMPLEMENTED_DORMANT)
+H. PR6.14 future public “why FULL” proof surface.
 
 PR6.8 does not establish genesis, a complete admission edge, lineage, membership,
 or authorization.
 
 ## Explicit non-claims
 
-This bridge asserts only that pure caller-injected membership evaluation is
-implemented dormant. It does not assert that Canon membership is runtime-wired,
+This bridge asserts only that pure caller-injected membership evaluation and
+the separate PR6.13 classification policy are implemented dormant. It does not
+assert that either is runtime-wired,
 enforced, deployed, funded, or active. The evaluator performs no raw evidence,
 storage, or RPC lookup and is not a participant-facing mapping or public proof
 surface. It changes no runtime behavior. No production wiring was added.
@@ -114,3 +115,4 @@ surface. It changes no runtime behavior. No production wiring was added.
 - [Canonical E923 Genesis Record V1](CANONICAL_E923_GENESIS_RECORD_V1.md)
 - [Canonical Sponsor Lineage Evaluator V1](CANONICAL_SPONSOR_LINEAGE_EVALUATOR_V1.md)
 - [Canonical CRT Membership Evaluator V1](CANONICAL_CRT_MEMBERSHIP_EVALUATOR_V1.md)
+- [Canonical CRT Authorization Policy V1](CANONICAL_CRT_AUTHORIZATION_POLICY_V1.md)
