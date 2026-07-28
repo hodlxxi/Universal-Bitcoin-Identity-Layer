@@ -21,7 +21,7 @@ The only status terms used here are `IMPLEMENTED_DORMANT`, `ACTIVE_LEGACY_NON_CA
 | Unique sponsor/admission registry | Each non-genesis child has at most one effective sponsor and one exact registered admission edge. | PR6.10 append-only canonical registry and pure depth-1 current-edge evaluator. | IMPLEMENTED_DORMANT | Within the unchanged PR6.10 contract, deeper edges fail closed pending complete lineage traversal; PR6.11 separately provides that traversal for an explicit snapshot. |
 | Cascade depth and acyclic lineage validation | `child_depth = sponsor_depth + 1`; no self-sponsorship, cycles, repeated identifiers, or repeated role-bound keys; all active paths terminate at E923. | PR6.11 pure explicit-snapshot sponsor-lineage evaluator. | IMPLEMENTED_DORMANT | Generic membership and production/runtime composition remain unavailable. |
 | Ancestor inactivity propagation | Inactive edges produce `edge_inactive` and dependent `lineage_inactive` states while preserving history. | PR6.11 root-to-target controlling-state evaluation. | IMPLEMENTED_DORMANT | No automatic storage lookup or production composition exists. |
-| CRT membership-state evaluator | Emit only `genesis_active`, `active`, `provisional`, `edge_inactive`, `lineage_inactive`, `disputed`, or `unknown`. | No evaluator is wired. | MISSING | Compose genesis, admission, current UTXO evidence, and complete ancestry. |
+| CRT membership-state evaluator | Emit only `genesis_active`, `active`, `provisional`, `edge_inactive`, `lineage_inactive`, `disputed`, or `unknown`. | PR6.12 pure composition over one exact PR6.9 genesis or PR6.11 lineage evaluation. | IMPLEMENTED_DORMANT | No runtime wiring; PR6.13 retains the separate FULL/LIMITED policy mapping. |
 | FULL/LIMITED authorization policy mapping | Authorization must be separately governed from membership. FULL and LIMITED are not CRT membership states. | No Canon-conformant participant-facing mapping is wired. | MISSING | Define and review policy only after membership-state evaluation. |
 | Public why-FULL proof | Explain current authorization from bounded evidence and policy. | No public proof surface is wired. | MISSING | Expose only after evaluation and mapping are defined. |
 | Active wallet-wide ratio path | Wallet-wide aggregation and ratio substitution fail Canon admission. | Active legacy session FULL/LIMITED paths use incoming/outgoing balance ratios in some flows. | ACTIVE_LEGACY_NON_CANONICAL | Keep truthfully labeled until separately replaced; it is not CRT proof. |
@@ -48,7 +48,7 @@ B. PR6.8 trusted registration/exact outpoint binding. (IMPLEMENTED_DORMANT)
 C. Canonical E923 genesis-record publication, lifecycle, and fail-closed evaluation. (IMPLEMENTED_DORMANT)
 D. PR6.10 authoritative admission-edge registry and depth-1 current edge evaluation. (IMPLEMENTED_DORMANT)
 E. PR6.11 complete selected sponsor-lineage traversal and ancestor inactivity propagation. (IMPLEMENTED_DORMANT)
-F. Future CRT membership-state composition.
+F. PR6.12 canonical CRT membership-state composition. (IMPLEMENTED_DORMANT)
 G. Future FULL/LIMITED policy mapping.
 H. Future public “why FULL” proof.
 

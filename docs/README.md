@@ -17,6 +17,7 @@ The normative theory and protocol source is `hodlxxi/hodlxxi-cryptographic-recip
 - **[CANONICAL_E923_GENESIS_RECORD_V1.md](CANONICAL_E923_GENESIS_RECORD_V1.md)** — dormant exact E923 depth-0 source publication, evaluator, and append-only persistence boundary.
 - **[CANONICAL_ADMISSION_EDGE_REGISTRY_V1.md](CANONICAL_ADMISSION_EDGE_REGISTRY_V1.md)** — PR6.10 dormant authoritative admission-edge registry and depth-1 current-edge evaluation boundary.
 - **[CANONICAL_SPONSOR_LINEAGE_EVALUATOR_V1.md](CANONICAL_SPONSOR_LINEAGE_EVALUATOR_V1.md)** — PR6.11 dormant pure explicit-snapshot sponsor-path evaluator; generic membership remains unavailable.
+- **[CANONICAL_CRT_MEMBERSHIP_EVALUATOR_V1.md](CANONICAL_CRT_MEMBERSHIP_EVALUATOR_V1.md)** — PR6.12 dormant pure membership composition over one exact genesis or sponsor-lineage evaluation; FULL/LIMITED mapping remains deferred.
 - **[TRUSTED_COVENANT_REGISTRATION_V1.md](TRUSTED_COVENANT_REGISTRATION_V1.md)** — dormant exact validated-pair registration, lifecycle gating, and normalized outpoint binding.
 
 0. **[DOCUMENTATION_MAP.md](DOCUMENTATION_MAP.md)** - Start here for the docs status map: current, historical, experimental, and archive-candidate documentation.
