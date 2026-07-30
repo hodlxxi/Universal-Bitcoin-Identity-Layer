@@ -6,11 +6,13 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 from coincurve import PrivateKey, PublicKeyXOnly
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.sql.dml import Update
 
 from app.models import ActionOperation, ActionStepUpChallenge
 from app.services.action_idempotency import request_fingerprint_sha256, token_reference_sha256
@@ -124,6 +126,17 @@ def reservation(challenge, **changes):
 def rows(factory):
     with factory() as session:
         return session.query(ActionOperation).all(), session.query(ActionStepUpChallenge).all()
+
+
+def concurrent_reservations(repository, requests_and_proofs):
+    barrier = Barrier(len(requests_and_proofs))
+
+    def reserve(pair):
+        barrier.wait()
+        return repository.reserve_with_step_up(pair[0], pair[1], NOW)
+
+    with ThreadPoolExecutor(max_workers=len(requests_and_proofs)) as pool:
+        return list(pool.map(reserve, requests_and_proofs))
 
 
 def test_atomic_success_persists_bound_evidence_without_secrets(tmp_path):
@@ -295,16 +308,41 @@ def test_flush_failure_rolls_back_challenge_consumption(tmp_path):
         assert session.get(ActionStepUpChallenge, challenge.challenge_id).consumed_at is None
 
 
+def test_cas_failure_rolls_back_provisional_operation(tmp_path):
+    class FailedCasSession(Session):
+        def execute(self, statement, *args, **kwargs):
+            if isinstance(statement, Update) and statement.table.name == ActionStepUpChallenge.__tablename__:
+                return type("FailedCasResult", (), {"rowcount": 0})()
+            return super().execute(statement, *args, **kwargs)
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'failed-cas.db'}")
+    ActionStepUpChallenge.__table__.create(engine)
+    ActionOperation.__table__.create(engine)
+    factory = sessionmaker(bind=engine, class_=FailedCasSession, expire_on_commit=False)
+    repository = SqlAlchemyAtomicStepUpOperationRepository(factory)
+    key = PrivateKey()
+    challenge = create_challenge(factory, key)
+
+    with pytest.raises(ActionOperationStorageError, match="storage_unavailable"):
+        repository.reserve_with_step_up(reservation(challenge), signed_proof(challenge, key), NOW)
+
+    operations, challenges = rows(factory)
+    assert operations == []
+    assert challenges[0].consumed_at is None
+
+
 def test_concurrent_identical_requests_resolve_new_and_replay(tmp_path):
-    factory, repository = setup(tmp_path)
+    factory, repository = setup(tmp_path, "identical.db")
     key = PrivateKey()
     challenge = create_challenge(factory, key)
     request, proof = reservation(challenge), signed_proof(challenge, key)
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(lambda _: repository.reserve_with_step_up(request, proof, NOW), range(2)))
+    results = concurrent_reservations(repository, [(request, proof), (request, proof)])
     assert sorted(result.status.value for result in results) == ["new", "replay"]
     assert len({result.operation.operation_id for result in results}) == 1
-    assert len(rows(factory)[0]) == 1
+    operations, challenges = rows(factory)
+    assert len(operations) == 1
+    assert len(challenges) == 1
+    assert sum(challenge.consumed_at is not None for challenge in challenges) == 1
 
 
 def test_concurrent_different_keys_same_challenge(tmp_path):
@@ -313,14 +351,15 @@ def test_concurrent_different_keys_same_challenge(tmp_path):
     challenge = create_challenge(factory, key)
     proof = signed_proof(challenge, key)
     requests = [reservation(challenge), reservation(challenge, idempotency_key_sha256="55" * 32)]
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(lambda request: repository.reserve_with_step_up(request, proof, NOW), requests))
+    results = concurrent_reservations(repository, [(request, proof) for request in requests])
     assert sorted(result.status.value for result in results) == ["new", "step_up_rejected"]
     rejected = next(
         result for result in results if result.verification is not None and not result.verification.verified
     )
     assert rejected.verification.reason_code is StepUpReason.CHALLENGE_CONSUMED
-    assert len(rows(factory)[0]) == 1
+    operations, challenges = rows(factory)
+    assert len(operations) == 1
+    assert sum(challenge.consumed_at is not None for challenge in challenges) == 1
 
 
 def test_concurrent_same_namespace_different_challenges(tmp_path):
@@ -329,13 +368,7 @@ def test_concurrent_same_namespace_different_challenges(tmp_path):
     challenges = [create_challenge(factory, key) for key in keys]
     requests = [reservation(challenge) for challenge in challenges]
     proofs = [signed_proof(challenge, key) for challenge, key in zip(challenges, keys)]
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(
-            pool.map(
-                lambda pair: repository.reserve_with_step_up(pair[0], pair[1], NOW),
-                zip(requests, proofs),
-            )
-        )
+    results = concurrent_reservations(repository, list(zip(requests, proofs)))
     assert sorted(result.status.value for result in results) == ["idempotency_conflict", "new"]
     with factory() as session:
         stored = {row.challenge_id: row for row in session.query(ActionStepUpChallenge)}

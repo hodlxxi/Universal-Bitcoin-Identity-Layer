@@ -128,10 +128,16 @@ class SqlAlchemyAtomicStepUpOperationRepository:
                     verified_at=timestamp,
                 )
                 if not verification.verified:
+                    if verification.reason_code is StepUpReason.CHALLENGE_CONSUMED:
+                        session.rollback()
+                        return self._resolve_after_race(reservation, timestamp)
                     return AtomicStepUpReserveResult(AtomicStepUpReserveStatus.STEP_UP_REJECTED, None, verification)
 
                 verification_hash = step_up_verification_sha256(verification)
                 bound = replace(reservation, step_up_verification_sha256=verification_hash)
+                operation = ActionOperation(**vars(bound), state="reserved", updated_at=bound.reserved_at)
+                session.add(operation)
+                session.flush()
                 consumed = session.execute(
                     update(ActionStepUpChallenge)
                     .where(
@@ -160,9 +166,6 @@ class SqlAlchemyAtomicStepUpOperationRepository:
                 if consumed.rowcount != 1:
                     session.rollback()
                     return self._resolve_after_race(reservation, timestamp)
-                operation = ActionOperation(**vars(bound), state="reserved", updated_at=bound.reserved_at)
-                session.add(operation)
-                session.flush()
                 session.commit()
                 session.refresh(operation)
                 session.expunge(operation)
