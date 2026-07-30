@@ -1,4 +1,57 @@
+import ast
 from pathlib import Path
+
+
+ROOT = Path(__file__).parents[2]
+POLICY_MODULE = "app.services.canonical_crt_authorization_policy"
+PROOF_MODULE = "app.services.canonical_crt_authorization_proof"
+POLICY_SYMBOLS = {
+    "CanonicalCrtAuthorizationClass",
+    "CanonicalCrtAuthorizationEvaluation",
+    "CanonicalCrtAuthorizationReason",
+    "canonical_crt_authorization_evaluation_bytes",
+    "canonical_crt_authorization_evaluation_sha256",
+    "parse_canonical_crt_authorization_evaluation",
+}
+DYNAMIC_CALLS = {"import_module", "__import__", "exec", "eval"}
+
+
+def _tree(path):
+    return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+
+
+def _constant_string(node):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _constant_string(node.left)
+        right = _constant_string(node.right)
+        if left is not None and right is not None:
+            return left + right
+    return None
+
+
+def _referenced_modules(path):
+    modules = set()
+    for node in ast.walk(_tree(path)):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            modules.add(node.module or "")
+            modules.update(
+                f"{node.module}.{alias.name}"
+                for alias in node.names
+                if node.module
+            )
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if POLICY_MODULE in node.value or PROOF_MODULE in node.value:
+                modules.add(node.value)
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            value = _constant_string(node)
+            if isinstance(value, str):
+                if POLICY_MODULE in value or PROOF_MODULE in value:
+                    modules.add(value)
+    return modules
 
 
 def test_service_is_importable_and_domain_only():
@@ -18,28 +71,61 @@ def test_service_is_importable_and_domain_only():
 
 
 def test_no_runtime_surface_consumes_policy():
-    service_name = "canonical_crt_authorization_policy"
-    for root in (
-        Path("app/blueprints"),
-        Path("packages/hodlxxi_mcp"),
-        Path("app/services"),
-    ):
-        if root.exists():
-            for path in root.rglob("*.py"):
-                if path.name != f"{service_name}.py":
-                    assert service_name not in path.read_text(errors="ignore")
+    proof_path = ROOT / "app/services/canonical_crt_authorization_proof.py"
+    policy_imports = [
+        node for node in ast.walk(_tree(proof_path))
+        if isinstance(node, ast.ImportFrom) and node.module == POLICY_MODULE
+    ]
+    assert len(policy_imports) == 1
+    assert {alias.name for alias in policy_imports[0].names} == POLICY_SYMBOLS
+    assert all(alias.name != "*" for alias in policy_imports[0].names)
+
+    for node in ast.walk(_tree(proof_path)):
+        if isinstance(node, ast.Import):
+            assert all(alias.name != "importlib" for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            assert node.module != "importlib"
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            assert node.func.id not in DYNAMIC_CALLS
+
+    services = ROOT / "app/services"
+    allowed = {
+        services / "canonical_crt_authorization_policy.py",
+        proof_path,
+    }
+    for path in services.rglob("*.py"):
+        if path not in allowed:
+            tree = _tree(path)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    assert all(alias.name != "importlib" for alias in node.names)
+                elif isinstance(node, ast.ImportFrom):
+                    assert node.module != "importlib"
+                elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                    assert node.func.id not in DYNAMIC_CALLS
+            assert POLICY_MODULE not in _referenced_modules(path)
+
+    for root in (ROOT / "app/blueprints", ROOT / "packages/hodlxxi_mcp"):
+        for path in root.rglob("*.py"):
+            references = _referenced_modules(path)
+            assert POLICY_MODULE not in references
+            assert PROOF_MODULE not in references
 
 
 def test_no_model_migration_cli_scheduler_or_runtime_publication():
-    service_name = "canonical_crt_authorization_policy"
-    for root in (Path("migrations"), Path("app")):
+    allowed = {
+        ROOT / "app/services/canonical_crt_authorization_policy.py",
+        ROOT / "app/services/canonical_crt_authorization_proof.py",
+    }
+    for root in (ROOT / "migrations", ROOT / "app"):
         if not root.exists():
             continue
-        for path in root.rglob("*"):
-            if (
-                path.is_file()
-                and path.suffix in {".py", ".sql"}
-                and path.name != f"{service_name}.py"
-                and "tests" not in path.parts
-            ):
-                assert service_name not in path.read_text(errors="ignore")
+        for path in root.rglob("*.py"):
+            if path not in allowed:
+                references = _referenced_modules(path)
+                assert POLICY_MODULE not in references
+                assert PROOF_MODULE not in references
+        for path in root.rglob("*.sql"):
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            assert "canonical_crt_authorization_policy" not in text
+            assert "canonical_crt_authorization_proof" not in text

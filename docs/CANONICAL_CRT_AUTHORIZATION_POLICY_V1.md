@@ -53,5 +53,10 @@ authorization, current entitlement storage, the covenant entitlement
 materializer, and runtime resolvers remain separate and unchanged. No runtime
 resolver consumes PR6.13.
 
-PR6.14 remains responsible for a reviewed public “why FULL” proof. PR6.13
-provides no public proof surface and does not replace legacy authorization.
+PR6.14 is the sole reviewed dormant pure-domain consumer of the PR6.13 result
+contract. It provides a separate canonical why-FULL/why-LIMITED artifact over
+one exact PR6.13 evaluation. No runtime resolver, entitlement store, action
+authorization, route, API, or MCP surface consumes PR6.13. PR6.14 adds no
+public surface. PR6.15 remains responsible for future read-only publication
+and verification. PR6.13 itself provides no public proof surface and does not
+replace legacy authorization.
