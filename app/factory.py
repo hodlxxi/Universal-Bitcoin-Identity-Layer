@@ -236,12 +236,16 @@ def register_blueprints(app: Flask) -> None:
     # OAuth client billing endpoints
     from app.blueprints.agent import agent_bp
     from app.blueprints.billing_agent import billing_agent_bp
+    from app.blueprints.crt_authorization_proof import (
+        crt_authorization_proof_bp,
+    )
     from app.blueprints.nip17_messages import nip17_messages_bp
     from app.blueprints.qr_operator import qr_operator_bp
     from app.blueprints.qr_pointer import qr_pointer_bp
 
     app.register_blueprint(billing_agent_bp)
     app.register_blueprint(agent_bp)
+    app.register_blueprint(crt_authorization_proof_bp)
     app.register_blueprint(nip17_messages_bp)
     app.register_blueprint(qr_operator_bp)
     app.register_blueprint(qr_pointer_bp)

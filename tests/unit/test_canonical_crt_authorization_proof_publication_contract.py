@@ -3,76 +3,145 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parents[2]
-SERVICE_IMPORT = "canonical_crt_authorization_proof"
-POLICY_MODULE = "app.services.canonical_crt_authorization_policy"
-MEMBERSHIP_MODULE = "app.services.canonical_crt_membership"
-POLICY_SYMBOLS = {
-    "CanonicalCrtAuthorizationClass",
-    "CanonicalCrtAuthorizationEvaluation",
-    "CanonicalCrtAuthorizationReason",
-    "canonical_crt_authorization_evaluation_bytes",
-    "canonical_crt_authorization_evaluation_sha256",
-    "parse_canonical_crt_authorization_evaluation",
+PROOF_MODULE = "app.services.canonical_crt_authorization_proof"
+PUBLICATION_MODULE = (
+    "app.services.canonical_crt_authorization_proof_publication"
+)
+PUBLICATION_PATH = (
+    ROOT / "app/services/canonical_crt_authorization_proof_publication.py"
+)
+BLUEPRINT_PATH = ROOT / "app/blueprints/crt_authorization_proof.py"
+APPROVED_PROOF_CONSUMER = PUBLICATION_PATH
+APPROVED_PUBLICATION_CONSUMER = BLUEPRINT_PATH
+FORBIDDEN_IMPORT_PARTS = {
+    "flask", "sqlalchemy", "database", "models", "requests", "httpx",
+    "subprocess", "payment", "payments", "billing", "entitlement",
+    "entitlements", "session", "sessions", "bitcoin", "rpc", "lnd", "mcp",
+    "scheduler", "schedulers", "cli",
+}
+FORBIDDEN_CALLS = {
+    "session_scope", "get_rpc_connection", "requests.request",
+    "requests.sessions.session.request", "session.request", "subprocess",
+    "write_text", "write_bytes", "unlink", "rename", "mkdir",
 }
 
 
-def _constant_string(node):
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        left = _constant_string(node.left)
-        right = _constant_string(node.right)
-        if left is not None and right is not None:
-            return left + right
-    return None
-
-
-def test_no_public_or_runtime_consumer():
-    forbidden_roots = (
-        ROOT / "app/blueprints",
-        ROOT / "packages/hodlxxi_mcp",
+def _runtime_python_files():
+    roots = (
+        ROOT / "app",
+        ROOT / "packages",
+        ROOT / "migrations",
+        ROOT / "scripts",
     )
-    for directory in forbidden_roots:
-        for path in directory.rglob("*.py"):
-            assert SERVICE_IMPORT not in path.read_text(errors="ignore")
+    for directory in roots:
+        if directory.exists():
+            yield from directory.rglob("*.py")
 
 
-def test_no_model_migration_cli_or_scheduler_was_added():
-    changed_service = ROOT / "app/services/canonical_crt_authorization_proof.py"
-    text = changed_service.read_text()
-    for forbidden in (
-        "import sqlalchemy", "from sqlalchemy", "import flask", "from flask",
-        "import subprocess", "from subprocess", "import requests",
-        "from requests",
-    ):
-        assert forbidden not in text.lower()
-
-    tree = ast.parse(text, filename=str(changed_service))
-    imports = {}
+def _imports(path):
+    tree = ast.parse(path.read_text(), filename=str(path))
+    result = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
-            imports.setdefault(node.module or "", []).extend(node.names)
+            result.append((node.module or "", tuple(a.name for a in node.names)))
         elif isinstance(node, ast.Import):
-            assert all(alias.name != "importlib" for alias in node.names)
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            assert node.func.id not in {
-                "import_module", "__import__", "exec", "eval",
+            result.extend((alias.name, ()) for alias in node.names)
+    return result
+
+
+def _dotted_name(node):
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        parent = _dotted_name(node.value)
+        return f"{parent}.{node.attr}" if parent else node.attr
+    return ""
+
+
+def _module_parts(module):
+    return {part.lower() for part in module.split(".")}
+
+
+def test_exactly_one_static_proof_consumer_and_one_public_blueprint():
+    proof_consumers = set()
+    publication_consumers = set()
+    for path in _runtime_python_files():
+        for module, _ in _imports(path):
+            if module == PROOF_MODULE:
+                proof_consumers.add(path)
+            if module == PUBLICATION_MODULE:
+                publication_consumers.add(path)
+    assert proof_consumers == {APPROVED_PROOF_CONSUMER}
+    assert publication_consumers == {APPROVED_PUBLICATION_CONSUMER}
+
+
+def test_approved_imports_are_explicit_and_complete():
+    imports = dict(_imports(PUBLICATION_PATH))
+    assert set(imports[PROOF_MODULE]) == {
+        "CanonicalCrtAuthorizationProof",
+        "InvalidCanonicalCrtAuthorizationProof",
+        "SCHEMA",
+        "VERIFICATION_RULE",
+        "canonical_crt_authorization_proof_bytes",
+        "canonical_crt_authorization_proof_sha256",
+        "parse_canonical_crt_authorization_proof",
+    }
+    blueprint_imports = dict(_imports(BLUEPRINT_PATH))
+    assert PUBLICATION_MODULE in blueprint_imports
+    tree = ast.parse(PUBLICATION_PATH.read_text(), filename=str(PUBLICATION_PATH))
+    proof_imports = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == PROOF_MODULE
+    ]
+    assert len(proof_imports) == 1
+    assert all(alias.name != "*" for alias in proof_imports[0].names)
+
+
+def test_no_wildcard_or_dynamic_import_and_no_code_execution():
+    for path in (PUBLICATION_PATH, BLUEPRINT_PATH):
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                assert all(alias.name != "*" for alias in node.names)
+                assert node.module != "importlib"
+            elif isinstance(node, ast.Import):
+                assert all(alias.name != "importlib" for alias in node.names)
+            elif isinstance(node, ast.Call):
+                assert _dotted_name(node.func) not in {
+                    "__import__", "eval", "exec", "importlib.import_module",
+                    "import_module",
+                }
+
+
+def test_publication_service_has_no_forbidden_executable_dependency_or_call():
+    tree = ast.parse(PUBLICATION_PATH.read_text(), filename=str(PUBLICATION_PATH))
+    for module, _ in _imports(PUBLICATION_PATH):
+        assert not (_module_parts(module) & FORBIDDEN_IMPORT_PARTS), module
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        called = _dotted_name(node.func).lower()
+        assert called not in FORBIDDEN_CALLS
+        assert not any(called.startswith(f"{name}.") for name in (
+            "subprocess", "requests", "httpx",
+        ))
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "replace":
+            assert _dotted_name(node.func.value) not in {
+                "path", "_artifact_directory",
             }
-        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-            value = _constant_string(node)
-            assert not (
-                isinstance(value, str)
-                and value.startswith("app.services.canonical_crt_")
-            )
 
-    assert "importlib" not in imports
-    assert MEMBERSHIP_MODULE in imports
-    assert POLICY_MODULE in imports
-    assert {alias.name for alias in imports[POLICY_MODULE]} == POLICY_SYMBOLS
-    assert all(alias.name != "*" for alias in imports[POLICY_MODULE])
 
-    import app.services.canonical_crt_authorization_policy as policy
-    import app.services.canonical_crt_authorization_proof as proof
+def test_agent_is_discovery_only():
+    agent_path = ROOT / "app/blueprints/agent.py"
+    imported = {module for module, _ in _imports(agent_path)}
+    assert PROOF_MODULE not in imported
+    assert PUBLICATION_MODULE not in imported
 
-    for name in POLICY_SYMBOLS:
-        assert getattr(proof, name) is getattr(policy, name)
+
+def test_no_second_blueprint_mcp_or_sensitive_runtime_consumer():
+    for path in _runtime_python_files():
+        if path in {APPROVED_PROOF_CONSUMER, APPROVED_PUBLICATION_CONSUMER}:
+            continue
+        imported = {module for module, _ in _imports(path)}
+        assert PROOF_MODULE not in imported, path
+        assert PUBLICATION_MODULE not in imported, path

@@ -1,6 +1,7 @@
 # Canonical CRT Authorization Proof V1
 
-**Status: PR6.14 `IMPLEMENTED_DORMANT`.**
+**Status: PR6.14 `IMPLEMENTED_DORMANT`; PR6.15 adds a separate
+`IMPLEMENTED_SOURCE_ONLY` read-only reference surface.**
 
 Canonical CRT Authorization Proof V1 is a pure deterministic artifact explaining
 why one exact PR6.13 authorization evaluation is `FULL` or `LIMITED`. Its only
@@ -69,7 +70,7 @@ the proof nor private-key possession, and does not establish live Bitcoin state.
 Authenticity requires a separately reviewed signature or attestation layer;
 PR6.14 adds neither.
 
-## Dormant boundary
+## Domain boundary
 
 The builder is caller-injected and performs no storage, database, Bitcoin RPC,
 LND, HTTP, or subprocess operation. It adds no action authorization, entitlement,
@@ -78,5 +79,8 @@ no route, API, MCP tool, CLI, scheduler, model, migration, runtime wiring, or
 public endpoint. Active wallet-ratio authorization remains separate and
 `ACTIVE_LEGACY_NON_CANONICAL`.
 
-PR6.15 is responsible for any future read-only public proof publication and
-verification surface.
+PR6.15 adds source-implemented read-only publication of three deterministic
+reference artifacts and stateless verification through this parser. It does not
+alter the builder, activate live source composition, grant authorization, add
+MCP support, or claim deployment. See
+[Canonical CRT Authorization Proof Publication V1](CANONICAL_CRT_AUTHORIZATION_PROOF_PUBLICATION_V1.md).
