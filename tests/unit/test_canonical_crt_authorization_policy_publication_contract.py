@@ -92,6 +92,7 @@ def test_no_runtime_surface_consumes_policy():
     allowed = {
         services / "canonical_crt_authorization_policy.py",
         proof_path,
+        services / "canonical_crt_authorization_proof_publication.py",
     }
     for path in services.rglob("*.py"):
         if path not in allowed:
@@ -116,6 +117,7 @@ def test_no_model_migration_cli_scheduler_or_runtime_publication():
     allowed = {
         ROOT / "app/services/canonical_crt_authorization_policy.py",
         ROOT / "app/services/canonical_crt_authorization_proof.py",
+        ROOT / "app/services/canonical_crt_authorization_proof_publication.py",
     }
     for root in (ROOT / "migrations", ROOT / "app"):
         if not root.exists():

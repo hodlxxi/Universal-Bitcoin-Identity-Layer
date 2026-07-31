@@ -234,6 +234,14 @@ def _agent_endpoints() -> dict:
         "attestations": "/agent/attestations",
         "trust_events": "/agent/trust/events",
         "discovery": "/agent/discovery",
+        "crt_authorization_proof_discovery":
+            "/.well-known/crt-authorization-proof.json",
+        "crt_authorization_proof_catalog":
+            "/agent/crt/authorization-proofs",
+        "crt_authorization_proof_artifact":
+            "/agent/crt/authorization-proofs/<artifact_id>.json",
+        "crt_authorization_proof_verify":
+            "/agent/crt/authorization-proofs/verify",
         "nostr_announcement": "/agent/nostr/announcement",
         "reputation": "/agent/reputation",
         "chain_health": "/agent/chain/health",
@@ -997,6 +1005,21 @@ def agent_discovery():
             "chain_health": endpoints["chain_health"],
             "request": endpoints["request"],
             "message": endpoints["message"],
+        },
+        "crt_authorization_proof": {
+            "status": "IMPLEMENTED_SOURCE_ONLY",
+            "mode": "READ_ONLY_REFERENCE_SURFACE",
+            "deployment": "NOT_DEPLOYED",
+            "live_membership": "NOT_LIVE_MEMBERSHIP",
+            "discovery": endpoints["crt_authorization_proof_discovery"],
+            "catalog": endpoints["crt_authorization_proof_catalog"],
+            "artifact": endpoints["crt_authorization_proof_artifact"],
+            "verify": endpoints["crt_authorization_proof_verify"],
+            "live_membership_evaluation": False,
+            "live_authorization_evaluation": False,
+            "runtime_authorization_granted": False,
+            "mcp_publication": False,
+            "signature_or_attestation": False,
         },
         "trust_surfaces": {
             "events": endpoints["trust_events"],

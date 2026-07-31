@@ -16,7 +16,8 @@ def test_primary_policy_document_is_published_and_dormant():
     public_row = next(
         line for line in status.splitlines() if "Public why-FULL proof" in line
     )
-    assert "| MISSING |" in public_row
+    assert "IMPLEMENTED_SOURCE_ONLY" in public_row
+    assert "NOT_DEPLOYED" in public_row
     assert "PR6.13" in bridge
     assert "implemented dormant" in bridge.lower()
 

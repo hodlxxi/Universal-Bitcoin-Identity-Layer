@@ -12,7 +12,8 @@ def test_primary_membership_document_is_published_and_dormant():
     assert "IMPLEMENTED_DORMANT" in status
     assert "PR6.12" in status
     assert "FULL/LIMITED authorization policy mapping" in status
-    assert "| MISSING |" in status
+    assert "IMPLEMENTED_SOURCE_ONLY" in status
+    assert "NOT_LIVE_MEMBERSHIP" in status
     assert "implemented dormant" in bridge.lower()
     assert "No production wiring was added" in bridge
 
