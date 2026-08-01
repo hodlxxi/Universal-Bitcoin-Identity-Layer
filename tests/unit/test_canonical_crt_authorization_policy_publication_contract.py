@@ -13,6 +13,7 @@ POLICY_SYMBOLS = {
     "canonical_crt_authorization_evaluation_sha256",
     "parse_canonical_crt_authorization_evaluation",
 }
+RESOLVER_PATH = ROOT / "app/services/canonical_crt_authorization_proof_resolver.py"
 DYNAMIC_CALLS = {"import_module", "__import__", "exec", "eval"}
 
 
@@ -93,6 +94,7 @@ def test_no_runtime_surface_consumes_policy():
         services / "canonical_crt_authorization_policy.py",
         proof_path,
         services / "canonical_crt_authorization_proof_publication.py",
+        RESOLVER_PATH,
     }
     for path in services.rglob("*.py"):
         if path not in allowed:
@@ -118,6 +120,7 @@ def test_no_model_migration_cli_scheduler_or_runtime_publication():
         ROOT / "app/services/canonical_crt_authorization_policy.py",
         ROOT / "app/services/canonical_crt_authorization_proof.py",
         ROOT / "app/services/canonical_crt_authorization_proof_publication.py",
+        RESOLVER_PATH,
     }
     for root in (ROOT / "migrations", ROOT / "app"):
         if not root.exists():

@@ -6,7 +6,9 @@ Canon basis: `hodlxxi/hodlxxi-cryptographic-reciprocity` commit `152c87522a7d89c
 
 The status terms used here include `IMPLEMENTED_DORMANT`,
 `IMPLEMENTED_SOURCE_ONLY`, `READ_ONLY_REFERENCE_SURFACE`, `NOT_DEPLOYED`,
-`NOT_LIVE_MEMBERSHIP`, `ACTIVE_LEGACY_NON_CANONICAL`, `MISSING`,
+`NOT_LIVE_MEMBERSHIP`, `READ_ONLY_EXPLICIT_SNAPSHOT_COMPOSITION`,
+`NOT_LIVE_SOURCE_LOOKUP`, `NOT_RUNTIME_AUTHORIZATION`,
+`ACTIVE_LEGACY_NON_CANONICAL`, `MISSING`,
 `DECLARED_UNFUNDED`, and `DOCUMENTED`.
 
 ## Inventory matrix
@@ -26,8 +28,9 @@ The status terms used here include `IMPLEMENTED_DORMANT`,
 | Ancestor inactivity propagation | Inactive edges produce `edge_inactive` and dependent `lineage_inactive` states while preserving history. | PR6.11 root-to-target controlling-state evaluation. | IMPLEMENTED_DORMANT | No automatic storage lookup or production composition exists. |
 | CRT membership-state evaluator | Emit only `genesis_active`, `active`, `provisional`, `edge_inactive`, `lineage_inactive`, `disputed`, or `unknown`. | PR6.12 pure composition over one exact PR6.9 genesis or PR6.11 lineage evaluation. | IMPLEMENTED_DORMANT | No runtime wiring; PR6.13 retains the separate FULL/LIMITED policy mapping. |
 | FULL/LIMITED authorization policy mapping | Authorization must be separately governed from membership. FULL and LIMITED are not CRT membership states. | PR6.13 pure mapping over one exact nested PR6.12 membership evaluation. | IMPLEMENTED_DORMANT | No runtime resolver, entitlement store, action authorization, or participant-facing surface consumes it. |
-| Canonical why-FULL/why-LIMITED proof artifact | Explain one exact PR6.13 authorization evaluation without recomputation. | PR6.14 pure canonical proof over one exact PR6.13 evaluation. | IMPLEMENTED_DORMANT | Consumed only by the PR6.15 source-only reference publication service; no live resolver, current source composition, enforcement or deployment consumes it. |
+| Canonical why-FULL/why-LIMITED proof artifact | Explain one exact PR6.13 authorization evaluation without recomputation. | PR6.14 pure canonical proof over one exact PR6.13 evaluation. | IMPLEMENTED_DORMANT | Consumed by the PR6.15 source-only reference publication service and PR6.16 dormant snapshot composition only; no live resolver, enforcement, or deployment consumes it. |
 | Public proof publication and verification surface (formerly “Public why-FULL proof”) | Publish and verify proof bytes read-only. | PR6.15 source-controlled reference catalog/download and stateless HTTP verification; no MCP wrapper. | IMPLEMENTED_SOURCE_ONLY; READ_ONLY_REFERENCE_SURFACE; NOT_DEPLOYED; NOT_LIVE_MEMBERSHIP | Live composition, current proof generation, signatures, enforcement, MCP, and deployment remain missing. |
+| Current authorization proof snapshot resolver | Compose PR6.9/PR6.11 caller-injected evidence through PR6.12–PR6.14 at one exact `evaluated_at`. | PR6.16 dormant pure explicit-snapshot resolver with strict request validation and final PR6.14 round-trip. | IMPLEMENTED_DORMANT; READ_ONLY_EXPLICIT_SNAPSHOT_COMPOSITION; NOT_DEPLOYED; NOT_LIVE_SOURCE_LOOKUP; NOT_RUNTIME_AUTHORIZATION | Trusted live adapters, participant-facing lookup, signatures, shadow comparison, enforcement, and deployment remain missing. |
 | Active wallet-wide ratio path | Wallet-wide aggregation and ratio substitution fail Canon admission. | Active legacy session FULL/LIMITED paths use incoming/outgoing balance ratios in some flows. | ACTIVE_LEGACY_NON_CANONICAL | Keep truthfully labeled until separately replaced; it is not CRT proof. |
 | SPECIAL_USERS/admin paths | Administration is distinct from membership. | Active allowlist/administrator authorization paths. | ACTIVE_LEGACY_NON_CANONICAL | Do not infer membership, sponsor status, or lineage from administrator access. |
 | Operator-agent `current_144` declaration | Delegation/continuity is separate from human `legacy_777` membership. | Public one-leg operator-agent declaration. | DECLARED_UNFUNDED | A single unfunded leg is not a pair, funding, admission, membership, sponsor power, or entitlement. |
@@ -57,6 +60,9 @@ G. PR6.13 canonical FULL/LIMITED policy mapping. (IMPLEMENTED_DORMANT)
 H. PR6.14 canonical authorization proof artifact. (IMPLEMENTED_DORMANT)
 I. PR6.15 read-only reference publication and stateless verification surface.
    (IMPLEMENTED_SOURCE_ONLY; NOT_DEPLOYED; NOT_LIVE_MEMBERSHIP)
+J. PR6.16 current proof explicit-snapshot composition.
+   (IMPLEMENTED_DORMANT; NOT_DEPLOYED; NOT_LIVE_SOURCE_LOOKUP;
+   NOT_RUNTIME_AUTHORIZATION)
 
 PR6.8 does not establish genesis, a complete admission edge, lineage, membership,
 or authorization.
