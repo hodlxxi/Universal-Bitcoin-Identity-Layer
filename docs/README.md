@@ -21,6 +21,7 @@ The normative theory and protocol source is `hodlxxi/hodlxxi-cryptographic-recip
 - **[CANONICAL_CRT_AUTHORIZATION_POLICY_V1.md](CANONICAL_CRT_AUTHORIZATION_POLICY_V1.md)** — PR6.13 dormant pure FULL/LIMITED classification of one exact nested canonical membership evaluation; no runtime wiring or action grant.
 - **[CANONICAL_CRT_AUTHORIZATION_PROOF_V1.md](CANONICAL_CRT_AUTHORIZATION_PROOF_V1.md)** — PR6.14 dormant pure why-FULL/why-LIMITED proof artifact over one exact PR6.13 evaluation; published separately through the PR6.15 source-only reference surface, with no live generation or deployment.
 - **[CANONICAL_CRT_AUTHORIZATION_PROOF_PUBLICATION_V1.md](CANONICAL_CRT_AUTHORIZATION_PROOF_PUBLICATION_V1.md)** — PR6.15 source-implemented, read-only deterministic reference publication and stateless canonical-byte verification; not live membership and not deployed.
+- **[CANONICAL_CRT_AUTHORIZATION_PROOF_RESOLVER_V1.md](CANONICAL_CRT_AUTHORIZATION_PROOF_RESOLVER_V1.md)** — PR6.16 dormant, read-only composition from one caller-injected evidence snapshot at one exact time; not live lookup, runtime authorization, or deployment.
 - **[TRUSTED_COVENANT_REGISTRATION_V1.md](TRUSTED_COVENANT_REGISTRATION_V1.md)** — dormant exact validated-pair registration, lifecycle gating, and normalized outpoint binding.
 
 0. **[DOCUMENTATION_MAP.md](DOCUMENTATION_MAP.md)** - Start here for the docs status map: current, historical, experimental, and archive-candidate documentation.

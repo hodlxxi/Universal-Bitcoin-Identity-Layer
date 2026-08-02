@@ -12,6 +12,7 @@ PUBLICATION_PATH = (
 )
 BLUEPRINT_PATH = ROOT / "app/blueprints/crt_authorization_proof.py"
 APPROVED_PROOF_CONSUMER = PUBLICATION_PATH
+RESOLVER_PATH = ROOT / "app/services/canonical_crt_authorization_proof_resolver.py"
 APPROVED_PUBLICATION_CONSUMER = BLUEPRINT_PATH
 FORBIDDEN_IMPORT_PARTS = {
     "flask", "sqlalchemy", "database", "models", "requests", "httpx",
@@ -62,7 +63,7 @@ def _module_parts(module):
     return {part.lower() for part in module.split(".")}
 
 
-def test_exactly_one_static_proof_consumer_and_one_public_blueprint():
+def test_exactly_two_static_proof_consumers_and_one_public_blueprint():
     proof_consumers = set()
     publication_consumers = set()
     for path in _runtime_python_files():
@@ -71,7 +72,7 @@ def test_exactly_one_static_proof_consumer_and_one_public_blueprint():
                 proof_consumers.add(path)
             if module == PUBLICATION_MODULE:
                 publication_consumers.add(path)
-    assert proof_consumers == {APPROVED_PROOF_CONSUMER}
+    assert proof_consumers == {APPROVED_PROOF_CONSUMER, RESOLVER_PATH}
     assert publication_consumers == {APPROVED_PUBLICATION_CONSUMER}
 
 
@@ -140,7 +141,11 @@ def test_agent_is_discovery_only():
 
 def test_no_second_blueprint_mcp_or_sensitive_runtime_consumer():
     for path in _runtime_python_files():
-        if path in {APPROVED_PROOF_CONSUMER, APPROVED_PUBLICATION_CONSUMER}:
+        if path in {
+            APPROVED_PROOF_CONSUMER,
+            APPROVED_PUBLICATION_CONSUMER,
+            RESOLVER_PATH,
+        }:
             continue
         imported = {module for module, _ in _imports(path)}
         assert PROOF_MODULE not in imported, path
