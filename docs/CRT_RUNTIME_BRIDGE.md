@@ -94,6 +94,15 @@ I. PR6.15 read-only reference publication and stateless verification surface.
 J. PR6.16 read-only explicit-snapshot proof composition.
    (IMPLEMENTED_DORMANT; NOT_DEPLOYED; NOT_LIVE_SOURCE_LOOKUP;
    NOT_RUNTIME_AUTHORIZATION)
+K. PR6.17 read-only injected trusted-source lookup and deterministic source plan.
+   (IMPLEMENTED_DORMANT; SOURCE_PLAN_ONLY; NOT_BITCOIN_OBSERVED;
+   NOT_PROOF_GENERATION; NOT_DEPLOYED)
+
+PR6.16 composes a proof only from an already supplied exact evidence snapshot.
+PR6.17 instead loads trusted canonical storage sources and checks their
+consistency; it neither observes Bitcoin nor invokes PR6.16. PR6.18 still must
+bind multi-edge observations to one block height, best-block hash, and
+observation window before source-plan conversion into PR6.11 evidence.
 
 PR6.8 does not establish genesis, a complete admission edge, lineage, membership,
 or authorization.
@@ -128,3 +137,4 @@ No production wiring was added.
 - [Canonical CRT Authorization Proof V1](CANONICAL_CRT_AUTHORIZATION_PROOF_V1.md)
 - [Canonical CRT Authorization Proof Publication V1](CANONICAL_CRT_AUTHORIZATION_PROOF_PUBLICATION_V1.md)
 - [Canonical Current CRT Authorization Proof Resolver V1](CANONICAL_CRT_AUTHORIZATION_PROOF_RESOLVER_V1.md)
+- [Trusted CRT Authorization Source Plan V1](TRUSTED_CRT_AUTHORIZATION_SOURCE_PLAN_V1.md)
