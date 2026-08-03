@@ -23,6 +23,7 @@ The normative theory and protocol source is `hodlxxi/hodlxxi-cryptographic-recip
 - **[CANONICAL_CRT_AUTHORIZATION_PROOF_PUBLICATION_V1.md](CANONICAL_CRT_AUTHORIZATION_PROOF_PUBLICATION_V1.md)** — PR6.15 source-implemented, read-only deterministic reference publication and stateless canonical-byte verification; not live membership and not deployed.
 - **[CANONICAL_CRT_AUTHORIZATION_PROOF_RESOLVER_V1.md](CANONICAL_CRT_AUTHORIZATION_PROOF_RESOLVER_V1.md)** — PR6.16 dormant, read-only composition from one caller-injected evidence snapshot at one exact time; not live lookup, runtime authorization, or deployment.
 - **[TRUSTED_CRT_AUTHORIZATION_SOURCE_PLAN_V1.md](TRUSTED_CRT_AUTHORIZATION_SOURCE_PLAN_V1.md)** — PR6.17 dormant read-only loading and consistency checking of injected trusted canonical sources into a deterministic plan; no Bitcoin observation, proof generation, runtime wiring, or deployment.
+- **[TRUSTED_CRT_BITCOIN_OBSERVATION_SNAPSHOT_V1.md](TRUSTED_CRT_BITCOIN_OBSERVATION_SNAPSHOT_V1.md)** — PR6.18 dormant globally height/hash-anchored read-only observation of one exact PR6.17 plan; no evidence conversion, proof generation, runtime wiring, or deployment.
 - **[TRUSTED_COVENANT_REGISTRATION_V1.md](TRUSTED_COVENANT_REGISTRATION_V1.md)** — dormant exact validated-pair registration, lifecycle gating, and normalized outpoint binding.
 
 0. **[DOCUMENTATION_MAP.md](DOCUMENTATION_MAP.md)** - Start here for the docs status map: current, historical, experimental, and archive-candidate documentation.

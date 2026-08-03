@@ -99,7 +99,8 @@ one observation call, while `CovenantRelationEvaluation` retains height but not
 best-block hash. Calling it independently for multiple edges cannot establish
 one coherent Bitcoin snapshot. PR6.18 must define a globally anchored
 multi-edge observation contract binding every edge to one block height,
-best-block hash, and observation window. Conversion into PR6.11 evidence,
+best-block hash, and observation window; PR6.18 now implements that dormant
+read-only boundary. Conversion into PR6.11 evidence,
 PR6.16 invocation, participant-facing discovery, current-proof HTTP/MCP
 surfaces, attestation and human verification, shadow comparison, entitlement
 materialization, runtime enforcement, and deployment also remain missing.
