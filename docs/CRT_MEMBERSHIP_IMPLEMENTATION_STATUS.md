@@ -35,6 +35,7 @@ The status terms used here include `IMPLEMENTED_DORMANT`,
 | Public proof publication and verification surface (formerly “Public why-FULL proof”) | Publish and verify proof bytes read-only. | PR6.15 source-controlled reference catalog/download and stateless HTTP verification; no MCP wrapper. | IMPLEMENTED_SOURCE_ONLY; READ_ONLY_REFERENCE_SURFACE; NOT_DEPLOYED; NOT_LIVE_MEMBERSHIP | Live composition, current proof generation, signatures, enforcement, MCP, and deployment remain missing. |
 | Current authorization proof snapshot resolver | Compose PR6.9/PR6.11 caller-injected evidence through PR6.12–PR6.14 at one exact `evaluated_at`. | PR6.16 dormant pure explicit-snapshot resolver with strict request validation and final PR6.14 round-trip. | IMPLEMENTED_DORMANT; READ_ONLY_EXPLICIT_SNAPSHOT_COMPOSITION; NOT_DEPLOYED; NOT_LIVE_SOURCE_LOOKUP; NOT_RUNTIME_AUTHORIZATION | Trusted live adapters, participant-facing lookup, signatures, shadow comparison, enforcement, and deployment remain missing. |
 | Trusted authorization source plan | Load exact trusted PR6.8/PR6.9/PR6.10 stored records without observing Bitcoin or composing a proof. | PR6.17 injected read-only adapter, canonical double reads, root-to-target traversal, and deterministic manifest. | IMPLEMENTED_DORMANT; READ_ONLY_INJECTED_SOURCE_LOOKUP; SOURCE_PLAN_ONLY; NOT_BITCOIN_OBSERVED; NOT_PROOF_GENERATION; NOT_DEPLOYED | PR6.18 global block-height/hash/window observation, evidence conversion, PR6.16 invocation, participant lookup, enforcement, and deployment remain missing. |
+| Globally anchored Bitcoin observation snapshot | Observe every required source in one exact PR6.17 plan at one stable Bitcoin height and best-block hash. | PR6.18 injected read-only adapter, pinned reuse of the trusted observer, and deterministic immutable snapshot. | IMPLEMENTED_DORMANT; GLOBALLY_ANCHORED_MULTI_EDGE_SNAPSHOT; BEST_BLOCK_HASH_BOUND; NOT_DEPLOYED | PR6.19 evidence conversion, inactive/disputed composition, PR6.16 invocation, current-proof lookup, surfaces, entitlement, enforcement, and deployment remain missing. |
 | Active wallet-wide ratio path | Wallet-wide aggregation and ratio substitution fail Canon admission. | Active legacy session FULL/LIMITED paths use incoming/outgoing balance ratios in some flows. | ACTIVE_LEGACY_NON_CANONICAL | Keep truthfully labeled until separately replaced; it is not CRT proof. |
 | SPECIAL_USERS/admin paths | Administration is distinct from membership. | Active allowlist/administrator authorization paths. | ACTIVE_LEGACY_NON_CANONICAL | Do not infer membership, sponsor status, or lineage from administrator access. |
 | Operator-agent `current_144` declaration | Delegation/continuity is separate from human `legacy_777` membership. | Public one-leg operator-agent declaration. | DECLARED_UNFUNDED | A single unfunded leg is not a pair, funding, admission, membership, sponsor power, or entitlement. |
@@ -69,6 +70,9 @@ J. PR6.16 current proof explicit-snapshot composition.
    NOT_RUNTIME_AUTHORIZATION)
 K. PR6.17 trusted canonical-storage source plan.
    (IMPLEMENTED_DORMANT; SOURCE_PLAN_ONLY; NOT_BITCOIN_OBSERVED; NOT_DEPLOYED)
+L. PR6.18 globally anchored multi-edge Bitcoin observation snapshot.
+   (IMPLEMENTED_DORMANT; READ_ONLY_INJECTED_BITCOIN_OBSERVATION;
+   BEST_BLOCK_HASH_BOUND; NOT_DEPLOYED)
 
 PR6.8 does not establish genesis, a complete admission edge, lineage, membership,
 or authorization.

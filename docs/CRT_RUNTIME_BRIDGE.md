@@ -97,12 +97,17 @@ J. PR6.16 read-only explicit-snapshot proof composition.
 K. PR6.17 read-only injected trusted-source lookup and deterministic source plan.
    (IMPLEMENTED_DORMANT; SOURCE_PLAN_ONLY; NOT_BITCOIN_OBSERVED;
    NOT_PROOF_GENERATION; NOT_DEPLOYED)
+L. PR6.18 read-only globally anchored Bitcoin observation of one exact source plan.
+   (IMPLEMENTED_DORMANT; GLOBALLY_ANCHORED_MULTI_EDGE_SNAPSHOT;
+   BEST_BLOCK_HASH_BOUND; NOT_RUNTIME_AUTHORIZATION; NOT_DEPLOYED)
 
 PR6.16 composes a proof only from an already supplied exact evidence snapshot.
 PR6.17 instead loads trusted canonical storage sources and checks their
-consistency; it neither observes Bitcoin nor invokes PR6.16. PR6.18 still must
-bind multi-edge observations to one block height, best-block hash, and
-observation window before source-plan conversion into PR6.11 evidence.
+consistency; it neither observes Bitcoin nor invokes PR6.16. PR6.18 binds all
+required multi-edge observations to one block height, best-block hash, and
+observation window. PR6.19 still must convert the snapshot into PR6.11 evidence,
+compose inactive/disputed sources, and invoke PR6.16; current lookup, surfaces,
+attestation, entitlements, enforcement, and deployment also remain absent.
 
 PR6.8 does not establish genesis, a complete admission edge, lineage, membership,
 or authorization.
@@ -138,3 +143,4 @@ No production wiring was added.
 - [Canonical CRT Authorization Proof Publication V1](CANONICAL_CRT_AUTHORIZATION_PROOF_PUBLICATION_V1.md)
 - [Canonical Current CRT Authorization Proof Resolver V1](CANONICAL_CRT_AUTHORIZATION_PROOF_RESOLVER_V1.md)
 - [Trusted CRT Authorization Source Plan V1](TRUSTED_CRT_AUTHORIZATION_SOURCE_PLAN_V1.md)
+- [Trusted CRT Bitcoin Observation Snapshot V1](TRUSTED_CRT_BITCOIN_OBSERVATION_SNAPSHOT_V1.md)
