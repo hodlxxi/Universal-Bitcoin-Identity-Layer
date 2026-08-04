@@ -1,5 +1,10 @@
 # CRT Membership Implementation Status
 
+PR6.19 is `IMPLEMENTED_DORMANT`: the fixed HODLXXI V1 local snapshot composer
+binds exact PR6.17 and PR6.18 inputs and calls PR6.16. Its output is unsigned
+local evaluation only; production authorization, signed portable envelopes,
+replication, authority rules, and fork handling remain deferred.
+
 > **Status: CURRENT IMPLEMENTATION INVENTORY — documentation only.**
 
 Canon basis: `hodlxxi/hodlxxi-cryptographic-reciprocity` commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`. PR6.8 implementation branch base: `fe333cdb5068a73b4dc57b875e1b0223b01855f7`. The older commit `7df976c59742aa84fd79cfd41f12a34a33915259` remains relevant only as the active-runtime audit basis.

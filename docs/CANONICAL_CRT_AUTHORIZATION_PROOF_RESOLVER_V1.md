@@ -1,5 +1,9 @@
 # Canonical Current CRT Authorization Proof Resolver V1
 
+PR6.19 calls this existing public explicit-snapshot resolver after exact local
+source/snapshot-to-evidence composition. The resulting proof remains unsigned,
+local, profile-specific, dormant, and unrelated to runtime authorization.
+
 ## Status and boundary
 
 PR6.16 is `IMPLEMENTED_DORMANT`,

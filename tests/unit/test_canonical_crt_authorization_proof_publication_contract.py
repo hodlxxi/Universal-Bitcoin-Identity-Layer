@@ -13,6 +13,7 @@ PUBLICATION_PATH = (
 BLUEPRINT_PATH = ROOT / "app/blueprints/crt_authorization_proof.py"
 APPROVED_PROOF_CONSUMER = PUBLICATION_PATH
 RESOLVER_PATH = ROOT / "app/services/canonical_crt_authorization_proof_resolver.py"
+COMPOSER_PATH = ROOT / "app/services/hodlxxi_v1_snapshot_proof_composition.py"
 APPROVED_PUBLICATION_CONSUMER = BLUEPRINT_PATH
 FORBIDDEN_IMPORT_PARTS = {
     "flask", "sqlalchemy", "database", "models", "requests", "httpx",
@@ -72,7 +73,7 @@ def test_exactly_two_static_proof_consumers_and_one_public_blueprint():
                 proof_consumers.add(path)
             if module == PUBLICATION_MODULE:
                 publication_consumers.add(path)
-    assert proof_consumers == {APPROVED_PROOF_CONSUMER, RESOLVER_PATH}
+    assert proof_consumers == {APPROVED_PROOF_CONSUMER, RESOLVER_PATH, COMPOSER_PATH}
     assert publication_consumers == {APPROVED_PUBLICATION_CONSUMER}
 
 
@@ -145,6 +146,7 @@ def test_no_second_blueprint_mcp_or_sensitive_runtime_consumer():
             APPROVED_PROOF_CONSUMER,
             APPROVED_PUBLICATION_CONSUMER,
             RESOLVER_PATH,
+            COMPOSER_PATH,
         }:
             continue
         imported = {module for module, _ in _imports(path)}

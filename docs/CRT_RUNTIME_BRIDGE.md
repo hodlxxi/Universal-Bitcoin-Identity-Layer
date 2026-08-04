@@ -1,5 +1,9 @@
 # CRT Canon and Runtime Bridge
 
+The dormant PR6.19 HODLXXI V1 snapshot composer adds no runtime bridge or
+production authorization behavior. It performs pure caller-supplied local
+composition only and does not make its unsigned output portable authority.
+
 > **Status: CURRENT DOCUMENTATION BRIDGE — documentation only; no runtime behavior change.**
 
 ## Synchronization basis and authority

@@ -130,22 +130,24 @@ def _digest(value: object) -> str:
 class CanonicalSponsorLineageEdgeEvidence:
     record: CanonicalAdmissionEdge
     trusted_registration: TrustedCovenantRegistration
-    observation_evaluation: CovenantRelationEvaluation
+    observation_evaluation: CovenantRelationEvaluation | None
 
     def __post_init__(self):
         if (type(self.record) is not CanonicalAdmissionEdge
                 or type(self.trusted_registration) is not TrustedCovenantRegistration
-                or type(self.observation_evaluation) is not CovenantRelationEvaluation):
+                or (self.observation_evaluation is not None
+                    and type(self.observation_evaluation) is not CovenantRelationEvaluation)):
             raise InvalidCanonicalSponsorLineage("evidence type")
         CanonicalAdmissionEdge(*(getattr(self.record, f) for f in CanonicalAdmissionEdge.__dataclass_fields__))
         TrustedCovenantRegistration(*(
             getattr(self.trusted_registration, f)
             for f in TrustedCovenantRegistration.__dataclass_fields__
         ))
-        CovenantRelationEvaluation(*(
-            getattr(self.observation_evaluation, f)
-            for f in CovenantRelationEvaluation.__dataclass_fields__
-        ))
+        if self.observation_evaluation is not None:
+            CovenantRelationEvaluation(*(
+                getattr(self.observation_evaluation, f)
+                for f in CovenantRelationEvaluation.__dataclass_fields__
+            ))
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,7 +167,7 @@ class CanonicalSponsorLineageNode:
     trusted_registration_sha256: str
     sponsor_basis_record_id: str
     sponsor_basis_record_sha256: str
-    observation_evaluation_sha256: str
+    observation_evaluation_sha256: str | None
     local_current_evaluation_sha256: str
 
     def __post_init__(self):
@@ -173,9 +175,11 @@ class CanonicalSponsorLineageNode:
             raise InvalidCanonicalSponsorLineage("node depth")
         _uuid(self.edge_id); _uuid(self.trusted_registration_id); _uuid(self.sponsor_basis_record_id)
         for value in (self.edge_sha256, self.trusted_registration_sha256,
-                      self.sponsor_basis_record_sha256, self.observation_evaluation_sha256,
+                      self.sponsor_basis_record_sha256,
                       self.local_current_evaluation_sha256):
             _digest(value)
+        if self.observation_evaluation_sha256 is not None:
+            _digest(self.observation_evaluation_sha256)
         if (
             type(self.local_evaluation_state) is not AdmissionEdgeEvaluationState
             or type(self.local_evaluation_reason) is not AdmissionEdgeCurrentReason
@@ -242,6 +246,8 @@ class CanonicalSponsorLineageNode:
             self.local_evaluation_state not in expected
             or self.local_evaluation_reason
             not in expected[self.local_evaluation_state]
+            or (self.local_evaluation_state is AdmissionEdgeEvaluationState.ACTIVE
+                and self.observation_evaluation_sha256 is None)
         ):
             raise InvalidCanonicalSponsorLineage("node state reason")
 
@@ -653,7 +659,8 @@ def evaluate_canonical_sponsor_lineage(
             local.state, local.reason_code, registration.registration_id,
             trusted_registration_sha256(registration), record.sponsor_basis_record_id,
             record.sponsor_basis_record_sha256,
-            covenant_relation_source_sha256(evidence.observation_evaluation),
+            (None if evidence.observation_evaluation is None else
+             covenant_relation_source_sha256(evidence.observation_evaluation)),
             canonical_admission_edge_current_evaluation_sha256(local),
         ))
         relevant.extend(((record.edge_id, canonical_admission_edge_sha256(record)),
