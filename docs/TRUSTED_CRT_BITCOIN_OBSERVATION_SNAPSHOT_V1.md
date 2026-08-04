@@ -1,5 +1,9 @@
 # Trusted CRT Bitcoin Observation Snapshot V1
 
+PR6.19 may consume this exact resolution through the dormant fixed HODLXXI V1
+local composer. PR6.18 itself remains observation-only and does not generate a
+proof or authorize runtime behavior.
+
 > Status: `IMPLEMENTED_DORMANT`; `READ_ONLY_INJECTED_BITCOIN_OBSERVATION`;
 > `GLOBALLY_ANCHORED_MULTI_EDGE_SNAPSHOT`; `BEST_BLOCK_HASH_BOUND`;
 > `SOURCE_PLAN_CONSUMER_ONLY`; `NOT_LINEAGE_EVIDENCE_CONVERSION`;
