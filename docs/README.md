@@ -11,6 +11,7 @@
 
 The normative theory and protocol source is `hodlxxi/hodlxxi-cryptographic-reciprocity` at commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`. PR6.8 uses implementation branch base `fe333cdb5068a73b4dc57b875e1b0223b01855f7`; the older `7df976c59742aa84fd79cfd41f12a34a33915259` is explicitly the active-runtime audit basis. These documents do not assert current CRT Membership Protocol V1 enforcement.
 
+- **[HODLXXI_PROJECT_COMPASS.md](HODLXXI_PROJECT_COMPASS.md)** — canonical project direction, trust-model invariants, architectural boundaries, release discipline, and mandatory future-PR alignment.
 - **[CRT_RUNTIME_BRIDGE.md](CRT_RUNTIME_BRIDGE.md)** — authority boundaries, Canon claims, runtime mismatch, and implementation sequence.
 - **[CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md](CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md)** — current component and gap inventory.
 - **[CRT_COVENANT_PROFILE_V1.md](CRT_COVENANT_PROFILE_V1.md)** — exact `legacy_777` human-admission and `current_144` operator-agent profile mapping.
