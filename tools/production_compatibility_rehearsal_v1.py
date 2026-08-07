@@ -593,6 +593,14 @@ def _resolve_executable(path: Path, evidence_code: str) -> Path:
     return resolved
 
 
+def _validated_launcher_path(path: Path, evidence_code: str) -> Path:
+    """Return an absolute launcher path after validating its resolved target."""
+
+    launcher = Path(os.path.abspath(os.fspath(path)))
+    _resolve_executable(launcher, evidence_code)
+    return launcher
+
+
 def _dsn_contains_password(value: str) -> bool:
     try:
         parsed = urlsplit(value)
@@ -696,7 +704,7 @@ def validate_execute_request(request: ExecuteRequest) -> ResolvedRequest:
             raise SafetyViolation("OUTPUT_PATH_PROHIBITED")
 
     git = _resolve_executable(request.git_binary, "GIT_BINARY_INVALID")
-    python = _resolve_executable(request.python_binary, "PYTHON_BINARY_INVALID")
+    python = _validated_launcher_path(request.python_binary, "PYTHON_BINARY_INVALID")
     try:
         pg_directory = request.postgresql_binary_directory.resolve(strict=True)
     except (OSError, RuntimeError) as exc:
