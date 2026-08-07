@@ -10,7 +10,6 @@ import pytest
 
 from tools import production_compatibility_rehearsal_v1 as rehearsal
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -357,6 +356,67 @@ def test_unsupported_auth_probe_cannot_be_converted_to_pass(monkeypatch):
             snapshot=ROOT,
             target="unused",
             mode="auth",
+        )
+
+
+@pytest.mark.parametrize(
+    ("returncode", "expected_status", "expected_evidence", "expected_unsupported"),
+    [
+        (3, "BLOCKED", "PROBE_PROCESS_BLOCKED", True),
+        (4, "FAIL", "PROBE_PROCESS_FAILED", False),
+        (-2, "FAIL", "PROBE_PROCESS_FAILED", False),
+    ],
+)
+def test_nonzero_probe_exit_without_stdout_retains_sanitized_process_diagnosis(
+    monkeypatch,
+    returncode,
+    expected_status,
+    expected_evidence,
+    expected_unsupported,
+):
+    runner = FakeRunner(
+        [
+            rehearsal.CommandResult(
+                returncode,
+                "",
+                "Traceback: postgresql://user:password@database.invalid/private",
+            )
+        ]
+    )
+    state = SimpleNamespace(
+        resolved=SimpleNamespace(tools=SimpleNamespace(python=Path("/synthetic/python"))),
+    )
+    monkeypatch.setattr(rehearsal, "_application_environment", lambda *_args, **_kwargs: {"LANG": "C"})
+
+    outcome = rehearsal._run_application_probe(
+        runner,
+        state,
+        snapshot=ROOT,
+        target="unused",
+        mode="startup",
+    )
+
+    assert outcome.status == expected_status
+    assert outcome.evidence_code == expected_evidence
+    assert outcome.unsupported is expected_unsupported
+    assert "postgresql://" not in outcome.sanitized_detail
+    assert "password" not in outcome.sanitized_detail
+
+
+def test_zero_probe_exit_without_envelope_remains_fail_closed(monkeypatch):
+    runner = FakeRunner([rehearsal.CommandResult(0, "", "")])
+    state = SimpleNamespace(
+        resolved=SimpleNamespace(tools=SimpleNamespace(python=Path("/synthetic/python"))),
+    )
+    monkeypatch.setattr(rehearsal, "_application_environment", lambda *_args, **_kwargs: {"LANG": "C"})
+
+    with pytest.raises(rehearsal.CommandFailure, match="PROBE_RESULT_MISSING"):
+        rehearsal._run_application_probe(
+            runner,
+            state,
+            snapshot=ROOT,
+            target="unused",
+            mode="startup",
         )
 
 

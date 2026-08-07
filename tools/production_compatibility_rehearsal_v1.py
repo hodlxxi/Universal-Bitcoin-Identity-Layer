@@ -1065,6 +1065,7 @@ def create_ephemeral_jwks(directory: Path, token_factory: Callable[[], str] | No
 PROBE_PROGRAM = r"""
 import base64
 import hashlib
+import io
 import json
 import os
 import smtplib
@@ -1072,6 +1073,7 @@ import socket
 import subprocess
 import sys
 import urllib.request
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlsplit
 
@@ -1134,28 +1136,6 @@ subprocess.call = blocked_side_effect
 subprocess.check_call = blocked_side_effect
 subprocess.check_output = blocked_side_effect
 subprocess.run = blocked_side_effect
-
-try:
-    import requests
-    requests.sessions.Session.request = blocked_side_effect
-except ImportError:
-    pass
-
-try:
-    import redis
-
-    def redis_disabled(*_args, **_kwargs):
-        raise redis.exceptions.ConnectionError("rehearsal-disabled")
-
-    redis.Redis.ping = redis_disabled
-    redis.client.Redis.ping = redis_disabled
-except ImportError:
-    pass
-
-import app.utils
-app.utils.get_rpc_connection = blocked_side_effect
-
-from app.factory import create_app
 
 
 def require(value, code):
@@ -1426,24 +1406,62 @@ def auth_probe():
     ]
 
 
-try:
-    mode = sys.argv[1]
-    evidence = startup_probe() if mode == "startup" else auth_probe() if mode == "auth" else None
-    if evidence is None:
-        raise ProbeBlocked("UNKNOWN_PROBE_MODE")
-    print(json.dumps({"status": "PASS", "evidence_codes": evidence}, sort_keys=True, separators=(",", ":")))
-except ProbeBlocked as exc:
-    print(json.dumps({"status": "BLOCKED", "evidence_code": exc.code}, sort_keys=True, separators=(",", ":")))
-    sys.exit(3)
-except (ImportError, ModuleNotFoundError):
-    print(json.dumps({"status": "BLOCKED", "evidence_code": "PROBE_DEPENDENCY_UNAVAILABLE"}, sort_keys=True, separators=(",", ":")))
-    sys.exit(3)
-except ProbeFailure as exc:
-    print(json.dumps({"status": "FAIL", "evidence_code": exc.code}, sort_keys=True, separators=(",", ":")))
-    sys.exit(4)
-except Exception:
-    print(json.dumps({"status": "FAIL", "evidence_code": "UNCLASSIFIED_PROBE_FAILURE"}, sort_keys=True, separators=(",", ":")))
-    sys.exit(4)
+with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+    try:
+        try:
+            import requests
+
+            requests.sessions.Session.request = blocked_side_effect
+        except ImportError:
+            pass
+
+        try:
+            import redis
+
+            def redis_disabled(*_args, **_kwargs):
+                raise redis.exceptions.ConnectionError("rehearsal-disabled")
+
+            redis.Redis.ping = redis_disabled
+            redis.client.Redis.ping = redis_disabled
+        except ImportError:
+            pass
+
+        import app.utils
+
+        app.utils.get_rpc_connection = blocked_side_effect
+
+        from app.factory import create_app
+
+        mode = sys.argv[1]
+        evidence = startup_probe() if mode == "startup" else auth_probe() if mode == "auth" else None
+        if evidence is None:
+            raise ProbeBlocked("UNKNOWN_PROBE_MODE")
+        probe_payload = {"status": "PASS", "evidence_codes": evidence}
+        probe_returncode = 0
+    except ProbeBlocked as exc:
+        probe_payload = {"status": "BLOCKED", "evidence_code": exc.code}
+        probe_returncode = 3
+    except (ImportError, ModuleNotFoundError):
+        probe_payload = {"status": "BLOCKED", "evidence_code": "PROBE_DEPENDENCY_UNAVAILABLE"}
+        probe_returncode = 3
+    except ProbeFailure as exc:
+        probe_payload = {"status": "FAIL", "evidence_code": exc.code}
+        probe_returncode = 4
+    except Exception:
+        probe_payload = {"status": "FAIL", "evidence_code": "UNCLASSIFIED_PROBE_FAILURE"}
+        probe_returncode = 4
+    except SystemExit:
+        probe_payload = {"status": "FAIL", "evidence_code": "UNCLASSIFIED_PROBE_FAILURE"}
+        probe_returncode = 4
+    except KeyboardInterrupt:
+        probe_payload = {"status": "FAIL", "evidence_code": "UNCLASSIFIED_PROBE_FAILURE"}
+        probe_returncode = 4
+    except BaseException:
+        probe_payload = {"status": "FAIL", "evidence_code": "UNCLASSIFIED_PROBE_FAILURE"}
+        probe_returncode = 4
+
+sys.stdout.write(json.dumps(probe_payload, sort_keys=True, separators=(",", ":")) + "\n")
+raise SystemExit(probe_returncode)
 """
 
 
@@ -1562,6 +1580,15 @@ def _run_application_probe(
         env=_application_environment(state, snapshot, target),
         timeout=300,
     )
+    if not result.stdout.strip() and result.returncode != 0:
+        if result.returncode == 3:
+            return PhaseOutcome(
+                "BLOCKED",
+                "PROBE_PROCESS_BLOCKED",
+                DETAILS["PROBE_BLOCKED"],
+                unsupported=True,
+            )
+        return PhaseOutcome("FAIL", "PROBE_PROCESS_FAILED", DETAILS["PROBE_FAILED"])
     payload = _parse_probe_payload(result.stdout)
     status = payload.get("status")
     if status == "PASS" and result.returncode == 0:

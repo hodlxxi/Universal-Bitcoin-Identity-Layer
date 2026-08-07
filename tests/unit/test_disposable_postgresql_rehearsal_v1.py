@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
+import sys
 import tarfile
+import textwrap
 from dataclasses import replace
 from pathlib import Path
 
@@ -38,6 +41,140 @@ def execute_request(tmp_path: Path, **changes) -> rehearsal.ExecuteRequest:
         effective_uid=1000,
     )
     return replace(request, **changes)
+
+
+PROBE_IMPORT_FAILURE_DETAIL = (
+    "postgresql://probe-user:probe-password@database.invalid/private "
+    "/tmp/private/probe.py credential=probe-secret"
+)
+
+
+def run_probe_with_factory_import(tmp_path: Path, factory_statement: str) -> subprocess.CompletedProcess[str]:
+    app_directory = tmp_path / "app"
+    app_directory.mkdir()
+    (app_directory / "__init__.py").write_text("", encoding="utf-8")
+    (app_directory / "utils.py").write_text(
+        "def get_rpc_connection():\n"
+        "    raise AssertionError('unguarded Bitcoin RPC access')\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "requests.py").write_text(
+        textwrap.dedent(
+            """
+            class Session:
+                def request(self, *_args, **_kwargs):
+                    raise AssertionError("unguarded HTTP access")
+
+            class Sessions:
+                pass
+
+            sessions = Sessions()
+            sessions.Session = Session
+            """
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "redis.py").write_text(
+        textwrap.dedent(
+            """
+            class ConnectionError(Exception):
+                pass
+
+            class Exceptions:
+                pass
+
+            exceptions = Exceptions()
+            exceptions.ConnectionError = ConnectionError
+
+            class Redis:
+                def ping(self):
+                    raise AssertionError("unguarded Redis access")
+
+            class Client:
+                pass
+
+            client = Client()
+            client.Redis = Redis
+            """
+        ),
+        encoding="utf-8",
+    )
+    factory_source = textwrap.dedent(
+        f"""
+        import __main__
+        import smtplib
+        import socket
+        import subprocess
+        import sys
+        import urllib.request
+
+        import app.utils
+        import redis
+        import requests
+
+        if socket.socket.connect is not __main__.guarded_connect:
+            raise RuntimeError("socket connect guard missing")
+        if socket.socket.connect_ex is not __main__.guarded_connect_ex:
+            raise RuntimeError("socket connect_ex guard missing")
+        if socket.socket.sendto is not __main__.guarded_sendto:
+            raise RuntimeError("socket sendto guard missing")
+        if socket.create_connection is not __main__.blocked_side_effect:
+            raise RuntimeError("socket connection guard missing")
+        if urllib.request.urlopen is not __main__.blocked_side_effect:
+            raise RuntimeError("URL guard missing")
+        if smtplib.SMTP is not __main__.blocked_side_effect:
+            raise RuntimeError("SMTP guard missing")
+        if subprocess.run is not __main__.blocked_side_effect:
+            raise RuntimeError("subprocess guard missing")
+        if requests.sessions.Session.request is not __main__.blocked_side_effect:
+            raise RuntimeError("HTTP guard missing")
+        if redis.Redis.ping is not __main__.redis_disabled:
+            raise RuntimeError("Redis guard missing")
+        if app.utils.get_rpc_connection is not __main__.blocked_side_effect:
+            raise RuntimeError("Bitcoin RPC guard missing")
+
+        print({PROBE_IMPORT_FAILURE_DETAIL!r})
+        sys.stderr.write(__file__ + " " + {PROBE_IMPORT_FAILURE_DETAIL!r} + "\\n")
+        {factory_statement}
+        """
+    )
+    (app_directory / "factory.py").write_text(factory_source, encoding="utf-8")
+    return subprocess.run(
+        [sys.executable, "-c", rehearsal.PROBE_PROGRAM, "startup"],
+        cwd=tmp_path,
+        env={"PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": str(tmp_path)},
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+
+
+def assert_sanitized_probe_failure(
+    result: subprocess.CompletedProcess[str],
+    *,
+    expected_payload: dict[str, str],
+    expected_returncode: int,
+) -> None:
+    assert result.returncode == expected_returncode
+    assert result.stderr == ""
+    assert len(result.stdout.splitlines()) == 1
+    assert json.loads(result.stdout) == expected_payload
+    rendered = result.stdout + result.stderr
+    for forbidden in (
+        "Traceback",
+        "ImportError",
+        "KeyboardInterrupt",
+        "RuntimeError",
+        "SystemExit",
+        "/tmp/private/probe.py",
+        "postgresql://",
+        "credential=",
+        "probe-password",
+        "probe-secret",
+        PROBE_IMPORT_FAILURE_DETAIL,
+    ):
+        assert forbidden not in rendered
 
 
 class NeverRunner:
@@ -401,7 +538,11 @@ def test_every_inherited_runtime_key_is_refused_before_runner_use(tmp_path):
 def test_probe_installs_integration_guards_before_importing_application_factory():
     program = rehearsal.PROBE_PROGRAM
     compile(program, "<production-compatibility-rehearsal-probe>", "exec")
+    envelope = program.index("with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):")
+    protected_execution = program.index("    try:", envelope)
     factory_import = program.index("from app.factory import create_app")
+    factory_classification = program.index("    except ProbeBlocked as exc:", factory_import)
+    assert protected_execution < factory_import < factory_classification
     for guard in (
         "socket.socket.connect = guarded_connect",
         "socket.socket.connect_ex = guarded_connect_ex",
@@ -420,3 +561,88 @@ def test_probe_installs_integration_guards_before_importing_application_factory(
     assert 'issuer=os.environ["JWT_ISSUER"]' in program
     assert 'audience=registration["client_id"]' in program
     assert "/srv/ubid" not in program
+
+
+def test_probe_blocked_during_factory_import_emits_sanitized_blocked_envelope(tmp_path):
+    result = run_probe_with_factory_import(
+        tmp_path,
+        'socket.create_connection(("forbidden.invalid", 8332))',
+    )
+    assert_sanitized_probe_failure(
+        result,
+        expected_payload={
+            "status": "BLOCKED",
+            "evidence_code": "EXTERNAL_SIDE_EFFECT_GUARD_TRIGGERED",
+        },
+        expected_returncode=3,
+    )
+
+
+def test_import_error_during_factory_import_emits_sanitized_blocked_envelope(tmp_path):
+    result = run_probe_with_factory_import(
+        tmp_path,
+        f"raise ImportError({PROBE_IMPORT_FAILURE_DETAIL!r})",
+    )
+    assert_sanitized_probe_failure(
+        result,
+        expected_payload={"status": "BLOCKED", "evidence_code": "PROBE_DEPENDENCY_UNAVAILABLE"},
+        expected_returncode=3,
+    )
+
+
+def test_ordinary_exception_during_factory_import_emits_sanitized_fail_envelope(tmp_path):
+    result = run_probe_with_factory_import(
+        tmp_path,
+        f"raise RuntimeError({PROBE_IMPORT_FAILURE_DETAIL!r})",
+    )
+    assert_sanitized_probe_failure(
+        result,
+        expected_payload={"status": "FAIL", "evidence_code": "UNCLASSIFIED_PROBE_FAILURE"},
+        expected_returncode=4,
+    )
+
+
+def test_system_exit_during_factory_import_emits_sanitized_fail_envelope(tmp_path):
+    result = run_probe_with_factory_import(
+        tmp_path,
+        f"raise SystemExit({PROBE_IMPORT_FAILURE_DETAIL!r})",
+    )
+    assert_sanitized_probe_failure(
+        result,
+        expected_payload={"status": "FAIL", "evidence_code": "UNCLASSIFIED_PROBE_FAILURE"},
+        expected_returncode=4,
+    )
+
+
+def test_keyboard_interrupt_during_factory_import_is_fail_closed(tmp_path):
+    result = run_probe_with_factory_import(tmp_path, "raise KeyboardInterrupt()")
+    assert_sanitized_probe_failure(
+        result,
+        expected_payload={"status": "FAIL", "evidence_code": "UNCLASSIFIED_PROBE_FAILURE"},
+        expected_returncode=4,
+    )
+
+
+def test_successful_probe_evidence_sequences_remain_exact():
+    assert rehearsal.STARTUP_PROBE_EVIDENCE == (
+        "APPLICATION_STARTUP",
+        "REQUIRED_BLUEPRINT_REGISTRATION",
+        "DISPOSABLE_TARGET_QUERYABILITY",
+    )
+    assert rehearsal.AUTH_PROBE_EVIDENCE == (
+        "APPLICATION_STARTUP",
+        "BLUEPRINT_REGISTRATION",
+        "OAUTH_CLIENT_REGISTRATION_VALIDATION",
+        "REDIRECT_URI_VALIDATION",
+        "PKCE_REQUIREMENTS",
+        "SCOPE_POLICY",
+        "AUTHORIZATION_CODE_ONE_TIME_CONSUMPTION",
+        "TOKEN_ISSUE",
+        "BEARER_PARSING",
+        "TOKEN_VALIDATION",
+        "TOKEN_INTROSPECTION",
+        "REVOKED_OR_EXPIRED_TOKEN_REJECTION",
+        "INACTIVE_USER_REJECTION",
+        "EXACT_LIMITED_ENTITLEMENT",
+        "NO_CRT_FULL_FROM_REHEARSAL_METADATA",
+    )
