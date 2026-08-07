@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import copy
 import json
 import subprocess
@@ -7,9 +8,13 @@ import sys
 import tarfile
 import textwrap
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from tools import production_compatibility_rehearsal_v1 as rehearsal
 
@@ -175,6 +180,101 @@ def assert_sanitized_probe_failure(
         PROBE_IMPORT_FAILURE_DETAIL,
     ):
         assert forbidden not in rendered
+
+
+class SyntheticProbeFailure(RuntimeError):
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+def probe_function(name: str) -> ast.FunctionDef:
+    program = ast.parse(rehearsal.PROBE_PROGRAM)
+    return next(
+        statement
+        for statement in program.body
+        if isinstance(statement, ast.FunctionDef) and statement.name == name
+    )
+
+
+def probe_evidence(name: str) -> tuple[str, ...]:
+    function = probe_function(name)
+    returns = [statement for statement in function.body if isinstance(statement, ast.Return)]
+    assert len(returns) == 1
+    return tuple(ast.literal_eval(returns[0].value))
+
+
+def id_token_verification_block() -> ast.Try:
+    function = probe_function("auth_probe")
+    return next(
+        statement
+        for statement in function.body
+        if isinstance(statement, ast.Try)
+        and any(
+            isinstance(node, ast.Name)
+            and node.id == "id_signing_key"
+            and isinstance(node.ctx, ast.Store)
+            for node in ast.walk(statement)
+        )
+    )
+
+
+def make_id_token(
+    signing_key: rsa.RSAPrivateKey,
+    *,
+    issuer: str = "https://rehearsal-issuer.invalid",
+    audience: str = "rehearsal-client",
+    missing_claim: str | None = None,
+) -> str:
+    now = datetime.now(timezone.utc)
+    claims = {
+        "exp": now + timedelta(minutes=5),
+        "iat": now,
+        "iss": issuer,
+        "sub": "ab" * 32,
+        "aud": audience,
+    }
+    if missing_claim is not None:
+        claims.pop(missing_claim)
+    return jwt.encode(claims, signing_key, algorithm="RS256", headers={"kid": "rehearsal-key"})
+
+
+def execute_id_token_verification(
+    id_token: str,
+    signing_key: rsa.RSAPrivateKey,
+    *,
+    decode_calls: list[dict[str, object]],
+    lookup_calls: list[tuple[str, str]],
+) -> dict[str, object]:
+    def require(value, code):
+        if not value:
+            raise SyntheticProbeFailure(code)
+
+    def get_key_by_kid(directory, kid):
+        lookup_calls.append((directory, kid))
+        return signing_key
+
+    def decode(encoded, key, **kwargs):
+        decode_calls.append({"encoded": encoded, "key": key, "kwargs": dict(kwargs)})
+        return jwt.decode(encoded, key, **kwargs)
+
+    namespace = {
+        "ProbeFailure": SyntheticProbeFailure,
+        "get_key_by_kid": get_key_by_kid,
+        "id_token": id_token,
+        "jwt": SimpleNamespace(get_unverified_header=jwt.get_unverified_header, decode=decode),
+        "os": SimpleNamespace(
+            environ={
+                "JWKS_DIR": "/synthetic/rehearsal-jwks",
+                "JWT_ISSUER": "https://rehearsal-issuer.invalid",
+            }
+        ),
+        "registration": {"client_id": "rehearsal-client"},
+        "require": require,
+    }
+    module = ast.Module(body=[id_token_verification_block()], type_ignores=[])
+    exec(compile(module, "<rehearsal-id-token-verification>", "exec"), namespace)
+    return namespace["id_claims"]
 
 
 class NeverRunner:
@@ -346,6 +446,7 @@ def test_complete_fourteen_phase_simulation_uses_exact_isolated_commands(tmp_pat
     assert [item["phase"] for item in result["phases"]] == list(rehearsal.PHASES)
     assert all(item["status"] == "PASS" for item in result["phases"])
     assert all(item["cleanup_status"] == "COMPLETE" for item in result["phases"])
+    assert result["phases"][3]["evidence_code"] == "STARTUP_PROBE_COMPLETE"
     assert not request.workspace.exists()
     rehearsal.validate_sanitized_result(result)
 
@@ -557,10 +658,86 @@ def test_probe_installs_integration_guards_before_importing_application_factory(
         assert program.index(guard) < factory_import
     assert "https://synthetic-client.invalid/callback" in program
     assert "ID_TOKEN_MISSING" in program
+    assert 'id_header.get("alg") == "RS256"' in program
+    assert 'get_key_by_kid(os.environ["JWKS_DIR"], id_header["kid"])' in program
+    assert "id_verification_key = id_signing_key.public_key()" in program
+    assert "id_token,\n            id_verification_key," in program
     assert 'algorithms=["RS256"]' in program
     assert 'issuer=os.environ["JWT_ISSUER"]' in program
     assert 'audience=registration["client_id"]' in program
+    assert 'options={"require": ["exp", "iat", "iss", "sub", "aud"]}' in program
     assert "/srv/ubid" not in program
+
+
+def test_rehearsal_id_token_verification_uses_public_key_and_strict_decode_options():
+    signing_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    id_token = make_id_token(signing_key)
+    decode_calls: list[dict[str, object]] = []
+    lookup_calls: list[tuple[str, str]] = []
+
+    claims = execute_id_token_verification(
+        id_token,
+        signing_key,
+        decode_calls=decode_calls,
+        lookup_calls=lookup_calls,
+    )
+
+    assert claims["sub"] == "ab" * 32
+    assert lookup_calls == [("/synthetic/rehearsal-jwks", "rehearsal-key")]
+    assert len(decode_calls) == 1
+    decode_call = decode_calls[0]
+    verification_key = decode_call["key"]
+    assert isinstance(signing_key, rsa.RSAPrivateKey)
+    assert isinstance(verification_key, rsa.RSAPublicKey)
+    assert not isinstance(verification_key, rsa.RSAPrivateKey)
+    assert verification_key.public_numbers() == signing_key.public_key().public_numbers()
+    assert decode_call["encoded"] == id_token
+    assert decode_call["kwargs"] == {
+        "algorithms": ["RS256"],
+        "audience": "rehearsal-client",
+        "issuer": "https://rehearsal-issuer.invalid",
+        "options": {"require": ["exp", "iat", "iss", "sub", "aud"]},
+    }
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_cause"),
+    [
+        ("invalid_signature", jwt.InvalidSignatureError),
+        ("wrong_issuer", jwt.InvalidIssuerError),
+        ("wrong_audience", jwt.InvalidAudienceError),
+        ("missing_required_claim", jwt.MissingRequiredClaimError),
+    ],
+)
+def test_rehearsal_id_token_verification_remains_fail_closed(failure, expected_cause):
+    verification_signing_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token_signing_key = verification_signing_key
+    token_options = {}
+    if failure == "invalid_signature":
+        token_signing_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    elif failure == "wrong_issuer":
+        token_options["issuer"] = "https://wrong-issuer.invalid"
+    elif failure == "wrong_audience":
+        token_options["audience"] = "wrong-client"
+    else:
+        token_options["missing_claim"] = "exp"
+    id_token = make_id_token(token_signing_key, **token_options)
+    decode_calls: list[dict[str, object]] = []
+    lookup_calls: list[tuple[str, str]] = []
+
+    with pytest.raises(SyntheticProbeFailure, match="ID_TOKEN_VALIDATION_FAILED") as caught:
+        execute_id_token_verification(
+            id_token,
+            verification_signing_key,
+            decode_calls=decode_calls,
+            lookup_calls=lookup_calls,
+        )
+
+    assert isinstance(caught.value.__cause__, expected_cause)
+    assert lookup_calls == [("/synthetic/rehearsal-jwks", "rehearsal-key")]
+    assert len(decode_calls) == 1
+    assert isinstance(decode_calls[0]["key"], rsa.RSAPublicKey)
+    assert decode_calls[0]["kwargs"]["algorithms"] == ["RS256"]
 
 
 def test_probe_blocked_during_factory_import_emits_sanitized_blocked_envelope(tmp_path):
@@ -646,3 +823,5 @@ def test_successful_probe_evidence_sequences_remain_exact():
         "EXACT_LIMITED_ENTITLEMENT",
         "NO_CRT_FULL_FROM_REHEARSAL_METADATA",
     )
+    assert probe_evidence("startup_probe") == rehearsal.STARTUP_PROBE_EVIDENCE
+    assert probe_evidence("auth_probe") == rehearsal.AUTH_PROBE_EVIDENCE
