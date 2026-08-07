@@ -1318,9 +1318,10 @@ def auth_probe():
         )
         id_signing_key = get_key_by_kid(os.environ["JWKS_DIR"], id_header["kid"])
         require(id_signing_key is not None, "ID_TOKEN_VALIDATION_FAILED")
+        id_verification_key = id_signing_key.public_key()
         id_claims = jwt.decode(
             id_token,
-            id_signing_key,
+            id_verification_key,
             algorithms=["RS256"],
             audience=registration["client_id"],
             issuer=os.environ["JWT_ISSUER"],
