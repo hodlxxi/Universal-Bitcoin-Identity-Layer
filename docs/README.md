@@ -11,6 +11,7 @@
 
 - **[PRODUCTION_COMPATIBILITY_INVENTORY_V1.md](PRODUCTION_COMPATIBILITY_INVENTORY_V1.md)** — pinned main-to-staging compatibility inventory, activation analysis, blockers, release trains, and non-claims.
 - **[PRODUCTION_HOST_DATABASE_METADATA_AUDIT_V1.md](PRODUCTION_HOST_DATABASE_METADATA_AUDIT_V1.md)** — sanitized deterministic read-only production host and PostgreSQL metadata audit; not deployment approval.
+- **[PRODUCTION_COMPATIBILITY_REHEARSAL_PLAN_V1.md](PRODUCTION_COMPATIBILITY_REHEARSAL_PLAN_V1.md)** — fail-closed synthetic non-production startup/auth, seven-migration, and backup/restore rehearsal plan and harness contract; execution remains `NOT_RUN`.
 
 The normative theory and protocol source is `hodlxxi/hodlxxi-cryptographic-reciprocity` at commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`. PR6.8 uses implementation branch base `fe333cdb5068a73b4dc57b875e1b0223b01855f7`; the older `7df976c59742aa84fd79cfd41f12a34a33915259` is explicitly the active-runtime audit basis. These documents do not assert current CRT Membership Protocol V1 enforcement.
 
