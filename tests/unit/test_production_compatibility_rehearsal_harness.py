@@ -56,6 +56,17 @@ def make_executable(path: Path) -> Path:
     return path
 
 
+def make_venv_python_launcher(tmp_path: Path) -> tuple[Path, Path]:
+    target = make_executable(tmp_path / "python3.12")
+    binary_directory = tmp_path / "venv" / "bin"
+    binary_directory.mkdir(parents=True)
+    python3 = binary_directory / "python3"
+    python3.symlink_to(target)
+    launcher = binary_directory / "python"
+    launcher.symlink_to(python3.name)
+    return launcher, target
+
+
 def execute_request(tmp_path: Path, **changes) -> rehearsal.ExecuteRequest:
     pg_directory = tmp_path / "pg-bin"
     pg_directory.mkdir(exist_ok=True)
@@ -170,6 +181,84 @@ def test_execute_rejects_tcp_and_accepts_only_unix_socket_architecture(tmp_path)
     resolved = rehearsal.validate_execute_request(unix)
     assert resolved.request.transport == "unix"
     assert resolved.request.listen_addresses == ""
+
+
+def test_execute_preserves_venv_python_launcher_identity(tmp_path):
+    launcher, target = make_venv_python_launcher(tmp_path)
+    request = execute_request(tmp_path, python_binary=launcher)
+
+    resolved = rehearsal.validate_execute_request(request)
+
+    assert launcher.is_symlink()
+    assert launcher.resolve(strict=True) == target
+    assert resolved.tools.python == launcher
+    assert resolved.tools.python != target
+
+
+def test_execute_rejects_broken_python_launcher_symlink(tmp_path):
+    launcher = tmp_path / "venv" / "bin" / "python"
+    launcher.parent.mkdir(parents=True)
+    launcher.symlink_to("python3")
+    request = execute_request(tmp_path, python_binary=launcher)
+
+    with pytest.raises(rehearsal.SafetyViolation, match="PYTHON_BINARY_INVALID"):
+        rehearsal.validate_execute_request(request)
+
+
+def test_execute_rejects_python_launcher_with_non_executable_target(tmp_path):
+    target = tmp_path / "python3.12"
+    target.write_text("synthetic non-executable target\n", encoding="utf-8")
+    target.chmod(0o600)
+    launcher = tmp_path / "venv" / "bin" / "python"
+    launcher.parent.mkdir(parents=True)
+    launcher.symlink_to(target)
+    request = execute_request(tmp_path, python_binary=launcher)
+
+    with pytest.raises(rehearsal.SafetyViolation, match="PYTHON_BINARY_INVALID"):
+        rehearsal.validate_execute_request(request)
+
+
+def test_execute_rejects_python_launcher_with_non_file_target(tmp_path):
+    target = tmp_path / "python-target-directory"
+    target.mkdir(mode=0o700)
+    launcher = tmp_path / "venv" / "bin" / "python"
+    launcher.parent.mkdir(parents=True)
+    launcher.symlink_to(target, target_is_directory=True)
+    request = execute_request(tmp_path, python_binary=launcher)
+
+    with pytest.raises(rehearsal.SafetyViolation, match="PYTHON_BINARY_INVALID"):
+        rehearsal.validate_execute_request(request)
+
+
+def test_execute_accepts_non_symlink_python_and_stores_absolute_launcher(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    request = execute_request(tmp_path, python_binary=Path("python"))
+
+    resolved = rehearsal.validate_execute_request(request)
+
+    assert not request.python_binary.is_symlink()
+    assert resolved.tools.python == tmp_path / "python"
+    assert resolved.tools.python.is_absolute()
+
+
+def test_application_probe_uses_preserved_python_launcher(tmp_path, monkeypatch):
+    launcher, target = make_venv_python_launcher(tmp_path)
+    resolved = rehearsal.validate_execute_request(execute_request(tmp_path, python_binary=launcher))
+    runner = FakeRunner([rehearsal.CommandResult(3, "", "")])
+    state = SimpleNamespace(resolved=resolved)
+    monkeypatch.setattr(rehearsal, "_application_environment", lambda *_args, **_kwargs: {"LANG": "C"})
+
+    outcome = rehearsal._run_application_probe(
+        runner,
+        state,
+        snapshot=ROOT,
+        target="unused",
+        mode="startup",
+    )
+
+    assert outcome.status == "BLOCKED"
+    assert runner.calls[0]["argv"][0] == str(launcher)
+    assert runner.calls[0]["argv"][0] != str(target)
 
 
 def test_execute_refuses_inherited_database_url(tmp_path):
