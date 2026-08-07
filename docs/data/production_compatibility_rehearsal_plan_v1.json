@@ -355,7 +355,7 @@
     {
       "phase": "REHEARSAL_11_COMPARE",
       "status": "NOT_RUN",
-      "purpose": "Compare normalized schema, relation ownership categories, table, sequence and index counts, then query every restored application table.",
+      "purpose": "Compare normalized schema, relation ownership categories, table, sequence and index counts, per-table synthetic row counts, then query every restored application table.",
       "prerequisites": [
         "REHEARSAL_10_RESTORE"
       ],
@@ -511,6 +511,7 @@
       "NORMALIZED_SCHEMA_MATCH",
       "RELATION_OWNERSHIP_CATEGORY_MATCH",
       "TABLE_SEQUENCE_INDEX_COUNTS_MATCH",
+      "PER_TABLE_SYNTHETIC_ROW_COUNTS_MATCH",
       "EVERY_RESTORED_APPLICATION_TABLE_QUERYABLE"
     ],
     "insufficient_evidence": [
@@ -579,9 +580,9 @@
     ]
   },
   "next_required_work": {
-    "task": "PR6.24",
+    "task": "SEPARATELY_AUTHORIZED_DISPOSABLE_EXECUTION",
     "operator_decisions_required": [
-      "Approve a specific isolated non-production host, non-root account and temporary root.",
+      "Approve the host, non-root account and temporary root; a production host requires separate explicit authorization for the disposable laboratory only.",
       "Approve exact Python and PostgreSQL binary paths and versions.",
       "Confirm both immutable source snapshots can use one isolated dependency environment.",
       "Approve egress denial and Unix-socket-only laboratory controls.",
@@ -600,7 +601,7 @@
         "propose release-gate changes based on evidence"
       ],
       "may_not": [
-        "use the production host",
+        "contact or modify production resources outside the disposable laboratory",
         "use the production PostgreSQL cluster",
         "use production rows",
         "use production credentials",

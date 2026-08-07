@@ -10,7 +10,6 @@ import pytest
 
 from tools import production_compatibility_rehearsal_v1 as rehearsal
 
-
 ROOT = Path(__file__).resolve().parents[2]
 JSON_PATH = ROOT / "docs/data/production_compatibility_rehearsal_plan_v1.json"
 DOCUMENT_PATH = ROOT / "docs/PRODUCTION_COMPATIBILITY_REHEARSAL_PLAN_V1.md"
@@ -78,6 +77,9 @@ def test_exact_release_dispositions_pr6_24_boundary_and_non_claims():
     boundary = value["next_required_work"]["pr6_24_boundary"]
     assert boundary["may"] == list(rehearsal.PR6_24_MAY)
     assert boundary["may_not"] == list(rehearsal.PR6_24_MAY_NOT)
+    assert "use the production host" not in boundary["may_not"]
+    assert "contact or modify production resources outside the disposable laboratory" in boundary["may_not"]
+    assert value["next_required_work"]["task"] == "SEPARATELY_AUTHORIZED_DISPOSABLE_EXECUTION"
     assert value["explicit_non_claims"] == list(rehearsal.NON_CLAIMS)
     assert len(value["explicit_non_claims"]) == len(set(value["explicit_non_claims"])) == 38
 
@@ -134,6 +136,12 @@ def test_result_schema_has_exact_sanitized_phase_fields():
     assert template["artifact_sha256"] is None
 
 
+def test_executable_probe_environment_and_restore_evidence_match_the_plan():
+    value = load()
+    assert value["startup_probe"]["allowlisted_variable_names"] == list(rehearsal.APPLICATION_ENVIRONMENT_KEYS)
+    assert "PER_TABLE_SYNTHETIC_ROW_COUNTS_MATCH" in value["backup_restore_probe"]["required_evidence"]
+
+
 def test_synthetic_fixture_is_schema_only_and_matches_observed_catalog_identity():
     value = load()["synthetic_baseline"]
     sql = FIXTURE_PATH.read_text(encoding="utf-8")
@@ -150,9 +158,7 @@ def test_synthetic_fixture_is_schema_only_and_matches_observed_catalog_identity(
         "oauth_tokens",
         "users",
     ]
-    constraints = {
-        item["primary_key"] for item in value["tables"]
-    } | {
+    constraints = {item["primary_key"] for item in value["tables"]} | {
         name for item in value["tables"] for name in item["foreign_keys"]
     }
     indexes = {name for item in value["tables"] for name in item["indexes"]}
@@ -175,7 +181,8 @@ def test_human_plan_basis_distinctions_compass_and_readme_link():
         rehearsal.SOURCE_AUDIT_REPORT_SHA256,
         rehearsal.SOURCE_DATABASE_IDENTIFIER_SHA256,
         "Plan mode, future execution evidence, and release approval are three distinct things",
-        "PR6.23 creates a plan and harness only. PR6.24 may execute it only in an explicitly approved isolated non-production environment.",
+        "PR6.23 created the plan and execute-mode engine. PR6.24 makes the disposable engine repository-supported and tested",
+        "On a production host, that authorization covers only the disposable laboratory and never any production resource.",
         "SQLite",
         "not a complete production schema clone",
         "HC-03",

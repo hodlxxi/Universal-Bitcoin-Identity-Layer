@@ -1,8 +1,8 @@
 # Production Compatibility Rehearsal Plan V1
 
-Status: **PLAN AND HARNESS ONLY — EXECUTION NOT RUN — NO RELEASE AUTHORITY**
+Status: **REPOSITORY-SUPPORTED DISPOSABLE HARNESS — EXECUTION NOT RUN — NO RELEASE AUTHORITY**
 
-PR6.23 creates a plan and harness only. PR6.24 may execute it only in an explicitly approved isolated non-production environment.
+PR6.23 created the plan and execute-mode engine. PR6.24 makes the disposable engine repository-supported and tested, but does not execute PostgreSQL. A real run still requires separate explicit authorization for one marker-owned non-production laboratory. On a production host, that authorization covers only the disposable laboratory and never any production resource.
 
 The production source basis is `6873e8fb73cbea8fda43fe3609bbdbb2817d8299`. The staging source basis is `872485fedce951365a3325e3bfd0ad766112c272`. The PR6.22 source audit report SHA-256 is `1b30768d3a00ccf188e15bf75dc5ce1007065b093c502ab1187e95a41ca8984f`, and the sanitized application-database identifier is `cd098bd0f85e4f7b5767fdc94daa08d4f9d08bbda0c60ebb6065bbc754ce0106`. The real database name is neither included nor derived.
 
@@ -20,7 +20,7 @@ PR6.22 is sanitized read-only metadata, not behavioral evidence. It establishes 
 
 ## Disposable laboratory and fail-closed boundary
 
-The future `execute` command requires the exact acknowledgement `DISPOSABLE-NONPRODUCTION-REHEARSAL-V1`, explicit repository and workspace paths, the two exact source SHAs, an explicit approved temporary root, an explicit Python binary, an explicit Git binary, and an explicit PostgreSQL binary directory. It reads no application configuration file. It rejects inherited runtime/database configuration by variable name without retaining any value.
+The `execute` command requires the exact acknowledgement `DISPOSABLE-NONPRODUCTION-REHEARSAL-V1`, explicit repository and workspace paths, the two exact source SHAs, an explicit approved temporary root, an explicit Python binary, an explicit Git binary, and an explicit PostgreSQL binary directory. It reads no application configuration file. It rejects inherited runtime/database configuration by variable name without retaining any value.
 
 Execution as UID 0 is rejected because root would expand the damage boundary of path mistakes, cluster control, archive creation, and cleanup. The laboratory needs no privileged port, system service, system cluster, or protected checkout access. A non-root account makes operating-system ownership part of the containment contract.
 
@@ -47,12 +47,12 @@ All committed phase states are `NOT_RUN`. No phase is pre-classified as successf
 4. `REHEARSAL_03_NEW_CODE_OLD_SCHEMA_STARTUP` — probe staging `create_app`, required blueprint registration, connection, and four-table queryability against the old schema.
 5. `REHEARSAL_04_NEW_CODE_OLD_SCHEMA_AUTH` — exercise the supported synthetic OAuth/OIDC matrix with staging code and the old schema.
 6. `REHEARSAL_05_APPLY_SEVEN_MIGRATIONS` — apply exactly the seven migrations below, stopping at the first failure.
-7. `REHEARSAL_06_VERIFY_MIGRATED_CATALOG` — verify migration-declared tables, columns, named constraints, primary keys, and indexes.
+7. `REHEARSAL_06_VERIFY_MIGRATED_CATALOG` — verify migration-declared tables, columns, table-qualified named constraints, exact primary/unique/foreign-key column relationships, inline check counts, and explicit indexes.
 8. `REHEARSAL_07_OLD_CODE_NEW_SCHEMA_STARTUP` — probe production-basis application startup against the migrated additive schema.
 9. `REHEARSAL_08_NEW_CODE_NEW_SCHEMA_STARTUP_AUTH` — probe staging startup and repeat the supported synthetic authentication matrix against the migrated schema.
 10. `REHEARSAL_09_BACKUP` — create a custom-format archive of only the disposable target, inspect its contents, and calculate SHA-256.
 11. `REHEARSAL_10_RESTORE` — verify the checksum and restore only into a second execute-time generated target in the same disposable cluster.
-12. `REHEARSAL_11_COMPARE` — compare normalized schema, relation ownership categories, table/sequence/index counts, and queryability of every restored application table.
+12. `REHEARSAL_11_COMPARE` — compare normalized schema, relation ownership categories, table/sequence/index counts, per-table synthetic row counts, and queryability of every restored application table.
 13. `REHEARSAL_12_CLEANUP` — stop only the harness-created cluster and remove only marker-owned temporary artifacts.
 14. `REHEARSAL_13_RESULT` — emit a sanitized result object with no release authority.
 
@@ -70,7 +70,7 @@ No downgrade SQL is generated, applied, or modified.
 6. `migrations/2026-07-26_canonical_admission_edge_registry_v1.sql`
 7. `migrations/2026-07-26_canonical_e923_genesis_record_v1.sql`
 
-The migrated-catalog check derives required relations, columns, explicitly named constraints, primary keys, and indexes from these immutable files. `IF NOT EXISTS` is not treated as shape proof.
+The migrated-catalog check derives required relations, columns, table-qualified named constraints, inline check counts, and explicit indexes from these immutable files. It separately verifies the exact table, ordered local columns, referenced table and columns, and delete action for every primary-key, unique, and foreign-key constraint, including unnamed inline constraints. `IF NOT EXISTS` is not treated as shape proof.
 
 ## Synthetic old-schema baseline
 
@@ -116,9 +116,9 @@ If a required import or dependency cannot be isolated, the probe returns `BLOCKE
 
 ## Backup and restore verification
 
-The future backup phase reuses the safety meaning of `docs/ops/POSTGRES_BACKUP_RESTORE.md`, `scripts/postgres_backup_verified.sh`, and `scripts/postgres_verify_backup.sh` without modifying or invoking those production-oriented scripts. It operates only against the harness-created cluster.
+The backup phase reuses the safety meaning of `docs/ops/POSTGRES_BACKUP_RESTORE.md`, `scripts/postgres_backup_verified.sh`, and `scripts/postgres_verify_backup.sh` without modifying or invoking those production-oriented scripts. It operates only against the harness-created cluster.
 
-Evidence requires all of the following: custom-format archive creation, SHA-256 verification, readable archive contents, successful restore into a second disposable target, normalized schema equality after removing only `\restrict` and `\unrestrict` marker lines, relation ownership-category equality, equal table/sequence/index counts, and a successful query against every restored application table. `pg_dump` exit zero or `pg_restore --list` alone is insufficient.
+Evidence requires all of the following: custom-format archive creation, SHA-256 verification, readable archive contents, successful restore into a second disposable target, normalized schema equality after removing only `\restrict` and `\unrestrict` marker lines, relation ownership-category equality, equal table/sequence/index counts, equal per-table synthetic row counts, and a successful query against every restored application table. `pg_dump` exit zero or `pg_restore --list` alone is insufficient.
 
 This proves neither that a production backup exists nor that production recovery is ready. Production recovery still requires separate outage, recovery-point, write-shutdown, ownership, privilege, health, rollback, and incident procedures.
 
@@ -138,9 +138,9 @@ Results contain no raw stdout/stderr, credentials, DSNs, runtime database identi
 
 ## Failure handling and cleanup authority
 
-Every external command is an argument vector through an injectable runner; `shell=True` is never used. Tests use only a fake runner. A command failure discards raw output and produces a fixed `FAIL` evidence code. A missing safe dependency or safety-gate rejection produces `BLOCKED`. No failed prerequisite is bypassed.
+Every external command is an argument vector through an injectable runner; `shell=True` is never used. Repository tests use only fake runners, including a complete successful 14-phase command simulation; they do not execute PostgreSQL. A command failure discards raw output and produces a fixed `FAIL` evidence code. A missing safe dependency or safety-gate rejection produces `BLOCKED`. No failed prerequisite is bypassed.
 
-The harness records cluster-start intent before invoking `pg_ctl`. If startup reports failure, cleanup still attempts to stop the owned data directory; it does not assume no server started. If stop cannot be proven, the workspace remains. Cleanup does not call `dropdb` and never targets a system cluster. It verifies the marker immediately before removal and deletes only the one marker-owned workspace. Missing or changed ownership evidence causes cleanup refusal, not best-effort deletion.
+The harness records cluster-start intent before invoking `pg_ctl`. If startup reports failure, cleanup still attempts to stop the owned data directory; it does not assume no server started. An outer `finally` also attempts cleanup for orchestration-level interruptions. If stop cannot be proven, the workspace remains. Cleanup does not call `dropdb` and never targets a system cluster. It verifies the marker immediately before removal and deletes only the one marker-owned workspace. Missing or changed ownership evidence causes cleanup refusal, not best-effort deletion.
 
 ## Release-gate effects
 
@@ -153,11 +153,28 @@ This plan changes no release gate:
 
 Even a future all-`PASS` result would be evidence for review, not automatic approval. Train 1 still needs an explicit release decision after startup/auth evidence. Train 2 still needs an explicit release decision after migration and backup/restore evidence.
 
-## Operator decisions still required
+## Separately authorized invocation boundary
 
-Before PR6.24, operators must decide exactly:
+PR6.24 does not run this command. After separate authorization, the invocation must use a clean non-protected checkout, a non-root account, an already approved temporary root, a nonexistent direct-child workspace, a new output path outside that workspace, no inherited runtime configuration, and the explicit binaries. The command shape is:
 
-1. the isolated non-production host, non-root account, and approved temporary root;
+```bash
+env -i PATH=/usr/bin:/bin \
+  /absolute/path/to/python /absolute/clean/non-protected/checkout/tools/production_compatibility_rehearsal_v1.py execute \
+  --ack DISPOSABLE-NONPRODUCTION-REHEARSAL-V1 \
+  --repository /absolute/clean/non-protected/checkout \
+  --temporary-root /tmp/operator-approved-root \
+  --workspace /tmp/operator-approved-root/new-direct-child \
+  --production-sha 6873e8fb73cbea8fda43fe3609bbdbb2817d8299 \
+  --staging-sha 872485fedce951365a3325e3bfd0ad766112c272 \
+  --git-binary /usr/bin/git \
+  --python-binary /absolute/path/to/python \
+  --postgresql-binary-directory /usr/lib/postgresql/16/bin \
+  --output /tmp/new-sanitized-result.json
+```
+
+Before any such execution, operators must decide exactly:
+
+1. the approved host, non-root account, and temporary root; use of a production host requires separate explicit authorization for the disposable laboratory only;
 2. the exact Python, Git, and PostgreSQL binary paths and versions;
 3. whether both immutable snapshots can use the approved isolated dependency environment;
 4. how laboratory egress denial and Unix-socket-only controls are independently verified;
@@ -179,7 +196,7 @@ PR6.24 may:
 
 PR6.24 may not:
 
-- use the production host;
+- contact or modify production resources outside the disposable laboratory;
 - use the production PostgreSQL cluster;
 - use production rows;
 - use production credentials;

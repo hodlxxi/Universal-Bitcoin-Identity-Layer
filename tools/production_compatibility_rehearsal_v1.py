@@ -1,7 +1,8 @@
 """Sanitized production compatibility rehearsal plan and harness V1.
 
-Plan mode is the default and is deliberately inert.  Execute mode is a
-future, fail-closed laboratory workflow; PR6.23 does not run it.
+Plan mode is the default and is deliberately inert. Execute mode is a
+repository-supported, fail-closed disposable workflow whose real PostgreSQL
+execution always requires a separate explicit operator authorization.
 """
 
 from __future__ import annotations
@@ -24,7 +25,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Mapping, Protocol, Sequence
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
-
 
 PRODUCTION_SHA = "6873e8fb73cbea8fda43fe3609bbdbb2817d8299"
 STAGING_SHA = "872485fedce951365a3325e3bfd0ad766112c272"
@@ -91,6 +91,55 @@ MIGRATIONS = (
     "migrations/2026-07-26_canonical_e923_genesis_record_v1.sql",
 )
 
+APPLICATION_ENVIRONMENT_KEYS = (
+    "APP_VERSION",
+    "DATABASE_URL",
+    "DISABLE_FORCE_HTTPS",
+    "FLASK_ENV",
+    "FLASK_SECRET_KEY",
+    "HOME",
+    "JWKS_DIR",
+    "JWT_ALGORITHM",
+    "JWT_ISSUER",
+    "PYTHONDONTWRITEBYTECODE",
+    "PYTHONPATH",
+    "RATE_LIMIT_ENABLED",
+    "TESTING",
+    "TMPDIR",
+)
+
+# Exact primary-key, unique, and foreign-key shapes created by the immutable
+# seven-migration transition. Names alone are insufficient evidence: a
+# constraint with the right name on the wrong table or columns must fail.
+# Fields are table|type|columns|referenced_table|referenced_columns|delete_action.
+MIGRATION_RELATIONAL_CONSTRAINTS = frozenset(
+    {
+        "action_operations|p|operation_id|||",
+        "action_operations|u|actor_pubkey,oauth_client_id,idempotency_key_sha256|||",
+        "action_operations|u|step_up_challenge_id|||",
+        "action_operations|f|step_up_challenge_id|action_step_up_challenges|challenge_id|a",
+        "action_step_up_challenges|p|challenge_id|||",
+        "action_step_up_challenges|u|nonce|||",
+        "current_entitlement_evidence|p|evidence_id|||",
+        "trusted_covenant_registrations|p|registration_id|||",
+        "trusted_covenant_registrations|u|registration_sha256|||",
+        "trusted_covenant_registered_outpoints|p|id|||",
+        "trusted_covenant_registered_outpoints|u|registration_id,direction|||",
+        "trusted_covenant_registered_outpoints|u|txid,vout|||",
+        ("trusted_covenant_registered_outpoints|f|registration_id|" "trusted_covenant_registrations|registration_id|c"),
+        "canonical_admission_edges|p|edge_id|||",
+        "canonical_admission_edges|u|trusted_registration_id|||",
+        "canonical_admission_edges|u|trusted_registration_sha256|||",
+        "canonical_admission_edges|u|canonical_edge_sha256|||",
+        "canonical_admission_edge_legs|p|id|||",
+        "canonical_admission_edge_legs|u|edge_id,direction|||",
+        "canonical_admission_edge_legs|u|txid,vout|||",
+        "canonical_admission_edge_legs|f|edge_id|canonical_admission_edges|edge_id|a",
+        "canonical_genesis_records|p|record_id|||",
+        "canonical_genesis_records|u|canonical_record_sha256|||",
+    }
+)
+
 NON_CLAIMS = (
     "no deployment approval",
     "no deployment performed",
@@ -142,7 +191,7 @@ PR6_24_MAY = (
 )
 
 PR6_24_MAY_NOT = (
-    "use the production host",
+    "contact or modify production resources outside the disposable laboratory",
     "use the production PostgreSQL cluster",
     "use production rows",
     "use production credentials",
@@ -337,7 +386,9 @@ def validate_plan_contract(plan: Mapping[str, object]) -> None:
     phases = plan["phases"]
     _require(isinstance(phases, list), "phases must be a list")
     _require(tuple(item.get("phase") for item in phases if isinstance(item, dict)) == PHASES, "invalid phase order")
-    _require(all(isinstance(item, dict) and item.get("status") == "NOT_RUN" for item in phases), "phase claimed execution")
+    _require(
+        all(isinstance(item, dict) and item.get("status") == "NOT_RUN" for item in phases), "phase claimed execution"
+    )
     _require(tuple(plan["migration_order"]) == MIGRATIONS, "invalid migration order")
     _require(tuple(plan["explicit_non_claims"]) == NON_CLAIMS, "invalid non-claim list")
 
@@ -378,6 +429,10 @@ def validate_plan_contract(plan: Mapping[str, object]) -> None:
     _require(
         startup_probe.get("configuration_source") == "EXPLICIT_ALLOWLIST_ONLY",
         "startup configuration is not allowlisted",
+    )
+    _require(
+        tuple(startup_probe.get("allowlisted_variable_names", ())) == APPLICATION_ENVIRONMENT_KEYS,
+        "startup environment allowlist does not match the executable probe",
     )
     _require(startup_probe.get("inherited_environment") == "FORBIDDEN", "inherited environment allowed")
 
@@ -552,7 +607,7 @@ def _dsn_contains_password(value: str) -> bool:
 def validate_database_target(name: str) -> str:
     """Accept only execute-time rehearsal target syntax and reject defaults."""
 
-    if not isinstance(name, str) or not DATABASE_TARGET_PATTERN.fullmatch(name):
+    if not isinstance(name, str) or len(name) > 63 or not DATABASE_TARGET_PATTERN.fullmatch(name):
         raise SafetyViolation("DATABASE_TARGET_PATTERN_REJECTED")
     if name in {"postgres", "template0", "template1"}:
         raise SafetyViolation("RESERVED_DATABASE_TARGET_REJECTED")
@@ -604,9 +659,7 @@ def validate_execute_request(request: ExecuteRequest) -> ResolvedRequest:
     if request.transport != "unix" or request.listen_addresses != "":
         raise SafetyViolation("TCP_POSTGRESQL_REFUSED")
 
-    repository_input = Path(
-        os.path.abspath(os.fspath(request.repository))
-    )
+    repository_input = Path(os.path.abspath(os.fspath(request.repository)))
     _validate_path_text(repository_input)
     if _is_prohibited(repository_input):
         raise SafetyViolation("PROTECTED_REPOSITORY_PATH_REFUSED")
@@ -687,14 +740,23 @@ class WorkspaceGuard:
             descriptor = os.open(guard.marker, flags, 0o600)
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
                 handle.write(payload + "\n")
-        except Exception:
+            guard.assert_owned()
+            return guard
+        except BaseException:
+            # This method alone created the mode-0700 workspace and exclusive
+            # marker. Remove only that regular partial marker and only if the
+            # workspace is otherwise empty; unexpected contents are retained.
+            try:
+                marker_stat = guard.marker.lstat()
+                if stat.S_ISREG(marker_stat.st_mode) and marker_stat.st_uid == os.geteuid():
+                    guard.marker.unlink()
+            except OSError:
+                pass
             try:
                 workspace.rmdir()
             except OSError:
                 pass
             raise
-        guard.assert_owned()
-        return guard
 
     def assert_owned(self) -> None:
         if self.workspace.parent != self.temporary_root or self.workspace.is_symlink():
@@ -799,7 +861,9 @@ DETAILS = {
     "MIGRATED_CATALOG_VERIFIED": "Migration-declared catalog objects matched the required contract.",
     "BACKUP_ARCHIVE_VERIFIED": "The disposable custom-format archive and checksum were verified.",
     "RESTORE_COMPLETE": "The archive restored into the second disposable target.",
-    "RESTORE_COMPARISON_COMPLETE": "Schema, ownership categories, counts and queryability matched.",
+    "RESTORE_COMPARISON_COMPLETE": (
+        "Schema, ownership categories, object counts, per-table synthetic row counts and queryability matched."
+    ),
     "CLEANUP_COMPLETE": "Only marker-owned temporary artifacts were removed.",
     "CLEANUP_NOT_REQUIRED": "No marker-owned workspace required cleanup.",
     "SANITIZED_RESULT_EMITTED": "A sanitized result object was produced with no release authority.",
@@ -998,7 +1062,7 @@ def create_ephemeral_jwks(directory: Path, token_factory: Callable[[], str] | No
     public_path.chmod(0o600)
 
 
-PROBE_PROGRAM = r'''
+PROBE_PROGRAM = r"""
 import base64
 import hashlib
 import json
@@ -1182,6 +1246,7 @@ def auth_probe():
 
     import jwt
     from app.database import close_all, session_scope
+    from app.jwks import get_key_by_kid
     from app.models import OAuthToken, User
 
     application = build_app()
@@ -1251,7 +1316,33 @@ def auth_probe():
     require(token_response.status_code == 200, "TOKEN_ISSUE_FAILED")
     token_payload = token_response.get_json()
     access_token = token_payload.get("access_token") if isinstance(token_payload, dict) else None
+    id_token = token_payload.get("id_token") if isinstance(token_payload, dict) else None
     require(isinstance(access_token, str) and access_token, "ACCESS_TOKEN_MISSING")
+    require(
+        isinstance(id_token, str) and len(id_token.split(".")) == 3,
+        "ID_TOKEN_MISSING",
+    )
+    try:
+        id_header = jwt.get_unverified_header(id_token)
+        require(
+            id_header.get("alg") == "RS256" and isinstance(id_header.get("kid"), str),
+            "ID_TOKEN_VALIDATION_FAILED",
+        )
+        id_signing_key = get_key_by_kid(os.environ["JWKS_DIR"], id_header["kid"])
+        require(id_signing_key is not None, "ID_TOKEN_VALIDATION_FAILED")
+        id_claims = jwt.decode(
+            id_token,
+            id_signing_key,
+            algorithms=["RS256"],
+            audience=registration["client_id"],
+            issuer=os.environ["JWT_ISSUER"],
+            options={"require": ["exp", "iat", "iss", "sub", "aud"]},
+        )
+    except ProbeFailure:
+        raise
+    except Exception as exc:
+        raise ProbeFailure("ID_TOKEN_VALIDATION_FAILED") from exc
+    require(id_claims.get("sub") == "ab" * 32, "ID_TOKEN_VALIDATION_FAILED")
     reused = client.post(
         "/oauth/token",
         data={
@@ -1353,7 +1444,7 @@ except ProbeFailure as exc:
 except Exception:
     print(json.dumps({"status": "FAIL", "evidence_code": "UNCLASSIFIED_PROBE_FAILURE"}, sort_keys=True, separators=(",", ":")))
     sys.exit(4)
-'''
+"""
 
 
 def _postgres_environment(state: ExecutionState) -> dict[str, str]:
@@ -1418,7 +1509,7 @@ def _application_environment(state: ExecutionState, snapshot: Path, target: str)
     if state.guard is None or state.jwks_directory is None:
         raise SafetyViolation("APPLICATION_PROBE_WORKSPACE_INCOMPLETE")
     state.guard.assert_owned()
-    return {
+    environment = {
         "APP_VERSION": "1.0.0-beta",
         "DATABASE_URL": _internal_database_url(state, target),
         "DISABLE_FORCE_HTTPS": "1",
@@ -1434,6 +1525,9 @@ def _application_environment(state: ExecutionState, snapshot: Path, target: str)
         "TESTING": "1",
         "TMPDIR": str(state.guard.workspace / "tmp"),
     }
+    if tuple(environment) != APPLICATION_ENVIRONMENT_KEYS:
+        raise SafetyViolation("APPLICATION_ENVIRONMENT_ALLOWLIST_MISMATCH")
+    return environment
 
 
 def _parse_probe_payload(output: str) -> Mapping[str, object]:
@@ -1569,24 +1663,11 @@ def _verify_baseline_catalog(runner: CommandRunner, state: ExecutionState) -> No
     if not isinstance(baseline, dict) or not isinstance(baseline.get("tables"), list):
         raise PlanContractError("baseline catalog missing")
     tables = {str(item["table"]) for item in baseline["tables"]}
-    columns = {
-        f"{item['table']}.{column}"
-        for item in baseline["tables"]
-        for column in item["columns"]
+    columns = {f"{item['table']}.{column}" for item in baseline["tables"] for column in item["columns"]}
+    constraints = {str(item["primary_key"]) for item in baseline["tables"]} | {
+        str(name) for item in baseline["tables"] for name in item["foreign_keys"]
     }
-    constraints = {
-        str(item["primary_key"])
-        for item in baseline["tables"]
-    } | {
-        str(name)
-        for item in baseline["tables"]
-        for name in item["foreign_keys"]
-    }
-    indexes = {
-        str(name)
-        for item in baseline["tables"]
-        for name in item["indexes"]
-    }
+    indexes = {str(name) for item in baseline["tables"] for name in item["indexes"]}
     table_literals = ",".join(_sql_string(name) for name in sorted(tables))
     _query_expected_set(
         runner,
@@ -1707,8 +1788,7 @@ def _migration_catalog_contract(snapshot: Path) -> tuple[set[str], set[str], set
                         constraints.add(f"{table}_pkey")
                         indexes.add(f"{table}_pkey")
         constraints.update(
-            match.group(1).lower()
-            for match in re.finditer(r"\bCONSTRAINT\s+([a-z][a-z0-9_]*)", text, re.I)
+            match.group(1).lower() for match in re.finditer(r"\bCONSTRAINT\s+([a-z][a-z0-9_]*)", text, re.I)
         )
         indexes.update(
             match.group(1).lower()
@@ -1721,10 +1801,75 @@ def _migration_catalog_contract(snapshot: Path) -> tuple[set[str], set[str], set
     return tables, columns, constraints, indexes
 
 
+def _migration_named_constraint_contract(snapshot: Path) -> set[str]:
+    """Return table-qualified names for every declared named constraint."""
+
+    expected: set[str] = set()
+    create_table = re.compile(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-z][a-z0-9_]*)\s*\(", re.I)
+    alter_constraint = re.compile(
+        r"\bALTER\s+TABLE\s+([a-z][a-z0-9_]*)\s+ADD\s+CONSTRAINT\s+([a-z][a-z0-9_]*)",
+        re.I,
+    )
+    for relative in MIGRATIONS:
+        text = (snapshot / relative).read_text(encoding="utf-8")
+        for match in create_table.finditer(text):
+            table = match.group(1).lower()
+            opening = text.find("(", match.start())
+            closing = _matching_parenthesis(text, opening)
+            body = text[opening + 1 : closing]
+            for constraint in re.finditer(r"\bCONSTRAINT\s+([a-z][a-z0-9_]*)", body, re.I):
+                expected.add(f"{table}|{constraint.group(1).lower()}")
+            for definition in _split_sql_definitions(body):
+                if not re.match(r"^CONSTRAINT\b", definition, re.I) and re.search(
+                    r"\bPRIMARY\s+KEY\b", definition, re.I
+                ):
+                    expected.add(f"{table}|{table}_pkey")
+        for constraint in alter_constraint.finditer(text):
+            expected.add(f"{constraint.group(1).lower()}|{constraint.group(2).lower()}")
+    return expected
+
+
+def _migration_check_constraint_counts(snapshot: Path) -> set[str]:
+    """Return exact per-table CHECK counts, including unnamed inline checks."""
+
+    expected: set[str] = set()
+    create_table = re.compile(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-z][a-z0-9_]*)\s*\(", re.I)
+    for relative in MIGRATIONS:
+        text = (snapshot / relative).read_text(encoding="utf-8")
+        for match in create_table.finditer(text):
+            table = match.group(1).lower()
+            opening = text.find("(", match.start())
+            closing = _matching_parenthesis(text, opening)
+            count = len(re.findall(r"\bCHECK\s*\(", text[opening + 1 : closing], re.I))
+            expected.add(f"{table}|{count}")
+    return expected
+
+
+def _migration_explicit_index_contract(snapshot: Path) -> set[str]:
+    """Return table-qualified explicit index identities from the seven files."""
+
+    expected: set[str] = set()
+    create_index = re.compile(
+        r"\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?" r"([a-z][a-z0-9_]*)\s+ON\s+([a-z][a-z0-9_]*)",
+        re.I,
+    )
+    for relative in MIGRATIONS:
+        text = (snapshot / relative).read_text(encoding="utf-8")
+        for match in create_index.finditer(text):
+            expected.add(f"{match.group(2).lower()}|{match.group(1).lower()}")
+    return expected
+
+
 def _verify_migrated_catalog(runner: CommandRunner, state: ExecutionState) -> None:
     if state.primary_target is None or state.staging_snapshot is None:
         raise SafetyViolation("MIGRATED_CATALOG_STATE_INCOMPLETE")
-    tables, columns, constraints, indexes = _migration_catalog_contract(state.staging_snapshot)
+    tables, columns, _constraints, _indexes = _migration_catalog_contract(state.staging_snapshot)
+    named_constraints = _migration_named_constraint_contract(state.staging_snapshot)
+    check_counts = _migration_check_constraint_counts(state.staging_snapshot)
+    explicit_indexes = _migration_explicit_index_contract(state.staging_snapshot)
+    relational_tables = {item.split("|", 1)[0] for item in MIGRATION_RELATIONAL_CONSTRAINTS}
+    if relational_tables != tables:
+        raise PlanContractError("relational constraint contract does not cover every migrated table")
     table_literals = ",".join(_sql_string(name) for name in sorted(tables))
     _query_expected_set(
         runner,
@@ -1748,25 +1893,71 @@ def _verify_migrated_catalog(runner: CommandRunner, state: ExecutionState) -> No
         expected=columns,
         evidence_code="MIGRATED_COLUMN_CATALOG_MISMATCH",
     )
-    constraint_literals = ",".join(_sql_string(name) for name in sorted(constraints))
-    _query_expected_set(
-        runner,
-        state,
-        state.primary_target,
-        sql=f"SELECT conname FROM pg_constraint WHERE conname IN ({constraint_literals}) ORDER BY conname;",
-        expected=constraints,
-        evidence_code="MIGRATED_CONSTRAINT_CATALOG_MISMATCH",
-    )
-    index_literals = ",".join(_sql_string(name) for name in sorted(indexes))
+    constraint_names = {item.split("|", 1)[1] for item in named_constraints}
+    constraint_literals = ",".join(_sql_string(name) for name in sorted(constraint_names))
     _query_expected_set(
         runner,
         state,
         state.primary_target,
         sql=(
-            "SELECT indexname FROM pg_indexes "
-            f"WHERE schemaname='public' AND indexname IN ({index_literals}) ORDER BY indexname;"
+            "SELECT r.relname||'|'||c.conname FROM pg_constraint c "
+            "JOIN pg_class r ON r.oid=c.conrelid "
+            "JOIN pg_namespace n ON n.oid=r.relnamespace "
+            f"WHERE n.nspname='public' AND r.relname IN ({table_literals}) "
+            f"AND c.conname IN ({constraint_literals}) ORDER BY 1;"
         ),
-        expected=indexes,
+        expected=named_constraints,
+        evidence_code="MIGRATED_CONSTRAINT_CATALOG_MISMATCH",
+    )
+    _query_expected_set(
+        runner,
+        state,
+        state.primary_target,
+        sql=(
+            "SELECT r.relname||'|'||c.contype||'|'||"
+            "COALESCE((SELECT string_agg(a.attname,',' ORDER BY k.ordinality) "
+            "FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum,ordinality) "
+            "JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.attnum),'')||'|'||"
+            "CASE WHEN c.contype='f' THEN rr.relname ELSE '' END||'|'||"
+            "CASE WHEN c.contype='f' THEN COALESCE((SELECT string_agg(a.attname,',' ORDER BY k.ordinality) "
+            "FROM unnest(c.confkey) WITH ORDINALITY AS k(attnum,ordinality) "
+            "JOIN pg_attribute a ON a.attrelid=c.confrelid AND a.attnum=k.attnum),'') ELSE '' END||'|'||"
+            "CASE WHEN c.contype='f' THEN c.confdeltype::text ELSE '' END "
+            "FROM pg_constraint c JOIN pg_class r ON r.oid=c.conrelid "
+            "JOIN pg_namespace n ON n.oid=r.relnamespace "
+            "LEFT JOIN pg_class rr ON rr.oid=c.confrelid "
+            f"WHERE n.nspname='public' AND r.relname IN ({table_literals}) "
+            "AND c.contype IN ('p','u','f') ORDER BY 1;"
+        ),
+        expected=set(MIGRATION_RELATIONAL_CONSTRAINTS),
+        evidence_code="MIGRATED_RELATIONAL_CONSTRAINT_MISMATCH",
+    )
+    _query_expected_set(
+        runner,
+        state,
+        state.primary_target,
+        sql=(
+            "SELECT r.relname||'|'||count(*)::text FROM pg_constraint c "
+            "JOIN pg_class r ON r.oid=c.conrelid "
+            "JOIN pg_namespace n ON n.oid=r.relnamespace "
+            f"WHERE n.nspname='public' AND r.relname IN ({table_literals}) AND c.contype='c' "
+            "GROUP BY r.relname ORDER BY r.relname;"
+        ),
+        expected=check_counts,
+        evidence_code="MIGRATED_CHECK_CONSTRAINT_COUNT_MISMATCH",
+    )
+    index_names = {item.split("|", 1)[1] for item in explicit_indexes}
+    index_literals = ",".join(_sql_string(name) for name in sorted(index_names))
+    _query_expected_set(
+        runner,
+        state,
+        state.primary_target,
+        sql=(
+            "SELECT tablename||'|'||indexname FROM pg_indexes "
+            f"WHERE schemaname='public' AND tablename IN ({table_literals}) "
+            f"AND indexname IN ({index_literals}) ORDER BY 1;"
+        ),
+        expected=explicit_indexes,
         evidence_code="MIGRATED_INDEX_CATALOG_MISMATCH",
     )
 
@@ -1780,11 +1971,7 @@ def _sha256_file(path: Path) -> str:
 
 
 def _normalized_schema(value: str) -> str:
-    lines = [
-        line
-        for line in value.splitlines()
-        if not re.match(r"^\\(?:un)?restrict(?:\s|$)", line)
-    ]
+    lines = [line for line in value.splitlines() if not re.match(r"^\\(?:un)?restrict(?:\s|$)", line)]
     return "\n".join(lines).strip() + "\n"
 
 
@@ -2025,7 +2212,11 @@ class RehearsalHarness:
             evidence_code="BACKUP_ARCHIVE_CREATE_FAILED",
             timeout=600,
         )
-        if not state.archive_path.is_file() or state.archive_path.is_symlink() or state.archive_path.stat().st_size == 0:
+        if (
+            not state.archive_path.is_file()
+            or state.archive_path.is_symlink()
+            or state.archive_path.stat().st_size == 0
+        ):
             raise CommandFailure("BACKUP_ARCHIVE_MISSING")
         state.archive_sha256 = _sha256_file(state.archive_path)
         listing = _checked(
@@ -2101,7 +2292,7 @@ class RehearsalHarness:
         )
 
     def _phase_11(self, state: ExecutionState) -> PhaseOutcome:
-        if state.primary_target is None or state.restored_target is None:
+        if state.primary_target is None or state.restored_target is None or state.staging_snapshot is None:
             raise SafetyViolation("COMPARE_STATE_INCOMPLETE")
         original_schema = _normalized_schema(self._schema_dump(state, state.primary_target).stdout)
         restored_schema = _normalized_schema(self._schema_dump(state, state.restored_target).stdout)
@@ -2157,6 +2348,38 @@ class RehearsalHarness:
         ).stdout
         if original_owners != restored_owners:
             raise CommandFailure("RELATION_OWNERSHIP_CATEGORY_MISMATCH")
+
+        baseline = state.plan.get("synthetic_baseline")
+        if not isinstance(baseline, dict) or not isinstance(baseline.get("tables"), list):
+            raise PlanContractError("baseline catalog missing")
+        baseline_tables = {str(item["table"]) for item in baseline["tables"]}
+        migrated_tables = _migration_catalog_contract(state.staging_snapshot)[0]
+        application_tables = baseline_tables | migrated_tables
+        if not application_tables or any(not SAFE_IDENTIFIER.fullmatch(table) for table in application_tables):
+            raise PlanContractError("application table contract invalid")
+        row_counts_sql = (
+            " UNION ALL ".join(
+                f"SELECT '{table}' AS table_name,count(*)::text AS row_count FROM {table}"
+                for table in sorted(application_tables)
+            )
+            + " ORDER BY 1;"
+        )
+        original_row_counts = _psql(
+            self.runner,
+            state,
+            state.primary_target,
+            sql=row_counts_sql,
+            evidence_code="SOURCE_ROW_COUNT_QUERY_FAILED",
+        ).stdout
+        restored_row_counts = _psql(
+            self.runner,
+            state,
+            state.restored_target,
+            sql=row_counts_sql,
+            evidence_code="RESTORED_ROW_COUNT_QUERY_FAILED",
+        ).stdout
+        if not original_row_counts.strip() or original_row_counts != restored_row_counts:
+            raise CommandFailure("PER_TABLE_ROW_COUNT_MISMATCH")
 
         queryability_sql = """
 DO $$
@@ -2255,12 +2478,20 @@ $$;
             else:
                 outcome = PhaseOutcome("FAIL", exc.evidence_code, DETAILS["COMMAND_FAILED"])
         except Exception:
-            outcome = PhaseOutcome("FAIL", "UNEXPECTED_FAILURE", DETAILS["UNEXPECTED_FAILURE"])
+            if phase == "REHEARSAL_12_CLEANUP":
+                outcome = PhaseOutcome(
+                    "FAIL",
+                    "UNEXPECTED_FAILURE",
+                    DETAILS["CLEANUP_FAILED"],
+                    cleanup_status="FAILED",
+                )
+            else:
+                outcome = PhaseOutcome("FAIL", "UNEXPECTED_FAILURE", DETAILS["UNEXPECTED_FAILURE"])
         duration_ms = max(0, int((self.monotonic() - started) * 1000))
         return _phase_result(phase, outcome, duration_ms)
 
     def execute(self, request: ExecuteRequest) -> dict[str, object]:
-        """Run the future laboratory workflow with injected command execution."""
+        """Run the separately authorized laboratory workflow through the injected runner."""
 
         plan = self.plan()
         state_box: dict[str, ExecutionState] = {}
@@ -2281,30 +2512,36 @@ $$;
         results: list[dict[str, object]] = []
         prerequisite_failed = False
         workspace_created = False
-        for phase, operation in zip(PHASES[:12], operations, strict=True):
-            if prerequisite_failed:
-                cleanup = "PENDING" if workspace_created else "NOT_REQUIRED"
-                results.append(
-                    _phase_result(
-                        phase,
-                        PhaseOutcome(
-                            "BLOCKED",
-                            "PREREQUISITE_NOT_PASS",
-                            DETAILS["PREREQUISITE_NOT_PASS"],
-                            cleanup_status=cleanup,
-                            unsupported=True,
-                        ),
-                        0,
+        cleanup_result: dict[str, object]
+        try:
+            for phase, operation in zip(PHASES[:12], operations, strict=True):
+                if prerequisite_failed:
+                    cleanup = "PENDING" if workspace_created else "NOT_REQUIRED"
+                    results.append(
+                        _phase_result(
+                            phase,
+                            PhaseOutcome(
+                                "BLOCKED",
+                                "PREREQUISITE_NOT_PASS",
+                                DETAILS["PREREQUISITE_NOT_PASS"],
+                                cleanup_status=cleanup,
+                                unsupported=True,
+                            ),
+                            0,
+                        )
                     )
-                )
-                continue
-            result = self._invoke(phase, operation)
-            results.append(result)
-            workspace_created = state_box.get("state") is not None and state_box["state"].guard is not None
-            if result["status"] != "PASS":
-                prerequisite_failed = True
+                    continue
+                result = self._invoke(phase, operation)
+                results.append(result)
+                workspace_created = state_box.get("state") is not None and state_box["state"].guard is not None
+                if result["status"] != "PASS":
+                    prerequisite_failed = True
+        finally:
+            # Cleanup is attempted even for orchestration-level BaseException
+            # paths that are deliberately not converted into sanitized phase
+            # evidence (for example KeyboardInterrupt or SystemExit).
+            cleanup_result = self._invoke(PHASES[12], lambda: self._phase_12(state_box.get("state")))
 
-        cleanup_result = self._invoke(PHASES[12], lambda: self._phase_12(state_box.get("state")))
         results.append(cleanup_result)
         final_cleanup = cleanup_result["cleanup_status"]
         for result in results[:-1]:
@@ -2345,8 +2582,26 @@ $$;
 def validate_sanitized_result(result: Mapping[str, object]) -> None:
     """Ensure result output cannot carry raw runtime or target material."""
 
+    required_top_level = {
+        "schema",
+        "plan_version",
+        "production_sha",
+        "staging_sha",
+        "execution_status",
+        "release_authority",
+        "phases",
+        "release_gate_effect",
+    }
+    if set(result) != required_top_level:
+        raise ValueError("invalid result top-level shape")
     if result.get("schema") != "hodlxxi.production_compatibility_rehearsal_result.v1":
         raise ValueError("invalid result schema")
+    if result.get("plan_version") != 1:
+        raise ValueError("invalid result plan version")
+    if result.get("production_sha") != PRODUCTION_SHA or result.get("staging_sha") != STAGING_SHA:
+        raise ValueError("invalid result source basis")
+    if result.get("execution_status") not in {"PASS", "FAIL", "BLOCKED"}:
+        raise ValueError("invalid execution status")
     if result.get("release_authority") != "NONE" or result.get("release_gate_effect") != "NONE":
         raise ValueError("result attempted release authority")
     phases = result.get("phases")
@@ -2363,6 +2618,46 @@ def validate_sanitized_result(result: Mapping[str, object]) -> None:
     }
     if any(not isinstance(item, dict) or set(item) != required_fields for item in phases):
         raise ValueError("invalid phase result shape")
+    allowed_cleanup = {"COMPLETE", "NOT_REQUIRED", "FAILED", "REFUSED_UNOWNED"}
+    fixed_details = set(DETAILS.values())
+    for item in phases:
+        status = item["status"]
+        evidence_code = item["evidence_code"]
+        duration_ms = item["duration_ms"]
+        artifact_sha256 = item["artifact_sha256"]
+        if status not in {"PASS", "FAIL", "BLOCKED"}:
+            raise ValueError("invalid phase result status")
+        if (
+            not isinstance(evidence_code, str)
+            or len(evidence_code) > 128
+            or not re.fullmatch(r"[A-Z0-9_]+", evidence_code)
+        ):
+            raise ValueError("invalid phase evidence code")
+        if isinstance(duration_ms, bool) or not isinstance(duration_ms, int) or duration_ms < 0:
+            raise ValueError("invalid phase duration")
+        if item["sanitized_detail"] not in fixed_details:
+            raise ValueError("invalid sanitized detail")
+        if artifact_sha256 is not None and (
+            not isinstance(artifact_sha256, str) or not SHA256_PATTERN.fullmatch(artifact_sha256)
+        ):
+            raise ValueError("invalid phase artifact digest")
+        if item["cleanup_status"] not in allowed_cleanup:
+            raise ValueError("invalid cleanup status")
+    final_cleanup = phases[12]["cleanup_status"]
+    if any(item["cleanup_status"] != final_cleanup for item in phases):
+        raise ValueError("inconsistent cleanup status")
+    if (
+        phases[13]["status"] != "PASS"
+        or phases[13]["evidence_code"] != "SANITIZED_RESULT_EMITTED"
+        or phases[13]["sanitized_detail"] != DETAILS["SANITIZED_RESULT_EMITTED"]
+    ):
+        raise ValueError("invalid result emission phase")
+    substantive_statuses = {item["status"] for item in phases[:13]}
+    expected_execution_status = (
+        "FAIL" if "FAIL" in substantive_statuses else "BLOCKED" if "BLOCKED" in substantive_statuses else "PASS"
+    )
+    if result["execution_status"] != expected_execution_status:
+        raise ValueError("execution status does not match phases")
     for path, value in _walk(result):
         if isinstance(value, str):
             if DSN_PATTERN.search(value) or _contains_ip_literal(value) or DATABASE_TARGET_PATTERN.fullmatch(value):
@@ -2410,14 +2705,17 @@ def main(argv: Sequence[str] | None = None, *, runner: CommandRunner | None = No
         if namespace.json:
             rendered = canonical_plan_json(plan)
         else:
-            rendered = "\n".join(
-                [
-                    "HODLXXI production compatibility rehearsal V1",
-                    "execution_status=NOT_RUN",
-                    "release_authority=NONE",
-                    *[f"{item['phase']}=NOT_RUN" for item in plan["phases"]],
-                ]
-            ) + "\n"
+            rendered = (
+                "\n".join(
+                    [
+                        "HODLXXI production compatibility rehearsal V1",
+                        "execution_status=NOT_RUN",
+                        "release_authority=NONE",
+                        *[f"{item['phase']}=NOT_RUN" for item in plan["phases"]],
+                    ]
+                )
+                + "\n"
+            )
         if namespace.output is not None:
             _write_explicit_output(namespace.output, rendered)
         else:
