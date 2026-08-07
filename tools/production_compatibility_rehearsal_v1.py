@@ -1950,7 +1950,7 @@ def _verify_migrated_catalog(runner: CommandRunner, state: ExecutionState) -> No
         state,
         state.primary_target,
         sql=(
-            "SELECT r.relname||'|'||c.contype||'|'||"
+            "SELECT r.relname||'|'||c.contype::text||'|'||"
             "COALESCE((SELECT string_agg(a.attname,',' ORDER BY k.ordinality) "
             "FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum,ordinality) "
             "JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.attnum),'')||'|'||"
