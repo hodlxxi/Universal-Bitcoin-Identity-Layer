@@ -20,6 +20,37 @@ from tools import production_compatibility_rehearsal_v1 as rehearsal
 
 ROOT = Path(__file__).resolve().parents[2]
 
+EXPECTED_RELATIONAL_CONSTRAINTS = frozenset(
+    {
+        "action_operations|p|operation_id|||",
+        "action_operations|u|actor_pubkey,oauth_client_id,idempotency_key_sha256|||",
+        "action_operations|u|step_up_challenge_id|||",
+        "action_operations|f|step_up_challenge_id|action_step_up_challenges|challenge_id|a",
+        "action_step_up_challenges|p|challenge_id|||",
+        "action_step_up_challenges|u|nonce|||",
+        "current_entitlement_evidence|p|evidence_id|||",
+        "trusted_covenant_registrations|p|registration_id|||",
+        "trusted_covenant_registrations|u|registration_sha256|||",
+        "trusted_covenant_registered_outpoints|p|id|||",
+        "trusted_covenant_registered_outpoints|u|registration_id,direction|||",
+        "trusted_covenant_registered_outpoints|u|txid,vout|||",
+        (
+            "trusted_covenant_registered_outpoints|f|registration_id|"
+            "trusted_covenant_registrations|registration_id|c"
+        ),
+        "canonical_admission_edges|p|edge_id|||",
+        "canonical_admission_edges|u|trusted_registration_id|||",
+        "canonical_admission_edges|u|trusted_registration_sha256|||",
+        "canonical_admission_edges|u|canonical_edge_sha256|||",
+        "canonical_admission_edge_legs|p|id|||",
+        "canonical_admission_edge_legs|u|edge_id,direction|||",
+        "canonical_admission_edge_legs|u|txid,vout|||",
+        "canonical_admission_edge_legs|f|edge_id|canonical_admission_edges|edge_id|a",
+        "canonical_genesis_records|p|record_id|||",
+        "canonical_genesis_records|u|canonical_record_sha256|||",
+    }
+)
+
 
 def make_executable(path: Path) -> Path:
     path.write_text("synthetic executable placeholder\n", encoding="utf-8")
@@ -285,11 +316,21 @@ class NeverRunner:
 class SuccessfulRehearsalRunner:
     """Filesystem-aware command double for one complete rehearsal."""
 
-    def __init__(self, *, fail_first_migration: bool = False):
+    def __init__(
+        self,
+        *,
+        fail_first_migration: bool = False,
+        relational_constraints: set[str] | frozenset[str] | None = None,
+    ):
         self.calls: list[dict[str, object]] = []
         self.fail_first_migration = fail_first_migration
         self.migration_failure_returned = False
         self.started_configuration = ""
+        self.relational_constraints = (
+            rehearsal.MIGRATION_RELATIONAL_CONSTRAINTS
+            if relational_constraints is None
+            else frozenset(relational_constraints)
+        )
         plan = rehearsal.load_plan()
         baseline = plan["synthetic_baseline"]
         assert isinstance(baseline, dict)
@@ -357,7 +398,7 @@ class SuccessfulRehearsalRunner:
         if "r.relname||'|'||c.conname" in sql:
             return rehearsal.CommandResult(0, self._lines(self.named_constraints), "")
         if "unnest(c.conkey)" in sql:
-            return rehearsal.CommandResult(0, self._lines(rehearsal.MIGRATION_RELATIONAL_CONSTRAINTS), "")
+            return rehearsal.CommandResult(0, self._lines(self.relational_constraints), "")
         if "count(*)::text FROM pg_constraint" in sql:
             return rehearsal.CommandResult(0, self._lines(self.check_counts), "")
         if sql.startswith("SELECT indexname FROM pg_indexes"):
@@ -584,6 +625,7 @@ def test_workspace_creation_removes_partial_owned_marker_on_unexpected_error(tmp
 
 
 def test_migrated_catalog_contract_includes_inline_unique_checks_and_foreign_keys():
+    assert rehearsal.MIGRATION_RELATIONAL_CONSTRAINTS == EXPECTED_RELATIONAL_CONSTRAINTS
     assert (
         "canonical_admission_edge_legs|f|edge_id|canonical_admission_edges|edge_id|a"
         in rehearsal.MIGRATION_RELATIONAL_CONSTRAINTS
@@ -599,6 +641,67 @@ def test_migrated_catalog_contract_includes_inline_unique_checks_and_foreign_key
     indexes = rehearsal._migration_explicit_index_contract(ROOT)
     assert "canonical_admission_edges|uq_admission_edge_effective_child_id" in indexes
     assert "canonical_admission_edge_legs|idx_admission_leg_edge" in indexes
+
+
+def test_phase_06_relational_catalog_sql_casts_contype_and_preserves_shape(tmp_path):
+    runner = SuccessfulRehearsalRunner()
+    request = execute_request(tmp_path)
+
+    result = rehearsal.RehearsalHarness(
+        runner,
+        monotonic=lambda: 3.75,
+        token_factory=lambda: "relational_sql",
+    ).execute(request)
+
+    assert result["execution_status"] == "PASS"
+    assert result["phases"][6]["phase"] == "REHEARSAL_06_VERIFY_MIGRATED_CATALOG"
+    assert result["phases"][6]["evidence_code"] == "MIGRATED_CATALOG_VERIFIED"
+    relational_calls = [
+        call
+        for call in runner.calls
+        if Path(call["argv"][0]).name == "psql"
+        and "--command" in call["argv"]
+        and "unnest(c.conkey)" in call["argv"][call["argv"].index("--command") + 1]
+    ]
+    assert len(relational_calls) == 1
+    sql = relational_calls[0]["argv"][relational_calls[0]["argv"].index("--command") + 1]
+    assert "SELECT r.relname||'|'||c.contype::text||'|'||" in sql
+    assert "||c.contype||" not in sql
+    assert "CASE WHEN c.contype='f' THEN c.confdeltype::text ELSE '' END" in sql
+    assert sql.count("string_agg(a.attname,',' ORDER BY k.ordinality)") == 2
+    assert "FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum,ordinality)" in sql
+    assert "FROM unnest(c.confkey) WITH ORDINALITY AS k(attnum,ordinality)" in sql
+    assert "a.attrelid=c.confrelid AND a.attnum=k.attnum" in sql
+    assert "LEFT JOIN pg_class rr ON rr.oid=c.confrelid" in sql
+    assert sql.count("c.contype IN ('p','u','f')") == 1
+    assert sql.endswith("AND c.contype IN ('p','u','f') ORDER BY 1;")
+
+
+@pytest.mark.parametrize("mutation", ["missing", "extra"])
+def test_phase_06_relational_catalog_mismatch_remains_fail_closed(tmp_path, mutation):
+    actual = set(EXPECTED_RELATIONAL_CONSTRAINTS)
+    if mutation == "missing":
+        actual.remove("action_operations|p|operation_id|||")
+    else:
+        actual.add("action_operations|u|unexpected_column|||")
+    runner = SuccessfulRehearsalRunner(relational_constraints=actual)
+    request = execute_request(tmp_path)
+
+    result = rehearsal.RehearsalHarness(
+        runner,
+        monotonic=lambda: 3.875,
+        token_factory=lambda: f"relational_{mutation}",
+    ).execute(request)
+
+    phase = result["phases"][6]
+    assert result["execution_status"] == "FAIL"
+    assert phase["phase"] == "REHEARSAL_06_VERIFY_MIGRATED_CATALOG"
+    assert phase["status"] == "FAIL"
+    assert phase["evidence_code"] == "MIGRATED_RELATIONAL_CONSTRAINT_MISMATCH"
+    assert phase["sanitized_detail"] == rehearsal.DETAILS["COMMAND_FAILED"]
+    assert result["phases"][7]["evidence_code"] == "PREREQUISITE_NOT_PASS"
+    assert result["phases"][12]["evidence_code"] == "CLEANUP_COMPLETE"
+    assert not request.workspace.exists()
 
 
 @pytest.mark.parametrize(
