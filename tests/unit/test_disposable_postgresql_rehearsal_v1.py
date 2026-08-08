@@ -52,6 +52,372 @@ EXPECTED_RELATIONAL_CONSTRAINTS = frozenset(
 )
 
 
+def phase_11_json_lines(*rows: list[object]) -> str:
+    return "".join(json.dumps(row, separators=(",", ":")) + "\n" for row in rows)
+
+
+PHASE_11_MARKERS = {
+    "relation": "PHASE_11_RELATION_INVENTORY_V1",
+    "column": "PHASE_11_COLUMN_SEMANTICS_V1",
+    "constraint": "PHASE_11_CONSTRAINT_SEMANTICS_V1",
+    "check": "PHASE_11_CHECK_SEMANTICS_V1",
+    "index": "PHASE_11_INDEX_SEMANTICS_V1",
+    "sequence": "PHASE_11_SEQUENCE_SEMANTICS_V1",
+}
+
+
+PHASE_11_CATALOG_OUTPUTS = {
+    "relation": phase_11_json_lines(["public", "users", "r", "p", False]),
+    "column": phase_11_json_lines(
+        [
+            "public",
+            "users",
+            1,
+            "id",
+            "pg_catalog",
+            "varchar",
+            "character varying(36)",
+            True,
+            "",
+            "",
+            "gen_random_uuid()::text",
+            ["pg_catalog", "default"],
+        ]
+    ),
+    "constraint": phase_11_json_lines(
+        [
+            "public",
+            "users",
+            "users_pkey",
+            "p",
+            ["id"],
+            None,
+            None,
+            [],
+            None,
+            None,
+            None,
+            False,
+            False,
+            True,
+            False,
+            True,
+            0,
+            None,
+            None,
+            None,
+        ],
+        [
+            "public",
+            "oauth_codes",
+            "oauth_codes_user_id_fkey",
+            "f",
+            ["user_id"],
+            "public",
+            "users",
+            ["id"],
+            "a",
+            "a",
+            "s",
+            False,
+            False,
+            True,
+            False,
+            True,
+            0,
+            None,
+            None,
+            None,
+        ],
+        [
+            "public",
+            "action_operations",
+            "ck_action_operations_state",
+            "c",
+            ["state"],
+            None,
+            None,
+            [],
+            None,
+            None,
+            None,
+            False,
+            False,
+            True,
+            False,
+            True,
+            0,
+            None,
+            None,
+            None,
+        ],
+    ),
+    "check": phase_11_json_lines(
+        [
+            "public",
+            "action_operations",
+            "ck_action_operations_state",
+            "CHECK (((state)::text = ANY (ARRAY[('reserved'::character varying)::text])))",
+        ]
+    ),
+    "index": phase_11_json_lines(
+        [
+            "public",
+            "users",
+            "public",
+            "idx_user_pubkey",
+            "btree",
+            False,
+            False,
+            False,
+            True,
+            False,
+            False,
+            True,
+            True,
+            True,
+            1,
+            1,
+            "CREATE INDEX idx_user_pubkey ON public.users USING btree (pubkey)",
+            None,
+            None,
+            None,
+        ]
+    ),
+    "sequence": phase_11_json_lines(
+        [
+            "public",
+            "canonical_admission_edge_legs_id_seq",
+            "bigint",
+            1,
+            1,
+            9223372036854775807,
+            1,
+            1,
+            False,
+            "public",
+            "canonical_admission_edge_legs",
+            "id",
+            "a",
+            "1",
+            False,
+        ]
+    ),
+}
+
+
+RAW_SOURCE_SCHEMA = """\
+CREATE TABLE public.action_operations (state character varying(32));
+ALTER TABLE public.action_operations ADD CONSTRAINT ck_action_operations_state
+CHECK (((state)::text = ANY ((ARRAY['reserved'::character varying])::text[])));
+"""
+
+
+RAW_RESTORED_SCHEMA = """\
+CREATE TABLE public.action_operations (state character varying(32));
+ALTER TABLE public.action_operations ADD CONSTRAINT ck_action_operations_state
+CHECK (((state)::text = ANY (ARRAY[('reserved'::character varying)::text])));
+"""
+
+
+def changed_catalog_output(category: str, old: str, new: str) -> str:
+    value = PHASE_11_CATALOG_OUTPUTS[category]
+    assert old in value
+    return value.replace(old, new, 1)
+
+
+def catalog_output_without_line(category: str, position: int) -> str:
+    lines = PHASE_11_CATALOG_OUTPUTS[category].splitlines(keepends=True)
+    del lines[position]
+    return "".join(lines)
+
+
+def successful_command(stdout: str) -> rehearsal.CommandResult:
+    return rehearsal.CommandResult(0, stdout, "")
+
+
+PHASE_11_FAIL_CLOSED_CASES = (
+    (
+        "relation missing",
+        "relation",
+        successful_command(""),
+        "RELATION_INVENTORY_MISMATCH",
+    ),
+    (
+        "extra relation",
+        "relation",
+        successful_command(
+            PHASE_11_CATALOG_OUTPUTS["relation"]
+            + phase_11_json_lines(["public", "unexpected_relation", "r", "p", False])
+        ),
+        "RELATION_INVENTORY_MISMATCH",
+    ),
+    (
+        "column missing",
+        "column",
+        successful_command(""),
+        "COLUMN_SEMANTICS_MISMATCH",
+    ),
+    (
+        "column added",
+        "column",
+        successful_command(
+            PHASE_11_CATALOG_OUTPUTS["column"]
+            + phase_11_json_lines(
+                [
+                    "public",
+                    "users",
+                    2,
+                    "unexpected_column",
+                    "pg_catalog",
+                    "text",
+                    "text",
+                    False,
+                    "",
+                    "",
+                    None,
+                    ["pg_catalog", "default"],
+                ]
+            )
+        ),
+        "COLUMN_SEMANTICS_MISMATCH",
+    ),
+    (
+        "column type changed",
+        "column",
+        successful_command(
+            changed_catalog_output("column", '"varchar","character varying(36)"', '"int8","bigint"')
+        ),
+        "COLUMN_SEMANTICS_MISMATCH",
+    ),
+    (
+        "column nullability changed",
+        "column",
+        successful_command(changed_catalog_output("column", ',true,"","",', ',false,"","",')),
+        "COLUMN_SEMANTICS_MISMATCH",
+    ),
+    (
+        "column default changed",
+        "column",
+        successful_command(changed_catalog_output("column", "gen_random_uuid()::text", "'changed'::text")),
+        "COLUMN_SEMANTICS_MISMATCH",
+    ),
+    (
+        "constraint missing",
+        "constraint",
+        successful_command(catalog_output_without_line("constraint", 1)),
+        "CONSTRAINT_SEMANTICS_MISMATCH",
+    ),
+    (
+        "extra constraint",
+        "constraint",
+        successful_command(
+            PHASE_11_CATALOG_OUTPUTS["constraint"]
+            + changed_catalog_output("constraint", "users_pkey", "users_unexpected_key").splitlines(keepends=True)[0]
+        ),
+        "CONSTRAINT_SEMANTICS_MISMATCH",
+    ),
+    (
+        "foreign key target changed",
+        "constraint",
+        successful_command(
+            changed_catalog_output(
+                "constraint",
+                '"public","users",["id"],"a","a","s"',
+                '"public","oauth_clients",["client_id"],"a","a","s"',
+            )
+        ),
+        "CONSTRAINT_SEMANTICS_MISMATCH",
+    ),
+    (
+        "foreign key delete action changed",
+        "constraint",
+        successful_command(changed_catalog_output("constraint", '["id"],"a","a","s"', '["id"],"c","a","s"')),
+        "CONSTRAINT_SEMANTICS_MISMATCH",
+    ),
+    (
+        "foreign key update action changed",
+        "constraint",
+        successful_command(changed_catalog_output("constraint", '["id"],"a","a","s"', '["id"],"a","r","s"')),
+        "CONSTRAINT_SEMANTICS_MISMATCH",
+    ),
+    (
+        "check expression genuinely changed",
+        "check",
+        successful_command(changed_catalog_output("check", "reserved", "executing")),
+        "CHECK_CONSTRAINT_SEMANTICS_MISMATCH",
+    ),
+    (
+        "explicit index missing",
+        "index",
+        successful_command(""),
+        "INDEX_SEMANTICS_MISMATCH",
+    ),
+    (
+        "explicit index materially changed",
+        "index",
+        successful_command(changed_catalog_output("index", '"btree",false', '"btree",true')),
+        "INDEX_SEMANTICS_MISMATCH",
+    ),
+    (
+        "sequence property changed",
+        "sequence",
+        successful_command(changed_catalog_output("sequence", '"bigint",1,1,', '"bigint",1,2,')),
+        "SEQUENCE_SEMANTICS_MISMATCH",
+    ),
+    (
+        "ownership category changed",
+        "ownership",
+        successful_command("public|r|users|OTHER\n"),
+        "RELATION_OWNERSHIP_CATEGORY_MISMATCH",
+    ),
+    (
+        "table count changed",
+        "counts",
+        successful_command("11|2|48\n"),
+        "TABLE_SEQUENCE_INDEX_COUNT_MISMATCH",
+    ),
+    (
+        "sequence count changed",
+        "counts",
+        successful_command("12|1|48\n"),
+        "TABLE_SEQUENCE_INDEX_COUNT_MISMATCH",
+    ),
+    (
+        "index count changed",
+        "counts",
+        successful_command("12|2|47\n"),
+        "TABLE_SEQUENCE_INDEX_COUNT_MISMATCH",
+    ),
+    (
+        "application row count changed",
+        "row_count",
+        successful_command("users|999\n"),
+        "PER_TABLE_ROW_COUNT_MISMATCH",
+    ),
+    (
+        "restored table cannot be queried",
+        "queryability",
+        rehearsal.CommandResult(9, "forbidden raw stdout", "forbidden raw stderr"),
+        "RESTORED_TABLE_QUERYABILITY_FAILED",
+    ),
+)
+
+
+PHASE_11_CATALOG_QUERY_FAILURE_CASES = tuple(
+    (side, category, f"{side.upper()}_{label}_QUERY_FAILED")
+    for category, label in (
+        ("relation", "RELATION_INVENTORY"),
+        ("column", "COLUMN_SEMANTICS"),
+        ("constraint", "CONSTRAINT_SEMANTICS"),
+        ("check", "CHECK_SEMANTICS"),
+        ("index", "INDEX_SEMANTICS"),
+        ("sequence", "SEQUENCE_SEMANTICS"),
+    )
+    for side in ("source", "restored")
+)
+
+
 def make_executable(path: Path) -> Path:
     path.write_text("synthetic executable placeholder\n", encoding="utf-8")
     path.chmod(0o700)
@@ -321,6 +687,8 @@ class SuccessfulRehearsalRunner:
         *,
         fail_first_migration: bool = False,
         relational_constraints: set[str] | frozenset[str] | None = None,
+        phase_11_source_results: dict[str, rehearsal.CommandResult] | None = None,
+        phase_11_restored_results: dict[str, rehearsal.CommandResult] | None = None,
     ):
         self.calls: list[dict[str, object]] = []
         self.fail_first_migration = fail_first_migration
@@ -331,6 +699,8 @@ class SuccessfulRehearsalRunner:
             if relational_constraints is None
             else frozenset(relational_constraints)
         )
+        self.phase_11_source_results = dict(phase_11_source_results or {})
+        self.phase_11_restored_results = dict(phase_11_restored_results or {})
         plan = rehearsal.load_plan()
         baseline = plan["synthetic_baseline"]
         assert isinstance(baseline, dict)
@@ -387,6 +757,15 @@ class SuccessfulRehearsalRunner:
             return rehearsal.CommandResult(0, "", "")
 
         sql = self._argument_after(argv, "--command")
+        target = self._argument_after(argv, "--dbname")
+        restored = target.endswith("_restored")
+        for category, marker in PHASE_11_MARKERS.items():
+            if marker in sql:
+                if restored and category in self.phase_11_restored_results:
+                    return self.phase_11_restored_results[category]
+                if not restored and category in self.phase_11_source_results:
+                    return self.phase_11_source_results[category]
+                return rehearsal.CommandResult(0, PHASE_11_CATALOG_OUTPUTS[category], "")
         if "information_schema.tables" in sql:
             values = self.migrated_tables if "action_operations" in sql else self.baseline_table_names
             return rehearsal.CommandResult(0, self._lines(values), "")
@@ -406,14 +785,22 @@ class SuccessfulRehearsalRunner:
         if "tablename||'|'||indexname" in sql:
             return rehearsal.CommandResult(0, self._lines(self.explicit_indexes), "")
         if "count(*) FILTER" in sql:
+            if restored and "counts" in self.phase_11_restored_results:
+                return self.phase_11_restored_results["counts"]
             return rehearsal.CommandResult(0, "12|2|48\n", "")
         if "pg_get_userbyid" in sql:
+            if restored and "ownership" in self.phase_11_restored_results:
+                return self.phase_11_restored_results["ownership"]
             return rehearsal.CommandResult(0, "public|r|users|REHEARSAL_ROLE\n", "")
         if "AS row_count" in sql:
+            if restored and "row_count" in self.phase_11_restored_results:
+                return self.phase_11_restored_results["row_count"]
             all_tables = self.baseline_table_names | self.migrated_tables
             values = {f"{table}|{1 if table in self.baseline_table_names else 0}" for table in all_tables}
             return rehearsal.CommandResult(0, self._lines(values), "")
         if sql.lstrip().startswith("DO $$"):
+            if restored and "queryability" in self.phase_11_restored_results:
+                return self.phase_11_restored_results["queryability"]
             return rehearsal.CommandResult(0, "", "")
         raise AssertionError(f"unexpected psql query: {sql}")
 
@@ -462,16 +849,174 @@ class SuccessfulRehearsalRunner:
                 return rehearsal.CommandResult(0, "", "")
             target = self._argument_after(normalized, "--dbname")
             marker = "RESTORED" if target.endswith("_restored") else "PRIMARY"
-            schema = (
-                f"-- synthetic schema\n\\restrict {marker}\n"
-                f"CREATE TABLE stable (id integer);\n\\unrestrict {marker}\n"
-            )
+            semantic_schema = RAW_RESTORED_SCHEMA if target.endswith("_restored") else RAW_SOURCE_SCHEMA
+            schema = f"-- synthetic schema\n\\restrict {marker}\n{semantic_schema}\\unrestrict {marker}\n"
             return rehearsal.CommandResult(0, schema, "")
         if command == "pg_restore":
             if "--list" in normalized:
                 return rehearsal.CommandResult(0, "; synthetic archive\n1; TABLE public users rehearsal_owner\n", "")
             return rehearsal.CommandResult(0, "", "")
         raise AssertionError(f"unexpected command: {normalized}")
+
+
+def run_phase_11(tmp_path: Path, runner: SuccessfulRehearsalRunner) -> rehearsal.PhaseOutcome:
+    request = execute_request(tmp_path)
+    resolved = rehearsal.validate_execute_request(request)
+    guard = rehearsal.WorkspaceGuard.create(request.workspace, tmp_path, "phase-11-unit-owner")
+    state = rehearsal.ExecutionState(
+        resolved=resolved,
+        plan=rehearsal.load_plan(),
+        guard=guard,
+        staging_snapshot=ROOT,
+        primary_target="hodlxxi_rehearsal_phase11source",
+        restored_target="hodlxxi_rehearsal_phase11source_restored",
+    )
+    try:
+        return rehearsal.RehearsalHarness(runner)._phase_11(state)
+    finally:
+        guard.cleanup()
+
+
+def test_phase_11_accepts_catalog_equivalence_when_normalized_pg_dump_text_differs(tmp_path):
+    assert rehearsal._normalized_schema(RAW_SOURCE_SCHEMA) != rehearsal._normalized_schema(RAW_RESTORED_SCHEMA)
+    runner = SuccessfulRehearsalRunner()
+
+    outcome = run_phase_11(tmp_path, runner)
+
+    assert outcome.status == "PASS"
+    assert outcome.evidence_code == "RESTORE_COMPARISON_COMPLETE"
+    assert rehearsal.SHA256_PATTERN.fullmatch(str(outcome.artifact_sha256))
+    schema_dump_calls = [
+        call
+        for call in runner.calls
+        if Path(call["argv"][0]).name == "pg_dump" and "--schema-only" in call["argv"]
+    ]
+    assert len(schema_dump_calls) == 2
+    ownership_calls = [
+        call
+        for call in runner.calls
+        if "--command" in call["argv"]
+        and "pg_get_userbyid" in call["argv"][call["argv"].index("--command") + 1]
+    ]
+    assert len(ownership_calls) == 2
+    assert all(
+        "c.relkind::text" in call["argv"][call["argv"].index("--command") + 1]
+        for call in ownership_calls
+    )
+
+
+@pytest.mark.parametrize(
+    ("_description", "category", "restored_result", "evidence_code"),
+    PHASE_11_FAIL_CLOSED_CASES,
+    ids=[case[0] for case in PHASE_11_FAIL_CLOSED_CASES],
+)
+def test_phase_11_semantic_comparison_fails_closed(
+    tmp_path,
+    _description,
+    category,
+    restored_result,
+    evidence_code,
+):
+    runner = SuccessfulRehearsalRunner(phase_11_restored_results={category: restored_result})
+
+    with pytest.raises(rehearsal.CommandFailure, match=f"^{evidence_code}$") as caught:
+        run_phase_11(tmp_path, runner)
+
+    assert caught.value.evidence_code == evidence_code
+    assert "forbidden raw" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("side", "category", "evidence_code"),
+    PHASE_11_CATALOG_QUERY_FAILURE_CASES,
+    ids=[f"{case[0]} {case[1]}" for case in PHASE_11_CATALOG_QUERY_FAILURE_CASES],
+)
+def test_phase_11_catalog_query_failures_use_sanitized_scoped_evidence(
+    tmp_path,
+    side,
+    category,
+    evidence_code,
+):
+    failed = rehearsal.CommandResult(9, "forbidden raw stdout", "forbidden raw stderr")
+    source_results = {category: failed} if side == "source" else None
+    restored_results = {category: failed} if side == "restored" else None
+    runner = SuccessfulRehearsalRunner(
+        phase_11_source_results=source_results,
+        phase_11_restored_results=restored_results,
+    )
+
+    with pytest.raises(rehearsal.CommandFailure, match=f"^{evidence_code}$") as caught:
+        run_phase_11(tmp_path, runner)
+
+    assert caught.value.evidence_code == evidence_code
+    assert "forbidden raw" not in str(caught.value)
+
+
+def test_phase_11_catalog_queries_cover_required_semantic_fields():
+    relation_sql = rehearsal.PHASE_11_RELATION_INVENTORY_SQL
+    assert "n.nspname" in relation_sql
+    assert "c.relname" in relation_sql
+    assert "c.relkind::text" in relation_sql
+
+    column_sql = rehearsal.PHASE_11_COLUMN_SEMANTICS_SQL
+    for field in (
+        "a.attnum",
+        "a.attname",
+        "format_type(a.atttypid, a.atttypmod)",
+        "a.attnotnull",
+        "a.attidentity::text",
+        "a.attgenerated::text",
+        "pg_get_expr(d.adbin, d.adrelid, false)",
+    ):
+        assert field in column_sql
+
+    constraint_sql = rehearsal.PHASE_11_CONSTRAINT_SEMANTICS_SQL
+    for field in (
+        "con.conname",
+        "con.contype::text",
+        "unnest(con.conkey) WITH ORDINALITY",
+        "unnest(con.confkey) WITH ORDINALITY",
+        "con.confdeltype::text",
+        "con.confupdtype::text",
+        "con.condeferrable",
+        "con.condeferred",
+        "con.convalidated",
+    ):
+        assert field in constraint_sql
+
+    index_sql = rehearsal.PHASE_11_INDEX_SEMANTICS_SQL
+    for field in (
+        "index_catalog.indisunique",
+        "index_catalog.indisvalid",
+        "pg_get_indexdef(index_catalog.indexrelid, 0, false)",
+        "pg_get_expr(index_catalog.indpred, index_catalog.indrelid, false)",
+    ):
+        assert field in index_sql
+    assert "constraint_catalog.contype IN ('p', 'u', 'x')" in index_sql
+
+    sequence_sql = rehearsal.PHASE_11_SEQUENCE_SEMANTICS_SQL
+    for field in (
+        "sequence_catalog.seqstart",
+        "sequence_catalog.seqincrement",
+        "sequence_catalog.seqmax",
+        "sequence_catalog.seqmin",
+        "sequence_catalog.seqcache",
+        "sequence_catalog.seqcycle",
+        "sequence_state.last_value",
+        "sequence_state.is_called",
+    ):
+        assert field in sequence_sql
+
+
+def test_phase_11_check_identity_uses_postgresql_reparse_without_regex_rewriting():
+    sql = rehearsal.PHASE_11_CHECK_SEMANTICS_SQL
+    assert sql.count("pg_get_constraintdef(") == 2
+    assert "CREATE TEMP TABLE pg_temp.phase_11_check_probe (LIKE %I.%I)" in sql
+    assert "ALTER TABLE pg_temp.phase_11_check_probe ADD CONSTRAINT %I %s" in sql
+    assert "con.contype = 'c'" in sql
+    assert "canonical_definition" in sql
+    assert "regexp" not in sql.casefold()
+    assert "replace(" not in sql.casefold()
 
 
 def test_complete_fourteen_phase_simulation_uses_exact_isolated_commands(tmp_path):

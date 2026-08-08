@@ -870,7 +870,8 @@ DETAILS = {
     "BACKUP_ARCHIVE_VERIFIED": "The disposable custom-format archive and checksum were verified.",
     "RESTORE_COMPLETE": "The archive restored into the second disposable target.",
     "RESTORE_COMPARISON_COMPLETE": (
-        "Schema, ownership categories, object counts, per-table synthetic row counts and queryability matched."
+        "Catalog schema semantics, ownership categories, object counts, per-table synthetic row counts and "
+        "queryability matched."
     ),
     "CLEANUP_COMPLETE": "Only marker-owned temporary artifacts were removed.",
     "CLEANUP_NOT_REQUIRED": "No marker-owned workspace required cleanup.",
@@ -2011,6 +2012,352 @@ def _normalized_schema(value: str) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
+# Phase 11 compares one deterministic JSON row per catalog object. JSON avoids
+# delimiter ambiguity in catalog expressions, while the explicit ORDER BY makes
+# byte equality a sound comparison of these catalog-derived identities.
+PHASE_11_RELATION_INVENTORY_SQL = """
+/* PHASE_11_RELATION_INVENTORY_V1 */
+SELECT jsonb_build_array(
+         n.nspname,
+         c.relname,
+         c.relkind::text,
+         c.relpersistence::text,
+         c.relispartition
+       )::text
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname <> 'information_schema'
+  AND n.nspname !~ '^pg_'
+  AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'c')
+ORDER BY n.nspname, c.relname, c.relkind;
+"""
+
+
+PHASE_11_COLUMN_SEMANTICS_SQL = """
+/* PHASE_11_COLUMN_SEMANTICS_V1 */
+SELECT jsonb_build_array(
+         n.nspname,
+         c.relname,
+         a.attnum,
+         a.attname,
+         tn.nspname,
+         t.typname,
+         format_type(a.atttypid, a.atttypmod),
+         a.attnotnull,
+         a.attidentity::text,
+         a.attgenerated::text,
+         pg_get_expr(d.adbin, d.adrelid, false),
+         CASE
+           WHEN a.attcollation = 0 THEN NULL
+           ELSE jsonb_build_array(cn.nspname, coll.collname)
+         END
+       )::text
+FROM pg_attribute a
+JOIN pg_class c ON c.oid = a.attrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_type t ON t.oid = a.atttypid
+JOIN pg_namespace tn ON tn.oid = t.typnamespace
+LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+LEFT JOIN pg_collation coll ON coll.oid = a.attcollation
+LEFT JOIN pg_namespace cn ON cn.oid = coll.collnamespace
+WHERE n.nspname <> 'information_schema'
+  AND n.nspname !~ '^pg_'
+  AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'c')
+  AND a.attnum > 0
+  AND NOT a.attisdropped
+ORDER BY n.nspname, c.relname, a.attnum;
+"""
+
+
+PHASE_11_CONSTRAINT_SEMANTICS_SQL = """
+/* PHASE_11_CONSTRAINT_SEMANTICS_V1 */
+SELECT jsonb_build_array(
+         n.nspname,
+         r.relname,
+         con.conname,
+         con.contype::text,
+         COALESCE(
+           ARRAY(
+             SELECT a.attname::text
+             FROM unnest(con.conkey) WITH ORDINALITY AS key(attnum, position)
+             JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = key.attnum
+             ORDER BY key.position
+           ),
+           ARRAY[]::text[]
+         ),
+         rn.nspname,
+         rr.relname,
+         COALESCE(
+           ARRAY(
+             SELECT a.attname::text
+             FROM unnest(con.confkey) WITH ORDINALITY AS key(attnum, position)
+             JOIN pg_attribute a ON a.attrelid = con.confrelid AND a.attnum = key.attnum
+             ORDER BY key.position
+           ),
+           ARRAY[]::text[]
+         ),
+         CASE WHEN con.contype = 'f' THEN con.confdeltype::text END,
+         CASE WHEN con.contype = 'f' THEN con.confupdtype::text END,
+         CASE WHEN con.contype = 'f' THEN con.confmatchtype::text END,
+         con.condeferrable,
+         con.condeferred,
+         con.convalidated,
+         con.connoinherit,
+         con.conislocal,
+         con.coninhcount,
+         pn.nspname,
+         pr.relname,
+         parent.conname
+       )::text
+FROM pg_constraint con
+JOIN pg_class r ON r.oid = con.conrelid
+JOIN pg_namespace n ON n.oid = r.relnamespace
+LEFT JOIN pg_class rr ON rr.oid = con.confrelid
+LEFT JOIN pg_namespace rn ON rn.oid = rr.relnamespace
+LEFT JOIN pg_constraint parent ON parent.oid = con.conparentid
+LEFT JOIN pg_class pr ON pr.oid = parent.conrelid
+LEFT JOIN pg_namespace pn ON pn.oid = pr.relnamespace
+WHERE n.nspname <> 'information_schema'
+  AND n.nspname !~ '^pg_'
+  AND r.relkind IN ('r', 'p', 'v', 'm', 'f')
+ORDER BY n.nspname, r.relname, con.conname;
+"""
+
+
+# A CHECK definition is deparsed by PostgreSQL, installed on an empty temporary
+# clone, and deparsed again. This reproduces PostgreSQL's own dump/restore parse
+# boundary and yields a stable catalog identity for equivalent ARRAY cast forms.
+# No expression is removed or rewritten by Python.
+PHASE_11_CHECK_SEMANTICS_SQL = """
+/* PHASE_11_CHECK_SEMANTICS_V1 */
+BEGIN;
+SET LOCAL search_path = pg_catalog, public;
+CREATE TEMP TABLE phase_11_check_semantics (
+  schema_name text NOT NULL,
+  relation_name text NOT NULL,
+  constraint_name text NOT NULL,
+  canonical_definition text NOT NULL
+) ON COMMIT DROP;
+DO $phase_11_check$
+DECLARE
+  item record;
+  canonical_definition text;
+BEGIN
+  FOR item IN
+    SELECT con.oid AS constraint_oid,
+           n.nspname AS schema_name,
+           r.relname AS relation_name,
+           con.conname AS constraint_name
+    FROM pg_constraint con
+    JOIN pg_class r ON r.oid = con.conrelid
+    JOIN pg_namespace n ON n.oid = r.relnamespace
+    WHERE con.contype = 'c'
+      AND n.nspname <> 'information_schema'
+      AND n.nspname !~ '^pg_'
+      AND r.relkind IN ('r', 'p', 'v', 'm', 'f')
+    ORDER BY n.nspname, r.relname, con.conname
+  LOOP
+    EXECUTE format(
+      'CREATE TEMP TABLE pg_temp.phase_11_check_probe (LIKE %I.%I)',
+      item.schema_name,
+      item.relation_name
+    );
+    EXECUTE format(
+      'ALTER TABLE pg_temp.phase_11_check_probe ADD CONSTRAINT %I %s',
+      item.constraint_name,
+      pg_get_constraintdef(item.constraint_oid, false)
+    );
+    SELECT pg_get_constraintdef(probe.oid, false)
+      INTO canonical_definition
+    FROM pg_constraint probe
+    JOIN pg_class probe_relation ON probe_relation.oid = probe.conrelid
+    WHERE probe_relation.relnamespace = pg_my_temp_schema()
+      AND probe_relation.relname = 'phase_11_check_probe'
+      AND probe.conname = item.constraint_name;
+    IF canonical_definition IS NULL THEN
+      RAISE EXCEPTION 'temporary CHECK constraint identity missing';
+    END IF;
+    INSERT INTO phase_11_check_semantics
+      (schema_name, relation_name, constraint_name, canonical_definition)
+    VALUES
+      (item.schema_name, item.relation_name, item.constraint_name, canonical_definition);
+    DROP TABLE pg_temp.phase_11_check_probe;
+  END LOOP;
+END
+$phase_11_check$;
+SELECT jsonb_build_array(
+         schema_name,
+         relation_name,
+         constraint_name,
+         canonical_definition
+       )::text
+FROM phase_11_check_semantics
+ORDER BY schema_name, relation_name, constraint_name;
+COMMIT;
+"""
+
+
+PHASE_11_INDEX_SEMANTICS_SQL = """
+/* PHASE_11_INDEX_SEMANTICS_V1 */
+SELECT jsonb_build_array(
+         tn.nspname,
+         table_relation.relname,
+         ins.nspname,
+         index_relation.relname,
+         access_method.amname,
+         index_catalog.indisunique,
+         index_catalog.indisprimary,
+         index_catalog.indisexclusion,
+         index_catalog.indimmediate,
+         index_catalog.indisclustered,
+         index_catalog.indisreplident,
+         index_catalog.indisvalid,
+         index_catalog.indisready,
+         index_catalog.indislive,
+         index_catalog.indnkeyatts,
+         index_catalog.indnatts,
+         pg_get_indexdef(index_catalog.indexrelid, 0, false),
+         pg_get_expr(index_catalog.indpred, index_catalog.indrelid, false),
+         constraint_catalog.conname,
+         constraint_catalog.contype::text
+       )::text
+FROM pg_index index_catalog
+JOIN pg_class index_relation ON index_relation.oid = index_catalog.indexrelid
+JOIN pg_namespace ins ON ins.oid = index_relation.relnamespace
+JOIN pg_class table_relation ON table_relation.oid = index_catalog.indrelid
+JOIN pg_namespace tn ON tn.oid = table_relation.relnamespace
+JOIN pg_am access_method ON access_method.oid = index_relation.relam
+LEFT JOIN pg_constraint constraint_catalog
+  ON constraint_catalog.conindid = index_catalog.indexrelid
+ AND constraint_catalog.contype IN ('p', 'u', 'x')
+WHERE tn.nspname <> 'information_schema'
+  AND tn.nspname !~ '^pg_'
+ORDER BY tn.nspname, table_relation.relname, ins.nspname, index_relation.relname;
+"""
+
+
+PHASE_11_SEQUENCE_SEMANTICS_SQL = """
+/* PHASE_11_SEQUENCE_SEMANTICS_V1 */
+BEGIN;
+CREATE TEMP TABLE phase_11_sequence_state (
+  schema_name text NOT NULL,
+  sequence_name text NOT NULL,
+  last_value text NOT NULL,
+  is_called boolean NOT NULL
+) ON COMMIT DROP;
+DO $phase_11_sequence$
+DECLARE
+  item record;
+  sequence_last_value text;
+  sequence_is_called boolean;
+BEGIN
+  FOR item IN
+    SELECT n.nspname AS schema_name, c.relname AS sequence_name
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.relkind = 'S'
+      AND n.nspname <> 'information_schema'
+      AND n.nspname !~ '^pg_'
+    ORDER BY n.nspname, c.relname
+  LOOP
+    EXECUTE format(
+      'SELECT last_value::text, is_called FROM %I.%I',
+      item.schema_name,
+      item.sequence_name
+    ) INTO sequence_last_value, sequence_is_called;
+    INSERT INTO phase_11_sequence_state
+      (schema_name, sequence_name, last_value, is_called)
+    VALUES
+      (item.schema_name, item.sequence_name, sequence_last_value, sequence_is_called);
+  END LOOP;
+END
+$phase_11_sequence$;
+SELECT jsonb_build_array(
+         n.nspname,
+         c.relname,
+         format_type(sequence_catalog.seqtypid, NULL),
+         sequence_catalog.seqstart,
+         sequence_catalog.seqincrement,
+         sequence_catalog.seqmax,
+         sequence_catalog.seqmin,
+         sequence_catalog.seqcache,
+         sequence_catalog.seqcycle,
+         owned_namespace.nspname,
+         owned_relation.relname,
+         owned_attribute.attname,
+         ownership_dependency.deptype::text,
+         sequence_state.last_value,
+         sequence_state.is_called
+       )::text
+FROM pg_sequence sequence_catalog
+JOIN pg_class c ON c.oid = sequence_catalog.seqrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN phase_11_sequence_state sequence_state
+  ON sequence_state.schema_name = n.nspname
+ AND sequence_state.sequence_name = c.relname
+LEFT JOIN LATERAL (
+  SELECT dependency.refobjid, dependency.refobjsubid, dependency.deptype
+  FROM pg_depend dependency
+  WHERE dependency.classid = 'pg_class'::regclass
+    AND dependency.objid = c.oid
+    AND dependency.objsubid = 0
+    AND dependency.refclassid = 'pg_class'::regclass
+    AND dependency.deptype IN ('a', 'i')
+  ORDER BY dependency.deptype, dependency.refobjid, dependency.refobjsubid
+  LIMIT 1
+) ownership_dependency ON true
+LEFT JOIN pg_class owned_relation ON owned_relation.oid = ownership_dependency.refobjid
+LEFT JOIN pg_namespace owned_namespace ON owned_namespace.oid = owned_relation.relnamespace
+LEFT JOIN pg_attribute owned_attribute
+  ON owned_attribute.attrelid = ownership_dependency.refobjid
+ AND owned_attribute.attnum = ownership_dependency.refobjsubid
+WHERE n.nspname <> 'information_schema'
+  AND n.nspname !~ '^pg_'
+ORDER BY n.nspname, c.relname;
+COMMIT;
+"""
+
+
+PHASE_11_CATALOG_COMPARISONS = (
+    (
+        PHASE_11_RELATION_INVENTORY_SQL,
+        "SOURCE_RELATION_INVENTORY_QUERY_FAILED",
+        "RESTORED_RELATION_INVENTORY_QUERY_FAILED",
+        "RELATION_INVENTORY_MISMATCH",
+    ),
+    (
+        PHASE_11_COLUMN_SEMANTICS_SQL,
+        "SOURCE_COLUMN_SEMANTICS_QUERY_FAILED",
+        "RESTORED_COLUMN_SEMANTICS_QUERY_FAILED",
+        "COLUMN_SEMANTICS_MISMATCH",
+    ),
+    (
+        PHASE_11_CONSTRAINT_SEMANTICS_SQL,
+        "SOURCE_CONSTRAINT_SEMANTICS_QUERY_FAILED",
+        "RESTORED_CONSTRAINT_SEMANTICS_QUERY_FAILED",
+        "CONSTRAINT_SEMANTICS_MISMATCH",
+    ),
+    (
+        PHASE_11_CHECK_SEMANTICS_SQL,
+        "SOURCE_CHECK_SEMANTICS_QUERY_FAILED",
+        "RESTORED_CHECK_SEMANTICS_QUERY_FAILED",
+        "CHECK_CONSTRAINT_SEMANTICS_MISMATCH",
+    ),
+    (
+        PHASE_11_INDEX_SEMANTICS_SQL,
+        "SOURCE_INDEX_SEMANTICS_QUERY_FAILED",
+        "RESTORED_INDEX_SEMANTICS_QUERY_FAILED",
+        "INDEX_SEMANTICS_MISMATCH",
+    ),
+    (
+        PHASE_11_SEQUENCE_SEMANTICS_SQL,
+        "SOURCE_SEQUENCE_SEMANTICS_QUERY_FAILED",
+        "RESTORED_SEQUENCE_SEMANTICS_QUERY_FAILED",
+        "SEQUENCE_SEMANTICS_MISMATCH",
+    ),
+)
+
+
 class RehearsalHarness:
     """Injectable, fail-closed phase orchestrator."""
 
@@ -2332,8 +2679,24 @@ class RehearsalHarness:
             raise SafetyViolation("COMPARE_STATE_INCOMPLETE")
         original_schema = _normalized_schema(self._schema_dump(state, state.primary_target).stdout)
         restored_schema = _normalized_schema(self._schema_dump(state, state.restored_target).stdout)
-        if original_schema != restored_schema:
-            raise CommandFailure("NORMALIZED_SCHEMA_MISMATCH")
+
+        for sql, source_failure, restored_failure, mismatch in PHASE_11_CATALOG_COMPARISONS:
+            original_catalog = _psql(
+                self.runner,
+                state,
+                state.primary_target,
+                sql=sql,
+                evidence_code=source_failure,
+            ).stdout
+            restored_catalog = _psql(
+                self.runner,
+                state,
+                state.restored_target,
+                sql=sql,
+                evidence_code=restored_failure,
+            ).stdout
+            if original_catalog != restored_catalog:
+                raise CommandFailure(mismatch)
 
         counts_sql = (
             "SELECT count(*) FILTER (WHERE c.relkind IN ('r','p'))||'|'||"
@@ -2361,7 +2724,7 @@ class RehearsalHarness:
             raise CommandFailure("TABLE_SEQUENCE_INDEX_COUNT_MISMATCH")
 
         ownership_sql = (
-            "SELECT n.nspname||'|'||c.relkind||'|'||c.relname||'|'||"
+            "SELECT n.nspname||'|'||c.relkind::text||'|'||c.relname||'|'||"
             "CASE WHEN pg_get_userbyid(c.relowner)=current_user THEN 'REHEARSAL_ROLE' ELSE 'OTHER' END "
             "FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace "
             "WHERE n.nspname NOT IN ('pg_catalog','information_schema') "
@@ -2440,7 +2803,14 @@ $$;
             sql=queryability_sql,
             evidence_code="RESTORED_TABLE_QUERYABILITY_FAILED",
         )
-        schema_digest = hashlib.sha256(original_schema.encode("utf-8")).hexdigest()
+        original_schema_digest = hashlib.sha256(original_schema.encode("utf-8")).hexdigest()
+        restored_schema_digest = hashlib.sha256(restored_schema.encode("utf-8")).hexdigest()
+        schema_text_status = "EQUAL" if original_schema == restored_schema else "DIFFERENT"
+        # The digest retains the raw dump comparison as sanitized diagnostic
+        # evidence; schema text status is deliberately not an authority gate.
+        schema_digest = hashlib.sha256(
+            f"{schema_text_status}|{original_schema_digest}|{restored_schema_digest}".encode("ascii")
+        ).hexdigest()
         return PhaseOutcome(
             "PASS",
             "RESTORE_COMPARISON_COMPLETE",
