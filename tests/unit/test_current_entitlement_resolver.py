@@ -10,6 +10,7 @@ from app.services.current_entitlement import (
     EntitlementUnavailable,
     EvidenceBackedCurrentEntitlementResolver,
     resolve_current_entitlement,
+    resolve_runtime_current_entitlement,
 )
 from app.services.current_entitlement_evidence import CONTRACT_VERSION, CurrentEntitlementEvidenceRecord
 
@@ -179,3 +180,113 @@ def test_evidence_resolver_does_not_mutate_browser_state_or_use_legacy_balance(a
         assert dict(session) == before_session
         assert vars(g) == before_g
     assert decision.identity_class is IdentityClass.FULL
+
+
+def test_runtime_resolver_uses_canonical_session_factory_and_sqlalchemy_repository(monkeypatch):
+    captured = {}
+
+    class RuntimeRepository:
+        def __init__(self, session_factory):
+            captured["session_factory"] = session_factory
+
+        def get_latest(self, subject):
+            captured["subject"] = subject
+            return evidence()
+
+        def append(self, _evidence):
+            pytest.fail("runtime resolver attempted to append evidence")
+
+    def canonical_session_factory():
+        pytest.fail("capturing repository should not open a session")
+
+    monkeypatch.setattr("app.database.get_session", canonical_session_factory)
+    monkeypatch.setattr(
+        "app.services.current_entitlement_evidence_storage.SqlAlchemyCurrentEntitlementEvidenceRepository",
+        RuntimeRepository,
+    )
+
+    decision = resolve_runtime_current_entitlement(
+        SUBJECT,
+        clock=lambda: NOW,
+        active_user_resolver=lambda subject: _active_baseline(subject),
+    )
+
+    assert captured == {"session_factory": canonical_session_factory, "subject": SUBJECT}
+    assert decision.identity_class is IdentityClass.FULL
+    assert decision.current_full_relation_satisfied is True
+
+
+def _active_baseline(subject):
+    from app.services.current_entitlement import EntitlementDecision
+
+    return EntitlementDecision(subject, IdentityClass.LIMITED, False, "active_persisted_user")
+
+
+def test_runtime_resolver_retains_injection_and_baseline_semantics():
+    repository = Repository()
+    decision = resolve_runtime_current_entitlement(
+        SUBJECT,
+        repository=repository,
+        clock=lambda: NOW,
+        active_user_resolver=_active_baseline,
+    )
+    assert decision == _active_baseline(SUBJECT)
+    assert repository.calls == [SUBJECT]
+
+    with pytest.raises(EntitlementDenied):
+        resolve_runtime_current_entitlement("A" * 64, repository=Repository())
+    with pytest.raises(EntitlementUnavailable):
+        resolve_runtime_current_entitlement(
+            SUBJECT,
+            repository=Repository(),
+            active_user_resolver=lambda _subject: (_ for _ in ()).throw(
+                EntitlementUnavailable("persisted user state unavailable")
+            ),
+        )
+
+
+def test_runtime_resolver_session_factory_path_is_read_only_and_closes_session():
+    class Query:
+        def filter(self, *_args):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def first(self):
+            return None
+
+    class Session:
+        closed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            self.closed = True
+
+        def query(self, _model):
+            return Query()
+
+        def commit(self):
+            pytest.fail("runtime read attempted to commit")
+
+        def add(self, _value):
+            pytest.fail("runtime read attempted to add")
+
+        def flush(self):
+            pytest.fail("runtime read attempted to flush")
+
+    session = Session()
+    decision = resolve_runtime_current_entitlement(
+        SUBJECT,
+        session_factory=lambda: session,
+        active_user_resolver=_active_baseline,
+    )
+    assert decision.identity_class is IdentityClass.LIMITED
+    assert session.closed is True
+
+
+def test_runtime_resolver_rejects_ambiguous_storage_injection():
+    with pytest.raises(ValueError, match="repository or session factory"):
+        resolve_runtime_current_entitlement(SUBJECT, repository=Repository(), session_factory=lambda: None)

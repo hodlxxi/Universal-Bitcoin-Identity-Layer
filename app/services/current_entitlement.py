@@ -118,3 +118,32 @@ class EvidenceBackedCurrentEntitlementResolver:
 
     def resolve(self, actor_pubkey: str) -> EntitlementSnapshot:
         return CurrentEntitlementResolver(self(actor_pubkey)).resolve(actor_pubkey)
+
+
+def resolve_runtime_current_entitlement(
+    subject_pubkey: str,
+    *,
+    repository=None,
+    session_factory=None,
+    clock=None,
+    active_user_resolver=resolve_current_entitlement,
+) -> EntitlementDecision:
+    """Resolve current entitlement through the canonical runtime database seam."""
+
+    if repository is not None and session_factory is not None:
+        raise ValueError("provide repository or session factory, not both")
+    if repository is None:
+        if session_factory is None:
+            from app.database import get_session
+
+            session_factory = get_session
+        from app.services.current_entitlement_evidence_storage import (
+            SqlAlchemyCurrentEntitlementEvidenceRepository,
+        )
+
+        repository = SqlAlchemyCurrentEntitlementEvidenceRepository(session_factory)
+    return EvidenceBackedCurrentEntitlementResolver(
+        repository,
+        clock=clock,
+        active_user_resolver=active_user_resolver,
+    )(subject_pubkey)

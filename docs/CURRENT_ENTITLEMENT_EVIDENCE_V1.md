@@ -1,8 +1,8 @@
 # Persisted Current Entitlement Evidence V1
 
-> **Status: IMPLEMENTED_DORMANT.** Synchronization basis: Canon commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`; runtime base `7df976c59742aa84fd79cfd41f12a34a33915259`.
+> **Status: IMPLEMENTED_RUNTIME_READ.** Synchronization basis: Canon commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`; runtime base `7df976c59742aa84fd79cfd41f12a34a33915259`.
 
-This dormant layer supplies an append-only, read-only-at-resolution source for a subject's current covenant-relation entitlement. It closes the gap between an active local account and authoritative, time-bounded FULL evidence without consulting browser state or a wallet RPC.
+This layer supplies an append-only, read-only-at-resolution source for a subject's current covenant-relation entitlement. The canonical runtime resolver reuses the application's initialized SQLAlchemy session factory, checks the active persisted-user LIMITED baseline, and then reads the latest evidence. It closes the gap between an active local account and authoritative, time-bounded FULL evidence without consulting browser state or a wallet RPC.
 
 FULL/LIMITED in this document are runtime authorization evidence outcomes, not CRT membership states. No Canon membership-state evaluator, lineage evaluator, or Canon-conformant policy mapping is wired. A current FULL evidence record must not be described as proof of CRT membership. The human `legacy_777` and operator-agent `current_144` profiles remain separate.
 
@@ -18,9 +18,11 @@ For one subject, latest means `observed_at DESC, created_at DESC, evidence_id DE
 
 Validity starts at `observed_at` and expires exclusively at `valid_until`; windows are at most 900 seconds. Evidence is never activated before `observed_at`. More than 60 seconds of future structural skew is malformed; smaller future skew is tolerated structurally but remains inactive. Revoked evidence is LIMITED from the resolver's perspective. Malformed or contradictory persisted state and storage failures fail closed as unavailable.
 
-## Boundary and status
+## Runtime boundary and status
 
-A future offline materializer may verify covenant state and append observations. That verifier is outside this PR. This PR adds no materializer, application-factory construction, route, MCP surface, background job, configuration flag, or production dependency wiring; the resolver is independently constructible and dormant.
+`resolve_runtime_current_entitlement` is the canonical runtime read seam. It constructs the existing SQLAlchemy evidence repository with the existing application session factory and invokes only `get_latest`; the read session is closed without commit. Missing, LIMITED, revoked, expired, or not-yet-active evidence remains LIMITED. Valid current FULL evidence upgrades the result to FULL. Malformed or subject-mismatched evidence and storage failures fail closed as unavailable.
+
+A future offline materializer may verify covenant state and append observations, and a future public assertion consumer may call this resolver. Both are outside this change. This layer performs no CRT evaluation or evidence materialization and adds no route, MCP surface, background job, configuration flag, or independent database infrastructure.
 
 See [CRT Runtime Bridge](CRT_RUNTIME_BRIDGE.md) and [CRT Membership Implementation Status](CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md).
 
