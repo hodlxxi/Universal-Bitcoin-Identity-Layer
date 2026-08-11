@@ -748,6 +748,93 @@ class TrustedCovenantRegistration(Base):
     )
 
 
+class CanonicalRootRegistrationBindingRow(Base):
+    """Dormant canonical selection binding for a graph's root subject."""
+
+    __tablename__ = "canonical_root_registration_bindings"
+
+    binding_id = Column(String(36), primary_key=True)
+    schema = Column(String(56), nullable=False)
+    binding_version = Column(String(64), nullable=False)
+    graph_or_protocol_id = Column(String(64), nullable=False)
+    root_x_only_public_key = Column(String(64), nullable=False)
+    trusted_registration_id = Column(String(36), nullable=False)
+    trusted_registration_sha256 = Column(String(64), nullable=False)
+    lifecycle_state = Column(String(10), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    lifecycle_changed_at = Column(DateTime(timezone=True), nullable=False)
+    effective_at = Column(DateTime(timezone=True))
+    superseded_by_binding_id = Column(String(36))
+    canonical_binding_sha256 = Column(String(64), nullable=False, unique=True)
+    canonical_record_json = Column(Text, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "schema = 'hodlxxi.canonical_root_registration_binding.v1'",
+            name="ck_root_registration_binding_schema",
+        ),
+        CheckConstraint(
+            "binding_version = 'hodlxxi.canonical_root_registration_binding_service.v1'",
+            name="ck_root_registration_binding_version",
+        ),
+        CheckConstraint(
+            "length(binding_id) = 36 AND binding_id = lower(binding_id)",
+            name="ck_root_registration_binding_id",
+        ),
+        CheckConstraint(
+            "length(root_x_only_public_key) = 64 AND root_x_only_public_key = lower(root_x_only_public_key)",
+            name="ck_root_registration_binding_root",
+        ),
+        CheckConstraint(
+            "length(trusted_registration_id) = 36 AND trusted_registration_id = lower(trusted_registration_id)",
+            name="ck_root_registration_binding_registration_id",
+        ),
+        CheckConstraint(
+            "length(trusted_registration_sha256) = 64 AND trusted_registration_sha256 = lower(trusted_registration_sha256)",
+            name="ck_root_registration_binding_registration_digest",
+        ),
+        CheckConstraint(
+            "length(canonical_binding_sha256) = 64 AND canonical_binding_sha256 = lower(canonical_binding_sha256)",
+            name="ck_root_registration_binding_digest",
+        ),
+        CheckConstraint(
+            "lifecycle_state IN ('proposed','effective','disputed','superseded','revoked')",
+            name="ck_root_registration_binding_lifecycle",
+        ),
+        CheckConstraint(
+            "lifecycle_changed_at >= created_at",
+            name="ck_root_registration_binding_changed_order",
+        ),
+        CheckConstraint(
+            "(lifecycle_state = 'proposed' AND effective_at IS NULL AND superseded_by_binding_id IS NULL) OR "
+            "(lifecycle_state = 'effective' AND effective_at IS NOT NULL AND effective_at >= created_at "
+            "AND lifecycle_changed_at >= effective_at AND superseded_by_binding_id IS NULL) OR "
+            "(lifecycle_state = 'superseded' AND effective_at IS NOT NULL AND effective_at >= created_at "
+            "AND lifecycle_changed_at >= effective_at AND superseded_by_binding_id IS NOT NULL) OR "
+            "(lifecycle_state IN ('disputed','revoked') AND "
+            "(effective_at IS NULL OR (effective_at >= created_at AND lifecycle_changed_at >= effective_at)) "
+            "AND superseded_by_binding_id IS NULL)",
+            name="ck_root_registration_binding_lifecycle_consistency",
+        ),
+        CheckConstraint(
+            "superseded_by_binding_id IS NULL OR "
+            "(length(superseded_by_binding_id) = 36 AND superseded_by_binding_id = lower(superseded_by_binding_id) "
+            "AND superseded_by_binding_id != binding_id)",
+            name="ck_root_registration_binding_successor",
+        ),
+        Index("idx_root_registration_binding_graph_root", "graph_or_protocol_id", "root_x_only_public_key"),
+        Index("idx_root_registration_binding_registration", "trusted_registration_id"),
+        Index(
+            "uq_root_registration_binding_effective_root",
+            "graph_or_protocol_id",
+            "root_x_only_public_key",
+            unique=True,
+            postgresql_where=text("lifecycle_state = 'effective'"),
+            sqlite_where=text("lifecycle_state = 'effective'"),
+        ),
+    )
+
+
 class CanonicalGenesisRecordRow(Base):
     """Dormant append-only canonical genesis record publication."""
 
