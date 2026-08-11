@@ -12,7 +12,9 @@ from typing import Optional
 from flask import Blueprint, jsonify, request, session
 
 from app.audit_logger import get_audit_logger
+from app.auth_api_core import canonical_xonly_pubkey
 from app.browser_routes import perform_browser_logout, render_browser_login
+from app.db_storage import create_user, get_user_by_pubkey
 from app.security import limiter
 from app.utils import (
     derive_legacy_address_from_pubkey,
@@ -34,6 +36,21 @@ import os
 
 VERIFY_RATE_LIMIT = os.environ.get("HODLXXI_TEST_RATE_LIMIT", VERIFY_RATE_LIMIT)
 LOGIN_RATE_LIMIT = "20 per minute"
+
+
+def _persist_canonical_login_identity(verified_pubkey: str) -> str:
+    """Persist one verified browser-login subject through canonical User storage."""
+    canonical_subject = canonical_xonly_pubkey(verified_pubkey)
+    user_id = create_user(canonical_subject)
+    user = get_user_by_pubkey(canonical_subject)
+    if (
+        not isinstance(user, dict)
+        or user.get("id") != user_id
+        or user.get("pubkey") != canonical_subject
+        or user.get("is_active") is not True
+    ):
+        raise RuntimeError("canonical login identity is unavailable")
+    return canonical_subject
 
 
 @auth_bp.route("/logout")
@@ -132,6 +149,17 @@ def verify_signature():
         if not matched_pubkey:
             audit_logger.log_event("auth.verify_failed", reason="no_matching_special_user", ip=request.remote_addr)
             return jsonify({"verified": False, "error": "Invalid signature"}), 403
+
+    try:
+        _persist_canonical_login_identity(matched_pubkey)
+    except Exception:
+        logger.exception("Canonical login identity persistence failed")
+        audit_logger.log_event(
+            "auth.verify_failed",
+            reason="identity_persistence_unavailable",
+            ip=request.remote_addr,
+        )
+        return jsonify({"verified": False, "error": "Authentication service temporarily unavailable"}), 503
 
     # Determine access level from covenant/balance state.
     # A valid signature proves key control only. RPC/descriptors require
