@@ -964,6 +964,71 @@ class TrustedCovenantRegisteredOutpoint(Base):
     )
 
 
+class CanonicalCovenantFundingSetRow(Base):
+    """Dormant immutable recognized-funding allowlist."""
+
+    __tablename__ = "canonical_covenant_funding_sets"
+    funding_set_id = Column(String(36), primary_key=True)
+    schema = Column(String(64), nullable=False)
+    funding_set_version = Column(String(72), nullable=False)
+    trusted_registration_id = Column(String(36), nullable=False)
+    trusted_registration_sha256 = Column(String(64), nullable=False)
+    pair_sha256 = Column(String(64), nullable=False)
+    subject_xonly_pubkey = Column(String(64), nullable=False)
+    counterparty_xonly_pubkey = Column(String(64), nullable=False)
+    lifecycle_state = Column(String(10), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    lifecycle_changed_at = Column(DateTime(timezone=True), nullable=False)
+    effective_at = Column(DateTime(timezone=True))
+    superseded_by_funding_set_id = Column(String(36))
+    canonical_funding_set_sha256 = Column(String(64), nullable=False, unique=True)
+    canonical_record_json = Column(Text, nullable=False)
+    recognized_outpoints = relationship(
+        "CanonicalCovenantFundingOutpointRow", back_populates="funding_set",
+        cascade="all, delete-orphan", passive_deletes=True,
+    )
+    __table_args__ = (
+        CheckConstraint("schema = 'hodlxxi.canonical_recognized_covenant_funding_set.v1'", name="ck_funding_set_schema"),
+        CheckConstraint("funding_set_version = 'hodlxxi.canonical_recognized_covenant_funding_set_service.v1'", name="ck_funding_set_version"),
+        CheckConstraint("length(funding_set_id) = 36 AND funding_set_id = lower(funding_set_id)", name="ck_funding_set_id"),
+        CheckConstraint("length(trusted_registration_id) = 36 AND trusted_registration_id = lower(trusted_registration_id)", name="ck_funding_set_registration_id"),
+        CheckConstraint("length(trusted_registration_sha256) = 64 AND length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(trusted_registration_sha256,'0',''),'1',''),'2',''),'3',''),'4',''),'5',''),'6',''),'7',''),'8',''),'9',''),'a',''),'b',''),'c',''),'d',''),'e',''),'f','')) = 0 AND length(pair_sha256) = 64 AND length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(pair_sha256,'0',''),'1',''),'2',''),'3',''),'4',''),'5',''),'6',''),'7',''),'8',''),'9',''),'a',''),'b',''),'c',''),'d',''),'e',''),'f','')) = 0", name="ck_funding_set_source_digests"),
+        CheckConstraint("length(subject_xonly_pubkey) = 64 AND length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(subject_xonly_pubkey,'0',''),'1',''),'2',''),'3',''),'4',''),'5',''),'6',''),'7',''),'8',''),'9',''),'a',''),'b',''),'c',''),'d',''),'e',''),'f','')) = 0 AND length(counterparty_xonly_pubkey) = 64 AND length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(counterparty_xonly_pubkey,'0',''),'1',''),'2',''),'3',''),'4',''),'5',''),'6',''),'7',''),'8',''),'9',''),'a',''),'b',''),'c',''),'d',''),'e',''),'f','')) = 0", name="ck_funding_set_participants"),
+        CheckConstraint("lifecycle_state IN ('proposed','effective','disputed','superseded','revoked')", name="ck_funding_set_lifecycle"),
+        CheckConstraint("lifecycle_changed_at >= created_at", name="ck_funding_set_changed_order"),
+        CheckConstraint("(lifecycle_state = 'proposed' AND effective_at IS NULL AND superseded_by_funding_set_id IS NULL) OR (lifecycle_state = 'effective' AND effective_at IS NOT NULL AND effective_at >= created_at AND lifecycle_changed_at >= effective_at AND superseded_by_funding_set_id IS NULL) OR (lifecycle_state = 'superseded' AND effective_at IS NOT NULL AND effective_at >= created_at AND lifecycle_changed_at >= effective_at AND superseded_by_funding_set_id IS NOT NULL) OR (lifecycle_state IN ('disputed','revoked') AND (effective_at IS NULL OR (effective_at >= created_at AND lifecycle_changed_at >= effective_at)) AND superseded_by_funding_set_id IS NULL)", name="ck_funding_set_lifecycle_consistency"),
+        CheckConstraint("superseded_by_funding_set_id IS NULL OR (length(superseded_by_funding_set_id) = 36 AND superseded_by_funding_set_id = lower(superseded_by_funding_set_id) AND superseded_by_funding_set_id != funding_set_id)", name="ck_funding_set_successor"),
+        CheckConstraint("length(canonical_funding_set_sha256) = 64 AND length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(canonical_funding_set_sha256,'0',''),'1',''),'2',''),'3',''),'4',''),'5',''),'6',''),'7',''),'8',''),'9',''),'a',''),'b',''),'c',''),'d',''),'e',''),'f','')) = 0", name="ck_funding_set_digest"),
+        Index("idx_funding_set_registration", "trusted_registration_id"),
+        Index("uq_funding_set_effective_registration", "trusted_registration_id", unique=True,
+              sqlite_where=text("lifecycle_state = 'effective'"),
+              postgresql_where=text("lifecycle_state = 'effective'")),
+    )
+
+
+class CanonicalCovenantFundingOutpointRow(Base):
+    __tablename__ = "canonical_covenant_funding_outpoints"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    funding_set_id = Column(String(36), ForeignKey("canonical_covenant_funding_sets.funding_set_id", ondelete="CASCADE"), nullable=False)
+    direction = Column(String(8), nullable=False)
+    txid = Column(String(64), nullable=False)
+    vout = Column(BigInteger, nullable=False)
+    amount_sats = Column(BigInteger, nullable=False)
+    witness_script_sha256 = Column(String(64), nullable=False)
+    descriptor_sha256 = Column(String(64))
+    funding_set = relationship("CanonicalCovenantFundingSetRow", back_populates="recognized_outpoints")
+    __table_args__ = (
+        UniqueConstraint("funding_set_id", "txid", "vout", name="uq_funding_outpoint_identity"),
+        CheckConstraint("direction IN ('incoming','outgoing')", name="ck_funding_outpoint_direction"),
+        CheckConstraint("length(txid) = 64 AND length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(txid,'0',''),'1',''),'2',''),'3',''),'4',''),'5',''),'6',''),'7',''),'8',''),'9',''),'a',''),'b',''),'c',''),'d',''),'e',''),'f','')) = 0", name="ck_funding_outpoint_txid"),
+        CheckConstraint("vout >= 0 AND vout <= 4294967295", name="ck_funding_outpoint_vout"),
+        CheckConstraint("amount_sats > 0 AND amount_sats <= 2100000000000000", name="ck_funding_outpoint_amount"),
+        CheckConstraint("length(witness_script_sha256) = 64 AND length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(witness_script_sha256,'0',''),'1',''),'2',''),'3',''),'4',''),'5',''),'6',''),'7',''),'8',''),'9',''),'a',''),'b',''),'c',''),'d',''),'e',''),'f','')) = 0", name="ck_funding_outpoint_script"),
+        CheckConstraint("descriptor_sha256 IS NULL OR (length(descriptor_sha256) = 64 AND length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(descriptor_sha256,'0',''),'1',''),'2',''),'3',''),'4',''),'5',''),'6',''),'7',''),'8',''),'9',''),'a',''),'b',''),'c',''),'d',''),'e',''),'f','')) = 0)", name="ck_funding_outpoint_descriptor"),
+        Index("idx_funding_outpoint_set", "funding_set_id"),
+    )
+
+
 class CanonicalAdmissionEdgeRow(Base):
     """Dormant append-only canonical human admission edge."""
 
