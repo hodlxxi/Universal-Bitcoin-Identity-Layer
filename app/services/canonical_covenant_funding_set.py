@@ -15,7 +15,12 @@ from app.services.trusted_covenant_registration import (
     TrustedCovenantRegistration,
     TrustedCovenantRegistrationLifecycle,
     canonical_trusted_registration_bytes,
+    p2wsh_script_pubkey_sha256,
     trusted_registration_sha256,
+)
+from app.services.trusted_covenant_observation import (
+    TRUSTED_OUTPOINT_SCHEMA,
+    TrustedCovenantOutpoint,
 )
 
 FUNDING_SET_SCHEMA = "hodlxxi.canonical_recognized_covenant_funding_set.v1"
@@ -244,6 +249,27 @@ def canonical_covenant_funding_set_bytes(value):
 
 def canonical_covenant_funding_set_sha256(value):
     return hashlib.sha256(canonical_covenant_funding_set_bytes(value)).hexdigest()
+
+
+def trusted_outpoints_from_canonical_funding_set(value):
+    """Materialize exactly the EFFECTIVE recognized allowlist for observation."""
+    value = _validated(value)
+    if value.lifecycle_state is not CovenantFundingSetLifecycle.EFFECTIVE:
+        _fail("only an effective funding set may materialize trusted outpoints")
+    return tuple(
+        TrustedCovenantOutpoint(
+            TRUSTED_OUTPOINT_SCHEMA,
+            value.subject_xonly_pubkey,
+            value.counterparty_xonly_pubkey,
+            item.direction,
+            item.txid,
+            item.vout,
+            item.amount_sats,
+            p2wsh_script_pubkey_sha256(item.witness_script_sha256),
+            item.descriptor_sha256,
+        )
+        for item in value.recognized_outpoints
+    )
 
 
 def _parse_time(value, field):
