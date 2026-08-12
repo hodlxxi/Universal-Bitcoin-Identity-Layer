@@ -40,7 +40,7 @@ def _module(name, path):
 
 
 fixtures = _module("funding_fixtures_for_edge_local", "tests/unit/test_canonical_covenant_funding_set.py")
-NOW = datetime(2026, 8, 12, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 12, 1, 2, 3, 456789, tzinfo=timezone.utc)
 GRAPH = "hodlxxi:test"
 
 
@@ -139,6 +139,7 @@ def test_real_five_utxo_vector_uses_exact_authority_and_ignores_dust(monkeypatch
     }
     assert ("f" * 64, 9) not in {(x.txid, x.vout) for x in observer.calls[0]}
     assert result.recognized_outpoint_count == result.qualifying_observation_count == 5
+    assert result.observed_at == NOW
     assert (result.incoming_sats, result.outgoing_sats) == (300000, 300000)
     assert result.current_full_relation_satisfied is True
     assert result.relation_reason is CovenantRelationReason.FULL_RELATION_SATISFIED

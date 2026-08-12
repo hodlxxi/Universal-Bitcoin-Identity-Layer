@@ -69,6 +69,7 @@ def test_repository_read_precedes_bitcoin_observation_and_no_write_api_is_used(m
     )
     assert events == ["repository_read_closed", "bitcoin_observation"]
     assert result.qualifying_observation_count == 5
+    assert result.observed_at == NOW
 
 
 def test_real_repository_session_closes_before_rpc_and_operation_does_not_write(monkeypatch, tmp_path):
@@ -135,5 +136,6 @@ def test_real_repository_session_closes_before_rpc_and_operation_does_not_write(
         funding_set_repository=repository, observer=Observer(),
     )
     assert result.qualifying_observation_count == 5
+    assert result.observed_at == NOW
     assert counts() == before
     assert TrackingSession.open_count == 0
