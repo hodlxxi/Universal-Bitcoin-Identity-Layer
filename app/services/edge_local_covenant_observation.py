@@ -72,6 +72,7 @@ class EdgeLocalCovenantRelationResult:
     funding_set_sha256: str
     recognized_outpoint_count: int
     qualifying_observation_count: int
+    observed_at: datetime
     observed_block_height: int
     incoming_sats: int
     outgoing_sats: int
@@ -214,6 +215,7 @@ def observe_edge_local_covenant_relation(
             canonical_covenant_funding_set_sha256(funding_set),
             len(trusted_outpoints),
             decision.qualifying_observation_count,
+            decision.observed_at,
             decision.observed_block_height,
             decision.incoming_sats,
             decision.outgoing_sats,
