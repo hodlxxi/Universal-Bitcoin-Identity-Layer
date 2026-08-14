@@ -7,12 +7,22 @@ import jwt
 from werkzeug.security import check_password_hash
 
 from app.db_storage import get_canonical_jwt_record_by_jti, get_oauth_client
+from app.auth_api_core import canonical_xonly_pubkey
+from app.db_storage import create_user
 
 
 def _pair():
     verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     return verifier, challenge
+
+
+def _admit_browser_session(client, pubkey="02" + "a" * 64):
+    create_user(canonical_xonly_pubkey(pubkey))
+    with client.session_transaction() as sess:
+        sess["logged_in_pubkey"] = pubkey
+        sess["login_method"] = "legacy"
+        sess["access_level"] = "limited"
 
 
 def test_dynamic_registration_policy_and_secret_hash(client):
@@ -45,8 +55,7 @@ def test_canonical_access_token_is_persisted_and_introspectable(client):
         "/oauth/register",
         json={"client_name": "flow", "redirect_uris": ["https://client.example/cb"], "scope": "profile openid"},
     ).get_json()
-    with client.session_transaction() as sess:
-        sess["logged_in_pubkey"] = "02" + "a" * 64
+    _admit_browser_session(client)
     verifier, challenge = _pair()
     authorization = client.get(
         "/oauth/authorize",

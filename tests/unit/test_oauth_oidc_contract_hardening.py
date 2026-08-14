@@ -12,8 +12,18 @@ import jwt
 import pytest
 
 from app.factory import create_app
+from app.auth_api_core import canonical_xonly_pubkey
+from app.db_storage import create_user
 from app.jwks import ensure_rsa_keypair, get_signing_key
 from app.tokens import issue_rs256_jwt
+
+
+def _admit_browser_session(client, pubkey="02" + "a" * 64):
+    create_user(canonical_xonly_pubkey(pubkey))
+    with client.session_transaction() as sess:
+        sess["logged_in_pubkey"] = pubkey
+        sess["login_method"] = "legacy"
+        sess["access_level"] = "limited"
 
 
 def test_factory_rejects_hs256_configuration():
@@ -536,8 +546,7 @@ def test_authorize_rejects_invalid_redirect_uri_without_500():
     with patch(
         "app.blueprints.oauth.get_oauth_client", return_value={"redirect_uris": ["https://app.example.com/callback"]}
     ):
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = "02" + "a" * 64
+        _admit_browser_session(client)
 
         _, challenge = _pkce_pair()
         resp = client.get(
@@ -583,8 +592,7 @@ def test_pkce_requires_s256_challenge():
     with patch(
         "app.blueprints.oauth.get_oauth_client", return_value={"redirect_uris": ["https://app.example.com/callback"]}
     ):
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = "02" + "a" * 64
+        _admit_browser_session(client)
 
         plain_resp = client.get(
             "/oauth/authorize",
@@ -640,8 +648,7 @@ def test_pkce_s256_authorize_and_bad_verifier_rejected_without_500():
         patch("app.blueprints.oauth.get_oauth_code", return_value=code_record),
         patch("app.blueprints.oauth.consume_oauth_code") as consume_code,
     ):
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = code_record["user_pubkey"]
+        _admit_browser_session(client, code_record["user_pubkey"])
 
         auth = client.get(
             "/oauth/authorize",
