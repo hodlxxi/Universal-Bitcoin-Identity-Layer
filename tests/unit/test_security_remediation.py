@@ -16,10 +16,15 @@ def test_pkce_required_on_authorize(client):
 
 
 def test_pkce_s256_token_exchange(client):
-    from app.db_storage import store_oauth_client
+    from app.auth_api_core import canonical_xonly_pubkey
+    from app.db_storage import create_user, store_oauth_client
 
+    compressed_pubkey = "02" + "a" * 64
+    create_user(canonical_xonly_pubkey(compressed_pubkey))
     with client.session_transaction() as sess:
-        sess["logged_in_pubkey"] = "02" + "a" * 64
+        sess["logged_in_pubkey"] = compressed_pubkey
+        sess["login_method"] = "legacy"
+        sess["access_level"] = "limited"
     store_oauth_client(
         "c2",
         {
