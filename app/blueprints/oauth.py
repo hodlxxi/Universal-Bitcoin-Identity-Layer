@@ -40,6 +40,7 @@ from app.services.oauth_scope_policy import (
     validate_client_scopes,
 )
 from app.services.oauth_bearer_validation import validate_canonical_access_token
+from app.services.canonical_oauth_browser_subject import resolve_oauth_browser_subject
 from app.security import limiter as _limiter
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -379,15 +380,20 @@ def authorize():
             return jsonify({"error": "invalid_scope", "error_description": "Requested scope is not allowed"}), 400
 
         # Check if user is authenticated
-        raw_subject = session.get("logged_in_pubkey")
-        if not raw_subject:
+        if "logged_in_pubkey" not in session:
             # Redirect to login with return URL
             login_return = _safe_local_redirect_target(request.full_path, fallback="/oauth/authorize")
             return redirect(f"/login?return_to={login_return}")
+        raw_subject = session.get("logged_in_pubkey")
         try:
-            user_pubkey = canonical_xonly_pubkey(raw_subject)
-        except (TypeError, ValueError):
-            return jsonify({"error": "access_denied", "error_description": "Invalid authenticated subject"}), 403
+            admitted = resolve_oauth_browser_subject(
+                raw_subject,
+                session.get("login_method"),
+                session.get("access_level"),
+            )
+            user_pubkey = admitted.subject
+        except Exception:
+            return jsonify({"error": "access_denied", "error_description": "Authenticated session is not eligible"}), 403
 
         # Generate authorization code
         auth_code = secrets.token_urlsafe(32)

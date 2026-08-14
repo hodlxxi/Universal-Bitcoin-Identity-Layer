@@ -726,7 +726,7 @@ def _handle_unexpected_exception(exc):
     return jsonify(payload), 500
 
 
-# Cookie domain: allow sessions to work across apex + www
+# Cookie domain is host-only unless an explicit compatibility override is set.
 _cookie_domain = os.getenv("SESSION_COOKIE_DOMAIN")
 if _cookie_domain:
     app.config["SESSION_COOKIE_DOMAIN"] = _cookie_domain
@@ -735,9 +735,10 @@ _cookie_name = os.getenv("SESSION_COOKIE_NAME")
 if _cookie_name:
     app.config["SESSION_COOKIE_NAME"] = _cookie_name
 # COOKIE_DOMAIN_V1
-app.config.setdefault("SESSION_COOKIE_DOMAIN", ".hodlxxi.com")
-app.config.setdefault("SESSION_COOKIE_SECURE", True)
-app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
+app.config.setdefault("SESSION_COOKIE_DOMAIN", None)
+app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 # /COOKIE_DOMAIN_V1
 
 # === DOCS_ROUTES_REGISTER_V1 ===
