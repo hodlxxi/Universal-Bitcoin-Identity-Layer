@@ -1535,8 +1535,8 @@ def test_phase_06_uses_location_normalized_parse_tree_equivalence_for_checks_and
     assert "string_agg(attribute.attname,',' ORDER BY key.ordinality)" not in check_sql
     assert "unnest(actual_constraint.conkey) WITH ORDINALITY" not in check_sql
     assert "actual_constraint.conbin=probe_constraint.conbin" not in check_sql
-    actual_normalized = rehearsal._normalized_check_tree_sql("actual_constraint.conbin")
-    probe_normalized = rehearsal._normalized_check_tree_sql("probe_constraint.conbin")
+    actual_normalized = rehearsal._normalized_pg_node_tree_sql("actual_constraint.conbin")
+    probe_normalized = rehearsal._normalized_pg_node_tree_sql("probe_constraint.conbin")
     assert check_sql.count(actual_normalized) == 1
     assert check_sql.count(probe_normalized) == 1
     assert actual_normalized.replace("actual_constraint", "probe_constraint") == probe_normalized
@@ -1549,11 +1549,45 @@ def test_phase_06_uses_location_normalized_parse_tree_equivalence_for_checks_and
     index_sql = rehearsal.PHASE_6_INDEX_SEMANTICS_SQL
     assert "PHASE_6_INDEX_SEMANTICS_V1" in index_sql
     assert index_sql.count("WHERE lifecycle_state = 'effective'") == 2
-    assert "index_catalog.indpred=reference_catalog.indpred" in index_sql
+    actual_predicate = rehearsal._normalized_pg_node_tree_sql("index_catalog.indpred")
+    reference_predicate = rehearsal._normalized_pg_node_tree_sql("reference_catalog.indpred")
+    assert index_sql.count(actual_predicate) == 1
+    assert index_sql.count(reference_predicate) == 1
+    assert actual_predicate.replace("index_catalog", "reference_catalog") == reference_predicate
+    assert f"{actual_predicate}\n                  ={reference_predicate}" in index_sql
+    assert "index_catalog.indpred=reference_catalog.indpred" not in index_sql
     assert "pg_get_expr" not in index_sql
 
 
-def test_phase_06_check_tree_normalization_is_exactly_location_only():
+def test_phase_06_index_predicate_classification_remains_strict_and_fail_closed():
+    index_sql = rehearsal.PHASE_6_INDEX_SEMANTICS_SQL
+    partial_indexes = {
+        item.split("|")[1]
+        for item in rehearsal.MIGRATION_8_9_INDEX_SEMANTICS
+        if item.endswith("|partial")
+    }
+
+    assert partial_indexes == {
+        "uq_root_registration_binding_effective_root",
+        "uq_funding_set_effective_registration",
+    }
+    assert index_sql.count("THEN 'partial'") == 1
+    assert index_sql.count("THEN 'none'") == 1
+    assert index_sql.count("ELSE 'mismatch'") == 1
+    assert (
+        "mapping.reference_index_name IS NULL AND index_catalog.indpred IS NULL"
+        in index_sql
+    )
+    assert "reference_catalog.indpred IS NOT NULL" in index_sql
+    assert index_sql.count("'phase_6_root_effective_reference'") == 1
+    assert index_sql.count("'phase_6_funding_set_effective_reference'") == 1
+    assert index_sql.count(",NULL)") == 4
+    assert "index_catalog.indisunique::text" in index_sql
+    assert "ORDER BY key.ordinality" in index_sql
+    assert "key.ordinality <= index_catalog.indnkeyatts" in index_sql
+
+
+def test_phase_06_pg_node_tree_normalization_is_exactly_location_only():
     pattern = re.compile(rehearsal.PG_NODE_TREE_LOCATION_PATTERN)
     replacement = rehearsal.PG_NODE_TREE_LOCATION_REPLACEMENT
 
@@ -1582,7 +1616,7 @@ def test_phase_06_check_tree_normalization_is_exactly_location_only():
         ("{OPEXPR :opno 96 :location -1}", "{OPEXPR :opno 96 :location 145}"),
     ],
 )
-def test_phase_06_check_tree_normalization_accepts_only_location_differences(actual, probe):
+def test_phase_06_predicate_tree_normalization_accepts_location_only_differences(actual, probe):
     pattern = re.compile(rehearsal.PG_NODE_TREE_LOCATION_PATTERN)
     replacement = rehearsal.PG_NODE_TREE_LOCATION_REPLACEMENT
     assert pattern.sub(replacement, actual) == pattern.sub(replacement, probe)
@@ -1592,12 +1626,16 @@ def test_phase_06_check_tree_normalization_accepts_only_location_differences(act
     ("actual", "probe"),
     [
         ("{CONST :constvalue 4 :location 8}", "{CONST :constvalue 5 :location 8}"),
+        (
+            "{CONST :constvalue effective :location 8}",
+            "{CONST :constvalue retired :location 8}",
+        ),
         ("{OPEXPR :opno 96 :location 8}", "{OPEXPR :opno 97 :location 8}"),
         ("{VAR :varattno 2 :location 8}", "{VAR :varattno 3 :location 8}"),
         ("{BOOLEXPR :boolop and :location 8}", "{BOOLEXPR :boolop or :location 8}"),
     ],
 )
-def test_phase_06_check_tree_normalization_preserves_semantic_mutations(actual, probe):
+def test_phase_06_predicate_tree_normalization_preserves_semantic_mutations(actual, probe):
     pattern = re.compile(rehearsal.PG_NODE_TREE_LOCATION_PATTERN)
     replacement = rehearsal.PG_NODE_TREE_LOCATION_REPLACEMENT
     assert pattern.sub(replacement, actual) != pattern.sub(replacement, probe)
