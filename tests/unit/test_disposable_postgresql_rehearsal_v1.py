@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tarfile
 import textwrap
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -609,6 +610,129 @@ def probe_evidence(name: str) -> tuple[str, ...]:
     returns = [statement for statement in function.body if isinstance(statement, ast.Return)]
     assert len(returns) == 1
     return tuple(ast.literal_eval(returns[0].value))
+
+
+def load_probe_browser_fixture(monkeypatch, persist):
+    service = SimpleNamespace(persist_verified_browser_subject=persist)
+    monkeypatch.setitem(sys.modules, "app.services.canonical_oauth_browser_subject", service)
+    program = ast.parse(rehearsal.PROBE_PROGRAM)
+    selected = [
+        statement
+        for statement in program.body
+        if (
+            isinstance(statement, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "SYNTHETIC_SUBJECT" for target in statement.targets)
+        )
+        or (isinstance(statement, ast.FunctionDef) and statement.name == "admit_synthetic_browser")
+    ]
+    namespace = {"require": lambda value, code: value or (_ for _ in ()).throw(SyntheticProbeFailure(code))}
+    exec(compile(ast.Module(body=selected, type_ignores=[]), "<probe-browser-fixture>", "exec"), namespace)
+    return namespace
+
+
+def test_probe_persists_before_setting_exact_limited_browser_admission(monkeypatch):
+    events = []
+    browser = {}
+
+    class Client:
+        @contextmanager
+        def session_transaction(self):
+            events.append("session")
+            yield browser
+
+    def persist(subject):
+        events.append(("persist", subject))
+        return subject
+
+    fixture = load_probe_browser_fixture(monkeypatch, persist)
+    fixture["admit_synthetic_browser"](Client())
+
+    subject = "ab" * 32
+    assert events == [("persist", subject), "session"]
+    assert browser == {
+        "logged_in_pubkey": subject,
+        "login_method": "legacy",
+        "access_level": "limited",
+    }
+
+
+def test_probe_persistence_failure_cannot_create_browser_admission(monkeypatch):
+    browser = {}
+
+    class Client:
+        @contextmanager
+        def session_transaction(self):
+            yield browser
+
+    def fail_persistence(_subject):
+        raise RuntimeError("synthetic persistence unavailable")
+
+    fixture = load_probe_browser_fixture(monkeypatch, fail_persistence)
+    with pytest.raises(RuntimeError, match="synthetic persistence unavailable"):
+        fixture["admit_synthetic_browser"](Client())
+    assert browser == {}
+
+
+@pytest.mark.parametrize("missing", ["login_method", "access_level"])
+def test_incomplete_probe_browser_admission_remains_fail_closed(monkeypatch, missing):
+    from app.services.canonical_oauth_browser_subject import resolve_oauth_browser_subject
+
+    subject = "ab" * 32
+    browser = {
+        "logged_in_pubkey": subject,
+        "login_method": "legacy",
+        "access_level": "limited",
+    }
+    browser.pop(missing)
+    user = {"id": "synthetic-user", "pubkey": subject, "is_active": True}
+    with pytest.raises(ValueError, match="inadmissible browser session"):
+        resolve_oauth_browser_subject(
+            browser["logged_in_pubkey"],
+            browser.get("login_method"),
+            browser.get("access_level"),
+            get_user_fn=lambda _subject: user,
+        )
+
+
+def test_every_probe_authorization_sequence_establishes_browser_admission_first():
+    authorization = probe_function("authorization_code")
+    authorization_statements = list(authorization.body)
+    authorization_admission_index = next(
+        index
+        for index, statement in enumerate(authorization_statements)
+        if isinstance(statement, ast.Expr)
+        and isinstance(statement.value, ast.Call)
+        and isinstance(statement.value.func, ast.Name)
+        and statement.value.func.id == "admit_synthetic_browser"
+    )
+    authorization_request_index = next(
+        index
+        for index, statement in enumerate(authorization_statements)
+        if isinstance(statement, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "response" for target in statement.targets)
+        and isinstance(statement.value, ast.Call)
+        and isinstance(statement.value.func, ast.Attribute)
+        and statement.value.func.attr == "get"
+    )
+    assert authorization_admission_index < authorization_request_index
+
+    auth_probe_function = probe_function("auth_probe")
+    statements = list(auth_probe_function.body)
+    admission_index = next(
+        index
+        for index, statement in enumerate(statements)
+        if isinstance(statement, ast.Expr)
+        and isinstance(statement.value, ast.Call)
+        and isinstance(statement.value.func, ast.Name)
+        and statement.value.func.id == "admit_synthetic_browser"
+    )
+    first_negative_request = next(
+        index
+        for index, statement in enumerate(statements)
+        if isinstance(statement, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "mismatched" for target in statement.targets)
+    )
+    assert admission_index < first_negative_request
 
 
 def id_token_verification_block() -> ast.Try:

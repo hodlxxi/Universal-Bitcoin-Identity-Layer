@@ -1269,10 +1269,23 @@ def pkce_pair():
     return verifier, challenge
 
 
+SYNTHETIC_SUBJECT = "ab" * 32
+
+
+def admit_synthetic_browser(client):
+    from app.services.canonical_oauth_browser_subject import persist_verified_browser_subject
+
+    subject = persist_verified_browser_subject(SYNTHETIC_SUBJECT)
+    require(subject == SYNTHETIC_SUBJECT, "SYNTHETIC_SUBJECT_PERSISTENCE_FAILED")
+    with client.session_transaction() as state:
+        state["logged_in_pubkey"] = subject
+        state["login_method"] = "legacy"
+        state["access_level"] = "limited"
+
+
 def authorization_code(client, registration, scope):
     verifier, challenge = pkce_pair()
-    with client.session_transaction() as state:
-        state["logged_in_pubkey"] = "ab" * 32
+    admit_synthetic_browser(client)
     response = client.get(
         "/oauth/authorize",
         query_string={
@@ -1334,8 +1347,7 @@ def auth_probe():
         "code_challenge": challenge,
         "code_challenge_method": "S256",
     }
-    with client.session_transaction() as state:
-        state["logged_in_pubkey"] = "ab" * 32
+    admit_synthetic_browser(client)
     mismatched = client.get("/oauth/authorize", query_string={**common, "redirect_uri": "https://mismatch.invalid/callback"})
     missing_pkce = client.get("/oauth/authorize", query_string={key: value for key, value in common.items() if key != "code_challenge"})
     plain_pkce = client.get("/oauth/authorize", query_string={**common, "code_challenge_method": "plain"})
@@ -1398,7 +1410,7 @@ def auth_probe():
         raise
     except Exception as exc:
         raise ProbeFailure("ID_TOKEN_VALIDATION_FAILED") from exc
-    require(id_claims.get("sub") == "ab" * 32, "ID_TOKEN_VALIDATION_FAILED")
+    require(id_claims.get("sub") == SYNTHETIC_SUBJECT, "ID_TOKEN_VALIDATION_FAILED")
     reused = client.post(
         "/oauth/token",
         data={
