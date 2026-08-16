@@ -27,7 +27,7 @@ from typing import Callable, Mapping, Protocol, Sequence
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 PRODUCTION_SHA = "6873e8fb73cbea8fda43fe3609bbdbb2817d8299"
-STAGING_SHA = "872485fedce951365a3325e3bfd0ad766112c272"
+STAGING_SHA = "b3b8ed776d94bbdda88371de7bee8fed17d505f0"
 SOURCE_AUDIT_REPORT_SHA256 = "1b30768d3a00ccf188e15bf75dc5ce1007065b093c502ab1187e95a41ca8984f"
 SOURCE_DATABASE_IDENTIFIER_SHA256 = "cd098bd0f85e4f7b5767fdc94daa08d4f9d08bbda0c60ebb6065bbc754ce0106"
 ACKNOWLEDGEMENT = "DISPOSABLE-NONPRODUCTION-REHEARSAL-V1"
@@ -46,7 +46,7 @@ PHASES = (
     "REHEARSAL_02_SYNTHETIC_OLD_SCHEMA",
     "REHEARSAL_03_NEW_CODE_OLD_SCHEMA_STARTUP",
     "REHEARSAL_04_NEW_CODE_OLD_SCHEMA_AUTH",
-    "REHEARSAL_05_APPLY_SEVEN_MIGRATIONS",
+    "REHEARSAL_05_APPLY_NINE_MIGRATIONS",
     "REHEARSAL_06_VERIFY_MIGRATED_CATALOG",
     "REHEARSAL_07_OLD_CODE_NEW_SCHEMA_STARTUP",
     "REHEARSAL_08_NEW_CODE_NEW_SCHEMA_STARTUP_AUTH",
@@ -89,6 +89,8 @@ MIGRATIONS = (
     "migrations/2026-07-25_trusted_covenant_registration.sql",
     "migrations/2026-07-26_canonical_admission_edge_registry_v1.sql",
     "migrations/2026-07-26_canonical_e923_genesis_record_v1.sql",
+    "migrations/2026-08-11_canonical_root_registration_binding_v1.sql",
+    "migrations/2026-08-12_canonical_covenant_funding_set_v1.sql",
 )
 
 APPLICATION_ENVIRONMENT_KEYS = (
@@ -109,7 +111,7 @@ APPLICATION_ENVIRONMENT_KEYS = (
 )
 
 # Exact primary-key, unique, and foreign-key shapes created by the immutable
-# seven-migration transition. Names alone are insufficient evidence: a
+# nine-migration transition. Names alone are insufficient evidence: a
 # constraint with the right name on the wrong table or columns must fail.
 # Fields are table|type|columns|referenced_table|referenced_columns|delete_action.
 MIGRATION_RELATIONAL_CONSTRAINTS = frozenset(
@@ -137,6 +139,70 @@ MIGRATION_RELATIONAL_CONSTRAINTS = frozenset(
         "canonical_admission_edge_legs|f|edge_id|canonical_admission_edges|edge_id|a",
         "canonical_genesis_records|p|record_id|||",
         "canonical_genesis_records|u|canonical_record_sha256|||",
+        "canonical_root_registration_bindings|p|binding_id|||",
+        "canonical_root_registration_bindings|u|canonical_binding_sha256|||",
+        "canonical_covenant_funding_sets|p|funding_set_id|||",
+        "canonical_covenant_funding_sets|u|canonical_funding_set_sha256|||",
+        "canonical_covenant_funding_outpoints|p|id|||",
+        "canonical_covenant_funding_outpoints|u|funding_set_id,txid,vout|||",
+        ("canonical_covenant_funding_outpoints|f|funding_set_id|"
+         "canonical_covenant_funding_sets|funding_set_id|c"),
+    }
+)
+
+# Phase-6 contracts for structures whose semantics are not proved by a name.
+# Fields are table|index|unique|ordered_columns|predicate_kind, followed by
+# table|column|type|default|sequence|owned_table|owned_column.
+MIGRATION_8_9_INDEX_SEMANTICS = frozenset(
+    {
+        "canonical_root_registration_bindings|idx_root_registration_binding_graph_root|false|graph_or_protocol_id,root_x_only_public_key|none",
+        "canonical_root_registration_bindings|idx_root_registration_binding_registration|false|trusted_registration_id|none",
+        "canonical_root_registration_bindings|uq_root_registration_binding_effective_root|true|graph_or_protocol_id,root_x_only_public_key|partial",
+        "canonical_covenant_funding_sets|idx_funding_set_registration|false|trusted_registration_id|none",
+        "canonical_covenant_funding_sets|uq_funding_set_effective_registration|true|trusted_registration_id|partial",
+        "canonical_covenant_funding_outpoints|idx_funding_outpoint_set|false|funding_set_id|none",
+    }
+)
+
+MIGRATION_8_9_SERIAL_SEMANTICS = frozenset(
+    {
+        "canonical_covenant_funding_outpoints|id|bigint|nextval('canonical_covenant_funding_outpoints_id_seq'::regclass)|canonical_covenant_funding_outpoints_id_seq|canonical_covenant_funding_outpoints|id"
+    }
+)
+
+# Fields are table|constraint|ordered referenced columns. This supplements the
+# exact per-table CHECK counts with column semantics for every named CHECK in
+# migrations eight and nine.
+MIGRATION_8_9_CHECK_SEMANTICS = frozenset(
+    {
+        "canonical_root_registration_bindings|ck_root_registration_binding_schema|schema",
+        "canonical_root_registration_bindings|ck_root_registration_binding_version|binding_version",
+        "canonical_root_registration_bindings|ck_root_registration_binding_id|binding_id",
+        "canonical_root_registration_bindings|ck_root_registration_binding_root|root_x_only_public_key",
+        "canonical_root_registration_bindings|ck_root_registration_binding_registration_id|trusted_registration_id",
+        "canonical_root_registration_bindings|ck_root_registration_binding_registration_digest|trusted_registration_sha256",
+        "canonical_root_registration_bindings|ck_root_registration_binding_digest|canonical_binding_sha256",
+        "canonical_root_registration_bindings|ck_root_registration_binding_lifecycle|lifecycle_state",
+        "canonical_root_registration_bindings|ck_root_registration_binding_changed_order|created_at,lifecycle_changed_at",
+        "canonical_root_registration_bindings|ck_root_registration_binding_lifecycle_consistency|lifecycle_state,created_at,lifecycle_changed_at,effective_at,superseded_by_binding_id",
+        "canonical_root_registration_bindings|ck_root_registration_binding_successor|binding_id,superseded_by_binding_id",
+        "canonical_covenant_funding_sets|ck_funding_set_schema|schema",
+        "canonical_covenant_funding_sets|ck_funding_set_version|funding_set_version",
+        "canonical_covenant_funding_sets|ck_funding_set_lifecycle|lifecycle_state",
+        "canonical_covenant_funding_sets|ck_funding_set_id|funding_set_id",
+        "canonical_covenant_funding_sets|ck_funding_set_registration_id|trusted_registration_id",
+        "canonical_covenant_funding_sets|ck_funding_set_source_digests|trusted_registration_sha256,pair_sha256",
+        "canonical_covenant_funding_sets|ck_funding_set_participants|subject_xonly_pubkey,counterparty_xonly_pubkey",
+        "canonical_covenant_funding_sets|ck_funding_set_changed_order|created_at,lifecycle_changed_at",
+        "canonical_covenant_funding_sets|ck_funding_set_lifecycle_consistency|lifecycle_state,created_at,lifecycle_changed_at,effective_at,superseded_by_funding_set_id",
+        "canonical_covenant_funding_sets|ck_funding_set_successor|funding_set_id,superseded_by_funding_set_id",
+        "canonical_covenant_funding_sets|ck_funding_set_digest|canonical_funding_set_sha256",
+        "canonical_covenant_funding_outpoints|ck_funding_outpoint_direction|direction",
+        "canonical_covenant_funding_outpoints|ck_funding_outpoint_txid|txid",
+        "canonical_covenant_funding_outpoints|ck_funding_outpoint_vout|vout",
+        "canonical_covenant_funding_outpoints|ck_funding_outpoint_amount|amount_sats",
+        "canonical_covenant_funding_outpoints|ck_funding_outpoint_script|witness_script_sha256",
+        "canonical_covenant_funding_outpoints|ck_funding_outpoint_descriptor|descriptor_sha256",
     }
 )
 
@@ -865,7 +931,7 @@ DETAILS = {
     "SYNTHETIC_BASELINE_READY": "The schema-only sanitized baseline loaded and matched its catalog contract.",
     "STARTUP_PROBE_COMPLETE": "The isolated startup probe completed with sanitized evidence.",
     "AUTH_PROBE_COMPLETE": "The supported synthetic authentication matrix completed with sanitized evidence.",
-    "SEVEN_MIGRATIONS_APPLIED": "All seven immutable migrations completed in the required order.",
+    "NINE_MIGRATIONS_APPLIED": "All nine immutable migrations completed in the required order.",
     "MIGRATED_CATALOG_VERIFIED": "Migration-declared catalog objects matched the required contract.",
     "BACKUP_ARCHIVE_VERIFIED": "The disposable custom-format archive and checksum were verified.",
     "RESTORE_COMPLETE": "The archive restored into the second disposable target.",
@@ -1883,7 +1949,7 @@ def _migration_check_constraint_counts(snapshot: Path) -> set[str]:
 
 
 def _migration_explicit_index_contract(snapshot: Path) -> set[str]:
-    """Return table-qualified explicit index identities from the seven files."""
+    """Return table-qualified explicit index identities from the nine files."""
 
     expected: set[str] = set()
     create_index = re.compile(
@@ -1895,6 +1961,109 @@ def _migration_explicit_index_contract(snapshot: Path) -> set[str]:
         for match in create_index.finditer(text):
             expected.add(f"{match.group(2).lower()}|{match.group(1).lower()}")
     return expected
+
+
+def _migration_8_9_check_semantics_sql(snapshot: Path) -> str:
+    """Build a PostgreSQL parse-tree comparison against the two immutable files."""
+
+    tables = {
+        "canonical_root_registration_bindings": "phase_6_root_checks",
+        "canonical_covenant_funding_sets": "phase_6_funding_set_checks",
+        "canonical_covenant_funding_outpoints": "phase_6_funding_outpoint_checks",
+    }
+    statements = ["/* PHASE_6_CHECK_SEMANTICS_V1 */", "BEGIN;"]
+    for table, probe in tables.items():
+        statements.append(f"CREATE TEMP TABLE {probe} (LIKE public.{table});")
+    create_table = re.compile(
+        r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-z][a-z0-9_]*)\s*\(", re.I
+    )
+    for relative in MIGRATIONS[-2:]:
+        text = (snapshot / relative).read_text(encoding="utf-8")
+        for match in create_table.finditer(text):
+            table = match.group(1).lower()
+            if table not in tables:
+                continue
+            opening = text.find("(", match.start())
+            closing = _matching_parenthesis(text, opening)
+            for definition in _split_sql_definitions(text[opening + 1 : closing]):
+                named = re.search(r"\bCONSTRAINT\s+([a-z][a-z0-9_]*)\s+CHECK\s*\(", definition, re.I)
+                if named is None:
+                    continue
+                name = named.group(1).lower()
+                if not SAFE_IDENTIFIER.fullmatch(name):
+                    raise PlanContractError("invalid migration constraint identifier")
+                check_opening = definition.find("(", named.start())
+                check_closing = _matching_parenthesis(definition, check_opening)
+                check_definition = definition[named.start() : check_closing + 1]
+                statements.append(f"ALTER TABLE {tables[table]} ADD {check_definition};")
+    statements.append(
+        "SELECT actual_table.relname||'|'||actual_constraint.conname||'|'||"
+        "COALESCE((SELECT string_agg(attribute.attname,',' ORDER BY key.ordinality) "
+        "FROM unnest(actual_constraint.conkey) WITH ORDINALITY AS key(attnum,ordinality) "
+        "JOIN pg_attribute attribute ON attribute.attrelid=actual_constraint.conrelid "
+        "AND attribute.attnum=key.attnum),'') FROM pg_constraint actual_constraint "
+        "JOIN pg_class actual_table ON actual_table.oid=actual_constraint.conrelid "
+        "JOIN pg_namespace actual_namespace ON actual_namespace.oid=actual_table.relnamespace "
+        "JOIN (VALUES "
+        + ",".join(
+            f"('{table}','{probe}')" for table, probe in tables.items()
+        )
+        + ") AS mapping(actual_table_name,probe_table_name) ON mapping.actual_table_name=actual_table.relname "
+        "JOIN pg_class probe_table ON probe_table.relname=mapping.probe_table_name "
+        "AND probe_table.relnamespace=pg_my_temp_schema() "
+        "JOIN pg_constraint probe_constraint ON probe_constraint.conrelid=probe_table.oid "
+        "AND probe_constraint.conname=actual_constraint.conname "
+        "WHERE actual_namespace.nspname='public' AND actual_constraint.contype='c' "
+        "AND actual_constraint.conbin=probe_constraint.conbin ORDER BY 1;"
+    )
+    statements.append("ROLLBACK;")
+    return "\n".join(statements)
+
+
+PHASE_6_INDEX_SEMANTICS_SQL = """
+/* PHASE_6_INDEX_SEMANTICS_V1 */
+BEGIN;
+CREATE TEMP TABLE phase_6_root_indexes (LIKE public.canonical_root_registration_bindings);
+CREATE TEMP TABLE phase_6_funding_set_indexes (LIKE public.canonical_covenant_funding_sets);
+CREATE UNIQUE INDEX phase_6_root_effective_reference
+  ON phase_6_root_indexes (graph_or_protocol_id, root_x_only_public_key)
+  WHERE lifecycle_state = 'effective';
+CREATE UNIQUE INDEX phase_6_funding_set_effective_reference
+  ON phase_6_funding_set_indexes (trusted_registration_id)
+  WHERE lifecycle_state = 'effective';
+SELECT table_relation.relname||'|'||index_relation.relname||'|'||index_catalog.indisunique::text||'|'||
+       COALESCE((SELECT string_agg(attribute.attname,',' ORDER BY key.ordinality)
+                 FROM unnest(index_catalog.indkey) WITH ORDINALITY AS key(attnum,ordinality)
+                 JOIN pg_attribute attribute ON attribute.attrelid=index_catalog.indrelid
+                                             AND attribute.attnum=key.attnum
+                 WHERE key.ordinality <= index_catalog.indnkeyatts),'')||'|'||
+       CASE
+         WHEN mapping.reference_index_name IS NULL AND index_catalog.indpred IS NULL THEN 'none'
+         WHEN reference_catalog.indpred IS NOT NULL
+              AND index_catalog.indpred=reference_catalog.indpred THEN 'partial'
+         ELSE 'mismatch'
+       END
+FROM pg_index index_catalog
+JOIN pg_class index_relation ON index_relation.oid=index_catalog.indexrelid
+JOIN pg_class table_relation ON table_relation.oid=index_catalog.indrelid
+JOIN pg_namespace table_namespace ON table_namespace.oid=table_relation.relnamespace
+JOIN (VALUES
+  ('idx_root_registration_binding_graph_root',NULL),
+  ('idx_root_registration_binding_registration',NULL),
+  ('uq_root_registration_binding_effective_root','phase_6_root_effective_reference'),
+  ('idx_funding_set_registration',NULL),
+  ('uq_funding_set_effective_registration','phase_6_funding_set_effective_reference'),
+  ('idx_funding_outpoint_set',NULL)
+) AS mapping(actual_index_name,reference_index_name)
+  ON mapping.actual_index_name=index_relation.relname
+LEFT JOIN pg_class reference_index
+  ON reference_index.relname=mapping.reference_index_name
+ AND reference_index.relnamespace=pg_my_temp_schema()
+LEFT JOIN pg_index reference_catalog ON reference_catalog.indexrelid=reference_index.oid
+WHERE table_namespace.nspname='public'
+ORDER BY 1;
+ROLLBACK;
+"""
 
 
 def _verify_migrated_catalog(runner: CommandRunner, state: ExecutionState) -> None:
@@ -1983,6 +2152,14 @@ def _verify_migrated_catalog(runner: CommandRunner, state: ExecutionState) -> No
         expected=check_counts,
         evidence_code="MIGRATED_CHECK_CONSTRAINT_COUNT_MISMATCH",
     )
+    _query_expected_set(
+        runner,
+        state,
+        state.primary_target,
+        sql=_migration_8_9_check_semantics_sql(state.staging_snapshot),
+        expected=set(MIGRATION_8_9_CHECK_SEMANTICS),
+        evidence_code="MIGRATED_CHECK_SEMANTICS_MISMATCH",
+    )
     index_names = {item.split("|", 1)[1] for item in explicit_indexes}
     index_literals = ",".join(_sql_string(name) for name in sorted(index_names))
     _query_expected_set(
@@ -1996,6 +2173,34 @@ def _verify_migrated_catalog(runner: CommandRunner, state: ExecutionState) -> No
         ),
         expected=explicit_indexes,
         evidence_code="MIGRATED_INDEX_CATALOG_MISMATCH",
+    )
+    _query_expected_set(
+        runner,
+        state,
+        state.primary_target,
+        sql=PHASE_6_INDEX_SEMANTICS_SQL,
+        expected=set(MIGRATION_8_9_INDEX_SEMANTICS),
+        evidence_code="MIGRATED_INDEX_SEMANTICS_MISMATCH",
+    )
+    _query_expected_set(
+        runner,
+        state,
+        state.primary_target,
+        sql=(
+            "SELECT tbl.relname||'|'||a.attname||'|'||format_type(a.atttypid,a.atttypmod)||'|'||"
+            "COALESCE(pg_get_expr(d.adbin,d.adrelid),'')||'|'||COALESCE(seq.relname,'')||'|'||"
+            "COALESCE(owner.relname,'')||'|'||COALESCE(owner_col.attname,'') "
+            "FROM pg_class tbl JOIN pg_namespace n ON n.oid=tbl.relnamespace "
+            "JOIN pg_attribute a ON a.attrelid=tbl.oid AND a.attname='id' "
+            "LEFT JOIN pg_attrdef d ON d.adrelid=tbl.oid AND d.adnum=a.attnum "
+            "LEFT JOIN pg_depend dep ON dep.refobjid=tbl.oid AND dep.refobjsubid=a.attnum "
+            "AND dep.deptype='a' LEFT JOIN pg_class seq ON seq.oid=dep.objid AND seq.relkind='S' "
+            "LEFT JOIN pg_class owner ON owner.oid=dep.refobjid "
+            "LEFT JOIN pg_attribute owner_col ON owner_col.attrelid=dep.refobjid AND owner_col.attnum=dep.refobjsubid "
+            "WHERE n.nspname='public' AND tbl.relname='canonical_covenant_funding_outpoints' ORDER BY 1;"
+        ),
+        expected=set(MIGRATION_8_9_SERIAL_SEMANTICS),
+        evidence_code="MIGRATED_SERIAL_SEMANTICS_MISMATCH",
     )
 
 
@@ -2533,7 +2738,7 @@ class RehearsalHarness:
                 evidence_code="ORDERED_MIGRATION_FAILED",
                 timeout=300,
             )
-        return PhaseOutcome("PASS", "SEVEN_MIGRATIONS_APPLIED", DETAILS["SEVEN_MIGRATIONS_APPLIED"])
+        return PhaseOutcome("PASS", "NINE_MIGRATIONS_APPLIED", DETAILS["NINE_MIGRATIONS_APPLIED"])
 
     def _phase_06(self, state: ExecutionState) -> PhaseOutcome:
         _verify_migrated_catalog(self.runner, state)

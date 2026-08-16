@@ -48,6 +48,16 @@ EXPECTED_RELATIONAL_CONSTRAINTS = frozenset(
         "canonical_admission_edge_legs|f|edge_id|canonical_admission_edges|edge_id|a",
         "canonical_genesis_records|p|record_id|||",
         "canonical_genesis_records|u|canonical_record_sha256|||",
+        "canonical_root_registration_bindings|p|binding_id|||",
+        "canonical_root_registration_bindings|u|canonical_binding_sha256|||",
+        "canonical_covenant_funding_sets|p|funding_set_id|||",
+        "canonical_covenant_funding_sets|u|canonical_funding_set_sha256|||",
+        "canonical_covenant_funding_outpoints|p|id|||",
+        "canonical_covenant_funding_outpoints|u|funding_set_id,txid,vout|||",
+        (
+            "canonical_covenant_funding_outpoints|f|funding_set_id|"
+            "canonical_covenant_funding_sets|funding_set_id|c"
+        ),
     }
 )
 
@@ -685,19 +695,37 @@ class SuccessfulRehearsalRunner:
     def __init__(
         self,
         *,
-        fail_first_migration: bool = False,
+        fail_migration_index: int | None = None,
         relational_constraints: set[str] | frozenset[str] | None = None,
+        check_semantics: set[str] | frozenset[str] | None = None,
+        index_semantics: set[str] | frozenset[str] | None = None,
+        serial_semantics: set[str] | frozenset[str] | None = None,
         phase_11_source_results: dict[str, rehearsal.CommandResult] | None = None,
         phase_11_restored_results: dict[str, rehearsal.CommandResult] | None = None,
     ):
         self.calls: list[dict[str, object]] = []
-        self.fail_first_migration = fail_first_migration
-        self.migration_failure_returned = False
+        self.fail_migration_index = fail_migration_index
+        self.migration_calls_seen = 0
         self.started_configuration = ""
         self.relational_constraints = (
             rehearsal.MIGRATION_RELATIONAL_CONSTRAINTS
             if relational_constraints is None
             else frozenset(relational_constraints)
+        )
+        self.index_semantics = (
+            rehearsal.MIGRATION_8_9_INDEX_SEMANTICS
+            if index_semantics is None
+            else frozenset(index_semantics)
+        )
+        self.check_semantics = (
+            rehearsal.MIGRATION_8_9_CHECK_SEMANTICS
+            if check_semantics is None
+            else frozenset(check_semantics)
+        )
+        self.serial_semantics = (
+            rehearsal.MIGRATION_8_9_SERIAL_SEMANTICS
+            if serial_semantics is None
+            else frozenset(serial_semantics)
         )
         self.phase_11_source_results = dict(phase_11_source_results or {})
         self.phase_11_restored_results = dict(phase_11_restored_results or {})
@@ -751,14 +779,19 @@ class SuccessfulRehearsalRunner:
     def _psql(self, argv: tuple[str, ...]) -> rehearsal.CommandResult:
         if "--file" in argv:
             file_path = self._argument_after(argv, "--file")
-            if self.fail_first_migration and not self.migration_failure_returned and "/migrations/" in file_path:
-                self.migration_failure_returned = True
-                return rehearsal.CommandResult(7, "raw forbidden output", "raw forbidden error")
+            if "/migrations/" in file_path:
+                self.migration_calls_seen += 1
+                if self.fail_migration_index == self.migration_calls_seen:
+                    return rehearsal.CommandResult(7, "raw forbidden output", "raw forbidden error")
             return rehearsal.CommandResult(0, "", "")
 
         sql = self._argument_after(argv, "--command")
         target = self._argument_after(argv, "--dbname")
         restored = target.endswith("_restored")
+        if "PHASE_6_CHECK_SEMANTICS_V1" in sql:
+            return rehearsal.CommandResult(0, self._lines(self.check_semantics), "")
+        if "PHASE_6_INDEX_SEMANTICS_V1" in sql:
+            return rehearsal.CommandResult(0, self._lines(self.index_semantics), "")
         for category, marker in PHASE_11_MARKERS.items():
             if marker in sql:
                 if restored and category in self.phase_11_restored_results:
@@ -774,16 +807,20 @@ class SuccessfulRehearsalRunner:
             return rehearsal.CommandResult(0, self._lines(values), "")
         if sql.startswith("SELECT conname FROM pg_constraint"):
             return rehearsal.CommandResult(0, self._lines(self.baseline_constraints), "")
-        if "r.relname||'|'||c.conname" in sql:
+        if "SELECT r.relname||'|'||c.conname FROM pg_constraint" in sql:
             return rehearsal.CommandResult(0, self._lines(self.named_constraints), "")
-        if "unnest(c.conkey)" in sql:
+        if "unnest(c.conkey)" in sql and "c.contype IN ('p','u','f')" in sql:
             return rehearsal.CommandResult(0, self._lines(self.relational_constraints), "")
         if "count(*)::text FROM pg_constraint" in sql:
             return rehearsal.CommandResult(0, self._lines(self.check_counts), "")
+        if "c.contype='c'" in sql and "unnest(c.conkey)" in sql:
+            return rehearsal.CommandResult(0, self._lines(self.check_semantics), "")
         if sql.startswith("SELECT indexname FROM pg_indexes"):
             return rehearsal.CommandResult(0, self._lines(self.baseline_indexes), "")
         if "tablename||'|'||indexname" in sql:
             return rehearsal.CommandResult(0, self._lines(self.explicit_indexes), "")
+        if "format_type(a.atttypid,a.atttypmod)" in sql:
+            return rehearsal.CommandResult(0, self._lines(self.serial_semantics), "")
         if "count(*) FILTER" in sql:
             if restored and "counts" in self.phase_11_restored_results:
                 return self.phase_11_restored_results["counts"]
@@ -1062,6 +1099,8 @@ def test_complete_fourteen_phase_simulation_uses_exact_isolated_commands(tmp_pat
     ]
     applied = ["migrations/" + Path(call["argv"][call["argv"].index("--file") + 1]).name for call in migration_calls]
     assert applied == list(rehearsal.MIGRATIONS)
+    assert len(applied) == 9
+    assert len(set(applied)) == 9
     flattened = [token for call in runner.calls for token in call["argv"]]
     assert not any("2026-02-10_client_billing.sql" in token for token in flattened)
     assert not any("2026-05-28_nip17_envelopes.sql" in token for token in flattened)
@@ -1096,7 +1135,7 @@ def test_complete_fourteen_phase_simulation_uses_exact_isolated_commands(tmp_pat
 
 
 def test_failure_after_cluster_creation_still_cleans_owned_workspace(tmp_path):
-    runner = SuccessfulRehearsalRunner(fail_first_migration=True)
+    runner = SuccessfulRehearsalRunner(fail_migration_index=1)
     request = execute_request(tmp_path)
     result = rehearsal.RehearsalHarness(
         runner,
@@ -1112,6 +1151,25 @@ def test_failure_after_cluster_creation_still_cleans_owned_workspace(tmp_path):
     rendered = json.dumps(result)
     assert "raw forbidden output" not in rendered
     assert "raw forbidden error" not in rendered
+
+
+@pytest.mark.parametrize("migration_index", [8, 9])
+def test_each_new_migration_failure_stops_in_phase_five_and_cleans(tmp_path, migration_index):
+    runner = SuccessfulRehearsalRunner(fail_migration_index=migration_index)
+    request = execute_request(tmp_path)
+    result = rehearsal.RehearsalHarness(
+        runner,
+        monotonic=lambda: 2.25,
+        token_factory=lambda: f"migration_{migration_index}",
+    ).execute(request)
+
+    assert runner.migration_calls_seen == migration_index
+    assert result["execution_status"] == "FAIL"
+    assert result["phases"][5]["phase"] == "REHEARSAL_05_APPLY_NINE_MIGRATIONS"
+    assert result["phases"][5]["evidence_code"] == "ORDERED_MIGRATION_FAILED"
+    assert result["phases"][6]["evidence_code"] == "PREREQUISITE_NOT_PASS"
+    assert result["phases"][12]["evidence_code"] == "CLEANUP_COMPLETE"
+    assert not request.workspace.exists()
 
 
 def test_outer_finally_cleans_workspace_on_keyboard_interrupt(tmp_path, monkeypatch):
@@ -1186,6 +1244,15 @@ def test_migrated_catalog_contract_includes_inline_unique_checks_and_foreign_key
     indexes = rehearsal._migration_explicit_index_contract(ROOT)
     assert "canonical_admission_edges|uq_admission_edge_effective_child_id" in indexes
     assert "canonical_admission_edge_legs|idx_admission_leg_edge" in indexes
+    assert "canonical_root_registration_bindings|11" in checks
+    assert "canonical_covenant_funding_sets|11" in checks
+    assert "canonical_covenant_funding_outpoints|6" in checks
+    assert (
+        "canonical_root_registration_bindings|uq_root_registration_binding_effective_root"
+        in indexes
+    )
+    assert "canonical_covenant_funding_sets|uq_funding_set_effective_registration" in indexes
+    assert "canonical_covenant_funding_outpoints|idx_funding_outpoint_set" in indexes
 
 
 def test_phase_06_relational_catalog_sql_casts_contype_and_preserves_shape(tmp_path):
@@ -1207,6 +1274,7 @@ def test_phase_06_relational_catalog_sql_casts_contype_and_preserves_shape(tmp_p
         if Path(call["argv"][0]).name == "psql"
         and "--command" in call["argv"]
         and "unnest(c.conkey)" in call["argv"][call["argv"].index("--command") + 1]
+        and "c.contype IN ('p','u','f')" in call["argv"][call["argv"].index("--command") + 1]
     ]
     assert len(relational_calls) == 1
     sql = relational_calls[0]["argv"][relational_calls[0]["argv"].index("--command") + 1]
@@ -1247,6 +1315,115 @@ def test_phase_06_relational_catalog_mismatch_remains_fail_closed(tmp_path, muta
     assert result["phases"][7]["evidence_code"] == "PREREQUISITE_NOT_PASS"
     assert result["phases"][12]["evidence_code"] == "CLEANUP_COMPLETE"
     assert not request.workspace.exists()
+
+
+@pytest.mark.parametrize(
+    ("removed", "replacement"),
+    [
+        ("canonical_root_registration_bindings|p|binding_id|||", None),
+        ("canonical_covenant_funding_sets|u|canonical_funding_set_sha256|||", None),
+        (
+            "canonical_covenant_funding_outpoints|f|funding_set_id|canonical_covenant_funding_sets|funding_set_id|c",
+            "canonical_covenant_funding_outpoints|f|funding_set_id|canonical_covenant_funding_sets|funding_set_id|a",
+        ),
+    ],
+)
+def test_phase_06_rejects_new_relational_catalog_mutations(tmp_path, removed, replacement):
+    actual = set(EXPECTED_RELATIONAL_CONSTRAINTS)
+    actual.remove(removed)
+    if replacement:
+        actual.add(replacement)
+    runner = SuccessfulRehearsalRunner(relational_constraints=actual)
+    result = rehearsal.RehearsalHarness(
+        runner,
+        monotonic=lambda: 3.9,
+        token_factory=lambda: "new_relational_mutation",
+    ).execute(execute_request(tmp_path))
+    assert result["phases"][6]["evidence_code"] == "MIGRATED_RELATIONAL_CONSTRAINT_MISMATCH"
+
+
+def test_phase_06_rejects_wrong_new_partial_index_predicate(tmp_path):
+    actual = set(rehearsal.MIGRATION_8_9_INDEX_SEMANTICS)
+    expected = next(item for item in actual if "uq_funding_set_effective_registration" in item)
+    actual.remove(expected)
+    actual.add(expected.rsplit("|", 1)[0] + "|none")
+    runner = SuccessfulRehearsalRunner(index_semantics=actual)
+    result = rehearsal.RehearsalHarness(
+        runner,
+        monotonic=lambda: 3.95,
+        token_factory=lambda: "wrong_partial_predicate",
+    ).execute(execute_request(tmp_path))
+    assert result["phases"][6]["evidence_code"] == "MIGRATED_INDEX_SEMANTICS_MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "identity",
+    [
+        "canonical_root_registration_bindings|ck_root_registration_binding_root|root_x_only_public_key",
+        "canonical_covenant_funding_sets|ck_funding_set_participants|subject_xonly_pubkey,counterparty_xonly_pubkey",
+        "canonical_covenant_funding_outpoints|ck_funding_outpoint_vout|vout",
+    ],
+)
+def test_phase_06_rejects_missing_or_malformed_new_check_semantics(tmp_path, identity):
+    actual = set(rehearsal.MIGRATION_8_9_CHECK_SEMANTICS)
+    actual.remove(identity)
+    actual.add(identity.rsplit("|", 1)[0] + "|wrong_column")
+    runner = SuccessfulRehearsalRunner(check_semantics=actual)
+    result = rehearsal.RehearsalHarness(
+        runner,
+        monotonic=lambda: 3.96,
+        token_factory=lambda: "wrong_check_semantics",
+    ).execute(execute_request(tmp_path))
+    assert result["phases"][6]["evidence_code"] == "MIGRATED_CHECK_SEMANTICS_MISMATCH"
+
+
+def test_phase_06_uses_postgresql_parse_tree_equivalence_for_checks_and_predicates():
+    check_sql = rehearsal._migration_8_9_check_semantics_sql(ROOT)
+    assert "PHASE_6_CHECK_SEMANTICS_V1" in check_sql
+    assert "actual_constraint.conbin=probe_constraint.conbin" in check_sql
+    assert "ALTER TABLE phase_6_root_checks ADD CONSTRAINT ck_root_registration_binding_lifecycle" in check_sql
+    assert "ALTER TABLE phase_6_funding_set_checks ADD CONSTRAINT ck_funding_set_lifecycle" in check_sql
+    assert "ALTER TABLE phase_6_funding_outpoint_checks ADD CONSTRAINT ck_funding_outpoint_vout" in check_sql
+    assert "pg_get_constraintdef" not in check_sql
+
+    index_sql = rehearsal.PHASE_6_INDEX_SEMANTICS_SQL
+    assert "PHASE_6_INDEX_SEMANTICS_V1" in index_sql
+    assert index_sql.count("WHERE lifecycle_state = 'effective'") == 2
+    assert "index_catalog.indpred=reference_catalog.indpred" in index_sql
+    assert "pg_get_expr" not in index_sql
+
+
+@pytest.mark.parametrize("mutation", ["missing", "wrong_owner"])
+def test_phase_06_rejects_missing_or_wrongly_owned_bigserial_sequence(tmp_path, mutation):
+    actual = set(rehearsal.MIGRATION_8_9_SERIAL_SEMANTICS)
+    expected = next(iter(actual))
+    if mutation == "missing":
+        actual.clear()
+    else:
+        actual = {expected.rsplit("|", 2)[0] + "|canonical_covenant_funding_sets|funding_set_id"}
+    runner = SuccessfulRehearsalRunner(serial_semantics=actual)
+    result = rehearsal.RehearsalHarness(
+        runner,
+        monotonic=lambda: 3.975,
+        token_factory=lambda: f"serial_{mutation}",
+    ).execute(execute_request(tmp_path))
+    assert result["phases"][6]["evidence_code"] == "MIGRATED_SERIAL_SEMANTICS_MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        "canonical_root_registration_bindings",
+        "canonical_covenant_funding_sets",
+        "canonical_covenant_funding_outpoints",
+    ],
+)
+def test_phase_11_detects_new_table_catalog_mismatch(tmp_path, table):
+    restored = rehearsal.CommandResult(0, phase_11_json_lines(["public", table, "r", "p", False]), "")
+    runner = SuccessfulRehearsalRunner(phase_11_restored_results={"relation": restored})
+    with pytest.raises(rehearsal.CommandFailure) as failure:
+        run_phase_11(tmp_path, runner)
+    assert failure.value.evidence_code == "RELATION_INVENTORY_MISMATCH"
 
 
 @pytest.mark.parametrize(
