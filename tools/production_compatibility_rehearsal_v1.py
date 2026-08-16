@@ -170,9 +170,9 @@ MIGRATION_8_9_SERIAL_SEMANTICS = frozenset(
     }
 )
 
-# Fields are table|constraint|ordered referenced columns. This supplements the
-# exact per-table CHECK counts with column semantics for every named CHECK in
-# migrations eight and nine.
+# Fields are table|constraint|canonical referenced-column set. This supplements
+# the exact per-table CHECK counts with column semantics for every named CHECK
+# in migrations eight and nine.
 MIGRATION_8_9_CHECK_SEMANTICS = frozenset(
     {
         "canonical_root_registration_bindings|ck_root_registration_binding_schema|schema",
@@ -184,17 +184,17 @@ MIGRATION_8_9_CHECK_SEMANTICS = frozenset(
         "canonical_root_registration_bindings|ck_root_registration_binding_digest|canonical_binding_sha256",
         "canonical_root_registration_bindings|ck_root_registration_binding_lifecycle|lifecycle_state",
         "canonical_root_registration_bindings|ck_root_registration_binding_changed_order|created_at,lifecycle_changed_at",
-        "canonical_root_registration_bindings|ck_root_registration_binding_lifecycle_consistency|lifecycle_state,created_at,lifecycle_changed_at,effective_at,superseded_by_binding_id",
+        "canonical_root_registration_bindings|ck_root_registration_binding_lifecycle_consistency|created_at,effective_at,lifecycle_changed_at,lifecycle_state,superseded_by_binding_id",
         "canonical_root_registration_bindings|ck_root_registration_binding_successor|binding_id,superseded_by_binding_id",
         "canonical_covenant_funding_sets|ck_funding_set_schema|schema",
         "canonical_covenant_funding_sets|ck_funding_set_version|funding_set_version",
         "canonical_covenant_funding_sets|ck_funding_set_lifecycle|lifecycle_state",
         "canonical_covenant_funding_sets|ck_funding_set_id|funding_set_id",
         "canonical_covenant_funding_sets|ck_funding_set_registration_id|trusted_registration_id",
-        "canonical_covenant_funding_sets|ck_funding_set_source_digests|trusted_registration_sha256,pair_sha256",
-        "canonical_covenant_funding_sets|ck_funding_set_participants|subject_xonly_pubkey,counterparty_xonly_pubkey",
+        "canonical_covenant_funding_sets|ck_funding_set_source_digests|pair_sha256,trusted_registration_sha256",
+        "canonical_covenant_funding_sets|ck_funding_set_participants|counterparty_xonly_pubkey,subject_xonly_pubkey",
         "canonical_covenant_funding_sets|ck_funding_set_changed_order|created_at,lifecycle_changed_at",
-        "canonical_covenant_funding_sets|ck_funding_set_lifecycle_consistency|lifecycle_state,created_at,lifecycle_changed_at,effective_at,superseded_by_funding_set_id",
+        "canonical_covenant_funding_sets|ck_funding_set_lifecycle_consistency|created_at,effective_at,lifecycle_changed_at,lifecycle_state,superseded_by_funding_set_id",
         "canonical_covenant_funding_sets|ck_funding_set_successor|funding_set_id,superseded_by_funding_set_id",
         "canonical_covenant_funding_sets|ck_funding_set_digest|canonical_funding_set_sha256",
         "canonical_covenant_funding_outpoints|ck_funding_outpoint_direction|direction",
@@ -2024,8 +2024,8 @@ def _migration_8_9_check_semantics_sql(snapshot: Path) -> str:
                 statements.append(f"ALTER TABLE {tables[table]} ADD {check_definition};")
     statements.append(
         "SELECT actual_table.relname||'|'||actual_constraint.conname||'|'||"
-        "COALESCE((SELECT string_agg(attribute.attname,',' ORDER BY key.ordinality) "
-        "FROM unnest(actual_constraint.conkey) WITH ORDINALITY AS key(attnum,ordinality) "
+        "COALESCE((SELECT string_agg(attribute.attname,',' ORDER BY attribute.attname) "
+        "FROM unnest(actual_constraint.conkey) AS key(attnum) "
         "JOIN pg_attribute attribute ON attribute.attrelid=actual_constraint.conrelid "
         "AND attribute.attnum=key.attnum),'') FROM pg_constraint actual_constraint "
         "JOIN pg_class actual_table ON actual_table.oid=actual_constraint.conrelid "

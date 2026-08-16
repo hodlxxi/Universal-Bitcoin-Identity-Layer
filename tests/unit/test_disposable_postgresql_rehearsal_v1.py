@@ -1481,30 +1481,59 @@ def test_phase_06_rejects_wrong_new_partial_index_predicate(tmp_path):
     assert result["phases"][6]["evidence_code"] == "MIGRATED_INDEX_SEMANTICS_MISMATCH"
 
 
-@pytest.mark.parametrize(
-    "identity",
-    [
-        "canonical_root_registration_bindings|ck_root_registration_binding_root|root_x_only_public_key",
-        "canonical_covenant_funding_sets|ck_funding_set_participants|subject_xonly_pubkey,counterparty_xonly_pubkey",
-        "canonical_covenant_funding_outpoints|ck_funding_outpoint_vout|vout",
-    ],
-)
-def test_phase_06_rejects_missing_or_malformed_new_check_semantics(tmp_path, identity):
+@pytest.mark.parametrize("mutation", ["missing", "extra", "renamed"])
+def test_phase_06_check_column_sets_remain_fail_closed(tmp_path, mutation):
     actual = set(rehearsal.MIGRATION_8_9_CHECK_SEMANTICS)
+    identity = (
+        "canonical_covenant_funding_sets|ck_funding_set_participants|"
+        "counterparty_xonly_pubkey,subject_xonly_pubkey"
+    )
     actual.remove(identity)
-    actual.add(identity.rsplit("|", 1)[0] + "|wrong_column")
+    if mutation == "missing":
+        actual.add(identity.replace(",subject_xonly_pubkey", ""))
+    elif mutation == "extra":
+        actual.add(
+            identity.replace(
+                ",subject_xonly_pubkey",
+                ",extra_xonly_pubkey,subject_xonly_pubkey",
+            )
+        )
+    else:
+        actual.add(
+            identity.replace("counterparty_xonly_pubkey", "renamed_xonly_pubkey")
+        )
     runner = SuccessfulRehearsalRunner(check_semantics=actual)
     result = rehearsal.RehearsalHarness(
         runner,
         monotonic=lambda: 3.96,
-        token_factory=lambda: "wrong_check_semantics",
+        token_factory=lambda: f"{mutation}_check_semantics",
     ).execute(execute_request(tmp_path))
     assert result["phases"][6]["evidence_code"] == "MIGRATED_CHECK_SEMANTICS_MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "columns",
+    [
+        ("lifecycle_state", "created_at", "effective_at"),
+        ("effective_at", "lifecycle_state", "created_at"),
+    ],
+)
+def test_phase_06_check_column_set_canonicalization_is_input_order_independent(columns):
+    assert ",".join(sorted(columns)) == "created_at,effective_at,lifecycle_state"
+
+
+def test_phase_06_expected_check_column_sets_are_lexicographically_canonical():
+    for identity in rehearsal.MIGRATION_8_9_CHECK_SEMANTICS:
+        columns = identity.rsplit("|", 1)[1].split(",")
+        assert columns == sorted(columns)
 
 
 def test_phase_06_uses_location_normalized_parse_tree_equivalence_for_checks_and_predicates():
     check_sql = rehearsal._migration_8_9_check_semantics_sql(ROOT)
     assert "PHASE_6_CHECK_SEMANTICS_V1" in check_sql
+    assert "string_agg(attribute.attname,',' ORDER BY attribute.attname)" in check_sql
+    assert "string_agg(attribute.attname,',' ORDER BY key.ordinality)" not in check_sql
+    assert "unnest(actual_constraint.conkey) WITH ORDINALITY" not in check_sql
     assert "actual_constraint.conbin=probe_constraint.conbin" not in check_sql
     actual_normalized = rehearsal._normalized_check_tree_sql("actual_constraint.conbin")
     probe_normalized = rehearsal._normalized_check_tree_sql("probe_constraint.conbin")
