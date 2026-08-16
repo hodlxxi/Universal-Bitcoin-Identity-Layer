@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import copy
 import json
+import re
 import subprocess
 import sys
 import tarfile
@@ -1501,20 +1502,76 @@ def test_phase_06_rejects_missing_or_malformed_new_check_semantics(tmp_path, ide
     assert result["phases"][6]["evidence_code"] == "MIGRATED_CHECK_SEMANTICS_MISMATCH"
 
 
-def test_phase_06_uses_postgresql_parse_tree_equivalence_for_checks_and_predicates():
+def test_phase_06_uses_location_normalized_parse_tree_equivalence_for_checks_and_predicates():
     check_sql = rehearsal._migration_8_9_check_semantics_sql(ROOT)
     assert "PHASE_6_CHECK_SEMANTICS_V1" in check_sql
-    assert "actual_constraint.conbin=probe_constraint.conbin" in check_sql
+    assert "actual_constraint.conbin=probe_constraint.conbin" not in check_sql
+    actual_normalized = rehearsal._normalized_check_tree_sql("actual_constraint.conbin")
+    probe_normalized = rehearsal._normalized_check_tree_sql("probe_constraint.conbin")
+    assert check_sql.count(actual_normalized) == 1
+    assert check_sql.count(probe_normalized) == 1
+    assert actual_normalized.replace("actual_constraint", "probe_constraint") == probe_normalized
     assert "ALTER TABLE phase_6_root_checks ADD CONSTRAINT ck_root_registration_binding_lifecycle" in check_sql
     assert "ALTER TABLE phase_6_funding_set_checks ADD CONSTRAINT ck_funding_set_lifecycle" in check_sql
     assert "ALTER TABLE phase_6_funding_outpoint_checks ADD CONSTRAINT ck_funding_outpoint_vout" in check_sql
     assert "pg_get_constraintdef" not in check_sql
+    assert "pg_get_expr" not in check_sql
 
     index_sql = rehearsal.PHASE_6_INDEX_SEMANTICS_SQL
     assert "PHASE_6_INDEX_SEMANTICS_V1" in index_sql
     assert index_sql.count("WHERE lifecycle_state = 'effective'") == 2
     assert "index_catalog.indpred=reference_catalog.indpred" in index_sql
     assert "pg_get_expr" not in index_sql
+
+
+def test_phase_06_check_tree_normalization_is_exactly_location_only():
+    pattern = re.compile(rehearsal.PG_NODE_TREE_LOCATION_PATTERN)
+    replacement = rehearsal.PG_NODE_TREE_LOCATION_REPLACEMENT
+
+    def normalize(value: str) -> str:
+        return pattern.sub(replacement, value)
+
+    assert normalize(":location 0 :location 42 :location -7}") == (
+        ":location -1 :location -1 :location -1}"
+    )
+    for value in (
+        ":location +7 ",
+        ":location 7x ",
+        ":location --7 ",
+        ":location  ",
+        ":locations 7 ",
+        ":other_location 7 ",
+        ":other:location 7 ",
+    ):
+        assert normalize(value) == value
+
+
+@pytest.mark.parametrize(
+    ("actual", "probe"),
+    [
+        ("{CONST :constvalue 4 :location 8}", "{CONST :constvalue 4 :location 91}"),
+        ("{OPEXPR :opno 96 :location -1}", "{OPEXPR :opno 96 :location 145}"),
+    ],
+)
+def test_phase_06_check_tree_normalization_accepts_only_location_differences(actual, probe):
+    pattern = re.compile(rehearsal.PG_NODE_TREE_LOCATION_PATTERN)
+    replacement = rehearsal.PG_NODE_TREE_LOCATION_REPLACEMENT
+    assert pattern.sub(replacement, actual) == pattern.sub(replacement, probe)
+
+
+@pytest.mark.parametrize(
+    ("actual", "probe"),
+    [
+        ("{CONST :constvalue 4 :location 8}", "{CONST :constvalue 5 :location 8}"),
+        ("{OPEXPR :opno 96 :location 8}", "{OPEXPR :opno 97 :location 8}"),
+        ("{VAR :varattno 2 :location 8}", "{VAR :varattno 3 :location 8}"),
+        ("{BOOLEXPR :boolop and :location 8}", "{BOOLEXPR :boolop or :location 8}"),
+    ],
+)
+def test_phase_06_check_tree_normalization_preserves_semantic_mutations(actual, probe):
+    pattern = re.compile(rehearsal.PG_NODE_TREE_LOCATION_PATTERN)
+    replacement = rehearsal.PG_NODE_TREE_LOCATION_REPLACEMENT
+    assert pattern.sub(replacement, actual) != pattern.sub(replacement, probe)
 
 
 @pytest.mark.parametrize("mutation", ["missing", "wrong_owner"])

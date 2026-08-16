@@ -1975,6 +1975,20 @@ def _migration_explicit_index_contract(snapshot: Path) -> set[str]:
     return expected
 
 
+PG_NODE_TREE_LOCATION_PATTERN = r"(^|[ {])(:location )-?[0-9]+(?=[ }])"
+PG_NODE_TREE_LOCATION_REPLACEMENT = r"\1\2-1"
+
+
+def _normalized_check_tree_sql(operand: str) -> str:
+    """Canonicalize only parser-location metadata in a pg_node_tree operand."""
+
+    return (
+        f"regexp_replace({operand}::text,"
+        f"'{PG_NODE_TREE_LOCATION_PATTERN}',"
+        f"'{PG_NODE_TREE_LOCATION_REPLACEMENT}','g')"
+    )
+
+
 def _migration_8_9_check_semantics_sql(snapshot: Path) -> str:
     """Build a PostgreSQL parse-tree comparison against the two immutable files."""
 
@@ -2026,7 +2040,11 @@ def _migration_8_9_check_semantics_sql(snapshot: Path) -> str:
         "JOIN pg_constraint probe_constraint ON probe_constraint.conrelid=probe_table.oid "
         "AND probe_constraint.conname=actual_constraint.conname "
         "WHERE actual_namespace.nspname='public' AND actual_constraint.contype='c' "
-        "AND actual_constraint.conbin=probe_constraint.conbin ORDER BY 1;"
+        "AND "
+        + _normalized_check_tree_sql("actual_constraint.conbin")
+        + "="
+        + _normalized_check_tree_sql("probe_constraint.conbin")
+        + " ORDER BY 1;"
     )
     statements.append("ROLLBACK;")
     return "\n".join(statements)
