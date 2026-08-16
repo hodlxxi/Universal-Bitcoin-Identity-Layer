@@ -1979,7 +1979,7 @@ PG_NODE_TREE_LOCATION_PATTERN = r"(^|[ {])(:location )-?[0-9]+(?=[ }])"
 PG_NODE_TREE_LOCATION_REPLACEMENT = r"\1\2-1"
 
 
-def _normalized_check_tree_sql(operand: str) -> str:
+def _normalized_pg_node_tree_sql(operand: str) -> str:
     """Canonicalize only parser-location metadata in a pg_node_tree operand."""
 
     return (
@@ -2041,16 +2041,16 @@ def _migration_8_9_check_semantics_sql(snapshot: Path) -> str:
         "AND probe_constraint.conname=actual_constraint.conname "
         "WHERE actual_namespace.nspname='public' AND actual_constraint.contype='c' "
         "AND "
-        + _normalized_check_tree_sql("actual_constraint.conbin")
+        + _normalized_pg_node_tree_sql("actual_constraint.conbin")
         + "="
-        + _normalized_check_tree_sql("probe_constraint.conbin")
+        + _normalized_pg_node_tree_sql("probe_constraint.conbin")
         + " ORDER BY 1;"
     )
     statements.append("ROLLBACK;")
     return "\n".join(statements)
 
 
-PHASE_6_INDEX_SEMANTICS_SQL = """
+PHASE_6_INDEX_SEMANTICS_SQL = f"""
 /* PHASE_6_INDEX_SEMANTICS_V1 */
 BEGIN;
 CREATE TEMP TABLE phase_6_root_indexes (LIKE public.canonical_root_registration_bindings);
@@ -2070,7 +2070,8 @@ SELECT table_relation.relname||'|'||index_relation.relname||'|'||index_catalog.i
        CASE
          WHEN mapping.reference_index_name IS NULL AND index_catalog.indpred IS NULL THEN 'none'
          WHEN reference_catalog.indpred IS NOT NULL
-              AND index_catalog.indpred=reference_catalog.indpred THEN 'partial'
+              AND {_normalized_pg_node_tree_sql("index_catalog.indpred")}
+                  ={_normalized_pg_node_tree_sql("reference_catalog.indpred")} THEN 'partial'
          ELSE 'mismatch'
        END
 FROM pg_index index_catalog
