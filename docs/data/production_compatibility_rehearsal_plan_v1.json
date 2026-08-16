@@ -2,10 +2,10 @@
   "schema": "hodlxxi.production_compatibility_rehearsal_plan.v1",
   "plan_version": 1,
   "production_sha": "6873e8fb73cbea8fda43fe3609bbdbb2817d8299",
-  "staging_sha": "872485fedce951365a3325e3bfd0ad766112c272",
+  "staging_sha": "b3b8ed776d94bbdda88371de7bee8fed17d505f0",
   "source_audit_report_sha256": "1b30768d3a00ccf188e15bf75dc5ce1007065b093c502ab1187e95a41ca8984f",
   "source_database_identifier_sha256": "cd098bd0f85e4f7b5767fdc94daa08d4f9d08bbda0c60ebb6065bbc754ce0106",
-  "purpose": "Define a fail-closed, disposable, synthetic-only non-production laboratory for future startup, authentication, seven-migration, backup and restore compatibility evidence.",
+  "purpose": "Define a fail-closed, disposable, synthetic-only non-production laboratory for future startup, authentication, nine-migration, backup and restore compatibility evidence.",
   "execution_status": "NOT_RUN",
   "release_authority": "NONE",
   "safety_invariants": [
@@ -117,7 +117,7 @@
       },
       {
         "label": "STAGING_BASIS",
-        "sha": "872485fedce951365a3325e3bfd0ad766112c272",
+        "sha": "b3b8ed776d94bbdda88371de7bee8fed17d505f0",
         "write_policy": "READ_ONLY_AFTER_EXTRACTION"
       }
     ],
@@ -252,7 +252,9 @@
     "migrations/2026-07-22_current_entitlement_evidence.sql",
     "migrations/2026-07-25_trusted_covenant_registration.sql",
     "migrations/2026-07-26_canonical_admission_edge_registry_v1.sql",
-    "migrations/2026-07-26_canonical_e923_genesis_record_v1.sql"
+    "migrations/2026-07-26_canonical_e923_genesis_record_v1.sql",
+    "migrations/2026-08-11_canonical_root_registration_binding_v1.sql",
+    "migrations/2026-08-12_canonical_covenant_funding_set_v1.sql"
   ],
   "phases": [
     {
@@ -299,9 +301,9 @@
       "failure_policy": "STOP_BEFORE_MIGRATIONS"
     },
     {
-      "phase": "REHEARSAL_05_APPLY_SEVEN_MIGRATIONS",
+      "phase": "REHEARSAL_05_APPLY_NINE_MIGRATIONS",
       "status": "NOT_RUN",
-      "purpose": "Apply exactly the seven immutable migration files in the declared order without downgrade SQL.",
+      "purpose": "Apply exactly the nine immutable migration files in the declared order without downgrade SQL.",
       "prerequisites": [
         "REHEARSAL_04_NEW_CODE_OLD_SCHEMA_AUTH"
       ],
@@ -312,7 +314,7 @@
       "status": "NOT_RUN",
       "purpose": "Verify migration-declared relations, columns, named constraints, primary keys and indexes.",
       "prerequisites": [
-        "REHEARSAL_05_APPLY_SEVEN_MIGRATIONS"
+        "REHEARSAL_05_APPLY_NINE_MIGRATIONS"
       ],
       "failure_policy": "STOP_BEFORE_OLD_CODE_PROBE"
     },

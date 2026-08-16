@@ -64,7 +64,8 @@ def test_exact_phase_and_migration_order_with_no_claimed_phase_pass():
     assert len(value["phases"]) == 14
     assert all(item["status"] == "NOT_RUN" for item in value["phases"])
     assert value["migration_order"] == list(rehearsal.MIGRATIONS)
-    assert len(value["migration_order"]) == 7
+    assert len(value["migration_order"]) == 9
+    assert value["phases"][5]["phase"] == "REHEARSAL_05_APPLY_NINE_MIGRATIONS"
     assert all(item["status"] == "NOT_RUN" for item in value["auth_probe_matrix"])
     assert value["startup_probe"]["unsupported_dependency"]["status"] == "BLOCKED"
 

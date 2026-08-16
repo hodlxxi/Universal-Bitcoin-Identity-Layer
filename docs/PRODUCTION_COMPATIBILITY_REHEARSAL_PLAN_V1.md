@@ -4,7 +4,9 @@ Status: **REPOSITORY-SUPPORTED DISPOSABLE HARNESS — EXECUTION NOT RUN — NO R
 
 PR6.23 created the plan and execute-mode engine. PR6.24 makes the disposable engine repository-supported and tested, but does not execute PostgreSQL. A real run still requires separate explicit authorization for one marker-owned non-production laboratory. On a production host, that authorization covers only the disposable laboratory and never any production resource.
 
-The production source basis is `6873e8fb73cbea8fda43fe3609bbdbb2817d8299`. The staging source basis is `872485fedce951365a3325e3bfd0ad766112c272`. The PR6.22 source audit report SHA-256 is `1b30768d3a00ccf188e15bf75dc5ce1007065b093c502ab1187e95a41ca8984f`, and the sanitized application-database identifier is `cd098bd0f85e4f7b5767fdc94daa08d4f9d08bbda0c60ebb6065bbc754ce0106`. The real database name is neither included nor derived.
+The production source basis is `6873e8fb73cbea8fda43fe3609bbdbb2817d8299`. The staging source basis is `b3b8ed776d94bbdda88371de7bee8fed17d505f0`. The PR6.22 source audit report SHA-256 is `1b30768d3a00ccf188e15bf75dc5ce1007065b093c502ab1187e95a41ca8984f`, and the sanitized application-database identifier is `cd098bd0f85e4f7b5767fdc94daa08d4f9d08bbda0c60ebb6065bbc754ce0106`. The real database name is neither included nor derived.
+
+The earlier seven-migration staging basis was superseded while every V1 phase was still `NOT_RUN`. No earlier rehearsal result exists. This existing V1 plan is now bounded to the exact current nine-migration release candidate; no V2 plan or duplicate harness is introduced. This release-enablement correction changes only rehearsal tooling, documentation, and tests. Even an all-`PASS` rehearsal remains evidence for review and never grants automatic deployment authority.
 
 The strict [JSON plan](data/production_compatibility_rehearsal_plan_v1.json) is normative. Plan mode, future execution evidence, and release approval are three distinct things:
 
@@ -33,7 +35,7 @@ The workspace must be a direct child of the explicitly approved temporary root a
 The repository must be clean. Git verifies that both exact commit objects exist locally. The harness never clones, fetches, pulls, switches, resets, cleans, or writes an existing checkout. It uses local `git archive` output, traversal-safe extraction inside the marker-owned workspace, and read-only extracted trees for:
 
 - production: `6873e8fb73cbea8fda43fe3609bbdbb2817d8299`;
-- staging: `872485fedce951365a3325e3bfd0ad766112c272`.
+- staging: `b3b8ed776d94bbdda88371de7bee8fed17d505f0`.
 
 The application probes run in separate Python processes with `PYTHONDONTWRITEBYTECODE` and an explicit `PYTHONPATH`, so imports cannot mix the two snapshots. Ephemeral RS256 signing material is created only inside the owned workspace. It is synthetic laboratory material, not copied key material.
 
@@ -46,7 +48,7 @@ All committed phase states are `NOT_RUN`. No phase is pre-classified as successf
 3. `REHEARSAL_02_SYNTHETIC_OLD_SCHEMA` — create an execute-time generated target and load the sanitized four-table schema-only baseline.
 4. `REHEARSAL_03_NEW_CODE_OLD_SCHEMA_STARTUP` — probe staging `create_app`, required blueprint registration, connection, and four-table queryability against the old schema.
 5. `REHEARSAL_04_NEW_CODE_OLD_SCHEMA_AUTH` — exercise the supported synthetic OAuth/OIDC matrix with staging code and the old schema.
-6. `REHEARSAL_05_APPLY_SEVEN_MIGRATIONS` — apply exactly the seven migrations below, stopping at the first failure.
+6. `REHEARSAL_05_APPLY_NINE_MIGRATIONS` — apply exactly the nine migrations below, stopping at the first failure.
 7. `REHEARSAL_06_VERIFY_MIGRATED_CATALOG` — verify migration-declared tables, columns, table-qualified named constraints, exact primary/unique/foreign-key column relationships, inline check counts, and explicit indexes.
 8. `REHEARSAL_07_OLD_CODE_NEW_SCHEMA_STARTUP` — probe production-basis application startup against the migrated additive schema.
 9. `REHEARSAL_08_NEW_CODE_NEW_SCHEMA_STARTUP_AUTH` — probe staging startup and repeat the supported synthetic authentication matrix against the migrated schema.
@@ -58,7 +60,7 @@ All committed phase states are `NOT_RUN`. No phase is pre-classified as successf
 
 Substantive phases run only after every prerequisite has `PASS`. A `FAIL` or `BLOCKED` phase marks later substantive phases `BLOCKED`; only cleanup and sanitized result emission may still run. Cleanup is a safety action, not silent continuation.
 
-## Exact seven-migration order
+## Exact nine-migration order
 
 No downgrade SQL is generated, applied, or modified.
 
@@ -69,8 +71,10 @@ No downgrade SQL is generated, applied, or modified.
 5. `migrations/2026-07-25_trusted_covenant_registration.sql`
 6. `migrations/2026-07-26_canonical_admission_edge_registry_v1.sql`
 7. `migrations/2026-07-26_canonical_e923_genesis_record_v1.sql`
+8. `migrations/2026-08-11_canonical_root_registration_binding_v1.sql`
+9. `migrations/2026-08-12_canonical_covenant_funding_set_v1.sql`
 
-The migrated-catalog check derives required relations, columns, table-qualified named constraints, inline check counts, and explicit indexes from these immutable files. It separately verifies the exact table, ordered local columns, referenced table and columns, and delete action for every primary-key, unique, and foreign-key constraint, including unnamed inline constraints. `IF NOT EXISTS` is not treated as shape proof.
+The migrated-catalog check derives required relations, columns, table-qualified named constraints, inline check counts, and explicit indexes from these immutable files. It separately verifies the exact table, ordered local columns, referenced table and columns, and delete action for every primary-key, unique, and foreign-key constraint, including unnamed inline constraints. For the two new migrations it also verifies index columns, uniqueness and partial predicates, plus the funding-outpoint `BIGSERIAL` type, default, sequence identity, and sequence ownership. `IF NOT EXISTS` is not treated as shape proof.
 
 ## Synthetic old-schema baseline
 
@@ -165,7 +169,7 @@ env -i PATH=/usr/bin:/bin \
   --temporary-root /tmp/operator-approved-root \
   --workspace /tmp/operator-approved-root/new-direct-child \
   --production-sha 6873e8fb73cbea8fda43fe3609bbdbb2817d8299 \
-  --staging-sha 872485fedce951365a3325e3bfd0ad766112c272 \
+  --staging-sha b3b8ed776d94bbdda88371de7bee8fed17d505f0 \
   --git-binary /usr/bin/git \
   --python-binary /absolute/path/to/python \
   --postgresql-binary-directory /usr/lib/postgresql/16/bin \
