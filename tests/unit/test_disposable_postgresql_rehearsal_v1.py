@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import inspect
 import json
 import re
 import subprocess
@@ -1641,20 +1642,83 @@ def test_phase_06_predicate_tree_normalization_preserves_semantic_mutations(actu
     assert pattern.sub(replacement, actual) != pattern.sub(replacement, probe)
 
 
-@pytest.mark.parametrize("mutation", ["missing", "wrong_owner"])
-def test_phase_06_rejects_missing_or_wrongly_owned_bigserial_sequence(tmp_path, mutation):
+def test_phase_06_serial_catalog_sql_selects_only_sequence_ownership(tmp_path):
+    runner = SuccessfulRehearsalRunner()
+    result = rehearsal.RehearsalHarness(
+        runner,
+        monotonic=lambda: 3.95,
+        token_factory=lambda: "serial_sql",
+    ).execute(execute_request(tmp_path))
+
+    assert result["execution_status"] == "PASS"
+    serial_calls = [
+        call
+        for call in runner.calls
+        if Path(call["argv"][0]).name == "psql"
+        and "--command" in call["argv"]
+        and "format_type(a.atttypid,a.atttypmod)" in call["argv"][call["argv"].index("--command") + 1]
+    ]
+    assert len(serial_calls) == 1
+    sql = serial_calls[0]["argv"][serial_calls[0]["argv"].index("--command") + 1]
+    assert "JOIN pg_depend dep ON dep.classid='pg_class'::regclass" in sql
+    assert "dep.objsubid=0" in sql
+    assert "dep.refclassid='pg_class'::regclass" in sql
+    assert "dep.refobjid=tbl.oid AND dep.refobjsubid=a.attnum" in sql
+    assert "dep.deptype='a'" in sql
+    assert "JOIN pg_class seq ON seq.oid=dep.objid AND seq.relkind='S'" in sql
+    assert "LEFT JOIN pg_depend dep" not in sql
+    assert "LEFT JOIN pg_class seq" not in sql
+    assert "DISTINCT" not in sql.upper()
+    expected_set_source = inspect.getsource(rehearsal._query_expected_set)
+    assert "if actual != expected:" in expected_set_source
+    assert "expected <= actual" not in expected_set_source
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing",
+        "wrong_sequence",
+        "wrong_table",
+        "wrong_column",
+        "wrong_type",
+        "wrong_default",
+        "unrelated_dependency_fanout",
+        "extra",
+    ],
+)
+def test_phase_06_serial_semantics_remain_fail_closed(tmp_path, mutation):
     actual = set(rehearsal.MIGRATION_8_9_SERIAL_SEMANTICS)
     expected = next(iter(actual))
     if mutation == "missing":
         actual.clear()
-    else:
+    elif mutation == "wrong_sequence":
+        fields = expected.split("|")
+        fields[4] = "unexpected_id_seq"
+        actual = {"|".join(fields)}
+    elif mutation == "wrong_table":
         actual = {expected.rsplit("|", 2)[0] + "|canonical_covenant_funding_sets|funding_set_id"}
+    elif mutation == "wrong_column":
+        actual = {expected.rsplit("|", 1)[0] + "|funding_set_id"}
+    elif mutation == "wrong_type":
+        actual = {expected.replace("|bigint|", "|integer|")}
+    elif mutation == "wrong_default":
+        actual = {expected.replace("nextval(", "unexpected_default(")}
+    elif mutation == "unrelated_dependency_fanout":
+        fields = expected.split("|")
+        fields[4] = ""
+        actual.add("|".join(fields))
+    else:
+        fields = expected.split("|")
+        fields[4] = "ambiguous_id_seq"
+        actual.add("|".join(fields))
     runner = SuccessfulRehearsalRunner(serial_semantics=actual)
     result = rehearsal.RehearsalHarness(
         runner,
         monotonic=lambda: 3.975,
         token_factory=lambda: f"serial_{mutation}",
     ).execute(execute_request(tmp_path))
+    assert result["execution_status"] == "FAIL"
     assert result["phases"][6]["evidence_code"] == "MIGRATED_SERIAL_SEMANTICS_MISMATCH"
 
 
