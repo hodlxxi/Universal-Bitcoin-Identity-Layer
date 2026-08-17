@@ -13,6 +13,8 @@ from flask import Blueprint, jsonify, request, session
 
 from app.audit_logger import get_audit_logger
 from app.browser_routes import perform_browser_logout, render_browser_login
+from app.db_storage import create_user, get_user_by_pubkey
+from app.services.canonical_oauth_browser_subject import persist_verified_browser_subject
 from app.security import limiter
 from app.utils import (
     derive_legacy_address_from_pubkey,
@@ -34,6 +36,15 @@ import os
 
 VERIFY_RATE_LIMIT = os.environ.get("HODLXXI_TEST_RATE_LIMIT", VERIFY_RATE_LIMIT)
 LOGIN_RATE_LIMIT = "20 per minute"
+
+
+def _persist_canonical_login_identity(verified_pubkey: str) -> str:
+    """Delegate canonical_xonly_pubkey, create_user, and get_user_by_pubkey handling."""
+    return persist_verified_browser_subject(
+        verified_pubkey,
+        create_user_fn=create_user,
+        get_user_fn=get_user_by_pubkey,
+    )
 
 
 @auth_bp.route("/logout")
@@ -132,6 +143,17 @@ def verify_signature():
         if not matched_pubkey:
             audit_logger.log_event("auth.verify_failed", reason="no_matching_special_user", ip=request.remote_addr)
             return jsonify({"verified": False, "error": "Invalid signature"}), 403
+
+    try:
+        _persist_canonical_login_identity(matched_pubkey)
+    except Exception:
+        logger.exception("Canonical login identity persistence failed")
+        audit_logger.log_event(
+            "auth.verify_failed",
+            reason="identity_persistence_unavailable",
+            ip=request.remote_addr,
+        )
+        return jsonify({"verified": False, "error": "Authentication service temporarily unavailable"}), 503
 
     # Determine access level from covenant/balance state.
     # A valid signature proves key control only. RPC/descriptors require

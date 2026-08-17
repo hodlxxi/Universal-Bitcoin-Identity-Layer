@@ -10,6 +10,8 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request, session, url_for
 
+from app.services.canonical_oauth_browser_subject import persist_verified_browser_subject
+
 api_auth_bp = Blueprint("api_auth", __name__)
 
 
@@ -214,6 +216,9 @@ def api_verify():
                 proof_expires_in=max(0, expires_at - now_ts),
             )
 
+        # A verified challenge is one-time even if downstream persistence fails.
+        ACTIVE_CHALLENGES.pop(cid, None)
+
         try:
             in_total, out_total = get_save_and_check_balances_for_pubkey(rec["pubkey"])
             ratio = (out_total / in_total) if in_total > 0 else 0
@@ -222,15 +227,18 @@ def api_verify():
             logger.exception("Nostr balance-based access check failed; defaulting to limited")
             access = "limited"
 
+        try:
+            persist_verified_browser_subject(rec["pubkey"])
+        except Exception:
+            logger.exception("Canonical Nostr identity persistence failed")
+            return jsonify(error="Authentication service temporarily unavailable"), 503
+
         logger.warning("NOSTR_STEP=before_session_set cid=%r access=%r", cid, access)
         session["logged_in_pubkey"] = rec["pubkey"]
         session["access_level"] = access
         session["login_method"] = "nostr"
         session.pop("guest_label", None)
         session.pop("guestLabel", None)
-
-        logger.warning("NOSTR_STEP=before_pop cid=%r", cid)
-        ACTIVE_CHALLENGES.pop(cid, None)
 
         logger.warning("NOSTR_STEP=before_success_return cid=%r", cid)
         return jsonify(ok=True, verified=True, method="nostr", pubkey=rec["pubkey"], access_level=access)

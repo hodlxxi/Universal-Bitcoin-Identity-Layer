@@ -12,8 +12,18 @@ import jwt
 import pytest
 
 from app.factory import create_app
+from app.auth_api_core import canonical_xonly_pubkey
+from app.db_storage import create_user
 from app.jwks import ensure_rsa_keypair, get_signing_key
 from app.tokens import issue_rs256_jwt
+
+
+def _admit_browser_session(client, pubkey="02" + "a" * 64):
+    create_user(canonical_xonly_pubkey(pubkey))
+    with client.session_transaction() as sess:
+        sess["logged_in_pubkey"] = pubkey
+        sess["login_method"] = "legacy"
+        sess["access_level"] = "limited"
 
 
 def test_factory_rejects_hs256_configuration():
@@ -152,7 +162,7 @@ print("legacy_runtime_did_not_load_dotenv=yes")
     assert "legacy_runtime_did_not_load_dotenv=yes" in result.stdout
 
 
-def _pkce_pair(verifier: str = "contract-verifier"):
+def _pkce_pair(verifier: str = "contract-verifier-12345678901234567890123456"):
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
     return verifier, challenge
 
@@ -536,8 +546,7 @@ def test_authorize_rejects_invalid_redirect_uri_without_500():
     with patch(
         "app.blueprints.oauth.get_oauth_client", return_value={"redirect_uris": ["https://app.example.com/callback"]}
     ):
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = "02" + "a" * 64
+        _admit_browser_session(client)
 
         _, challenge = _pkce_pair()
         resp = client.get(
@@ -583,8 +592,7 @@ def test_pkce_requires_s256_challenge():
     with patch(
         "app.blueprints.oauth.get_oauth_client", return_value={"redirect_uris": ["https://app.example.com/callback"]}
     ):
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = "02" + "a" * 64
+        _admit_browser_session(client)
 
         plain_resp = client.get(
             "/oauth/authorize",
@@ -614,7 +622,7 @@ def test_pkce_requires_s256_challenge():
 
 def test_pkce_s256_authorize_and_bad_verifier_rejected_without_500():
     client = _build_client()
-    verifier, challenge = _pkce_pair("correct-verifier")
+    verifier, challenge = _pkce_pair("correct-verifier-123456789012345678901234567")
     code_record = {
         "client_id": "client_1",
         "redirect_uri": "https://app.example.com/callback",
@@ -627,14 +635,20 @@ def test_pkce_s256_authorize_and_bad_verifier_rejected_without_500():
     with (
         patch(
             "app.blueprints.oauth.get_oauth_client",
-            return_value={"client_secret": "secret", "redirect_uris": ["https://app.example.com/callback"]},
+            return_value={
+                "client_id": "client_1",
+                "client_secret": "secret",
+                "redirect_uris": ["https://app.example.com/callback"],
+                "scope": "openid profile",
+                "metadata": {"trust_class": "public_dynamic"},
+            },
         ),
+        patch("app.blueprints.oauth._verify_client_secret", return_value=True),
         patch("app.blueprints.oauth.store_oauth_code") as _store,
         patch("app.blueprints.oauth.get_oauth_code", return_value=code_record),
-        patch("app.blueprints.oauth.delete_oauth_code") as delete_code,
+        patch("app.blueprints.oauth.consume_oauth_code") as consume_code,
     ):
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = code_record["user_pubkey"]
+        _admit_browser_session(client, code_record["user_pubkey"])
 
         auth = client.get(
             "/oauth/authorize",
@@ -665,4 +679,4 @@ def test_pkce_s256_authorize_and_bad_verifier_rejected_without_500():
 
     assert bad_token.status_code == 400
     assert bad_token.get_json()["error"] == "invalid_grant"
-    delete_code.assert_called()
+    consume_code.assert_not_called()

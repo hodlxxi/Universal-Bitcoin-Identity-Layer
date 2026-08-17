@@ -1,6 +1,15 @@
 [flake8]
 max-line-length = 120
 extend-ignore = E203,W503,F401,F811,E402,E501,W291,F841,E722
+per-file-ignores =
+    tests/unit/test_canonical_admission_edge.py:F403,F405
+    tests/unit/test_canonical_crt_authorization_policy.py:F403,F405
+    tests/unit/test_canonical_crt_authorization_proof.py:F403,F405
+    tests/unit/test_canonical_crt_membership.py:F403,F405
+    tests/unit/test_canonical_sponsor_lineage.py:F403,F405
+    tests/unit/test_hodlxxi_v1_snapshot_proof_composition.py:F403,F405
+    tests/unit/test_trusted_crt_authorization_source_plan.py:F403,F405
+    tests/unit/test_trusted_crt_bitcoin_observation_snapshot.py:F403,F405
 exclude =
     venv,
     .venv,

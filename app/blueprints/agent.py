@@ -36,6 +36,13 @@ from app.services.agent_readiness_report import (
     save_self_readiness_report,
 )
 from app.services.mcp_discovery import mcp_contract
+from app.services.action_authorization import IdentityClass
+from app.services.current_entitlement import (
+    EntitlementDecision,
+    EntitlementDenied,
+    EntitlementUnavailable,
+    resolve_runtime_current_entitlement,
+)
 from app.services.nostr_reports import configured_relays_from_env
 from app.services.trust_surface import (
     DEFAULT_AGENT_ID,
@@ -74,6 +81,10 @@ MARKETPLACE_LISTING_VERSION = "1.0"
 RECEIPT_VERSION = "1.0"
 RECEIPT_SCHEMA = "hodlxxi.receipt.v1"
 RECEIPT_RUNTIME = "HODLXXI 21-Sat Proof Runtime"
+CURRENT_ENTITLEMENT_ASSERTION_SCHEMA = "hodlxxi.current_entitlement_assertion.v1"
+_CURRENT_ENTITLEMENT_EVIDENCE_SOURCE_MAX_LENGTH = 128
+_CURRENT_ENTITLEMENT_OBSERVED_AT_MAX_LENGTH = 32
+_CURRENT_ENTITLEMENT_CONTROL_CHARACTER_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 SKILLS_ROOT = Path(__file__).resolve().parents[2] / "skills" / "public"
 SKILLS_REPO_RAW_BASE = "https://raw.githubusercontent.com/hodlxxi/Universal-Bitcoin-Identity-Layer/main/skills/public"
 
@@ -224,6 +235,7 @@ def _agent_endpoints() -> dict:
         "mcp": "/agent/mcp",
         "mcp_server_card": "/.well-known/mcp.json",
         "operator_continuity": OPERATOR_CONTINUITY_ENDPOINT,
+        "current_entitlement_assertion": "/agent/authority/current/<subject>.json",
         "readiness_self_scan": "/agent/readiness/self-scan",
         "request": "/agent/request",
         "message": "/agent/message",
@@ -234,6 +246,10 @@ def _agent_endpoints() -> dict:
         "attestations": "/agent/attestations",
         "trust_events": "/agent/trust/events",
         "discovery": "/agent/discovery",
+        "crt_authorization_proof_discovery": "/.well-known/crt-authorization-proof.json",
+        "crt_authorization_proof_catalog": "/agent/crt/authorization-proofs",
+        "crt_authorization_proof_artifact": "/agent/crt/authorization-proofs/<artifact_id>.json",
+        "crt_authorization_proof_verify": "/agent/crt/authorization-proofs/verify",
         "nostr_announcement": "/agent/nostr/announcement",
         "reputation": "/agent/reputation",
         "chain_health": "/agent/chain/health",
@@ -845,6 +861,7 @@ def _agent_identity_document() -> dict:
             "capabilities": endpoints["capabilities"],
             "capabilities_schema": endpoints["capabilities_schema"],
             "operator_continuity": endpoints["operator_continuity"],
+            "current_entitlement_assertion": endpoints["current_entitlement_assertion"],
             "skills": endpoints["skills"],
             "marketplace_listing": endpoints["marketplace_listing"],
         },
@@ -988,6 +1005,7 @@ def agent_discovery():
             "capabilities": endpoints["capabilities"],
             "capabilities_schema": endpoints["capabilities_schema"],
             "operator_continuity": endpoints["operator_continuity"],
+            "current_entitlement_assertion": endpoints["current_entitlement_assertion"],
             "skills": endpoints["skills"],
             "marketplace_listing": endpoints["marketplace_listing"],
             "nostr_announcement": endpoints["nostr_announcement"],
@@ -997,6 +1015,21 @@ def agent_discovery():
             "chain_health": endpoints["chain_health"],
             "request": endpoints["request"],
             "message": endpoints["message"],
+        },
+        "crt_authorization_proof": {
+            "status": "IMPLEMENTED_SOURCE_ONLY",
+            "mode": "READ_ONLY_REFERENCE_SURFACE",
+            "deployment": "NOT_DEPLOYED",
+            "live_membership": "NOT_LIVE_MEMBERSHIP",
+            "discovery": endpoints["crt_authorization_proof_discovery"],
+            "catalog": endpoints["crt_authorization_proof_catalog"],
+            "artifact": endpoints["crt_authorization_proof_artifact"],
+            "verify": endpoints["crt_authorization_proof_verify"],
+            "live_membership_evaluation": False,
+            "live_authorization_evaluation": False,
+            "runtime_authorization_granted": False,
+            "mcp_publication": False,
+            "signature_or_attestation": False,
         },
         "trust_surfaces": {
             "events": endpoints["trust_events"],
@@ -1109,6 +1142,103 @@ def nostr_announcement():
 @agent_bp.get("/agent/capabilities")
 def capabilities():
     return jsonify(_capabilities_payload())
+
+
+def _canonical_current_entitlement_subject(subject: str) -> str | None:
+    try:
+        canonical = canonical_xonly_pubkey(subject)
+    except (TypeError, ValueError):
+        return None
+    return canonical if canonical == subject else None
+
+
+def _safe_current_entitlement_evidence_source(value: object) -> bool:
+    return (
+        type(value) is str
+        and bool(value)
+        and value.strip() == value
+        and len(value) <= _CURRENT_ENTITLEMENT_EVIDENCE_SOURCE_MAX_LENGTH
+        and _CURRENT_ENTITLEMENT_CONTROL_CHARACTER_RE.search(value) is None
+    )
+
+
+def _safe_current_entitlement_observed_at(value: object) -> bool:
+    if value is None:
+        return True
+    if (
+        type(value) is not str
+        or not value
+        or len(value) > _CURRENT_ENTITLEMENT_OBSERVED_AT_MAX_LENGTH
+        or _CURRENT_ENTITLEMENT_CONTROL_CHARACTER_RE.search(value) is not None
+    ):
+        return False
+    try:
+        observed_at = datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    return (
+        observed_at.tzinfo is not None and observed_at.utcoffset() == timedelta(0) and observed_at.isoformat() == value
+    )
+
+
+def _validated_current_entitlement_publication_fields(
+    decision: object, canonical_subject: str
+) -> tuple[IdentityClass, bool, str, str | None] | None:
+    if not isinstance(decision, EntitlementDecision):
+        return None
+    try:
+        decision_subject = decision.subject
+        identity_class = decision.identity_class
+        current_full_relation_satisfied = decision.current_full_relation_satisfied
+        evidence_source = decision.evidence_source
+        observed_at = decision.observed_at
+        valid_entitlement = (identity_class is IdentityClass.LIMITED and current_full_relation_satisfied is False) or (
+            identity_class is IdentityClass.FULL and current_full_relation_satisfied is True
+        )
+        if (
+            decision_subject != canonical_subject
+            or not valid_entitlement
+            or not _safe_current_entitlement_evidence_source(evidence_source)
+            or not _safe_current_entitlement_observed_at(observed_at)
+        ):
+            return None
+    except Exception:
+        return None
+    return identity_class, current_full_relation_satisfied, evidence_source, observed_at
+
+
+@agent_bp.get("/agent/authority/current/<subject>.json")
+def current_entitlement_assertion(subject: str):
+    canonical_subject = _canonical_current_entitlement_subject(subject)
+    if canonical_subject is None:
+        return jsonify({"error": "invalid_subject"}), 400
+
+    try:
+        decision = resolve_runtime_current_entitlement(canonical_subject)
+    except EntitlementDenied:
+        return jsonify({"error": "entitlement_denied"}), 404
+    except EntitlementUnavailable:
+        return jsonify({"error": "entitlement_unavailable"}), 503
+    except Exception:
+        logger.exception("current entitlement assertion resolution failed")
+        return jsonify({"error": "entitlement_unavailable"}), 503
+
+    publication_fields = _validated_current_entitlement_publication_fields(decision, canonical_subject)
+    if publication_fields is None:
+        return jsonify({"error": "entitlement_unavailable"}), 503
+    identity_class, current_full_relation_satisfied, evidence_source, observed_at = publication_fields
+
+    return jsonify(
+        {
+            "schema": CURRENT_ENTITLEMENT_ASSERTION_SCHEMA,
+            "subject": canonical_subject,
+            "valid": True,
+            "identity_class": identity_class.value,
+            "current_full_relation_satisfied": current_full_relation_satisfied,
+            "evidence_source": evidence_source,
+            "observed_at": observed_at,
+        }
+    )
 
 
 @agent_bp.get("/agent/capabilities/schema")

@@ -1,0 +1,150 @@
+# CRT Canon and Runtime Bridge
+
+The dormant PR6.19 HODLXXI V1 snapshot composer adds no runtime bridge or
+production authorization behavior. It performs pure caller-supplied local
+composition only and does not make its unsigned output portable authority.
+
+> **Status: CURRENT DOCUMENTATION BRIDGE — documentation only; no runtime behavior change.**
+
+## Synchronization basis and authority
+
+This bridge synchronizes the normative CRT Canon in `hodlxxi/hodlxxi-cryptographic-reciprocity` at commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a` (merged PR #42) with PR6.8 implemented from branch base `fe333cdb5068a73b4dc57b875e1b0223b01855f7`. The older commit `7df976c59742aa84fd79cfd41f12a34a33915259` is the active-runtime audit basis, not the PR6.8 source basis.
+
+The authority order is:
+
+1. The CRT Canon repository is the normative theory and protocol source.
+2. This runtime repository records implementation components and operational truth.
+3. `hodlxxi.com` is observable deployed runtime evidence, not the normative protocol source.
+
+## Canon claims and runtime status
+
+| Canon claim | Normative subject | Runtime evidence or component | Current implementation status |
+| --- | --- | --- | --- |
+| `CRT-MEMBERSHIP-001` | Current human membership is an active, uniquely rooted evidence state. | PR6.12 dormant pure composition over the PR6.9 genesis evaluation or PR6.11 sponsor-lineage evaluation; PR6.13 separately classifies its exact result; PR6.14 explains it; PR6.15 publishes deterministic references; PR6.16 composes one caller-injected snapshot at one exact time. | PR6.16 is IMPLEMENTED_DORMANT and NOT_LIVE_SOURCE_LOOKUP; no live membership, production composition, entitlement adapter, action integration, or deployment is wired. |
+| `CRT-ADMISSION-001` | One human admission edge is an exact funded `legacy_777` mirrored pair. | PR6.10 dormant append-only registry and pure depth-1 edge evaluator over PR6.8 registration and trusted observations. | Exact equality and effective-child uniqueness are implemented dormant; within PR6.10, no production wiring or complete lineage traversal exists. PR6.11 is a separate explicit-snapshot evaluator. |
+| `CRT-CASCADE-001` | Active ancestry is unique, acyclic, rooted at E923, and propagates inactivity. | PR6.11 pure explicit-snapshot evaluator. | IMPLEMENTED_DORMANT; no automatic lookup, runtime cascade wiring, route, API, MCP, CLI, or scheduler. |
+| `CRT-GENESIS-001` | E923 is depth 0 only through an effective canonical genesis record for the named V1 graph. | PR6.9 exact source publication and pure evaluator; operator continuity remains supporting evidence only. | IMPLEMENTED_DORMANT; no production wiring, sponsor, admission edge, or succession authority. |
+
+## Distinct domains
+
+| Domain | Meaning | Must not be substituted with |
+| --- | --- | --- |
+| CRT membership state | `genesis_active`, `active`, `provisional`, `edge_inactive`, `lineage_inactive`, `disputed`, or `unknown` under the Canon protocol. | FULL/LIMITED, wallet balance, session state, administrator status, or account plan. |
+| Runtime FULL/LIMITED authorization | Outcomes of a separate runtime authorization policy. | CRT membership states or CRT membership proof. |
+| Commercial/account membership plan | Billing or account-plan behavior, including `app/ubid_membership.py`. | CRT human membership. |
+| Runtime administration | Operational privileges, including `SPECIAL_USERS` paths. | CRT membership, sponsor power, or lineage evidence. |
+| Agent delegation | Bounded operator-agent continuity under `current_144`. | Human admission, human membership, or sponsor power. |
+
+FULL and LIMITED are explicitly not CRT membership states.
+
+## Concise normative protocol summary
+
+E923 is the exceptional depth-0 genesis participant of the named V1 graph only through an effective canonical genesis record. Genesis has no sponsor and no invented admission edge. Every non-genesis human needs exactly one active sponsor edge and one unique active ancestry path terminating at effective E923. A sponsor may have multiple children, but a child has at most one active sponsor. `child_depth = sponsor_depth + 1`; active ancestry is acyclic; self-sponsorship is prohibited; and participant identifiers and role-bound participant keys cannot repeat in one active path. All active humans have equal membership status regardless of depth.
+
+Human Membership V1 exclusively uses the strictly CLTV-only `legacy_777` profile. An admission edge is exactly two mirrored, equal-funded legs for the same sponsor and child, bound to two distinct exact `txid:vout` outpoints that are currently unspent and have at least one confirmation. Direction is sender -> receiver: the receiver has the earlier unilateral CLTV branch and the sender has the later fallback branch. At child depth `d >= 1`:
+
+```text
+middle(d) = 1777777 - 777 * (d - 1)
+early(d)  = middle(d) - 777
+late(d)   = middle(d) + 777
+```
+
+If a required edge becomes inactive, its participant becomes `edge_inactive` and dependent descendants become `lineage_inactive` as applicable; historical evidence remains preserved.
+
+The `current_144` profile is separate operator-agent delegation/continuity evidence. It cannot create human membership or sponsor power and must never be mixed into a `legacy_777` human lineage.
+
+## Current runtime mismatch
+
+At active-runtime audit basis `7df976c59742aa84fd79cfd41f12a34a33915259`, active legacy paths still derive session FULL/LIMITED in some flows from wallet-wide incoming/outgoing balance ratio, and `SPECIAL_USERS` paths also exist. These are active legacy non-Canon authorization behaviors. Wallet-wide aggregation, balance ratios, session state, and administrator allowlists are not Canon-conformant CRT admission, lineage, or membership proof, and this documentation does not silently relabel them.
+
+## Dormant strict layers
+
+- PR6.5 provides a dormant pure exact-counterparty relation evaluator. Its current
+  boolean policy requires positive totals and
+  `outgoing_sats >= incoming_sats`; that is broader than Canon V1 admission,
+  which requires exactly equal positive integer-satoshi amounts. A positive
+  PR6.5 decision is therefore not admission, membership, or a Canon-conformant
+  equality proof.
+- PR6.6 provides a dormant trusted covenant observation adapter and entitlement
+  materializer. Observation and materialization preserve the PR6.5 decision;
+  they do not independently repair its amount-policy mismatch.
+- Persisted current entitlement evidence provides a dormant resolver/evidence layer.
+- PR6.7 provides a dormant strict canonical mirrored covenant raw-script validator.
+- PR6.8 provides dormant exact registration and normalized append-only storage.
+  Only active registrations materialize trusted observation definitions.
+  Unequal positive amounts are preserved, so registration is not admission or
+  Canon equality proof. Lifecycle transition orchestration is not implemented.
+
+The registration layer is independently constructible but is not composed into
+the adapter or any production path. These strict layers are not production
+enforcement. PR6.8 exact registration and outpoint binding does not fix the PR6.5
+amount-policy mismatch. A future admission layer must independently enforce exact
+amount equality, or the relation policy must be separately revised and reviewed.
+Considered by itself, PR6.8 provides no admission registry; PR6.10 is the separate
+dormant registry and equality boundary.
+
+## Implementation sequence
+
+A. This documentation synchronization.
+B. PR6.8 trusted registration and exact outpoint binding. (IMPLEMENTED_DORMANT)
+C. Canonical E923 genesis-record publication, lifecycle, and fail-closed evaluation. (IMPLEMENTED_DORMANT)
+D. PR6.10 authoritative admission-edge registry and depth-1 current edge evaluation. (IMPLEMENTED_DORMANT)
+E. PR6.11 complete selected sponsor-lineage traversal and ancestor inactivity propagation. (IMPLEMENTED_DORMANT)
+F. PR6.12 canonical CRT membership-state composition. (IMPLEMENTED_DORMANT)
+G. PR6.13 canonical FULL/LIMITED policy mapping. (IMPLEMENTED_DORMANT)
+H. PR6.14 canonical authorization proof artifact. (IMPLEMENTED_DORMANT)
+I. PR6.15 read-only reference publication and stateless verification surface.
+   (IMPLEMENTED_SOURCE_ONLY; NOT_DEPLOYED; NOT_LIVE_MEMBERSHIP)
+J. PR6.16 read-only explicit-snapshot proof composition.
+   (IMPLEMENTED_DORMANT; NOT_DEPLOYED; NOT_LIVE_SOURCE_LOOKUP;
+   NOT_RUNTIME_AUTHORIZATION)
+K. PR6.17 read-only injected trusted-source lookup and deterministic source plan.
+   (IMPLEMENTED_DORMANT; SOURCE_PLAN_ONLY; NOT_BITCOIN_OBSERVED;
+   NOT_PROOF_GENERATION; NOT_DEPLOYED)
+L. PR6.18 read-only globally anchored Bitcoin observation of one exact source plan.
+   (IMPLEMENTED_DORMANT; GLOBALLY_ANCHORED_MULTI_EDGE_SNAPSHOT;
+   BEST_BLOCK_HASH_BOUND; NOT_RUNTIME_AUTHORIZATION; NOT_DEPLOYED)
+
+PR6.16 composes a proof only from an already supplied exact evidence snapshot.
+PR6.17 instead loads trusted canonical storage sources and checks their
+consistency; it neither observes Bitcoin nor invokes PR6.16. PR6.18 binds all
+required multi-edge observations to one block height, best-block hash, and
+observation window. PR6.19 still must convert the snapshot into PR6.11 evidence,
+compose inactive/disputed sources, and invoke PR6.16; current lookup, surfaces,
+attestation, entitlements, enforcement, and deployment also remain absent.
+
+PR6.8 does not establish genesis, a complete admission edge, lineage, membership,
+or authorization.
+
+## Explicit non-claims
+
+This bridge asserts only that pure caller-injected membership evaluation and
+the separate PR6.13 classification policy and PR6.14 proof artifact are
+implemented dormant, while PR6.15 provides only checked-in references and
+stateless byte verification. It does not
+assert that either is runtime-wired,
+enforced, deployed, funded, or active. The evaluator performs no raw evidence,
+storage, or RPC lookup and is not a participant-facing mapping or public proof
+live membership or authorization surface. It changes no enforcement behavior.
+No production deployment or live source wiring was added.
+No production wiring was added.
+
+## Related runtime documents
+
+- [CRT Membership Implementation Status](CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md)
+- [CRT Covenant Profile V1](CRT_COVENANT_PROFILE_V1.md)
+- [Canonical Covenant Relation V1](CANONICAL_COVENANT_RELATION_V1.md)
+- [Trusted Covenant Observation V1](TRUSTED_COVENANT_OBSERVATION_V1.md)
+- [Current Entitlement Evidence V1](CURRENT_ENTITLEMENT_EVIDENCE_V1.md)
+- [Mirrored Covenant Pair V1](MIRRORED_COVENANT_PAIR_V1.md)
+- [Trusted Covenant Registration V1](TRUSTED_COVENANT_REGISTRATION_V1.md)
+- [Operator Continuity E923](OPERATOR_CONTINUITY_E923.md)
+- [Canonical E923 Genesis Record V1](CANONICAL_E923_GENESIS_RECORD_V1.md)
+- [Canonical Sponsor Lineage Evaluator V1](CANONICAL_SPONSOR_LINEAGE_EVALUATOR_V1.md)
+- [Canonical CRT Membership Evaluator V1](CANONICAL_CRT_MEMBERSHIP_EVALUATOR_V1.md)
+- [Canonical CRT Authorization Policy V1](CANONICAL_CRT_AUTHORIZATION_POLICY_V1.md)
+- [Canonical CRT Authorization Proof V1](CANONICAL_CRT_AUTHORIZATION_PROOF_V1.md)
+- [Canonical CRT Authorization Proof Publication V1](CANONICAL_CRT_AUTHORIZATION_PROOF_PUBLICATION_V1.md)
+- [Canonical Current CRT Authorization Proof Resolver V1](CANONICAL_CRT_AUTHORIZATION_PROOF_RESOLVER_V1.md)
+- [Trusted CRT Authorization Source Plan V1](TRUSTED_CRT_AUTHORIZATION_SOURCE_PLAN_V1.md)
+- [Trusted CRT Bitcoin Observation Snapshot V1](TRUSTED_CRT_BITCOIN_OBSERVATION_SNAPSHOT_V1.md)

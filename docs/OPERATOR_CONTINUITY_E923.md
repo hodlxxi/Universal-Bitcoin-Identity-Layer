@@ -1,6 +1,10 @@
 # HODLXXI Operator Continuity: E923
 
+> **Status: CURRENT DECLARATION, DECLARED_UNFUNDED.** Synchronization basis: Canon commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`; runtime base `7df976c59742aa84fd79cfd41f12a34a33915259`.
+
 This document records the public continuity packet for the HODLXXI runtime operator identity `E923`.
+
+The `current_144` operator-agent covenant is delegation/continuity evidence only. It is one unfunded leg, not a mirrored `legacy_777` human admission pair. The agent is not a V1 human member or sponsor, and no CRT membership or FULL entitlement follows. FULL/LIMITED are not CRT membership states. See [CRT Covenant Profile V1](CRT_COVENANT_PROFILE_V1.md) and [CRT Runtime Bridge](CRT_RUNTIME_BRIDGE.md).
 
 ## Current state
 

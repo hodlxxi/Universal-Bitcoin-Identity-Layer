@@ -23,6 +23,8 @@ import jwt
 import pytest
 
 from app.factory import create_app
+from app.auth_api_core import canonical_xonly_pubkey
+from app.db_storage import create_user
 
 
 def _pkce_pair():
@@ -37,6 +39,14 @@ def _authorize_with_pkce(client, query: dict):
     q["code_challenge"] = challenge
     q["code_challenge_method"] = "S256"
     return verifier, client.get("/oauth/authorize", query_string=q)
+
+
+def _admit_browser_session(client, pubkey="02" + "a" * 64, method="legacy", access="limited"):
+    create_user(canonical_xonly_pubkey(pubkey))
+    with client.session_transaction() as sess:
+        sess["logged_in_pubkey"] = pubkey
+        sess["login_method"] = method
+        sess["access_level"] = access
 
 
 @pytest.fixture
@@ -214,7 +224,7 @@ class TestAuthorizationFlow:
                 "client_id": registered_client["client_id"],
                 "redirect_uri": registered_client["redirect_uris"][0],
                 "state": "random_state",
-                "code_challenge": "abc123",
+                "code_challenge": "A" * 43,
                 "code_challenge_method": "S256",
             },
         )
@@ -226,8 +236,7 @@ class TestAuthorizationFlow:
     def test_authorize_with_authenticated_user(self, client, registered_client):
         """Test authorization with authenticated user."""
         # Simulate authenticated user
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = "02" + "a" * 64
+        _admit_browser_session(client)
 
         _, response = _authorize_with_pkce(
             client,
@@ -247,8 +256,7 @@ class TestAuthorizationFlow:
 
     def test_authorize_invalid_redirect_uri(self, client, registered_client):
         """Test authorization with invalid redirect URI."""
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = "02" + "a" * 64
+        _admit_browser_session(client)
 
         _, response = _authorize_with_pkce(
             client,
@@ -271,7 +279,7 @@ class TestAuthorizationFlow:
                 "response_type": "token",  # Implicit flow not supported
                 "client_id": registered_client["client_id"],
                 "redirect_uri": registered_client["redirect_uris"][0],
-                "code_challenge": "abc123",
+                "code_challenge": "A" * 43,
                 "code_challenge_method": "S256",
             },
         )
@@ -290,8 +298,7 @@ class TestPKCE:
         verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
 
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = "02" + "a" * 64
+        _admit_browser_session(client)
 
         response = client.get(
             "/oauth/authorize",
@@ -314,8 +321,7 @@ class TestPKCE:
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
 
         # 1. Get authorization code with PKCE
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = "02" + "a" * 64
+        _admit_browser_session(client)
 
         auth_response = client.get(
             "/oauth/authorize",
@@ -356,8 +362,7 @@ class TestPKCE:
         challenge = base64.urlsafe_b64encode(hashlib.sha256(correct_verifier.encode()).digest()).rstrip(b"=").decode()
 
         # Get authorization code
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = "02" + "a" * 64
+        _admit_browser_session(client)
 
         auth_response = client.get(
             "/oauth/authorize",
@@ -400,8 +405,7 @@ class TestPKCESafety:
         verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
 
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = "02" + "b" * 64
+        _admit_browser_session(client, "02" + "b" * 64)
 
         auth_response = client.get(
             "/oauth/authorize",
@@ -437,8 +441,7 @@ class TestOAuthErrorLeakage:
     """Ensure auth server errors do not expose internals."""
 
     def test_token_endpoint_hides_exception_details(self, client, registered_client, monkeypatch):
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = "02" + "d" * 64
+        _admit_browser_session(client, "02" + "d" * 64)
 
         verifier, auth_response = _authorize_with_pkce(
             client,
@@ -479,8 +482,7 @@ class TestTokenEndpoint:
     def test_token_exchange_success(self, client, registered_client):
         """Test successful authorization code to token exchange."""
         # Get authorization code first
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = "02" + "a" * 64
+        _admit_browser_session(client)
 
         verifier, auth_response = _authorize_with_pkce(
             client,
@@ -535,8 +537,7 @@ class TestTokenEndpoint:
     def test_token_code_reuse_prevented(self, client, registered_client):
         """Test that authorization codes can only be used once."""
         # Get code
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = "02" + "a" * 64
+        _admit_browser_session(client)
 
         verifier, auth_response = _authorize_with_pkce(
             client,
@@ -587,8 +588,7 @@ class TestTokenIntrospection:
     def test_introspect_active_token(self, client, registered_client, app):
         """Test introspection of active token."""
         # Get a valid token
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = "02" + "a" * 64
+        _admit_browser_session(client)
 
         verifier, auth_response = _authorize_with_pkce(
             client,
@@ -656,7 +656,7 @@ class TestTokenIntrospection:
                 "sub": "forged-user",
                 "iat": now,
                 "exp": now + 3600,
-                "scope": "read",
+                "scope": "self:read",
             },
             "attacker-secret",
             algorithm="HS256",
@@ -682,10 +682,9 @@ class TestJWTTokens:
 
     def test_jwt_token_structure(self, client, registered_client):
         """Opaque access_token + introspection works (with PKCE)."""
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = "test_pubkey"
+        _admit_browser_session(client)
 
-        verifier = "test_verifier_opaque_access"
+        verifier = "test_verifier_opaque_access_123456789012345678"
         digest = hashlib.sha256(verifier.encode("utf-8")).digest()
         challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
@@ -695,7 +694,7 @@ class TestJWTTokens:
                 "response_type": "code",
                 "client_id": registered_client["client_id"],
                 "redirect_uri": registered_client["redirect_uris"][0],
-                "scope": "read_limited",
+                "scope": "self:read",
                 "state": "s1",
                 "code_challenge": challenge,
                 "code_challenge_method": "S256",
@@ -738,10 +737,9 @@ class TestJWTTokens:
 
     def test_id_token_is_rs256(self, client, registered_client):
         """id_token should be RS256 and include kid when scope includes openid."""
-        with client.session_transaction() as sess:
-            sess["logged_in_pubkey"] = "02" + "a" * 64
+        _admit_browser_session(client)
 
-        verifier = "test_verifier_id_token"
+        verifier = "test_verifier_id_token_123456789012345678901"
         digest = hashlib.sha256(verifier.encode("utf-8")).digest()
         challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
@@ -751,7 +749,7 @@ class TestJWTTokens:
                 "response_type": "code",
                 "client_id": registered_client["client_id"],
                 "redirect_uri": registered_client["redirect_uris"][0],
-                "scope": "openid read_limited",
+                "scope": "openid self:read",
                 "nonce": "n1",
                 "state": "s2",
                 "code_challenge": challenge,

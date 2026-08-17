@@ -1,11 +1,36 @@
 # HODLXXI Documentation
 
-**Last Updated:** June 17, 2026  
-**Status:** Production-ready, documented, stabilized
+**Last Updated:** July 25, 2026
+**Status:** Current documentation index; implementation and historical status vary by document
 
 ---
 
 ## 📚 Documentation Index
+
+### CRT Canon and runtime bridge
+
+- **[PRODUCTION_COMPATIBILITY_INVENTORY_V1.md](PRODUCTION_COMPATIBILITY_INVENTORY_V1.md)** — pinned main-to-staging compatibility inventory, activation analysis, blockers, release trains, and non-claims.
+- **[PRODUCTION_HOST_DATABASE_METADATA_AUDIT_V1.md](PRODUCTION_HOST_DATABASE_METADATA_AUDIT_V1.md)** — sanitized deterministic read-only production host and PostgreSQL metadata audit; not deployment approval.
+- **[PRODUCTION_COMPATIBILITY_REHEARSAL_PLAN_V1.md](PRODUCTION_COMPATIBILITY_REHEARSAL_PLAN_V1.md)** — fail-closed synthetic non-production startup/auth, seven-migration, and backup/restore rehearsal plan and harness contract; execution remains `NOT_RUN`.
+
+The normative theory and protocol source is `hodlxxi/hodlxxi-cryptographic-reciprocity` at commit `152c87522a7d89cd5c0e7014d7915a19bf074e1a`. PR6.8 uses implementation branch base `fe333cdb5068a73b4dc57b875e1b0223b01855f7`; the older `7df976c59742aa84fd79cfd41f12a34a33915259` is explicitly the active-runtime audit basis. These documents do not assert current CRT Membership Protocol V1 enforcement.
+
+- **[HODLXXI_PROJECT_COMPASS.md](HODLXXI_PROJECT_COMPASS.md)** — canonical project direction, trust-model invariants, architectural boundaries, release discipline, and mandatory future-PR alignment.
+- **[CRT_RUNTIME_BRIDGE.md](CRT_RUNTIME_BRIDGE.md)** — authority boundaries, Canon claims, runtime mismatch, and implementation sequence.
+- **[CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md](CRT_MEMBERSHIP_IMPLEMENTATION_STATUS.md)** — current component and gap inventory.
+- **[CRT_COVENANT_PROFILE_V1.md](CRT_COVENANT_PROFILE_V1.md)** — exact `legacy_777` human-admission and `current_144` operator-agent profile mapping.
+- **[CANONICAL_E923_GENESIS_RECORD_V1.md](CANONICAL_E923_GENESIS_RECORD_V1.md)** — dormant exact E923 depth-0 source publication, evaluator, and append-only persistence boundary.
+- **[CANONICAL_ADMISSION_EDGE_REGISTRY_V1.md](CANONICAL_ADMISSION_EDGE_REGISTRY_V1.md)** — PR6.10 dormant authoritative admission-edge registry and depth-1 current-edge evaluation boundary.
+- **[CANONICAL_SPONSOR_LINEAGE_EVALUATOR_V1.md](CANONICAL_SPONSOR_LINEAGE_EVALUATOR_V1.md)** — PR6.11 dormant pure explicit-snapshot sponsor-path evaluator; generic membership remains unavailable.
+- **[CANONICAL_CRT_MEMBERSHIP_EVALUATOR_V1.md](CANONICAL_CRT_MEMBERSHIP_EVALUATOR_V1.md)** — PR6.12 dormant pure membership composition over one exact genesis or sponsor-lineage evaluation; FULL/LIMITED mapping remains deferred.
+- **[CANONICAL_CRT_AUTHORIZATION_POLICY_V1.md](CANONICAL_CRT_AUTHORIZATION_POLICY_V1.md)** — PR6.13 dormant pure FULL/LIMITED classification of one exact nested canonical membership evaluation; no runtime wiring or action grant.
+- **[CANONICAL_CRT_AUTHORIZATION_PROOF_V1.md](CANONICAL_CRT_AUTHORIZATION_PROOF_V1.md)** — PR6.14 dormant pure why-FULL/why-LIMITED proof artifact over one exact PR6.13 evaluation; published separately through the PR6.15 source-only reference surface, with no live generation or deployment.
+- **[CANONICAL_CRT_AUTHORIZATION_PROOF_PUBLICATION_V1.md](CANONICAL_CRT_AUTHORIZATION_PROOF_PUBLICATION_V1.md)** — PR6.15 source-implemented, read-only deterministic reference publication and stateless canonical-byte verification; not live membership and not deployed.
+- **[CANONICAL_CRT_AUTHORIZATION_PROOF_RESOLVER_V1.md](CANONICAL_CRT_AUTHORIZATION_PROOF_RESOLVER_V1.md)** — PR6.16 dormant, read-only composition from one caller-injected evidence snapshot at one exact time; not live lookup, runtime authorization, or deployment.
+- **[TRUSTED_CRT_AUTHORIZATION_SOURCE_PLAN_V1.md](TRUSTED_CRT_AUTHORIZATION_SOURCE_PLAN_V1.md)** — PR6.17 dormant read-only loading and consistency checking of injected trusted canonical sources into a deterministic plan; no Bitcoin observation, proof generation, runtime wiring, or deployment.
+- **[TRUSTED_CRT_BITCOIN_OBSERVATION_SNAPSHOT_V1.md](TRUSTED_CRT_BITCOIN_OBSERVATION_SNAPSHOT_V1.md)** — PR6.18 dormant globally height/hash-anchored read-only observation of one exact PR6.17 plan; no evidence conversion, proof generation, runtime wiring, or deployment.
+- **[HODLXXI_V1_LOCAL_SNAPSHOT_PROOF_COMPOSITION.md](HODLXXI_V1_LOCAL_SNAPSHOT_PROOF_COMPOSITION.md)** — PR6.19 dormant fixed-profile composition of exact PR6.17/PR6.18 inputs through PR6.11 and PR6.16 into an unsigned local result; not portable authority or deployment.
+- **[TRUSTED_COVENANT_REGISTRATION_V1.md](TRUSTED_COVENANT_REGISTRATION_V1.md)** — dormant exact validated-pair registration, lifecycle gating, and normalized outpoint binding.
 
 0. **[DOCUMENTATION_MAP.md](DOCUMENTATION_MAP.md)** - Start here for the docs status map: current, historical, experimental, and archive-candidate documentation.
 1. **[READINESS_EVALUATION.md](READINESS_EVALUATION.md)** - Current external evaluation path for public HODLXXI agent/runtime readiness.

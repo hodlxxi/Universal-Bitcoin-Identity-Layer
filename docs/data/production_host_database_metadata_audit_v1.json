@@ -1,0 +1,748 @@
+{
+  "schema": "hodlxxi.production_host_database_metadata_audit.v1",
+  "audit_version": "1",
+  "source_report_sha256": "1b30768d3a00ccf188e15bf75dc5ce1007065b093c502ab1187e95a41ca8984f",
+  "source_result_verdict": "PASS",
+  "audit_mode": "READ_ONLY",
+  "production_head": "6873e8fb73cbea8fda43fe3609bbdbb2817d8299",
+  "protected_staging_head": "fe333cdb5068a73b4dc57b875e1b0223b01855f7",
+  "remote_staging_basis": "b458470b409ed5a5f66844eddaf4a892bd335e12",
+  "protected_checkouts_unchanged": true,
+  "application_database_candidate_count": 1,
+  "application_database_id_sha256": "cd098bd0f85e4f7b5767fdc94daa08d4f9d08bbda0c60ebb6065bbc754ce0106",
+  "production_repository_presence": {
+    "present": [
+      "app/factory.py",
+      "app/blueprints/oauth.py"
+    ],
+    "absent": [
+      "app/blueprints/crt_authorization_proof.py",
+      "app/services/current_entitlement.py",
+      "app/services/hodlxxi_v1_snapshot_proof_composition.py",
+      "docs/PRODUCTION_COMPATIBILITY_INVENTORY_V1.md"
+    ],
+    "evidence_status": "CATALOG_OBSERVED"
+  },
+  "systemd_units": [
+    {
+      "unit": "hodlxxi-mcp.service",
+      "load_state": "loaded",
+      "active_state": "active",
+      "sub_state": "running",
+      "unit_file_state": "enabled",
+      "service_user_category": "DEDICATED_SYSTEM_SERVICE_ACCOUNT",
+      "working_directory_category": "VERSIONED_RELEASE_DIRECTORY",
+      "process_identity": "python3.12/hodlxxi-mcp-http",
+      "restart_count": 0,
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "unit": "hodlxxi-molt-agent-report.service",
+      "load_state": "loaded",
+      "active_state": "inactive",
+      "sub_state": "dead",
+      "unit_file_state": "static",
+      "service_user_category": "DEDICATED_SYSTEM_SERVICE_ACCOUNT",
+      "working_directory_category": "APPLICATION_DIRECTORY",
+      "process_identity": "NONE_RUNNING",
+      "restart_count": 0,
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "unit": "hodlxxi-molt-agent.service",
+      "load_state": "loaded",
+      "active_state": "inactive",
+      "sub_state": "dead",
+      "unit_file_state": "disabled",
+      "service_user_category": "DEDICATED_SYSTEM_SERVICE_ACCOUNT",
+      "working_directory_category": "APPLICATION_DIRECTORY",
+      "process_identity": "NONE_RUNNING",
+      "restart_count": 0,
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "unit": "hodlxxi-molt-promo.service",
+      "load_state": "masked",
+      "active_state": "inactive",
+      "sub_state": "dead",
+      "unit_file_state": "masked",
+      "service_user_category": "UNSPECIFIED",
+      "working_directory_category": "UNSPECIFIED",
+      "process_identity": "NONE_RUNNING",
+      "restart_count": 0,
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "unit": "hodlxxi.service",
+      "load_state": "loaded",
+      "active_state": "active",
+      "sub_state": "running",
+      "unit_file_state": "enabled",
+      "service_user_category": "DEDICATED_SYSTEM_SERVICE_ACCOUNT",
+      "working_directory_category": "PRODUCTION_CHECKOUT",
+      "process_identity": "python3.12/gunicorn",
+      "restart_count": 0,
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "unit": "lnd.service",
+      "load_state": "loaded",
+      "active_state": "active",
+      "sub_state": "running",
+      "unit_file_state": "enabled",
+      "service_user_category": "DEDICATED_SYSTEM_SERVICE_ACCOUNT",
+      "working_directory_category": "FILESYSTEM_ROOT",
+      "process_identity": "lnd",
+      "restart_count": 0,
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "unit": "nginx.service",
+      "load_state": "loaded",
+      "active_state": "active",
+      "sub_state": "running",
+      "unit_file_state": "enabled",
+      "service_user_category": "SYSTEM_DEFAULT",
+      "working_directory_category": "FILESYSTEM_ROOT",
+      "process_identity": "nginx",
+      "restart_count": 0,
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "unit": "postgresql.service",
+      "load_state": "loaded",
+      "active_state": "active",
+      "sub_state": "exited",
+      "unit_file_state": "enabled",
+      "service_user_category": "SYSTEM_DEFAULT",
+      "working_directory_category": "UNSPECIFIED",
+      "process_identity": "META_UNIT_NO_MAIN_PROCESS",
+      "restart_count": 0,
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "unit": "postgresql@.service",
+      "load_state": "unknown",
+      "active_state": "unknown",
+      "sub_state": "unknown",
+      "unit_file_state": "unknown",
+      "service_user_category": "UNSPECIFIED",
+      "working_directory_category": "UNSPECIFIED",
+      "process_identity": "STRUCTURE_UNKNOWN",
+      "restart_count": null,
+      "evidence_status": "INSUFFICIENT_METADATA"
+    },
+    {
+      "unit": "ubid-agent-watcher.service",
+      "load_state": "loaded",
+      "active_state": "inactive",
+      "sub_state": "dead",
+      "unit_file_state": "disabled",
+      "service_user_category": "PRIVILEGED_SYSTEM_ACCOUNT",
+      "working_directory_category": "PROTECTED_STAGING_CHECKOUT",
+      "process_identity": "NONE_RUNNING",
+      "restart_count": 0,
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "unit": "ubid-lnurl-staging.service",
+      "load_state": "loaded",
+      "active_state": "inactive",
+      "sub_state": "dead",
+      "unit_file_state": "disabled",
+      "service_user_category": "DEDICATED_SYSTEM_SERVICE_ACCOUNT",
+      "working_directory_category": "STAGING_APPLICATION_DIRECTORY",
+      "process_identity": "NONE_RUNNING",
+      "restart_count": 0,
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "unit": "ubid-staging.service",
+      "load_state": "loaded",
+      "active_state": "inactive",
+      "sub_state": "dead",
+      "unit_file_state": "disabled",
+      "service_user_category": "DEDICATED_SYSTEM_SERVICE_ACCOUNT",
+      "working_directory_category": "PROTECTED_STAGING_CHECKOUT",
+      "process_identity": "NONE_RUNNING",
+      "restart_count": 0,
+      "evidence_status": "OBSERVED_METADATA"
+    }
+  ],
+  "listening_sockets": [
+    {
+      "protocol": "udp",
+      "exposure_class": "UNKNOWN",
+      "port": 3478,
+      "process_or_unit": "turnserver",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "protocol": "udp",
+      "exposure_class": "LOOPBACK",
+      "port": 3478,
+      "process_or_unit": "turnserver",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "protocol": "udp",
+      "exposure_class": "LOOPBACK",
+      "port": 53,
+      "process_or_unit": "systemd-resolved",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "protocol": "tcp",
+      "exposure_class": "LOOPBACK",
+      "port": 5432,
+      "process_or_unit": "postgresql",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "protocol": "tcp",
+      "exposure_class": "WILDCARD",
+      "port": 80,
+      "process_or_unit": "nginx",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "protocol": "tcp",
+      "exposure_class": "WILDCARD",
+      "port": 22,
+      "process_or_unit": "ssh",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "protocol": "tcp",
+      "exposure_class": "LOOPBACK",
+      "port": 3478,
+      "process_or_unit": "turnserver",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "protocol": "tcp",
+      "exposure_class": "UNKNOWN",
+      "port": 3478,
+      "process_or_unit": "turnserver",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "protocol": "tcp",
+      "exposure_class": "LOOPBACK",
+      "port": 8332,
+      "process_or_unit": "ssh",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "protocol": "tcp",
+      "exposure_class": "LOOPBACK",
+      "port": 6379,
+      "process_or_unit": "redis",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "protocol": "tcp",
+      "exposure_class": "WILDCARD",
+      "port": 443,
+      "process_or_unit": "nginx",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "protocol": "tcp",
+      "exposure_class": "LOOPBACK",
+      "port": 10009,
+      "process_or_unit": "lnd",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "protocol": "tcp",
+      "exposure_class": "LOOPBACK",
+      "port": 5000,
+      "process_or_unit": "hodlxxi.service",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "protocol": "tcp",
+      "exposure_class": "LOOPBACK",
+      "port": 53,
+      "process_or_unit": "systemd-resolved",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "protocol": "tcp",
+      "exposure_class": "LOOPBACK",
+      "port": 8080,
+      "process_or_unit": "lnd",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "protocol": "tcp",
+      "exposure_class": "LOOPBACK",
+      "port": 8766,
+      "process_or_unit": "nginx",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "protocol": "tcp",
+      "exposure_class": "LOOPBACK",
+      "port": 8765,
+      "process_or_unit": "hodlxxi-mcp.service",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    {
+      "protocol": "tcp",
+      "exposure_class": "WILDCARD",
+      "port": 9735,
+      "process_or_unit": "lnd",
+      "evidence_status": "OBSERVED_METADATA"
+    }
+  ],
+  "nginx_routes": {
+    "listen": [
+      {
+        "exposure_class": "LOOPBACK",
+        "port": 8766
+      },
+      {
+        "exposure_class": "WILDCARD",
+        "port": 443
+      },
+      {
+        "exposure_class": "WILDCARD",
+        "port": 80
+      }
+    ],
+    "locations": [
+      "/",
+      "/.well-known/acme-challenge/",
+      "/health",
+      "/socket.io/",
+      "=/agent/mcp",
+      "=/agent/mcp/",
+      "=/api/public/status",
+      "=/api/public/status/",
+      "=/dev-dashboard",
+      "=/mcp",
+      "=/mcp/",
+      "=/oauth/token",
+      "^~/api/",
+      "^~/api/internal/agent/",
+      "^~/api/lnurl-auth/check/",
+      "^~/api/public/",
+      "^~/lnurl/",
+      "^~/oauth/",
+      "^~/play",
+      "^~/playground",
+      "^~/playground-demo"
+    ],
+    "upstreams": [
+      "LOOPBACK:8765/mcp",
+      "NAMED_UPSTREAM:hodlxxi_app"
+    ],
+    "evidence_status": "CONFIGURATION_OBSERVED_HEALTH_NOT_PROVEN"
+  },
+  "postgresql": {
+    "client_version": "16.14 (Ubuntu 16.14-0ubuntu0.24.04.1)",
+    "server_version": "16.14 (Ubuntu 16.14-0ubuntu0.24.04.1)",
+    "default_transaction_read_only": "on",
+    "audit_transaction_read_only": true,
+    "statement_timeout": "10s",
+    "lock_timeout": "1s",
+    "idle_in_transaction_session_timeout": "0",
+    "max_connections": 100,
+    "wal_level": "replica",
+    "installed_extensions": [
+      {
+        "extension": "plpgsql",
+        "version": "1.0"
+      }
+    ],
+    "lock_summary": [
+      {
+        "lock_type": "relation",
+        "mode": "AccessShareLock",
+        "granted": true,
+        "count": 1
+      },
+      {
+        "lock_type": "virtualxid",
+        "mode": "ExclusiveLock",
+        "granted": true,
+        "count": 1
+      }
+    ],
+    "evidence_status": "CATALOG_OBSERVED_READ_ONLY"
+  },
+  "application_database": {
+    "identifier_sha256": "cd098bd0f85e4f7b5767fdc94daa08d4f9d08bbda0c60ebb6065bbc754ce0106",
+    "signature_table_count": 4,
+    "relevant_tables": [
+      "oauth_clients",
+      "oauth_codes",
+      "oauth_tokens",
+      "users"
+    ],
+    "relevant_columns": {
+      "oauth_clients": [
+        "client_id",
+        "client_secret",
+        "client_name",
+        "redirect_uris",
+        "grant_types",
+        "response_types",
+        "scope",
+        "token_endpoint_auth_method",
+        "created_at",
+        "metadata",
+        "is_active",
+        "owner_pubkey",
+        "plan"
+      ],
+      "oauth_codes": [
+        "code",
+        "client_id",
+        "user_id",
+        "redirect_uri",
+        "scope",
+        "code_challenge",
+        "code_challenge_method",
+        "created_at",
+        "expires_at",
+        "is_used"
+      ],
+      "oauth_tokens": [
+        "id",
+        "access_token",
+        "refresh_token",
+        "token_type",
+        "client_id",
+        "user_id",
+        "scope",
+        "created_at",
+        "access_token_expires_at",
+        "refresh_token_expires_at",
+        "is_revoked",
+        "metadata"
+      ],
+      "users": [
+        "id",
+        "pubkey",
+        "created_at",
+        "last_login",
+        "metadata",
+        "is_active"
+      ]
+    },
+    "relevant_constraints": [
+      "oauth_clients_pkey",
+      "oauth_codes_client_id_fkey",
+      "oauth_codes_pkey",
+      "oauth_codes_user_id_fkey",
+      "oauth_tokens_client_id_fkey",
+      "oauth_tokens_pkey",
+      "oauth_tokens_user_id_fkey",
+      "users_pkey"
+    ],
+    "relevant_indexes": [
+      "idx_client_created",
+      "idx_client_name",
+      "idx_oauth_clients_owner",
+      "oauth_clients_pkey",
+      "idx_code_client",
+      "idx_code_expires",
+      "idx_oauth_codes_client_id",
+      "idx_oauth_codes_user_id",
+      "oauth_codes_pkey",
+      "idx_token_access",
+      "idx_token_expires",
+      "idx_token_refresh",
+      "idx_token_user",
+      "ix_oauth_tokens_access_token",
+      "ix_oauth_tokens_refresh_token",
+      "oauth_tokens_pkey",
+      "idx_user_created",
+      "idx_user_pubkey",
+      "ix_users_pubkey",
+      "users_pkey"
+    ],
+    "estimated_sizes": [
+      {
+        "table": "oauth_clients",
+        "estimated_rows": 85,
+        "total_bytes": 188416
+      },
+      {
+        "table": "oauth_codes",
+        "estimated_rows": 0,
+        "total_bytes": 114688
+      },
+      {
+        "table": "oauth_tokens",
+        "estimated_rows": -1,
+        "total_bytes": 131072
+      },
+      {
+        "table": "users",
+        "estimated_rows": -1,
+        "total_bytes": 81920
+      }
+    ],
+    "no_application_rows_read": true,
+    "evidence_status": "CATALOG_OBSERVED"
+  },
+  "migration_ledger": {
+    "alembic_version": "ABSENT",
+    "migrations": "ABSENT",
+    "schema_migrations": "ABSENT",
+    "alternate_ledgers": "UNKNOWN",
+    "migration_application": "NOT_PROVEN",
+    "evidence_status": "THREE_NAMES_CATALOG_OBSERVED"
+  },
+  "migration_readiness": [
+    {
+      "migration_file": "migrations/2026-07-20_action_operations.sql",
+      "target_structures": [
+        "action_operations"
+      ],
+      "production_structure_presence": "ABSENT",
+      "constraint_index_presence": "ABSENT",
+      "status": "ABSENT",
+      "application_consuming": false,
+      "sanitized_rehearsal_requirement": "REQUIRED",
+      "rollback_limitation": "No rollback SQL; dropping would lose operation and receipt history"
+    },
+    {
+      "migration_file": "migrations/2026-07-20_action_step_up_challenges.sql",
+      "target_structures": [
+        "action_step_up_challenges"
+      ],
+      "production_structure_presence": "ABSENT",
+      "constraint_index_presence": "ABSENT",
+      "status": "ABSENT",
+      "application_consuming": false,
+      "sanitized_rehearsal_requirement": "REQUIRED",
+      "rollback_limitation": "No rollback SQL; dropping would lose challenge audit state"
+    },
+    {
+      "migration_file": "migrations/2026-07-21_action_step_up_operation_binding.sql",
+      "target_structures": [
+        "action_operations unique constraint",
+        "action_operations foreign key"
+      ],
+      "production_structure_presence": "ABSENT",
+      "constraint_index_presence": "ABSENT",
+      "status": "ABSENT",
+      "application_consuming": false,
+      "sanitized_rehearsal_requirement": "REQUIRED",
+      "rollback_limitation": "No rollback SQL; addition can lock or fail"
+    },
+    {
+      "migration_file": "migrations/2026-07-22_current_entitlement_evidence.sql",
+      "target_structures": [
+        "current_entitlement_evidence"
+      ],
+      "production_structure_presence": "ABSENT",
+      "constraint_index_presence": "ABSENT",
+      "status": "ABSENT",
+      "application_consuming": false,
+      "sanitized_rehearsal_requirement": "REQUIRED",
+      "rollback_limitation": "No rollback SQL; dropping would lose evidence history"
+    },
+    {
+      "migration_file": "migrations/2026-07-25_trusted_covenant_registration.sql",
+      "target_structures": [
+        "trusted_covenant_registrations",
+        "trusted_covenant_registered_outpoints"
+      ],
+      "production_structure_presence": "ABSENT",
+      "constraint_index_presence": "ABSENT",
+      "status": "ABSENT",
+      "application_consuming": false,
+      "sanitized_rehearsal_requirement": "REQUIRED",
+      "rollback_limitation": "No rollback SQL; cascade/drop would erase registration evidence"
+    },
+    {
+      "migration_file": "migrations/2026-07-26_canonical_admission_edge_registry_v1.sql",
+      "target_structures": [
+        "canonical_admission_edges"
+      ],
+      "production_structure_presence": "ABSENT",
+      "constraint_index_presence": "ABSENT",
+      "status": "ABSENT",
+      "application_consuming": false,
+      "sanitized_rehearsal_requirement": "REQUIRED",
+      "rollback_limitation": "No rollback SQL; dropping would lose edge history"
+    },
+    {
+      "migration_file": "migrations/2026-07-26_canonical_e923_genesis_record_v1.sql",
+      "target_structures": [
+        "canonical_genesis_records"
+      ],
+      "production_structure_presence": "ABSENT",
+      "constraint_index_presence": "ABSENT",
+      "status": "ABSENT",
+      "application_consuming": false,
+      "sanitized_rehearsal_requirement": "REQUIRED",
+      "rollback_limitation": "No rollback SQL; dropping would lose genesis history"
+    }
+  ],
+  "backup_restore": {
+    "pg_dump_present": true,
+    "pg_restore_present": true,
+    "pgbackrest_present": false,
+    "wal_g_present": false,
+    "backup_timer": {
+      "unit": "dpkg-db-backup.timer",
+      "service": "dpkg-db-backup.service",
+      "evidence_status": "OBSERVED_METADATA"
+    },
+    "backup_exists": "NOT_PROVEN",
+    "restore_readiness": "NOT_PROVEN",
+    "restore_rehearsal": false,
+    "evidence_status": "TOOLING_AND_TIMER_METADATA_ONLY"
+  },
+  "blocker_disposition": [
+    {
+      "id": "PRODUCTION_SCHEMA_TRUTH_UNKNOWN",
+      "status": "PARTIALLY_RESOLVED",
+      "evidence": "Four relevant tables and their catalog structure were observed; unqueried structure and compatibility remain unknown."
+    },
+    {
+      "id": "MIGRATION_LEDGER_TRUTH_UNKNOWN",
+      "status": "PARTIALLY_RESOLVED",
+      "evidence": "Three named ledger tables are absent; alternate ledgers remain unknown and migration application is not proven."
+    },
+    {
+      "id": "MIGRATION_REHEARSAL_ABSENT",
+      "status": "STILL_BLOCKED",
+      "evidence": "No rehearsal occurred."
+    },
+    {
+      "id": "ROLLBACK_SQL_ABSENT_OR_INCOMPLETE",
+      "status": "OPERATOR_DECISION_REQUIRED",
+      "evidence": "Repository rollback limitations remain."
+    },
+    {
+      "id": "OLD_CODE_NEW_SCHEMA_COMPATIBILITY",
+      "status": "STILL_BLOCKED",
+      "evidence": "Requires sanitized rehearsal."
+    },
+    {
+      "id": "NEW_CODE_OLD_SCHEMA_COMPATIBILITY",
+      "status": "STILL_BLOCKED",
+      "evidence": "Requires sanitized rehearsal."
+    },
+    {
+      "id": "UNIQUENESS_FK_CONFLICT_RISK",
+      "status": "PARTIALLY_RESOLVED",
+      "evidence": "Target structures are absent, but conflict behavior requires rehearsal."
+    },
+    {
+      "id": "POSTGRESQL_LOCK_DURATION_RISK",
+      "status": "STILL_BLOCKED",
+      "evidence": "A point-in-time lock summary cannot prove migration lock duration."
+    },
+    {
+      "id": "BACKUP_RESTORE_REHEARSAL",
+      "status": "STILL_BLOCKED",
+      "evidence": "Tool presence and timer metadata prove neither backup existence nor restore readiness."
+    },
+    {
+      "id": "STAGING_RUNTIME_NOT_PROVEN_BY_REPOSITORY",
+      "status": "RESOLVED_BY_HOST_METADATA",
+      "evidence": "The protected staging unit was observed inactive; no protected staging process was proven running."
+    },
+    {
+      "id": "OAUTH_OIDC_JWT_COMPATIBILITY",
+      "status": "STILL_BLOCKED",
+      "evidence": "Metadata does not exercise credential behavior."
+    },
+    {
+      "id": "APPLICATION_STARTUP_IMPORT_COMPATIBILITY",
+      "status": "STILL_BLOCKED",
+      "evidence": "Production-like startup was not rehearsed."
+    },
+    {
+      "id": "FEATURE_FLAG_AND_ROLLBACK_CONTROLS",
+      "status": "OPERATOR_DECISION_REQUIRED",
+      "evidence": "Metadata does not select controls."
+    },
+    {
+      "id": "SHADOW_COMPARISON_NOT_IMPLEMENTED",
+      "status": "DEFERRED",
+      "evidence": "No shadow comparison is implemented."
+    },
+    {
+      "id": "CANONICAL_ENTITLEMENT_NOT_IMPLEMENTED",
+      "status": "DEFERRED",
+      "evidence": "Canonical entitlement remains deferred."
+    },
+    {
+      "id": "PRODUCTION_BITCOIN_RPC_ORCHESTRATION_NOT_IMPLEMENTED",
+      "status": "DEFERRED",
+      "evidence": "Production orchestration remains deferred."
+    },
+    {
+      "id": "LEGACY_BALANCE_TO_FULL_ACTIVE",
+      "status": "PARTIALLY_RESOLVED",
+      "evidence": "Repository evidence continues to identify the legacy path as active; host metadata does not validate behavior."
+    },
+    {
+      "id": "SIGNED_PORTABLE_AUTHORITY_AND_FEDERATION_DEFERRED",
+      "status": "DEFERRED",
+      "evidence": "Signing, portable authority, federation and replication remain deferred."
+    }
+  ],
+  "release_train_disposition": [
+    {
+      "train": "TRAIN_0",
+      "status": "COMPLETE",
+      "reason": "Repository and metadata inventory complete."
+    },
+    {
+      "train": "TRAIN_1",
+      "status": "NOT_RELEASE_APPROVED",
+      "reason": "Requires sanitized production-like startup and auth compatibility rehearsal."
+    },
+    {
+      "train": "TRAIN_2",
+      "status": "NOT_RELEASE_APPROVED",
+      "reason": "Requires migration and backup/restore rehearsals."
+    },
+    {
+      "train": "TRAINS_3_THROUGH_10",
+      "status": "DEPENDENT_ON_PR6_21_GATES",
+      "reason": "Existing ordered gates remain binding."
+    }
+  ],
+  "next_required_work": "PR6.23: design a sanitized production-like startup/auth and migration/backup/restore rehearsal plan and non-production harness; do not deploy, migrate, restart, copy production data, inspect secrets, or contact production services.",
+  "explicit_non_claims": [
+    "no deployment approval",
+    "no deployment performed",
+    "no migration applied",
+    "no migration rehearsal",
+    "no database write",
+    "no application-row inspection",
+    "no production data export",
+    "no environment value inspection",
+    "no secret inspection",
+    "no credential inspection",
+    "no service restart",
+    "no runtime configuration change",
+    "no route change",
+    "no authentication behavior change",
+    "no authorization behavior change",
+    "no Bitcoin RPC call",
+    "no LND call",
+    "no wallet operation",
+    "no backup proof from tooling presence",
+    "no restore proof",
+    "no startup compatibility proof",
+    "no OAuth/OIDC/JWT compatibility proof",
+    "no production readiness claim",
+    "no legacy cutover",
+    "no proof signing",
+    "no portable authority",
+    "no federation or replication"
+  ]
+}

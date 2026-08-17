@@ -2,6 +2,8 @@
 Integration tests for API endpoints.
 """
 
+import base64
+import hashlib
 import json
 from datetime import datetime, timedelta
 
@@ -231,13 +233,16 @@ class TestOAuthEndpoints:
         # Register OAuth client first
         store_oauth_client(oauth_client_data["client_id"], oauth_client_data)
 
+        code_verifier = "A" * 43
+        code_challenge = base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest()).rstrip(b"=").decode()
+
         params = {
             "client_id": oauth_client_data["client_id"],
             "redirect_uri": oauth_client_data["redirect_uris"][0],
             "response_type": "code",
             "scope": "openid profile",
             "state": "random_state_123",
-            "code_challenge": "abc123",
+            "code_challenge": code_challenge,
             "code_challenge_method": "S256",
         }
 

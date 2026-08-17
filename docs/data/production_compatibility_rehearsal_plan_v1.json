@@ -1,0 +1,661 @@
+{
+  "schema": "hodlxxi.production_compatibility_rehearsal_plan.v1",
+  "plan_version": 1,
+  "production_sha": "6873e8fb73cbea8fda43fe3609bbdbb2817d8299",
+  "staging_sha": "b3b8ed776d94bbdda88371de7bee8fed17d505f0",
+  "source_audit_report_sha256": "1b30768d3a00ccf188e15bf75dc5ce1007065b093c502ab1187e95a41ca8984f",
+  "source_database_identifier_sha256": "cd098bd0f85e4f7b5767fdc94daa08d4f9d08bbda0c60ebb6065bbc754ce0106",
+  "purpose": "Define a fail-closed, disposable, synthetic-only non-production laboratory for future startup, authentication, nine-migration, backup and restore compatibility evidence.",
+  "execution_status": "NOT_RUN",
+  "release_authority": "NONE",
+  "safety_invariants": [
+    "ACK_EXACT",
+    "REJECT_UID_0",
+    "EXPLICIT_REPOSITORY_PATH",
+    "EXPLICIT_NONEXISTENT_WORKSPACE",
+    "APPROVED_TEMPORARY_ROOT_ONLY",
+    "HARNESS_OWNERSHIP_MARKER_REQUIRED",
+    "REJECT_PROTECTED_CHECKOUTS",
+    "REJECT_PRODUCTION_SERVICE_DIRECTORIES",
+    "REJECT_INHERITED_CONFIGURATION",
+    "REJECT_EXTERNAL_DATABASE_DSN",
+    "REJECT_PASSWORD_BEARING_DSN",
+    "REJECT_EXISTING_POSTGRESQL_CLUSTER",
+    "UNIX_SOCKET_ONLY",
+    "TCP_DISABLED_LISTEN_ADDRESSES_EMPTY",
+    "GENERATE_TARGETS_ONLY_DURING_EXECUTE",
+    "SYNTHETIC_ROWS_ONLY",
+    "LOCAL_GIT_OBJECTS_ONLY",
+    "IMMUTABLE_SOURCE_SNAPSHOTS",
+    "NO_SHELL",
+    "FAIL_CLOSED_PHASE_DEPENDENCIES",
+    "SANITIZED_OUTPUT_ONLY",
+    "MARKER_SCOPED_CLEANUP_ONLY"
+  ],
+  "prohibited_targets": {
+    "checkouts": [
+      "/srv/ubid",
+      "/srv/ubid-staging"
+    ],
+    "service_directories": [
+      "/etc/postgresql",
+      "/var/lib/postgresql",
+      "/var/backups/hodlxxi",
+      "/opt/hodlxxi",
+      "/srv/hodlxxi"
+    ],
+    "reserved_target_literals": [
+      "postgres",
+      "template0",
+      "template1"
+    ],
+    "external_targets": "FORBIDDEN",
+    "production_rows": "FORBIDDEN"
+  },
+  "required_tools": [
+    {
+      "name": "git",
+      "purpose": "Verify exact local objects and export immutable local archives.",
+      "resolution": "EXPLICIT_ABSOLUTE_PATH"
+    },
+    {
+      "name": "python",
+      "purpose": "Run isolated application probes and harness logic.",
+      "resolution": "EXPLICIT_ABSOLUTE_PATH"
+    },
+    {
+      "name": "initdb",
+      "purpose": "Create only the marker-owned disposable cluster.",
+      "resolution": "EXPLICIT_POSTGRESQL_BINARY_DIRECTORY"
+    },
+    {
+      "name": "pg_ctl",
+      "purpose": "Start and stop only the marker-owned disposable cluster.",
+      "resolution": "EXPLICIT_POSTGRESQL_BINARY_DIRECTORY"
+    },
+    {
+      "name": "postgres",
+      "purpose": "Required server binary for the disposable cluster.",
+      "resolution": "EXPLICIT_POSTGRESQL_BINARY_DIRECTORY"
+    },
+    {
+      "name": "createdb",
+      "purpose": "Create execute-time generated targets in the disposable cluster.",
+      "resolution": "EXPLICIT_POSTGRESQL_BINARY_DIRECTORY"
+    },
+    {
+      "name": "psql",
+      "purpose": "Load the synthetic fixture, apply migrations and run catalog checks.",
+      "resolution": "EXPLICIT_POSTGRESQL_BINARY_DIRECTORY"
+    },
+    {
+      "name": "pg_dump",
+      "purpose": "Create the disposable custom-format archive and normalized schemas.",
+      "resolution": "EXPLICIT_POSTGRESQL_BINARY_DIRECTORY"
+    },
+    {
+      "name": "pg_restore",
+      "purpose": "Inspect and restore the disposable custom-format archive.",
+      "resolution": "EXPLICIT_POSTGRESQL_BINARY_DIRECTORY"
+    }
+  ],
+  "source_isolation": {
+    "object_source": "LOCAL_GIT_OBJECT_DATABASE_ONLY",
+    "network_clone": false,
+    "forbidden_git_operations": [
+      "clone",
+      "fetch",
+      "pull"
+    ],
+    "extraction": "git archive to a marker-owned temporary archive followed by traversal-safe extraction",
+    "existing_checkout_mutation": "FORBIDDEN",
+    "snapshots": [
+      {
+        "label": "PRODUCTION_BASIS",
+        "sha": "6873e8fb73cbea8fda43fe3609bbdbb2817d8299",
+        "write_policy": "READ_ONLY_AFTER_EXTRACTION"
+      },
+      {
+        "label": "STAGING_BASIS",
+        "sha": "b3b8ed776d94bbdda88371de7bee8fed17d505f0",
+        "write_policy": "READ_ONLY_AFTER_EXTRACTION"
+      }
+    ],
+    "cluster_architecture": {
+      "ownership": "HARNESS_CREATED_ONLY",
+      "transport": "UNIX_SOCKET_ONLY",
+      "listen_addresses": "",
+      "tcp": "DISABLED",
+      "existing_cluster": "FORBIDDEN",
+      "authentication": "LOCAL_DISPOSABLE_CLUSTER_ONLY"
+    },
+    "ephemeral_target_pattern": "^hodlxxi_rehearsal_[a-z0-9_]+$",
+    "target_generation_time": "EXECUTE_MODE_ONLY"
+  },
+  "synthetic_baseline": {
+    "fixture": "tests/fixtures/production_catalog_baseline_v1.sql",
+    "fixture_sha256": "63b9a16ed76f3c5672b429b41f3910fa77c25b8ec940eb8dbf280331fcb44359",
+    "scope": "SCHEMA_ONLY",
+    "catalog_reconstruction_is_complete_clone": false,
+    "disclaimer": "The fixture reconstructs only the PR6.22 four-table catalog facts needed for rehearsal and is not a complete production schema clone.",
+    "inserted_records": 0,
+    "tables": [
+      {
+        "table": "oauth_clients",
+        "columns": [
+          "client_id",
+          "client_secret",
+          "client_name",
+          "redirect_uris",
+          "grant_types",
+          "response_types",
+          "scope",
+          "token_endpoint_auth_method",
+          "created_at",
+          "metadata",
+          "is_active",
+          "owner_pubkey",
+          "plan"
+        ],
+        "primary_key": "oauth_clients_pkey",
+        "foreign_keys": [],
+        "indexes": [
+          "idx_client_created",
+          "idx_client_name",
+          "idx_oauth_clients_owner",
+          "oauth_clients_pkey"
+        ]
+      },
+      {
+        "table": "oauth_codes",
+        "columns": [
+          "code",
+          "client_id",
+          "user_id",
+          "redirect_uri",
+          "scope",
+          "code_challenge",
+          "code_challenge_method",
+          "created_at",
+          "expires_at",
+          "is_used"
+        ],
+        "primary_key": "oauth_codes_pkey",
+        "foreign_keys": [
+          "oauth_codes_client_id_fkey",
+          "oauth_codes_user_id_fkey"
+        ],
+        "indexes": [
+          "idx_code_client",
+          "idx_code_expires",
+          "idx_oauth_codes_client_id",
+          "idx_oauth_codes_user_id",
+          "oauth_codes_pkey"
+        ]
+      },
+      {
+        "table": "oauth_tokens",
+        "columns": [
+          "id",
+          "access_token",
+          "refresh_token",
+          "token_type",
+          "client_id",
+          "user_id",
+          "scope",
+          "created_at",
+          "access_token_expires_at",
+          "refresh_token_expires_at",
+          "is_revoked",
+          "metadata"
+        ],
+        "primary_key": "oauth_tokens_pkey",
+        "foreign_keys": [
+          "oauth_tokens_client_id_fkey",
+          "oauth_tokens_user_id_fkey"
+        ],
+        "indexes": [
+          "idx_token_access",
+          "idx_token_expires",
+          "idx_token_refresh",
+          "idx_token_user",
+          "ix_oauth_tokens_access_token",
+          "ix_oauth_tokens_refresh_token",
+          "oauth_tokens_pkey"
+        ]
+      },
+      {
+        "table": "users",
+        "columns": [
+          "id",
+          "pubkey",
+          "created_at",
+          "last_login",
+          "metadata",
+          "is_active"
+        ],
+        "primary_key": "users_pkey",
+        "foreign_keys": [],
+        "indexes": [
+          "idx_user_created",
+          "idx_user_pubkey",
+          "ix_users_pubkey",
+          "users_pkey"
+        ]
+      }
+    ]
+  },
+  "migration_order": [
+    "migrations/2026-07-20_action_operations.sql",
+    "migrations/2026-07-20_action_step_up_challenges.sql",
+    "migrations/2026-07-21_action_step_up_operation_binding.sql",
+    "migrations/2026-07-22_current_entitlement_evidence.sql",
+    "migrations/2026-07-25_trusted_covenant_registration.sql",
+    "migrations/2026-07-26_canonical_admission_edge_registry_v1.sql",
+    "migrations/2026-07-26_canonical_e923_genesis_record_v1.sql",
+    "migrations/2026-08-11_canonical_root_registration_binding_v1.sql",
+    "migrations/2026-08-12_canonical_covenant_funding_set_v1.sql"
+  ],
+  "phases": [
+    {
+      "phase": "REHEARSAL_00_PREFLIGHT",
+      "status": "NOT_RUN",
+      "purpose": "Validate acknowledgement, non-root execution, protected paths, exact local source objects, clean repository state, explicit binaries, workspace absence, ownership marker creation and absence of inherited runtime configuration.",
+      "prerequisites": [],
+      "failure_policy": "BLOCK_ALL_SUBSTANTIVE_PHASES"
+    },
+    {
+      "phase": "REHEARSAL_01_EPHEMERAL_CLUSTER",
+      "status": "NOT_RUN",
+      "purpose": "Create and start one marker-owned temporary PostgreSQL cluster with Unix sockets only and TCP disabled.",
+      "prerequisites": [
+        "REHEARSAL_00_PREFLIGHT"
+      ],
+      "failure_policy": "STOP_AND_CLEAN_MARKER_OWNED_ARTIFACTS"
+    },
+    {
+      "phase": "REHEARSAL_02_SYNTHETIC_OLD_SCHEMA",
+      "status": "NOT_RUN",
+      "purpose": "Create an execute-time generated target and load the sanitized schema-only four-table fixture.",
+      "prerequisites": [
+        "REHEARSAL_01_EPHEMERAL_CLUSTER"
+      ],
+      "failure_policy": "STOP_BEFORE_APPLICATION_PROBES"
+    },
+    {
+      "phase": "REHEARSAL_03_NEW_CODE_OLD_SCHEMA_STARTUP",
+      "status": "NOT_RUN",
+      "purpose": "Probe staging create_app startup, required blueprint registration and four-table queryability against the synthetic old schema.",
+      "prerequisites": [
+        "REHEARSAL_02_SYNTHETIC_OLD_SCHEMA"
+      ],
+      "failure_policy": "STOP_BEFORE_AUTH_PROBE"
+    },
+    {
+      "phase": "REHEARSAL_04_NEW_CODE_OLD_SCHEMA_AUTH",
+      "status": "NOT_RUN",
+      "purpose": "Run the supported synthetic OAuth/OIDC matrix with staging code against the old schema.",
+      "prerequisites": [
+        "REHEARSAL_03_NEW_CODE_OLD_SCHEMA_STARTUP"
+      ],
+      "failure_policy": "STOP_BEFORE_MIGRATIONS"
+    },
+    {
+      "phase": "REHEARSAL_05_APPLY_NINE_MIGRATIONS",
+      "status": "NOT_RUN",
+      "purpose": "Apply exactly the nine immutable migration files in the declared order without downgrade SQL.",
+      "prerequisites": [
+        "REHEARSAL_04_NEW_CODE_OLD_SCHEMA_AUTH"
+      ],
+      "failure_policy": "STOP_AT_FIRST_MIGRATION_FAILURE"
+    },
+    {
+      "phase": "REHEARSAL_06_VERIFY_MIGRATED_CATALOG",
+      "status": "NOT_RUN",
+      "purpose": "Verify migration-declared relations, columns, named constraints, primary keys and indexes.",
+      "prerequisites": [
+        "REHEARSAL_05_APPLY_NINE_MIGRATIONS"
+      ],
+      "failure_policy": "STOP_BEFORE_OLD_CODE_PROBE"
+    },
+    {
+      "phase": "REHEARSAL_07_OLD_CODE_NEW_SCHEMA_STARTUP",
+      "status": "NOT_RUN",
+      "purpose": "Probe production-basis create_app startup against the migrated additive schema.",
+      "prerequisites": [
+        "REHEARSAL_06_VERIFY_MIGRATED_CATALOG"
+      ],
+      "failure_policy": "STOP_BEFORE_FINAL_STAGING_PROBE"
+    },
+    {
+      "phase": "REHEARSAL_08_NEW_CODE_NEW_SCHEMA_STARTUP_AUTH",
+      "status": "NOT_RUN",
+      "purpose": "Repeat staging startup and the supported synthetic authentication matrix against the migrated schema.",
+      "prerequisites": [
+        "REHEARSAL_07_OLD_CODE_NEW_SCHEMA_STARTUP"
+      ],
+      "failure_policy": "STOP_BEFORE_BACKUP"
+    },
+    {
+      "phase": "REHEARSAL_09_BACKUP",
+      "status": "NOT_RUN",
+      "purpose": "Create one custom-format archive of the disposable rehearsal target, verify readable contents and calculate SHA-256.",
+      "prerequisites": [
+        "REHEARSAL_08_NEW_CODE_NEW_SCHEMA_STARTUP_AUTH"
+      ],
+      "failure_policy": "DO_NOT_ATTEMPT_RESTORE"
+    },
+    {
+      "phase": "REHEARSAL_10_RESTORE",
+      "status": "NOT_RUN",
+      "purpose": "Verify the archive checksum and restore only into a second execute-time generated target in the same disposable cluster.",
+      "prerequisites": [
+        "REHEARSAL_09_BACKUP"
+      ],
+      "failure_policy": "STOP_BEFORE_COMPARISON"
+    },
+    {
+      "phase": "REHEARSAL_11_COMPARE",
+      "status": "NOT_RUN",
+      "purpose": "Compare normalized schema, relation ownership categories, table, sequence and index counts, per-table synthetic row counts, then query every restored application table.",
+      "prerequisites": [
+        "REHEARSAL_10_RESTORE"
+      ],
+      "failure_policy": "FAIL_RESTORE_EVIDENCE"
+    },
+    {
+      "phase": "REHEARSAL_12_CLEANUP",
+      "status": "NOT_RUN",
+      "purpose": "Stop only the harness-created cluster and remove only temporary artifacts whose ownership marker matches this execution.",
+      "prerequisites": [
+        "REHEARSAL_00_PREFLIGHT"
+      ],
+      "failure_policy": "LEAVE_UNOWNED_OR_UNSTOPPED_ARTIFACTS_IN_PLACE"
+    },
+    {
+      "phase": "REHEARSAL_13_RESULT",
+      "status": "NOT_RUN",
+      "purpose": "Emit only the sanitized result schema; never include raw command output or runtime target identity.",
+      "prerequisites": [
+        "REHEARSAL_12_CLEANUP"
+      ],
+      "failure_policy": "NO_RELEASE_AUTHORITY"
+    }
+  ],
+  "startup_probe": {
+    "mechanics_source": "Existing create_app and OAuth/OIDC test fixtures, adapted to an isolated PostgreSQL Unix-socket target.",
+    "configuration_source": "EXPLICIT_ALLOWLIST_ONLY",
+    "allowlisted_variable_names": [
+      "APP_VERSION",
+      "DATABASE_URL",
+      "DISABLE_FORCE_HTTPS",
+      "FLASK_ENV",
+      "FLASK_SECRET_KEY",
+      "HOME",
+      "JWKS_DIR",
+      "JWT_ALGORITHM",
+      "JWT_ISSUER",
+      "PYTHONDONTWRITEBYTECODE",
+      "PYTHONPATH",
+      "RATE_LIMIT_ENABLED",
+      "TESTING",
+      "TMPDIR"
+    ],
+    "inherited_environment": "FORBIDDEN",
+    "test_material": "SYNTHETIC_AND_EPHEMERAL_ONLY",
+    "force_https": "DISABLED_FOR_LOCAL_TEST_CLIENT",
+    "rate_limiting": "DISABLED",
+    "network_guards": [
+      "BLOCK_INET_SOCKET_CONNECT",
+      "BLOCK_HTTP_CLIENTS",
+      "BLOCK_REDIS_CONNECTIVITY",
+      "BLOCK_BITCOIN_RPC",
+      "BLOCK_LND",
+      "BLOCK_RELAY_PUBLISHING",
+      "BLOCK_WALLET_OPERATIONS",
+      "BLOCK_EMAIL_AND_EXTERNAL_CALLBACKS"
+    ],
+    "required_observations": [
+      "APPLICATION_STARTUP",
+      "REQUIRED_BLUEPRINT_REGISTRATION",
+      "DISPOSABLE_TARGET_QUERYABILITY"
+    ],
+    "unsupported_dependency": {
+      "probe": "FULL_REDIS_INTEGRATION",
+      "status": "BLOCKED",
+      "exact_reason": "No separately created disposable Redis service is part of V1; the probe forces the reviewed non-production memory fallback without opening a Redis connection."
+    }
+  },
+  "auth_probe_matrix": [
+    {
+      "probe": "APPLICATION_STARTUP",
+      "status": "NOT_RUN",
+      "expected_contract": "create_app completes against the selected disposable schema"
+    },
+    {
+      "probe": "BLUEPRINT_REGISTRATION",
+      "status": "NOT_RUN",
+      "expected_contract": "OAuth and OIDC routes are registered"
+    },
+    {
+      "probe": "OAUTH_CLIENT_REGISTRATION_VALIDATION",
+      "status": "NOT_RUN",
+      "expected_contract": "safe synthetic registration accepted and managed metadata violations rejected"
+    },
+    {
+      "probe": "REDIRECT_URI_VALIDATION",
+      "status": "NOT_RUN",
+      "expected_contract": "exact registered redirect accepted and unsafe or mismatched redirects rejected"
+    },
+    {
+      "probe": "PKCE_REQUIREMENTS",
+      "status": "NOT_RUN",
+      "expected_contract": "S256 accepted while missing, plain and incorrect verifier cases are rejected"
+    },
+    {
+      "probe": "SCOPE_POLICY",
+      "status": "NOT_RUN",
+      "expected_contract": "finite allowed scopes accepted and unknown or reserved scopes rejected"
+    },
+    {
+      "probe": "AUTHORIZATION_CODE_ONE_TIME_CONSUMPTION",
+      "status": "NOT_RUN",
+      "expected_contract": "one code issues once and reuse fails"
+    },
+    {
+      "probe": "TOKEN_ISSUE",
+      "status": "NOT_RUN",
+      "expected_contract": "synthetic RS256 access and ID tokens are issued"
+    },
+    {
+      "probe": "BEARER_PARSING",
+      "status": "NOT_RUN",
+      "expected_contract": "one canonical Bearer header is accepted and ambiguous forms are rejected"
+    },
+    {
+      "probe": "TOKEN_VALIDATION",
+      "status": "NOT_RUN",
+      "expected_contract": "signature, issuer, audience, persisted digest, user and scope bindings validate"
+    },
+    {
+      "probe": "TOKEN_INTROSPECTION",
+      "status": "NOT_RUN",
+      "expected_contract": "valid synthetic token is active and invalid token is inactive"
+    },
+    {
+      "probe": "REVOKED_OR_EXPIRED_TOKEN_REJECTION",
+      "status": "NOT_RUN",
+      "expected_contract": "revoked and expiration-mismatched records are inactive"
+    },
+    {
+      "probe": "INACTIVE_USER_REJECTION",
+      "status": "NOT_RUN",
+      "expected_contract": "inactive persisted user cannot validate a token"
+    },
+    {
+      "probe": "EXACT_LIMITED_ENTITLEMENT",
+      "status": "NOT_RUN",
+      "expected_contract": "active persisted synthetic user resolves to LIMITED with no current FULL relation"
+    },
+    {
+      "probe": "NO_CRT_FULL_FROM_REHEARSAL_METADATA",
+      "status": "NOT_RUN",
+      "expected_contract": "synthetic rehearsal metadata never grants CRT FULL"
+    }
+  ],
+  "backup_restore_probe": {
+    "scope": "DISPOSABLE_CLUSTER_ONLY",
+    "archive_format": "CUSTOM",
+    "required_evidence": [
+      "ARCHIVE_SHA256_VERIFIED",
+      "ARCHIVE_CONTENTS_READABLE",
+      "SECOND_TARGET_RESTORE_SUCCEEDED",
+      "NORMALIZED_SCHEMA_MATCH",
+      "RELATION_OWNERSHIP_CATEGORY_MATCH",
+      "TABLE_SEQUENCE_INDEX_COUNTS_MATCH",
+      "PER_TABLE_SYNTHETIC_ROW_COUNTS_MATCH",
+      "EVERY_RESTORED_APPLICATION_TABLE_QUERYABLE"
+    ],
+    "insufficient_evidence": [
+      "PG_DUMP_EXIT_ZERO_ALONE",
+      "PG_RESTORE_LIST_ALONE"
+    ],
+    "normalization": "Remove only pg_dump restrict and unrestrict marker lines before schema comparison.",
+    "production_backup_claim": "FORBIDDEN",
+    "production_recovery_claim": "FORBIDDEN"
+  },
+  "result_schema": {
+    "schema": "hodlxxi.production_compatibility_rehearsal_result.v1",
+    "execution_status_values": [
+      "NOT_RUN",
+      "PASS",
+      "FAIL",
+      "BLOCKED"
+    ],
+    "phase_result_fields": [
+      "phase",
+      "status",
+      "evidence_code",
+      "duration_ms",
+      "sanitized_detail",
+      "artifact_sha256",
+      "cleanup_status"
+    ],
+    "phase_result_template": {
+      "phase": "REHEARSAL_PHASE_IDENTIFIER",
+      "status": "NOT_RUN",
+      "evidence_code": "NOT_RUN",
+      "duration_ms": null,
+      "sanitized_detail": "No execution evidence exists.",
+      "artifact_sha256": null,
+      "cleanup_status": "NOT_RUN"
+    },
+    "forbidden_content": [
+      "RAW_COMMAND_OUTPUT",
+      "RUNTIME_TARGET_IDENTIFIERS",
+      "CONNECTION_STRINGS",
+      "AUTHENTICATION_MATERIAL",
+      "IP_ADDRESS_LITERALS",
+      "ENVIRONMENT_VALUES"
+    ]
+  },
+  "release_gate_effect": {
+    "effect": "NONE",
+    "plan_execution_evidence_release_approval_are_distinct": true,
+    "train_disposition": [
+      {
+        "train": "TRAIN_0",
+        "status": "COMPLETE"
+      },
+      {
+        "train": "TRAIN_1",
+        "status": "NOT_RELEASE_APPROVED"
+      },
+      {
+        "train": "TRAIN_2",
+        "status": "NOT_RELEASE_APPROVED"
+      },
+      {
+        "train": "TRAINS_3_THROUGH_10",
+        "status": "DEPENDENT_ON_PR6_21_GATES"
+      }
+    ]
+  },
+  "next_required_work": {
+    "task": "SEPARATELY_AUTHORIZED_DISPOSABLE_EXECUTION",
+    "operator_decisions_required": [
+      "Approve the host, non-root account and temporary root; a production host requires separate explicit authorization for the disposable laboratory only.",
+      "Approve exact Python and PostgreSQL binary paths and versions.",
+      "Confirm both immutable source snapshots can use one isolated dependency environment.",
+      "Approve egress denial and Unix-socket-only laboratory controls.",
+      "Set acceptable phase duration and migration-lock thresholds.",
+      "Choose the sanitized result output and failed-artifact retention policy.",
+      "Decide how any exact BLOCKED probe affects later release review.",
+      "Keep release approval as a separate operator decision after evidence review."
+    ],
+    "pr6_24_boundary": {
+      "may": [
+        "provision an isolated disposable laboratory",
+        "run the PR6.23 harness",
+        "use synthetic data only",
+        "emit a sanitized result artifact",
+        "classify phases PASS, FAIL or BLOCKED",
+        "propose release-gate changes based on evidence"
+      ],
+      "may_not": [
+        "contact or modify production resources outside the disposable laboratory",
+        "use the production PostgreSQL cluster",
+        "use production rows",
+        "use production credentials",
+        "use production database names",
+        "deploy staging",
+        "apply production migrations",
+        "restart production services",
+        "call production Bitcoin RPC or LND",
+        "change entitlement or enforcement",
+        "merge release trains",
+        "declare production readiness automatically"
+      ]
+    }
+  },
+  "explicit_non_claims": [
+    "no deployment approval",
+    "no deployment performed",
+    "no production migration",
+    "no migration rehearsal executed",
+    "no database created",
+    "no database contacted",
+    "no database write",
+    "no application-row inspection",
+    "no production data copied",
+    "no production database name",
+    "no environment-value inspection",
+    "no secret inspection",
+    "no credential inspection",
+    "no service restart",
+    "no runtime configuration change",
+    "no route change",
+    "no authentication behavior change",
+    "no authorization behavior change",
+    "no Bitcoin RPC call",
+    "no LND call",
+    "no wallet operation",
+    "no network request",
+    "no PostgreSQL subprocess executed",
+    "no backup created",
+    "no restore executed",
+    "no startup compatibility proof",
+    "no OAuth/OIDC/JWT compatibility proof",
+    "no migration compatibility proof",
+    "no backup availability proof",
+    "no restore readiness proof",
+    "no production readiness claim",
+    "no Train 1 approval",
+    "no Train 2 approval",
+    "no legacy cutover",
+    "no CRT FULL grant",
+    "no proof signing",
+    "no portable authority",
+    "no federation or replication"
+  ]
+}
