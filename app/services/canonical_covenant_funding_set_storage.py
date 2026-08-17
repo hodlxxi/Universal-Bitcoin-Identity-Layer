@@ -39,15 +39,18 @@ def _utc(value):
 
 def _row_values(value):
     return {
-        "funding_set_id": value.funding_set_id, "schema": value.schema,
+        "funding_set_id": value.funding_set_id,
+        "schema": value.schema,
         "funding_set_version": value.funding_set_version,
         "trusted_registration_id": value.trusted_registration_id,
         "trusted_registration_sha256": value.trusted_registration_sha256,
         "pair_sha256": value.pair_sha256,
         "subject_xonly_pubkey": value.subject_xonly_pubkey,
         "counterparty_xonly_pubkey": value.counterparty_xonly_pubkey,
-        "lifecycle_state": value.lifecycle_state.value, "created_at": value.created_at,
-        "lifecycle_changed_at": value.lifecycle_changed_at, "effective_at": value.effective_at,
+        "lifecycle_state": value.lifecycle_state.value,
+        "created_at": value.created_at,
+        "lifecycle_changed_at": value.lifecycle_changed_at,
+        "effective_at": value.effective_at,
         "superseded_by_funding_set_id": value.superseded_by_funding_set_id,
         "canonical_funding_set_sha256": canonical_covenant_funding_set_sha256(value),
         "canonical_record_json": canonical_covenant_funding_set_bytes(value).decode("ascii"),
@@ -65,13 +68,18 @@ def _from_rows(row, children):
             if stored != wanted:
                 raise CanonicalCovenantFundingSetStorageError()
         child_projection = tuple(
-            (item.direction.value, item.txid, item.vout, item.amount_sats,
-             item.witness_script_sha256, item.descriptor_sha256)
+            (
+                item.direction.value,
+                item.txid,
+                item.vout,
+                item.amount_sats,
+                item.witness_script_sha256,
+                item.descriptor_sha256,
+            )
             for item in value.recognized_outpoints
         )
         stored_projection = tuple(
-            (item.direction, item.txid, item.vout, item.amount_sats,
-             item.witness_script_sha256, item.descriptor_sha256)
+            (item.direction, item.txid, item.vout, item.amount_sats, item.witness_script_sha256, item.descriptor_sha256)
             for item in children
         )
         if stored_projection != child_projection:
@@ -106,11 +114,17 @@ class SqlAlchemyCanonicalCovenantFundingSetRepository:
             value = self._registration(value)
             session = self._session_factory()
             parent = FundingSetRow(**_row_values(value))
-            parent.recognized_outpoints = [OutpointRow(
-                direction=x.direction.value, txid=x.txid, vout=x.vout,
-                amount_sats=x.amount_sats, witness_script_sha256=x.witness_script_sha256,
-                descriptor_sha256=x.descriptor_sha256,
-            ) for x in value.recognized_outpoints]
+            parent.recognized_outpoints = [
+                OutpointRow(
+                    direction=x.direction.value,
+                    txid=x.txid,
+                    vout=x.vout,
+                    amount_sats=x.amount_sats,
+                    witness_script_sha256=x.witness_script_sha256,
+                    descriptor_sha256=x.descriptor_sha256,
+                )
+                for x in value.recognized_outpoints
+            ]
             session.add(parent)
             session.commit()
         except (KeyboardInterrupt, SystemExit):
@@ -131,13 +145,20 @@ class SqlAlchemyCanonicalCovenantFundingSetRepository:
     def _rows(self, filters):
         try:
             with self._session_factory() as session:
-                parents = session.query(FundingSetRow).filter(*filters).order_by(
-                    FundingSetRow.created_at.asc(), FundingSetRow.funding_set_id.asc()).all()
+                parents = (
+                    session.query(FundingSetRow)
+                    .filter(*filters)
+                    .order_by(FundingSetRow.created_at.asc(), FundingSetRow.funding_set_id.asc())
+                    .all()
+                )
                 values = []
                 for row in parents:
-                    children = session.query(OutpointRow).filter(
-                        OutpointRow.funding_set_id == row.funding_set_id).order_by(
-                        OutpointRow.direction.asc(), OutpointRow.txid.asc(), OutpointRow.vout.asc()).all()
+                    children = (
+                        session.query(OutpointRow)
+                        .filter(OutpointRow.funding_set_id == row.funding_set_id)
+                        .order_by(OutpointRow.direction.asc(), OutpointRow.txid.asc(), OutpointRow.vout.asc())
+                        .all()
+                    )
                     values.append(_from_rows(row, children))
                 return tuple(values)
         except (KeyboardInterrupt, SystemExit):
@@ -153,24 +174,26 @@ class SqlAlchemyCanonicalCovenantFundingSetRepository:
             raise CanonicalCovenantFundingSetStorageError()
         if not rows:
             return None
-        return self._registration(rows[0]) if (
-            rows[0].lifecycle_state is CovenantFundingSetLifecycle.EFFECTIVE
-        ) else rows[0]
+        return (
+            self._registration(rows[0])
+            if (rows[0].lifecycle_state is CovenantFundingSetLifecycle.EFFECTIVE)
+            else rows[0]
+        )
 
     def list_by_registration(self, trusted_registration_id):
         rows = self._rows((FundingSetRow.trusted_registration_id == _id(trusted_registration_id),))
         return tuple(
-            self._registration(value) if (
-                value.lifecycle_state is CovenantFundingSetLifecycle.EFFECTIVE
-            ) else value
+            self._registration(value) if (value.lifecycle_state is CovenantFundingSetLifecycle.EFFECTIVE) else value
             for value in rows
         )
 
     def resolve_effective(self, trusted_registration_id):
-        rows = self._rows((
-            FundingSetRow.trusted_registration_id == _id(trusted_registration_id),
-            FundingSetRow.lifecycle_state == CovenantFundingSetLifecycle.EFFECTIVE.value,
-        ))
+        rows = self._rows(
+            (
+                FundingSetRow.trusted_registration_id == _id(trusted_registration_id),
+                FundingSetRow.lifecycle_state == CovenantFundingSetLifecycle.EFFECTIVE.value,
+            )
+        )
         if len(rows) != 1:
             raise CanonicalCovenantFundingSetStorageError()
         return self._registration(rows[0])

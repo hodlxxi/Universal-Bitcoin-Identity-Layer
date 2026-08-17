@@ -129,8 +129,7 @@ def canonical(monkeypatch):
     monkeypatch.setattr(
         service,
         "evaluate_canonical_root_entitlement",
-        lambda graph, subject, item: calls.append(("policy", graph, subject, item))
-        or original(graph, subject, item),
+        lambda graph, subject, item: calls.append(("policy", graph, subject, item)) or original(graph, subject, item),
     )
     return source, calls
 
@@ -168,7 +167,9 @@ def test_limited_preview_is_not_failure(monkeypatch, canonical):
 def test_commit_rejects_invalid_guard_before_observation(canonical, guard):
     _, calls = canonical
     with pytest.raises(service.CanonicalRootEntitlementRefreshUnavailable):
-        invoke(service.CanonicalRootEntitlementRefreshMode.COMMIT, execution_guard=guard, evidence_repository=Repository())
+        invoke(
+            service.CanonicalRootEntitlementRefreshMode.COMMIT, execution_guard=guard, evidence_repository=Repository()
+        )
     assert calls == []
 
 
@@ -178,7 +179,9 @@ def test_exact_replay_is_unchanged_inside_one_guard(canonical):
     events = []
     repository = Repository(evidence(decision), events)
     guard = Guard(events=events)
-    result = invoke(service.CanonicalRootEntitlementRefreshMode.COMMIT, execution_guard=guard, evidence_repository=repository)
+    result = invoke(
+        service.CanonicalRootEntitlementRefreshMode.COMMIT, execution_guard=guard, evidence_repository=repository
+    )
     assert result.outcome is service.CanonicalRootEntitlementRefreshOutcome.UNCHANGED
     assert result.evidence == repository.latest and repository.appended == []
     assert guard.holds == [SUBJECT]
@@ -200,13 +203,17 @@ def test_digest_or_time_difference_does_not_suppress_append(monkeypatch, canonic
     materialized = evidence(decision, evidence_id="00000000-0000-4000-8000-000000000011")
 
     class Materializer:
-        def __init__(self, repo): self.repo = repo
+        def __init__(self, repo):
+            self.repo = repo
+
         def materialize(self, graph, subject, item):
             self.repo.append(materialized)
             return materialized
 
     monkeypatch.setattr(service, "CanonicalRootEntitlementMaterializer", Materializer)
-    result = invoke(service.CanonicalRootEntitlementRefreshMode.COMMIT, execution_guard=Guard(), evidence_repository=repository)
+    result = invoke(
+        service.CanonicalRootEntitlementRefreshMode.COMMIT, execution_guard=Guard(), evidence_repository=repository
+    )
     assert result.outcome is service.CanonicalRootEntitlementRefreshOutcome.APPENDED
     assert repository.appended == [materialized]
 
@@ -218,20 +225,26 @@ def test_post_append_mismatch_is_sanitized_without_second_append(monkeypatch, ca
     repository = Repository()
 
     class Materializer:
-        def __init__(self, repo): self.repo = repo
+        def __init__(self, repo):
+            self.repo = repo
+
         def materialize(self, *_args):
             self.repo.appended.append(made)
             return made
 
     monkeypatch.setattr(service, "CanonicalRootEntitlementMaterializer", Materializer)
     with pytest.raises(service.CanonicalRootEntitlementRefreshUnavailable, match="refresh unavailable"):
-        invoke(service.CanonicalRootEntitlementRefreshMode.COMMIT, execution_guard=Guard(), evidence_repository=repository)
+        invoke(
+            service.CanonicalRootEntitlementRefreshMode.COMMIT, execution_guard=Guard(), evidence_repository=repository
+        )
     assert repository.appended == [made]
 
 
 @pytest.mark.parametrize("failure", [RuntimeError("secret path"), ValueError("rpc url")])
 def test_dependency_failures_are_sanitized(monkeypatch, failure):
-    monkeypatch.setattr(service, "observe_edge_local_covenant_relation", lambda *_a, **_k: (_ for _ in ()).throw(failure))
+    monkeypatch.setattr(
+        service, "observe_edge_local_covenant_relation", lambda *_a, **_k: (_ for _ in ()).throw(failure)
+    )
     with pytest.raises(service.CanonicalRootEntitlementRefreshUnavailable) as caught:
         invoke(service.CanonicalRootEntitlementRefreshMode.DRY_RUN)
     assert str(caught.value) == "canonical root entitlement refresh unavailable"
@@ -239,7 +252,9 @@ def test_dependency_failures_are_sanitized(monkeypatch, failure):
 
 @pytest.mark.parametrize("interrupt", [KeyboardInterrupt(), SystemExit()])
 def test_interrupts_remain_visible(monkeypatch, interrupt):
-    monkeypatch.setattr(service, "observe_edge_local_covenant_relation", lambda *_a, **_k: (_ for _ in ()).throw(interrupt))
+    monkeypatch.setattr(
+        service, "observe_edge_local_covenant_relation", lambda *_a, **_k: (_ for _ in ()).throw(interrupt)
+    )
     with pytest.raises(type(interrupt)):
         invoke(service.CanonicalRootEntitlementRefreshMode.DRY_RUN)
 
@@ -254,7 +269,9 @@ def test_two_competing_commits_are_serialized_by_injected_guard(monkeypatch, can
     made = evidence(decision)
 
     class Materializer:
-        def __init__(self, repo): self.repo = repo
+        def __init__(self, repo):
+            self.repo = repo
+
         def materialize(self, *_args):
             self.repo.append(made)
             return made
@@ -264,12 +281,20 @@ def test_two_competing_commits_are_serialized_by_injected_guard(monkeypatch, can
 
     def run():
         start.wait()
-        results.append(invoke(service.CanonicalRootEntitlementRefreshMode.COMMIT, execution_guard=guard, evidence_repository=repository))
+        results.append(
+            invoke(
+                service.CanonicalRootEntitlementRefreshMode.COMMIT,
+                execution_guard=guard,
+                evidence_repository=repository,
+            )
+        )
 
     threads = [Thread(target=run), Thread(target=run)]
-    for thread in threads: thread.start()
+    for thread in threads:
+        thread.start()
     start.wait()
-    for thread in threads: thread.join()
+    for thread in threads:
+        thread.join()
     assert {item.outcome for item in results} == {
         service.CanonicalRootEntitlementRefreshOutcome.APPENDED,
         service.CanonicalRootEntitlementRefreshOutcome.UNCHANGED,
@@ -280,7 +305,13 @@ def test_two_competing_commits_are_serialized_by_injected_guard(monkeypatch, can
 
 def test_admission_provenance_and_arbitrary_mode_fail_closed(monkeypatch, canonical):
     source, _ = canonical
-    monkeypatch.setattr(service, "observe_edge_local_covenant_relation", lambda *_a, **_k: replace(source, controlling_selection_source=ControllingRegistrationSelectionSource.CANONICAL_ADMISSION_EDGE))
+    monkeypatch.setattr(
+        service,
+        "observe_edge_local_covenant_relation",
+        lambda *_a, **_k: replace(
+            source, controlling_selection_source=ControllingRegistrationSelectionSource.CANONICAL_ADMISSION_EDGE
+        ),
+    )
     for mode in ("dry_run", service.CanonicalRootEntitlementRefreshMode.DRY_RUN):
         with pytest.raises(service.CanonicalRootEntitlementRefreshUnavailable):
             invoke(mode)
@@ -437,9 +468,7 @@ def test_exact_replay_has_complete_ordered_guard_lifecycle(monkeypatch):
 
 def test_expired_historical_evidence_does_not_suppress_fresh_append(monkeypatch):
     historical_relation = relation(observed_at=NOW - timedelta(minutes=10))
-    historical_decision = evaluate_canonical_root_entitlement(
-        GRAPH, SUBJECT, historical_relation
-    )
+    historical_decision = evaluate_canonical_root_entitlement(GRAPH, SUBJECT, historical_relation)
     historical = evidence(
         historical_decision,
         valid_until=NOW - timedelta(minutes=5),
@@ -452,9 +481,7 @@ def test_expired_historical_evidence_does_not_suppress_fresh_append(monkeypatch)
         evidence_id="00000000-0000-4000-8000-000000000021",
     )
     repository = Repository(historical)
-    monkeypatch.setattr(
-        service, "observe_edge_local_covenant_relation", lambda *_a, **_k: fresh
-    )
+    monkeypatch.setattr(service, "observe_edge_local_covenant_relation", lambda *_a, **_k: fresh)
 
     class Materializer:
         def __init__(self, repo):
@@ -477,9 +504,7 @@ def test_expired_historical_evidence_does_not_suppress_fresh_append(monkeypatch)
     assert repository.appended == [made]
 
 
-def test_guard_exit_failure_after_verified_append_is_sanitized_without_retry(
-    monkeypatch, canonical
-):
+def test_guard_exit_failure_after_verified_append_is_sanitized_without_retry(monkeypatch, canonical):
     source, _ = canonical
     decision = evaluate_canonical_root_entitlement(GRAPH, SUBJECT, source)
     made = evidence(
@@ -542,13 +567,9 @@ def test_malformed_dependency_return_types_fail_closed(monkeypatch, canonical, s
 
     repository = SequencedRepository()
     if stage == "observer":
-        monkeypatch.setattr(
-            service, "observe_edge_local_covenant_relation", lambda *_a, **_k: object()
-        )
+        monkeypatch.setattr(service, "observe_edge_local_covenant_relation", lambda *_a, **_k: object())
     if stage == "policy":
-        monkeypatch.setattr(
-            service, "evaluate_canonical_root_entitlement", lambda *_a: object()
-        )
+        monkeypatch.setattr(service, "evaluate_canonical_root_entitlement", lambda *_a: object())
 
     class Materializer:
         def __init__(self, repo):

@@ -30,7 +30,9 @@ def _module(name, path):
     return module
 
 
-registration_fixtures = _module("registration_fixtures_for_root_binding_storage", "tests/unit/test_trusted_covenant_registration.py")
+registration_fixtures = _module(
+    "registration_fixtures_for_root_binding_storage", "tests/unit/test_trusted_covenant_registration.py"
+)
 genesis_fixtures = _module("genesis_fixtures_for_root_binding_storage", "tests/unit/test_canonical_genesis_record.py")
 NOW = datetime(2026, 8, 11, tzinfo=timezone.utc)
 
@@ -97,9 +99,10 @@ def test_append_get_resolve_round_trip(storage):
     repository.append(value, evaluated_at=NOW)
     assert repository.get(value.binding_id) == value
     assert repository.list_for_root(value.graph_or_protocol_id, value.root_x_only_public_key) == (value,)
-    assert repository.resolve_effective(
-        value.graph_or_protocol_id, value.root_x_only_public_key, evaluated_at=NOW
-    ) == value
+    assert (
+        repository.resolve_effective(value.graph_or_protocol_id, value.root_x_only_public_key, evaluated_at=NOW)
+        == value
+    )
 
 
 def test_zero_and_multiple_effective_results_fail_closed(storage, monkeypatch):
@@ -132,9 +135,7 @@ def test_wrong_digest_and_root_cannot_be_appended(storage):
             replace(binding(registration, record), trusted_registration_sha256="f" * 64), evaluated_at=NOW
         )
     with pytest.raises(CanonicalRootRegistrationBindingStorageError):
-        repository.append(
-            replace(binding(registration, record), root_x_only_public_key="f" * 64), evaluated_at=NOW
-        )
+        repository.append(replace(binding(registration, record), root_x_only_public_key="f" * 64), evaluated_at=NOW)
 
 
 def test_inactive_registration_cannot_be_appended(storage):
@@ -156,9 +157,10 @@ def test_proposed_binding_can_be_activated_transactionally(storage):
         effective_at=NOW,
     )
     repository.transition(proposed.binding_id, effective, evaluated_at=NOW)
-    assert repository.resolve_effective(
-        effective.graph_or_protocol_id, effective.root_x_only_public_key, evaluated_at=NOW
-    ) == effective
+    assert (
+        repository.resolve_effective(effective.graph_or_protocol_id, effective.root_x_only_public_key, evaluated_at=NOW)
+        == effective
+    )
 
 
 @pytest.mark.parametrize("state", (Lifecycle.DISPUTED, Lifecycle.REVOKED))
@@ -170,18 +172,14 @@ def test_effective_binding_can_be_deactivated_and_retained(storage, state):
     repository.transition(effective.binding_id, transitioned, evaluated_at=NOW)
     assert repository.get(effective.binding_id) == transitioned
     with pytest.raises(CanonicalRootRegistrationBindingStorageError):
-        repository.resolve_effective(
-            effective.graph_or_protocol_id, effective.root_x_only_public_key, evaluated_at=NOW
-        )
+        repository.resolve_effective(effective.graph_or_protocol_id, effective.root_x_only_public_key, evaluated_at=NOW)
 
 
 def test_binding_can_be_revoked_after_registration_becomes_inactive(storage):
     _, repository, record, registration = storage
     effective = binding(registration, record)
     repository.append(effective, evaluated_at=NOW)
-    inactive = registration_fixtures.registration(
-        state=TrustedCovenantRegistrationLifecycle.REVOKED
-    )
+    inactive = registration_fixtures.registration(state=TrustedCovenantRegistrationLifecycle.REVOKED)
     repository._trusted_registration_repository.values = {inactive.registration_id: inactive}
     revoked = replace(effective, lifecycle_state=Lifecycle.REVOKED)
     repository.transition(effective.binding_id, revoked, evaluated_at=NOW)
@@ -203,9 +201,7 @@ def test_effective_binding_can_rotate_atomically_and_retain_history(storage):
     repository._trusted_registration_repository.values[other.registration_id] = other
     current = binding(registration, record)
     repository.append(current, evaluated_at=NOW)
-    replacement = binding(
-        other, record, identifier="20000000-0000-4000-8000-000000000005"
-    )
+    replacement = binding(other, record, identifier="20000000-0000-4000-8000-000000000005")
     superseded = replace(
         current,
         lifecycle_state=Lifecycle.SUPERSEDED,
@@ -218,9 +214,10 @@ def test_effective_binding_can_rotate_atomically_and_retain_history(storage):
         replacement=replacement,
     )
     assert repository.get(current.binding_id) == superseded
-    assert repository.resolve_effective(
-        current.graph_or_protocol_id, current.root_x_only_public_key, evaluated_at=NOW
-    ) == replacement
+    assert (
+        repository.resolve_effective(current.graph_or_protocol_id, current.root_x_only_public_key, evaluated_at=NOW)
+        == replacement
+    )
 
 
 def test_failed_rotation_rolls_back_original_effective_binding(storage):
@@ -270,9 +267,7 @@ def test_effective_uniqueness_and_historical_coexistence(storage):
         state=Lifecycle.PROPOSED,
     )
     repository.append(proposed, evaluated_at=NOW)
-    assert set(repository.list_for_root(first.graph_or_protocol_id, first.root_x_only_public_key)) == {
-        first, proposed
-    }
+    assert set(repository.list_for_root(first.graph_or_protocol_id, first.root_x_only_public_key)) == {first, proposed}
 
 
 def test_tampered_projection_fails_closed(storage):
@@ -281,7 +276,9 @@ def test_tampered_projection_fails_closed(storage):
     repository.append(value, evaluated_at=NOW)
     with engine.begin() as connection:
         connection.execute(text("PRAGMA ignore_check_constraints = ON"))
-        connection.execute(text("UPDATE canonical_root_registration_bindings SET trusted_registration_sha256=:v"), {"v": "f" * 64})
+        connection.execute(
+            text("UPDATE canonical_root_registration_bindings SET trusted_registration_sha256=:v"), {"v": "f" * 64}
+        )
     with pytest.raises(CanonicalRootRegistrationBindingStorageError):
         repository.get(value.binding_id)
 
@@ -320,9 +317,12 @@ def test_multiple_active_registrations_do_not_create_order_selection(storage):
     repository._trusted_registration_repository.values[other.registration_id] = other
     chosen = binding(registration, record)
     repository.append(chosen, evaluated_at=NOW)
-    assert repository.resolve_effective(
-        chosen.graph_or_protocol_id, chosen.root_x_only_public_key, evaluated_at=NOW
-    ).trusted_registration_id == registration.registration_id
+    assert (
+        repository.resolve_effective(
+            chosen.graph_or_protocol_id, chosen.root_x_only_public_key, evaluated_at=NOW
+        ).trusted_registration_id
+        == registration.registration_id
+    )
 
 
 def test_database_constraint_rejects_second_effective_row(storage):

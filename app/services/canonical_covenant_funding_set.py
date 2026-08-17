@@ -92,8 +92,12 @@ def _outpoint(value):
     if type(value) is not RecognizedCovenantFundingOutpoint:
         _fail("recognized_outpoints require exact RecognizedCovenantFundingOutpoint values")
     return RecognizedCovenantFundingOutpoint(
-        value.direction, value.txid, value.vout, value.amount_sats,
-        value.witness_script_sha256, value.descriptor_sha256,
+        value.direction,
+        value.txid,
+        value.vout,
+        value.amount_sats,
+        value.witness_script_sha256,
+        value.descriptor_sha256,
     )
 
 
@@ -138,10 +142,20 @@ class CanonicalCovenantFundingSet:
             if effective is not None or self.superseded_by_funding_set_id is not None:
                 _fail("proposed lifecycle is inconsistent")
         elif self.lifecycle_state is CovenantFundingSetLifecycle.EFFECTIVE:
-            if effective is None or effective < created or changed < effective or self.superseded_by_funding_set_id is not None:
+            if (
+                effective is None
+                or effective < created
+                or changed < effective
+                or self.superseded_by_funding_set_id is not None
+            ):
                 _fail("effective lifecycle is inconsistent")
         elif self.lifecycle_state is CovenantFundingSetLifecycle.SUPERSEDED:
-            if effective is None or effective < created or changed < effective or self.superseded_by_funding_set_id is None:
+            if (
+                effective is None
+                or effective < created
+                or changed < effective
+                or self.superseded_by_funding_set_id is None
+            ):
                 _fail("superseded lifecycle is inconsistent")
         else:
             if self.superseded_by_funding_set_id is not None:
@@ -158,9 +172,10 @@ class CanonicalCovenantFundingSet:
         if len({(item.txid, item.vout) for item in items}) != len(items):
             _fail("duplicate recognized outpoint")
         items = tuple(sorted(items, key=_sort_key))
-        if self.lifecycle_state is CovenantFundingSetLifecycle.EFFECTIVE and {
-            item.direction for item in items
-        } != {CovenantDirection.INCOMING, CovenantDirection.OUTGOING}:
+        if self.lifecycle_state is CovenantFundingSetLifecycle.EFFECTIVE and {item.direction for item in items} != {
+            CovenantDirection.INCOMING,
+            CovenantDirection.OUTGOING,
+        }:
             _fail("effective funding set requires both directions")
         object.__setattr__(self, "created_at", created)
         object.__setattr__(self, "lifecycle_changed_at", changed)
@@ -168,16 +183,32 @@ class CanonicalCovenantFundingSet:
         object.__setattr__(self, "recognized_outpoints", items)
 
 
-def create_canonical_covenant_funding_set(*, funding_set_id, trusted_registration,
-        lifecycle_state, created_at, lifecycle_changed_at, effective_at=None,
-        superseded_by_funding_set_id=None, recognized_outpoints=()):
+def create_canonical_covenant_funding_set(
+    *,
+    funding_set_id,
+    trusted_registration,
+    lifecycle_state,
+    created_at,
+    lifecycle_changed_at,
+    effective_at=None,
+    superseded_by_funding_set_id=None,
+    recognized_outpoints=(),
+):
     registration = _registration(trusted_registration)
     value = CanonicalCovenantFundingSet(
-        FUNDING_SET_SCHEMA, FUNDING_SET_VERSION, funding_set_id,
-        registration.registration_id, trusted_registration_sha256(registration),
-        registration.pair_sha256, registration.subject_xonly_pubkey,
-        registration.counterparty_xonly_pubkey, lifecycle_state, created_at,
-        lifecycle_changed_at, effective_at, superseded_by_funding_set_id,
+        FUNDING_SET_SCHEMA,
+        FUNDING_SET_VERSION,
+        funding_set_id,
+        registration.registration_id,
+        trusted_registration_sha256(registration),
+        registration.pair_sha256,
+        registration.subject_xonly_pubkey,
+        registration.counterparty_xonly_pubkey,
+        lifecycle_state,
+        created_at,
+        lifecycle_changed_at,
+        effective_at,
+        superseded_by_funding_set_id,
         recognized_outpoints,
     )
     return validate_funding_set_registration(value, registration)
@@ -216,8 +247,14 @@ def validate_funding_set_registration(value, trusted_registration):
     }
     if any(item.witness_script_sha256 != scripts[item.direction] for item in value.recognized_outpoints):
         _fail("recognized outpoint script does not match authoritative pair")
-    recognized = {(x.direction, x.txid, x.vout, x.amount_sats, x.witness_script_sha256, x.descriptor_sha256) for x in value.recognized_outpoints}
-    anchors = {(x.direction, x.txid, x.vout, x.amount_sats, x.witness_script_sha256, x.descriptor_sha256) for x in registration.outpoints}
+    recognized = {
+        (x.direction, x.txid, x.vout, x.amount_sats, x.witness_script_sha256, x.descriptor_sha256)
+        for x in value.recognized_outpoints
+    }
+    anchors = {
+        (x.direction, x.txid, x.vout, x.amount_sats, x.witness_script_sha256, x.descriptor_sha256)
+        for x in registration.outpoints
+    }
     if not anchors <= recognized:
         _fail("registration anchors are not present exactly")
     return value
@@ -240,9 +277,15 @@ def canonical_covenant_funding_set_bytes(value):
     for name in ("created_at", "lifecycle_changed_at", "effective_at"):
         payload[name] = _iso(getattr(value, name))
     payload["recognized_outpoints"] = [
-        {"direction": x.direction.value, "txid": x.txid, "vout": x.vout,
-         "amount_sats": x.amount_sats, "witness_script_sha256": x.witness_script_sha256,
-         "descriptor_sha256": x.descriptor_sha256} for x in value.recognized_outpoints
+        {
+            "direction": x.direction.value,
+            "txid": x.txid,
+            "vout": x.vout,
+            "amount_sats": x.amount_sats,
+            "witness_script_sha256": x.witness_script_sha256,
+            "descriptor_sha256": x.descriptor_sha256,
+        }
+        for x in value.recognized_outpoints
     ]
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
 
@@ -300,17 +343,31 @@ def parse_canonical_covenant_funding_set(raw):
         for item in data["recognized_outpoints"]:
             if type(item) is not dict or set(item) != fields:
                 _fail("recognized outpoint JSON has invalid fields")
-            outpoints.append(RecognizedCovenantFundingOutpoint(
-                CovenantDirection(item["direction"]), item["txid"], item["vout"],
-                item["amount_sats"], item["witness_script_sha256"], item["descriptor_sha256"]
-            ))
+            outpoints.append(
+                RecognizedCovenantFundingOutpoint(
+                    CovenantDirection(item["direction"]),
+                    item["txid"],
+                    item["vout"],
+                    item["amount_sats"],
+                    item["witness_script_sha256"],
+                    item["descriptor_sha256"],
+                )
+            )
         value = CanonicalCovenantFundingSet(
-            data["schema"], data["funding_set_version"], data["funding_set_id"],
-            data["trusted_registration_id"], data["trusted_registration_sha256"],
-            data["pair_sha256"], data["subject_xonly_pubkey"], data["counterparty_xonly_pubkey"],
-            CovenantFundingSetLifecycle(data["lifecycle_state"]), _parse_time(data["created_at"], "created_at"),
+            data["schema"],
+            data["funding_set_version"],
+            data["funding_set_id"],
+            data["trusted_registration_id"],
+            data["trusted_registration_sha256"],
+            data["pair_sha256"],
+            data["subject_xonly_pubkey"],
+            data["counterparty_xonly_pubkey"],
+            CovenantFundingSetLifecycle(data["lifecycle_state"]),
+            _parse_time(data["created_at"], "created_at"),
             _parse_time(data["lifecycle_changed_at"], "lifecycle_changed_at"),
-            _parse_time(data["effective_at"], "effective_at"), data["superseded_by_funding_set_id"], tuple(outpoints),
+            _parse_time(data["effective_at"], "effective_at"),
+            data["superseded_by_funding_set_id"],
+            tuple(outpoints),
         )
         if canonical_covenant_funding_set_bytes(value) != (raw.encode("ascii") if type(raw) is str else raw):
             _fail("funding set JSON is not canonical")

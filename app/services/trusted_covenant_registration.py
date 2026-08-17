@@ -190,7 +190,10 @@ class TrustedCovenantRegistration:
             "delta_profile": pair.delta_profile,
             "delta_blocks": pair.delta_blocks,
         }
-        if any(type(getattr(self, name)) is not type(value) or getattr(self, name) != value for name, value in authoritative.items()):
+        if any(
+            type(getattr(self, name)) is not type(value) or getattr(self, name) != value
+            for name, value in authoritative.items()
+        ):
             _fail("registration fields do not exactly match the authoritative mirrored pair")
 
         if type(self.outpoints) is not tuple or len(self.outpoints) != 2:

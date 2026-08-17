@@ -138,7 +138,9 @@ class FakeAtomicRepository:
         if self.status is AtomicStepUpReserveStatus.REPLAY:
             return AtomicStepUpReserveResult(self.status, operation, None)
         operation.step_up_verification_sha256 = self.verification_hash
-        self.operation_repository.operations[operation.operation_id].step_up_verification_sha256 = self.verification_hash
+        self.operation_repository.operations[operation.operation_id].step_up_verification_sha256 = (
+            self.verification_hash
+        )
         return AtomicStepUpReserveResult(
             self.status,
             operation,
@@ -179,8 +181,16 @@ def invocation(**changes):
 
 
 def make_gateway(
-    *, repo=None, validator=None, resolver=None, handler=None, signer=None, handlers=None,
-    ownership=None, atomic_repo=None, handler_action=ActionName.SELF_READ
+    *,
+    repo=None,
+    validator=None,
+    resolver=None,
+    handler=None,
+    signer=None,
+    handlers=None,
+    ownership=None,
+    atomic_repo=None,
+    handler_action=ActionName.SELF_READ,
 ):
     repo = repo or FakeRepository()
     calls = {"handler": 0, "signer": 0}
@@ -218,8 +228,7 @@ def make_step_up_gateway(*, repo=None, atomic_repo=None, validator=None, resolve
     return make_gateway(
         repo=repo,
         atomic_repo=atomic_repo,
-        validator=validator
-        or (lambda _: principal(scopes=frozenset({"covenant:draft:create"}))),
+        validator=validator or (lambda _: principal(scopes=frozenset({"covenant:draft:create"}))),
         resolver=resolver or (lambda _: EntitlementDecision(ACTOR, IdentityClass.FULL, True, "test")),
         handler=handler,
         handler_action=ActionName.COVENANT_DRAFT_CREATE,
@@ -557,9 +566,7 @@ def test_step_up_authentication_and_entitlement_precede_atomic_reservation(valid
     repo = FakeRepository()
     atomic = FakeAtomicRepository(repo)
     gateway, _, _ = make_step_up_gateway(repo=repo, atomic_repo=atomic, validator=validator, resolver=resolver)
-    result = gateway.invoke(
-        invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=step_up_proof())
-    )
+    result = gateway.invoke(invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=step_up_proof()))
     assert result.reason is expected
     assert atomic.calls == [] and repo.reservations == []
 
@@ -581,9 +588,7 @@ def test_step_up_ordinary_policy_denials_precede_atomic_reservation(identity, re
         validator=lambda _: principal(scopes=scopes),
         resolver=lambda _: EntitlementDecision(ACTOR, identity, relation, "test"),
     )
-    result = gateway.invoke(
-        invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=step_up_proof())
-    )
+    result = gateway.invoke(invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=step_up_proof()))
     assert result.reason is GatewayReason.AUTHORIZATION_DENIED
     assert atomic.calls == [] and repo.reservations == []
 
@@ -593,9 +598,7 @@ def test_atomic_new_dispatches_once_and_receipts_use_persisted_step_up_evidence(
     atomic = FakeAtomicRepository(repo)
     gateway, _, calls = make_step_up_gateway(repo=repo, atomic_repo=atomic)
     proof = step_up_proof()
-    result = gateway.invoke(
-        invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=proof)
-    )
+    result = gateway.invoke(invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=proof))
     receipt = parse_action_receipt(result.receipt)
     assert result.reason is GatewayReason.COMPLETED and calls["handler"] == 1
     assert len(atomic.calls) == 1 and repo.reservations[0].step_up_verification_sha256 is None
@@ -603,9 +606,7 @@ def test_atomic_new_dispatches_once_and_receipts_use_persisted_step_up_evidence(
     assert receipt["step_up_challenge_id"] == repo.operations[result.operation_id].step_up_challenge_id
     assert receipt["step_up_verification_sha256"] == atomic.verification_hash
     atomic.status = AtomicStepUpReserveStatus.REPLAY
-    replay = gateway.invoke(
-        invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=proof)
-    )
+    replay = gateway.invoke(invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=proof))
     assert replay.reason is GatewayReason.REPLAY and replay.receipt == result.receipt
     assert calls["handler"] == 1
 
@@ -636,9 +637,7 @@ def test_atomic_replay_nonterminal_states_never_dispatch(state, reason):
 
 def test_atomic_explicit_failure_receipt_uses_persisted_step_up_evidence():
     gateway, _, _ = make_step_up_gateway(handler=lambda _: HandlerResult.failed("rejected_by_handler"))
-    result = gateway.invoke(
-        invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=step_up_proof())
-    )
+    result = gateway.invoke(invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=step_up_proof()))
     receipt = parse_action_receipt(result.receipt)
     assert result.reason is GatewayReason.FAILED
     assert receipt["step_up_challenge_id"] == step_up_proof().challenge_id
@@ -656,9 +655,7 @@ def test_atomic_non_new_results_never_dispatch(status, reason):
     repo = FakeRepository()
     atomic = FakeAtomicRepository(repo, status)
     gateway, _, calls = make_step_up_gateway(repo=repo, atomic_repo=atomic)
-    result = gateway.invoke(
-        invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=step_up_proof())
-    )
+    result = gateway.invoke(invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=step_up_proof()))
     assert result.reason is reason and calls["handler"] == 0 and calls["signer"] == 0
 
 
@@ -674,9 +671,7 @@ def test_atomic_exception_and_malformed_result_fail_closed_without_dispatch():
 
     for atomic in (BrokenAtomic(RuntimeError("database detail")), BrokenAtomic(SimpleNamespace(status="new"))):
         gateway, repo, calls = make_step_up_gateway(atomic_repo=atomic)
-        result = gateway.invoke(
-            invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=step_up_proof())
-        )
+        result = gateway.invoke(invocation(action=ActionName.COVENANT_DRAFT_CREATE, step_up_proof=step_up_proof()))
         assert result.reason is GatewayReason.STORAGE_UNAVAILABLE
         assert calls["handler"] == 0 and calls["signer"] == 0 and repo.reservations == []
 

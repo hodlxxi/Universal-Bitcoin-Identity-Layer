@@ -36,25 +36,29 @@ SCHEMA = "hodlxxi.canonical_crt_membership_evaluation.v1"
 EVALUATOR_VERSION = "hodlxxi.canonical_crt_membership_evaluator.v1"
 VERIFICATION_RULE = "hodlxxi.canonical_crt_membership_verification.v1"
 
-MANDATORY_NON_CLAIMS = tuple(sorted((
-    "no FULL/LIMITED authorization grant",
-    "no automatic Bitcoin RPC observation claim",
-    "no automatic storage lookup claim",
-    "no decentralization or universal-legitimacy proof",
-    "no entitlement or user-role write",
-    "no fairness or informed-consent proof",
-    "no invite or sponsor permission grant",
-    "no legal identity, KYC or complete personhood proof",
-    "no ownership, custody or guardianship proof",
-    "no production enforcement or deployment claim",
-    "no proof of current private-key possession",
-    "no reputation, rank or trustworthiness grant",
-    "no runtime administration or server-privilege grant",
-    "no sincerity, loyalty or future-cooperation guarantee",
-    "no sponsor ownership or control over a participant",
-    "no validity for current_144 or cooperative admission templates",
-    "no validity outside the exact source evaluation and evaluated_at",
-)))
+MANDATORY_NON_CLAIMS = tuple(
+    sorted(
+        (
+            "no FULL/LIMITED authorization grant",
+            "no automatic Bitcoin RPC observation claim",
+            "no automatic storage lookup claim",
+            "no decentralization or universal-legitimacy proof",
+            "no entitlement or user-role write",
+            "no fairness or informed-consent proof",
+            "no invite or sponsor permission grant",
+            "no legal identity, KYC or complete personhood proof",
+            "no ownership, custody or guardianship proof",
+            "no production enforcement or deployment claim",
+            "no proof of current private-key possession",
+            "no reputation, rank or trustworthiness grant",
+            "no runtime administration or server-privilege grant",
+            "no sincerity, loyalty or future-cooperation guarantee",
+            "no sponsor ownership or control over a participant",
+            "no validity for current_144 or cooperative admission templates",
+            "no validity outside the exact source evaluation and evaluated_at",
+        )
+    )
+)
 
 _HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 _HEX66 = re.compile(r"(?:02|03)[0-9a-f]{64}\Z")
@@ -185,10 +189,7 @@ def _validate_genesis_source_state_reason(
         state = CanonicalGenesisEvaluationState(source_state)
     except (TypeError, ValueError):
         raise InvalidCanonicalCrtMembership("genesis source state") from None
-    if (
-        type(source_reason_code) is not str
-        or source_reason_code not in _GENESIS_SOURCE_STATE_REASONS[state]
-    ):
+    if type(source_reason_code) is not str or source_reason_code not in _GENESIS_SOURCE_STATE_REASONS[state]:
         raise InvalidCanonicalCrtMembership("genesis source reason")
     return state
 
@@ -231,9 +232,11 @@ _STATE_REASONS = {
         CanonicalCrtMembershipReason.TARGET_DISPUTED,
     },
     CanonicalCrtMembershipState.UNKNOWN: {
-        reason for reason in CanonicalCrtMembershipReason
+        reason
+        for reason in CanonicalCrtMembershipReason
         if reason.value.endswith("unknown")
-        or reason in {
+        or reason
+        in {
             CanonicalCrtMembershipReason.MISSING_TARGET_EVIDENCE,
             CanonicalCrtMembershipReason.MISSING_PARENT_EVIDENCE,
             CanonicalCrtMembershipReason.PARENT_DIGEST_MISMATCH,
@@ -257,12 +260,7 @@ _STATE_REASONS = {
 
 
 def _utc(value: object) -> datetime:
-    if (
-        type(value) is not datetime
-        or value.tzinfo is None
-        or value.utcoffset() != timedelta(0)
-        or value.microsecond
-    ):
+    if type(value) is not datetime or value.tzinfo is None or value.utcoffset() != timedelta(0) or value.microsecond:
         raise InvalidCanonicalCrtMembership("evaluated_at")
     return value
 
@@ -338,9 +336,11 @@ class CanonicalCrtMembershipEvaluation:
         _utc(self.evaluated_at)
         if type(self.depth) is not int or self.depth < 0:
             raise InvalidCanonicalCrtMembership("depth")
-        if type(self.compressed_public_key) is not str or _HEX66.fullmatch(
-            self.compressed_public_key
-        ) is None or self.compressed_public_key[2:] != self.x_only_public_key:
+        if (
+            type(self.compressed_public_key) is not str
+            or _HEX66.fullmatch(self.compressed_public_key) is None
+            or self.compressed_public_key[2:] != self.x_only_public_key
+        ):
             raise InvalidCanonicalCrtMembership("participant key")
         _digest(self.x_only_public_key)
         _digest(self.source_evaluation_sha256)
@@ -349,9 +349,7 @@ class CanonicalCrtMembershipEvaluation:
         if type(self.source_reason_code) is not str or not self.source_reason_code:
             raise InvalidCanonicalCrtMembership("source reason")
         if self.source_evaluation_kind is CanonicalCrtMembershipSourceKind.CANONICAL_GENESIS_EVALUATION:
-            source_state = _validate_genesis_source_state_reason(
-                self.source_state, self.source_reason_code
-            )
+            source_state = _validate_genesis_source_state_reason(self.source_state, self.source_reason_code)
             source_reason = None
         else:
             source_state, source_reason = _validate_lineage_source_state_reason(
@@ -398,9 +396,7 @@ class CanonicalCrtMembershipEvaluation:
             and not self.reason_code.value.startswith("source_")
         ):
             raise InvalidCanonicalCrtMembership("missing target digest")
-        if (self.selected_genesis_record_id is None) != (
-            self.selected_genesis_record_sha256 is None
-        ):
+        if (self.selected_genesis_record_id is None) != (self.selected_genesis_record_sha256 is None):
             raise InvalidCanonicalCrtMembership("partial genesis reference")
         if self.selected_genesis_record_id is not None:
             _uuid(self.selected_genesis_record_id)
@@ -496,8 +492,7 @@ class CanonicalCrtMembershipEvaluation:
                 CanonicalCrtMembershipReason.TARGET_LOCAL_EVALUATION_UNKNOWN,
             }
             if target_reason != (
-                self.controlling_depth == self.depth
-                and self.controlling_edge_id == self.target_edge_id
+                self.controlling_depth == self.depth and self.controlling_edge_id == self.target_edge_id
             ):
                 raise InvalidCanonicalCrtMembership("target control")
         if not self.reason_code.value.startswith("source_"):
@@ -511,10 +506,8 @@ class CanonicalCrtMembershipEvaluation:
                     CanonicalCrtMembershipState.ACTIVE: CanonicalSponsorLineageState.ACTIVE,
                     CanonicalCrtMembershipState.PROVISIONAL: CanonicalSponsorLineageState.PROVISIONAL,
                     CanonicalCrtMembershipState.DISPUTED: CanonicalSponsorLineageState.DISPUTED,
-                    CanonicalCrtMembershipState.EDGE_INACTIVE:
-                        CanonicalSponsorLineageState.LINEAGE_INACTIVE,
-                    CanonicalCrtMembershipState.LINEAGE_INACTIVE:
-                        CanonicalSponsorLineageState.LINEAGE_INACTIVE,
+                    CanonicalCrtMembershipState.EDGE_INACTIVE: CanonicalSponsorLineageState.LINEAGE_INACTIVE,
+                    CanonicalCrtMembershipState.LINEAGE_INACTIVE: CanonicalSponsorLineageState.LINEAGE_INACTIVE,
                     CanonicalCrtMembershipState.UNKNOWN: CanonicalSponsorLineageState.UNKNOWN,
                 }[expected_state]
                 if (
@@ -555,18 +548,27 @@ _LINEAGE_MAPPING = {
     ),
     **{
         reason: (
-            CanonicalCrtMembershipState.EDGE_INACTIVE
-            if reason is CanonicalSponsorLineageReason.TARGET_EDGE_INACTIVE
-            else CanonicalCrtMembershipState.LINEAGE_INACTIVE
-            if reason in {
-                CanonicalSponsorLineageReason.ANCESTOR_EDGE_INACTIVE,
-                CanonicalSponsorLineageReason.GENESIS_LINEAGE_INACTIVE,
-            }
-            else CanonicalCrtMembershipState.PROVISIONAL
-            if "provisional" in reason.value
-            else CanonicalCrtMembershipState.DISPUTED
-            if "disputed" in reason.value
-            else CanonicalCrtMembershipState.UNKNOWN,
+            (
+                CanonicalCrtMembershipState.EDGE_INACTIVE
+                if reason is CanonicalSponsorLineageReason.TARGET_EDGE_INACTIVE
+                else (
+                    CanonicalCrtMembershipState.LINEAGE_INACTIVE
+                    if reason
+                    in {
+                        CanonicalSponsorLineageReason.ANCESTOR_EDGE_INACTIVE,
+                        CanonicalSponsorLineageReason.GENESIS_LINEAGE_INACTIVE,
+                    }
+                    else (
+                        CanonicalCrtMembershipState.PROVISIONAL
+                        if "provisional" in reason.value
+                        else (
+                            CanonicalCrtMembershipState.DISPUTED
+                            if "disputed" in reason.value
+                            else CanonicalCrtMembershipState.UNKNOWN
+                        )
+                    )
+                )
+            ),
             CanonicalCrtMembershipReason(reason.value),
         )
         for reason in CanonicalSponsorLineageReason
@@ -576,17 +578,55 @@ _LINEAGE_MAPPING = {
 
 
 def _make_result(
-    *, subject_kind, participant_id, compressed_public_key, x_only_public_key,
-    depth, target_edge_id, target_edge_sha256, evaluated_at, state, reason,
-    source_kind, source_digest, source_state, source_reason, control_depth,
-    control_edge, selected_id, selected_digest, relevant,
+    *,
+    subject_kind,
+    participant_id,
+    compressed_public_key,
+    x_only_public_key,
+    depth,
+    target_edge_id,
+    target_edge_sha256,
+    evaluated_at,
+    state,
+    reason,
+    source_kind,
+    source_digest,
+    source_state,
+    source_reason,
+    control_depth,
+    control_edge,
+    selected_id,
+    selected_digest,
+    relevant,
 ) -> CanonicalCrtMembershipEvaluation:
     return CanonicalCrtMembershipEvaluation(
-        SCHEMA, EVALUATOR_VERSION, VERIFICATION_RULE, GRAPH_ID, NETWORK, HUMAN_PROFILE,
-        subject_kind, participant_id, compressed_public_key, x_only_public_key, depth,
-        target_edge_id, target_edge_sha256, evaluated_at, state, reason, source_kind,
-        source_digest, source_state, source_reason, control_depth, control_edge,
-        selected_id, selected_digest, tuple(relevant), MANDATORY_NON_CLAIMS, True,
+        SCHEMA,
+        EVALUATOR_VERSION,
+        VERIFICATION_RULE,
+        GRAPH_ID,
+        NETWORK,
+        HUMAN_PROFILE,
+        subject_kind,
+        participant_id,
+        compressed_public_key,
+        x_only_public_key,
+        depth,
+        target_edge_id,
+        target_edge_sha256,
+        evaluated_at,
+        state,
+        reason,
+        source_kind,
+        source_digest,
+        source_state,
+        source_reason,
+        control_depth,
+        control_edge,
+        selected_id,
+        selected_digest,
+        tuple(relevant),
+        MANDATORY_NON_CLAIMS,
+        True,
     )
 
 
@@ -615,11 +655,12 @@ def evaluate_canonical_crt_membership(
             raise InvalidCanonicalCrtMembership("exactly one source")
         genesis_mode = depth == 0 or participant_id == GENESIS_PARTICIPANT_ID
         if genesis_mode:
-            if (
-                (participant_id, compressed_public_key, x_only_public_key, depth)
-                != (GENESIS_PARTICIPANT_ID, GENESIS_COMPRESSED_KEY, GENESIS_XONLY_KEY, 0)
-                or target_edge_id is not None
-            ):
+            if (participant_id, compressed_public_key, x_only_public_key, depth) != (
+                GENESIS_PARTICIPANT_ID,
+                GENESIS_COMPRESSED_KEY,
+                GENESIS_XONLY_KEY,
+                0,
+            ) or target_edge_id is not None:
                 raise InvalidCanonicalCrtMembership("genesis request")
             subject_kind = CanonicalCrtMembershipSubjectKind.GENESIS
         else:
@@ -666,9 +707,7 @@ def evaluate_canonical_crt_membership(
         if type(genesis_evaluation) is not CanonicalGenesisEvaluation:
             raise InvalidCanonicalCrtMembership("source type")
         try:
-            source = parse_canonical_genesis_evaluation(
-                canonical_genesis_evaluation_bytes(genesis_evaluation)
-            )
+            source = parse_canonical_genesis_evaluation(canonical_genesis_evaluation_bytes(genesis_evaluation))
         except Exception:
             raise InvalidCanonicalCrtMembership("source value") from None
         state, reason = _GENESIS_MAPPING[source.state]
@@ -693,15 +732,23 @@ def evaluate_canonical_crt_membership(
             )
         binding = reason.value.startswith("source_")
         return _make_result(
-            subject_kind=subject_kind, participant_id=participant_id,
-            compressed_public_key=compressed_public_key, x_only_public_key=x_only_public_key,
-            depth=depth, target_edge_id=None, target_edge_sha256=None,
-            evaluated_at=evaluated_at, state=state, reason=reason,
+            subject_kind=subject_kind,
+            participant_id=participant_id,
+            compressed_public_key=compressed_public_key,
+            x_only_public_key=x_only_public_key,
+            depth=depth,
+            target_edge_id=None,
+            target_edge_sha256=None,
+            evaluated_at=evaluated_at,
+            state=state,
+            reason=reason,
             source_kind=CanonicalCrtMembershipSourceKind.CANONICAL_GENESIS_EVALUATION,
             source_digest=canonical_genesis_evaluation_sha256(source),
-            source_state=source.state.value, source_reason=source.reason_code,
+            source_state=source.state.value,
+            source_reason=source.reason_code,
             control_depth=None if state is CanonicalCrtMembershipState.GENESIS_ACTIVE or binding else 0,
-            control_edge=None, selected_id=source.selected_effective_record_id,
+            control_edge=None,
+            selected_id=source.selected_effective_record_id,
             selected_digest=source.selected_effective_record_sha256,
             relevant=source.relevant_records,
         )
@@ -710,9 +757,7 @@ def evaluate_canonical_crt_membership(
         if type(genesis_evaluation) is not CanonicalGenesisEvaluation:
             raise InvalidCanonicalCrtMembership("source type")
         try:
-            source = parse_canonical_genesis_evaluation(
-                canonical_genesis_evaluation_bytes(genesis_evaluation)
-            )
+            source = parse_canonical_genesis_evaluation(canonical_genesis_evaluation_bytes(genesis_evaluation))
         except Exception:
             raise InvalidCanonicalCrtMembership("source value") from None
         return _make_result(
@@ -746,11 +791,7 @@ def evaluate_canonical_crt_membership(
         raise InvalidCanonicalCrtMembership("source value") from None
     state, reason = _LINEAGE_MAPPING[source.reason_code]
     binding_reason = None
-    if (
-        source.graph_or_protocol_id != GRAPH_ID
-        or source.network != NETWORK
-        or source.human_profile != HUMAN_PROFILE
-    ):
+    if source.graph_or_protocol_id != GRAPH_ID or source.network != NETWORK or source.human_profile != HUMAN_PROFILE:
         binding_reason = CanonicalCrtMembershipReason.SOURCE_GRAPH_OR_PROFILE_MISMATCH
     elif source.evaluated_at != evaluated_at:
         binding_reason = CanonicalCrtMembershipReason.SOURCE_TIME_MISMATCH
@@ -766,20 +807,25 @@ def evaluate_canonical_crt_membership(
     if binding_reason is not None:
         state, reason = CanonicalCrtMembershipState.UNKNOWN, binding_reason
     return _make_result(
-        subject_kind=subject_kind, participant_id=participant_id,
-        compressed_public_key=compressed_public_key, x_only_public_key=x_only_public_key,
-        depth=depth, target_edge_id=target_edge_id,
+        subject_kind=subject_kind,
+        participant_id=participant_id,
+        compressed_public_key=compressed_public_key,
+        x_only_public_key=x_only_public_key,
+        depth=depth,
+        target_edge_id=target_edge_id,
         target_edge_sha256=(
             source.target_edge_sha256
             if source.target_edge_id == target_edge_id
-            and (source.target_edge_id, source.target_edge_sha256)
-            in source.relevant_records
+            and (source.target_edge_id, source.target_edge_sha256) in source.relevant_records
             else None
-        ), evaluated_at=evaluated_at,
-        state=state, reason=reason,
+        ),
+        evaluated_at=evaluated_at,
+        state=state,
+        reason=reason,
         source_kind=CanonicalCrtMembershipSourceKind.CANONICAL_SPONSOR_LINEAGE_EVALUATION,
         source_digest=canonical_sponsor_lineage_evaluation_sha256(source),
-        source_state=source.state.value, source_reason=source.reason_code.value,
+        source_state=source.state.value,
+        source_reason=source.reason_code.value,
         control_depth=None if binding_reason else source.controlling_depth,
         control_edge=None if binding_reason else source.controlling_edge_id,
         selected_id=source.selected_genesis_record_id,
@@ -804,16 +850,14 @@ def canonical_crt_membership_evaluation_bytes(value: CanonicalCrtMembershipEvalu
     if type(value) is not CanonicalCrtMembershipEvaluation:
         raise InvalidCanonicalCrtMembership("evaluation type")
     try:
-        value = CanonicalCrtMembershipEvaluation(
-            *(getattr(value, field) for field in value.__dataclass_fields__)
-        )
+        value = CanonicalCrtMembershipEvaluation(*(getattr(value, field) for field in value.__dataclass_fields__))
     except InvalidCanonicalCrtMembership:
         raise
     except Exception:
         raise InvalidCanonicalCrtMembership("evaluation value") from None
-    return json.dumps(
-        _dict(value), sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False
-    ).encode("ascii")
+    return json.dumps(_dict(value), sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode(
+        "ascii"
+    )
 
 
 def canonical_crt_membership_evaluation_sha256(value: CanonicalCrtMembershipEvaluation) -> str:
@@ -831,6 +875,7 @@ def parse_canonical_crt_membership_evaluation(
     if type(value) is not str:
         raise InvalidCanonicalCrtMembership("JSON")
     try:
+
         def pairs(items):
             result = {}
             for key, item in items:
@@ -862,9 +907,7 @@ def parse_canonical_crt_membership_evaluation(
                 "subject_kind": CanonicalCrtMembershipSubjectKind(data["subject_kind"]),
                 "state": CanonicalCrtMembershipState(data["state"]),
                 "reason_code": CanonicalCrtMembershipReason(data["reason_code"]),
-                "source_evaluation_kind": CanonicalCrtMembershipSourceKind(
-                    data["source_evaluation_kind"]
-                ),
+                "source_evaluation_kind": CanonicalCrtMembershipSourceKind(data["source_evaluation_kind"]),
                 "evaluated_at": datetime.fromisoformat(timestamp[:-1] + "+00:00"),
                 "relevant_records": tuple(tuple(item) for item in data["relevant_records"]),
                 "explicit_non_claims": tuple(data["explicit_non_claims"]),

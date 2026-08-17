@@ -1,30 +1,50 @@
 import ast
 from pathlib import Path
 
-
 ROOT = Path(__file__).parents[2]
 PROOF_MODULE = "app.services.canonical_crt_authorization_proof"
-PUBLICATION_MODULE = (
-    "app.services.canonical_crt_authorization_proof_publication"
-)
-PUBLICATION_PATH = (
-    ROOT / "app/services/canonical_crt_authorization_proof_publication.py"
-)
+PUBLICATION_MODULE = "app.services.canonical_crt_authorization_proof_publication"
+PUBLICATION_PATH = ROOT / "app/services/canonical_crt_authorization_proof_publication.py"
 BLUEPRINT_PATH = ROOT / "app/blueprints/crt_authorization_proof.py"
 APPROVED_PROOF_CONSUMER = PUBLICATION_PATH
 RESOLVER_PATH = ROOT / "app/services/canonical_crt_authorization_proof_resolver.py"
 COMPOSER_PATH = ROOT / "app/services/hodlxxi_v1_snapshot_proof_composition.py"
 APPROVED_PUBLICATION_CONSUMER = BLUEPRINT_PATH
 FORBIDDEN_IMPORT_PARTS = {
-    "flask", "sqlalchemy", "database", "models", "requests", "httpx",
-    "subprocess", "payment", "payments", "billing", "entitlement",
-    "entitlements", "session", "sessions", "bitcoin", "rpc", "lnd", "mcp",
-    "scheduler", "schedulers", "cli",
+    "flask",
+    "sqlalchemy",
+    "database",
+    "models",
+    "requests",
+    "httpx",
+    "subprocess",
+    "payment",
+    "payments",
+    "billing",
+    "entitlement",
+    "entitlements",
+    "session",
+    "sessions",
+    "bitcoin",
+    "rpc",
+    "lnd",
+    "mcp",
+    "scheduler",
+    "schedulers",
+    "cli",
 }
 FORBIDDEN_CALLS = {
-    "session_scope", "get_rpc_connection", "requests.request",
-    "requests.sessions.session.request", "session.request", "subprocess",
-    "write_text", "write_bytes", "unlink", "rename", "mkdir",
+    "session_scope",
+    "get_rpc_connection",
+    "requests.request",
+    "requests.sessions.session.request",
+    "session.request",
+    "subprocess",
+    "write_text",
+    "write_bytes",
+    "unlink",
+    "rename",
+    "mkdir",
 }
 
 
@@ -92,8 +112,7 @@ def test_approved_imports_are_explicit_and_complete():
     assert PUBLICATION_MODULE in blueprint_imports
     tree = ast.parse(PUBLICATION_PATH.read_text(), filename=str(PUBLICATION_PATH))
     proof_imports = [
-        node for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module == PROOF_MODULE
+        node for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module == PROOF_MODULE
     ]
     assert len(proof_imports) == 1
     assert all(alias.name != "*" for alias in proof_imports[0].names)
@@ -110,7 +129,10 @@ def test_no_wildcard_or_dynamic_import_and_no_code_execution():
                 assert all(alias.name != "importlib" for alias in node.names)
             elif isinstance(node, ast.Call):
                 assert _dotted_name(node.func) not in {
-                    "__import__", "eval", "exec", "importlib.import_module",
+                    "__import__",
+                    "eval",
+                    "exec",
+                    "importlib.import_module",
                     "import_module",
                 }
 
@@ -124,12 +146,18 @@ def test_publication_service_has_no_forbidden_executable_dependency_or_call():
             continue
         called = _dotted_name(node.func).lower()
         assert called not in FORBIDDEN_CALLS
-        assert not any(called.startswith(f"{name}.") for name in (
-            "subprocess", "requests", "httpx",
-        ))
+        assert not any(
+            called.startswith(f"{name}.")
+            for name in (
+                "subprocess",
+                "requests",
+                "httpx",
+            )
+        )
         if isinstance(node.func, ast.Attribute) and node.func.attr == "replace":
             assert _dotted_name(node.func.value) not in {
-                "path", "_artifact_directory",
+                "path",
+                "_artifact_directory",
             }
 
 

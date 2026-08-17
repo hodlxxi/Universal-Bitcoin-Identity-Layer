@@ -66,22 +66,31 @@ def test_active_genesis_round_trip_and_pinned_digests():
     assert canonical_crt_membership_evaluation_sha256(result) == (
         "d56fda10cd7181f987560b719e23af6620e187ffdc83a5bea9f5ca33bcf3ab29"
     )
-    assert parse_canonical_crt_membership_evaluation(
-        canonical_crt_membership_evaluation_bytes(result)
-    ) == result
+    assert parse_canonical_crt_membership_evaluation(canonical_crt_membership_evaluation_bytes(result)) == result
 
 
 @pytest.mark.parametrize(
     ("source_state", "source_reason", "state", "reason"),
     (
-        ("provisional", "proposed_only", CanonicalCrtMembershipState.PROVISIONAL,
-         CanonicalCrtMembershipReason.GENESIS_PROVISIONAL),
-        ("disputed", "controlling_dispute", CanonicalCrtMembershipState.DISPUTED,
-         CanonicalCrtMembershipReason.GENESIS_DISPUTED),
-        ("lineage_inactive", "all_records_revoked", CanonicalCrtMembershipState.LINEAGE_INACTIVE,
-         CanonicalCrtMembershipReason.GENESIS_LINEAGE_INACTIVE),
-        ("unknown", "no_records", CanonicalCrtMembershipState.UNKNOWN,
-         CanonicalCrtMembershipReason.GENESIS_UNKNOWN),
+        (
+            "provisional",
+            "proposed_only",
+            CanonicalCrtMembershipState.PROVISIONAL,
+            CanonicalCrtMembershipReason.GENESIS_PROVISIONAL,
+        ),
+        (
+            "disputed",
+            "controlling_dispute",
+            CanonicalCrtMembershipState.DISPUTED,
+            CanonicalCrtMembershipReason.GENESIS_DISPUTED,
+        ),
+        (
+            "lineage_inactive",
+            "all_records_revoked",
+            CanonicalCrtMembershipState.LINEAGE_INACTIVE,
+            CanonicalCrtMembershipReason.GENESIS_LINEAGE_INACTIVE,
+        ),
+        ("unknown", "no_records", CanonicalCrtMembershipState.UNKNOWN, CanonicalCrtMembershipReason.GENESIS_UNKNOWN),
     ),
 )
 def test_genesis_state_mapping(source_state, source_reason, state, reason):
@@ -112,9 +121,7 @@ def test_active_ordinary_membership(depth):
     assert len(result.relevant_records) == 1 + 2 * depth
     assert result.controlling_depth is result.controlling_edge_id is None
     if depth == 3:
-        assert result.source_evaluation_sha256 == (
-            "fed39d556a9d9259411f7a86f57d54141134a9990a8c2a502c2a727491416d5e"
-        )
+        assert result.source_evaluation_sha256 == ("fed39d556a9d9259411f7a86f57d54141134a9990a8c2a502c2a727491416d5e")
         assert canonical_crt_membership_evaluation_sha256(result) == (
             "b79a29168180ba897a81ebbd8143262be6196b93c5603317a16831a3a9c1cee3"
         )
@@ -123,10 +130,8 @@ def test_active_ordinary_membership(depth):
 @pytest.mark.parametrize(
     ("position", "expected_state", "expected_reason"),
     (
-        (2, CanonicalCrtMembershipState.EDGE_INACTIVE,
-         CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE),
-        (1, CanonicalCrtMembershipState.LINEAGE_INACTIVE,
-         CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE),
+        (2, CanonicalCrtMembershipState.EDGE_INACTIVE, CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE),
+        (1, CanonicalCrtMembershipState.LINEAGE_INACTIVE, CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE),
     ),
 )
 @pytest.mark.parametrize(
@@ -137,10 +142,13 @@ def test_target_and_ancestor_inactivity_are_distinct(position, expected_state, e
     items = list(lineage_fixture(2))
     items[position - 1] = with_edge_state(items[position - 1], lifecycle)
     for index in range(position, len(items)):
-        from app.services.canonical_admission_edge import canonical_admission_edge_sha256
+        from app.services.canonical_admission_edge import (
+            canonical_admission_edge_sha256 as recompute_admission_edge_sha256,
+        )
+
         record = replace(
             items[index].record,
-            sponsor_basis_record_sha256=canonical_admission_edge_sha256(items[index - 1].record),
+            sponsor_basis_record_sha256=recompute_admission_edge_sha256(items[index - 1].record),
         )
         items[index] = type(items[index])(
             record, items[index].trusted_registration, items[index].observation_evaluation
@@ -158,14 +166,24 @@ def test_target_and_ancestor_inactivity_are_distinct(position, expected_state, e
 def test_every_lineage_reason_maps_without_collapsing(reason):
     source = evaluate()
     requested = (
-        source.target_participant_id, source.target_compressed_public_key,
-        source.target_x_only_public_key, source.target_depth, source.target_edge_id,
+        source.target_participant_id,
+        source.target_compressed_public_key,
+        source.target_x_only_public_key,
+        source.target_depth,
+        source.target_edge_id,
     )
     mapping_state = (
-        "provisional" if "provisional" in reason.value else
-        "disputed" if "disputed" in reason.value else
-        "lineage_inactive" if reason.value.endswith("edge_inactive")
-        or reason.value == "genesis_lineage_inactive" else "unknown"
+        "provisional"
+        if "provisional" in reason.value
+        else (
+            "disputed"
+            if "disputed" in reason.value
+            else (
+                "lineage_inactive"
+                if reason.value.endswith("edge_inactive") or reason.value == "genesis_lineage_inactive"
+                else "unknown"
+            )
+        )
     )
     state = type(source.state)(mapping_state)
     metadata_absent = reason in {
@@ -175,24 +193,33 @@ def test_every_lineage_reason_maps_without_collapsing(reason):
     kwargs = dict(state=state, reason_code=reason)
     if metadata_absent:
         kwargs.update(
-            target_edge_sha256=None, target_participant_id=None,
-            target_compressed_public_key=None, target_x_only_public_key=None,
-            target_depth=None, selected_genesis_record_id=None,
-            selected_genesis_record_sha256=None, lineage_nodes=(), relevant_records=(),
-            controlling_depth=None, controlling_edge_id=None,
+            target_edge_sha256=None,
+            target_participant_id=None,
+            target_compressed_public_key=None,
+            target_x_only_public_key=None,
+            target_depth=None,
+            selected_genesis_record_id=None,
+            selected_genesis_record_sha256=None,
+            lineage_nodes=(),
+            relevant_records=(),
+            controlling_depth=None,
+            controlling_edge_id=None,
         )
     elif reason.value.startswith("genesis_"):
         kwargs.update(controlling_depth=0, controlling_edge_id=None)
     elif reason.value.startswith(("ancestor_", "target_")):
         position = source.target_depth if reason.value.startswith("target_") else 1
-        kwargs.update(controlling_depth=position,
-                      controlling_edge_id=source.lineage_nodes[position - 1].edge_id)
+        kwargs.update(controlling_depth=position, controlling_edge_id=source.lineage_nodes[position - 1].edge_id)
     else:
         kwargs.update(controlling_depth=None, controlling_edge_id=None)
     forged = replace(source, **kwargs)
     result = ordinary_membership(
-        forged, participant_id=requested[0], compressed_public_key=requested[1],
-        x_only_public_key=requested[2], depth=requested[3], target_edge_id=requested[4],
+        forged,
+        participant_id=requested[0],
+        compressed_public_key=requested[1],
+        x_only_public_key=requested[2],
+        depth=requested[3],
+        target_edge_id=requested[4],
     )
     assert result.reason_code.value == reason.value
 
@@ -233,7 +260,8 @@ def test_both_and_neither_sources_are_rejected():
             participant_id=source.genesis_participant_id,
             compressed_public_key=source.compressed_public_key,
             x_only_public_key=source.x_only_public_key,
-            depth=0, evaluated_at=NOW,
+            depth=0,
+            evaluated_at=NOW,
         )
     result = genesis_membership(genesis_evaluation=None, lineage_evaluation=evaluate())
     assert result.reason_code is CanonicalCrtMembershipReason.SOURCE_KIND_MISMATCH
@@ -292,9 +320,7 @@ def _rebind_descendants(items, changed_position):
             items[index],
             record=replace(
                 items[index].record,
-                sponsor_basis_record_sha256=canonical_admission_edge_sha256(
-                    items[index - 1].record
-                ),
+                sponsor_basis_record_sha256=canonical_admission_edge_sha256(items[index - 1].record),
             ),
         )
     return tuple(items)
@@ -371,9 +397,7 @@ def test_genesis_source_state_reason_forgery_rejected_even_on_binding_failure(fi
         ("provisional", "ancestor_disputed"),
     ),
 )
-def test_lineage_source_state_reason_forgery_rejected_even_on_binding_failure(
-    source_state, source_reason
-):
+def test_lineage_source_state_reason_forgery_rejected_even_on_binding_failure(source_state, source_reason):
     result = ordinary_membership(evaluated_at=NOW + timedelta(seconds=1))
     with pytest.raises(InvalidCanonicalCrtMembership):
         replace(result, source_state=source_state, source_reason_code=source_reason)
@@ -382,36 +406,52 @@ def test_lineage_source_state_reason_forgery_rejected_even_on_binding_failure(
 @pytest.mark.parametrize(
     ("position", "mode", "state", "reason"),
     (
-        (2, "revoked", CanonicalCrtMembershipState.EDGE_INACTIVE,
-         CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE),
-        (2, "superseded", CanonicalCrtMembershipState.EDGE_INACTIVE,
-         CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE),
-        (2, "spent", CanonicalCrtMembershipState.EDGE_INACTIVE,
-         CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE),
-        (2, "confirmations", CanonicalCrtMembershipState.EDGE_INACTIVE,
-         CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE),
-        (0, "revoked", CanonicalCrtMembershipState.LINEAGE_INACTIVE,
-         CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE),
-        (0, "superseded", CanonicalCrtMembershipState.LINEAGE_INACTIVE,
-         CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE),
-        (0, "spent", CanonicalCrtMembershipState.LINEAGE_INACTIVE,
-         CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE),
-        (0, "confirmations", CanonicalCrtMembershipState.LINEAGE_INACTIVE,
-         CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE),
-        (2, "binding", CanonicalCrtMembershipState.UNKNOWN,
-         CanonicalCrtMembershipReason.TARGET_LOCAL_EVALUATION_UNKNOWN),
-        (0, "binding", CanonicalCrtMembershipState.UNKNOWN,
-         CanonicalCrtMembershipReason.ANCESTOR_LOCAL_EVALUATION_UNKNOWN),
+        (2, "revoked", CanonicalCrtMembershipState.EDGE_INACTIVE, CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE),
+        (2, "superseded", CanonicalCrtMembershipState.EDGE_INACTIVE, CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE),
+        (2, "spent", CanonicalCrtMembershipState.EDGE_INACTIVE, CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE),
+        (
+            2,
+            "confirmations",
+            CanonicalCrtMembershipState.EDGE_INACTIVE,
+            CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE,
+        ),
+        (
+            0,
+            "revoked",
+            CanonicalCrtMembershipState.LINEAGE_INACTIVE,
+            CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE,
+        ),
+        (
+            0,
+            "superseded",
+            CanonicalCrtMembershipState.LINEAGE_INACTIVE,
+            CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE,
+        ),
+        (0, "spent", CanonicalCrtMembershipState.LINEAGE_INACTIVE, CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE),
+        (
+            0,
+            "confirmations",
+            CanonicalCrtMembershipState.LINEAGE_INACTIVE,
+            CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE,
+        ),
+        (
+            2,
+            "binding",
+            CanonicalCrtMembershipState.UNKNOWN,
+            CanonicalCrtMembershipReason.TARGET_LOCAL_EVALUATION_UNKNOWN,
+        ),
+        (
+            0,
+            "binding",
+            CanonicalCrtMembershipState.UNKNOWN,
+            CanonicalCrtMembershipReason.ANCESTOR_LOCAL_EVALUATION_UNKNOWN,
+        ),
     ),
 )
 def test_genuine_lineage_composition_and_authoritative_control(position, mode, state, reason):
     items = list(lineage_fixture())
     if mode in {"revoked", "superseded"}:
-        lifecycle = (
-            AdmissionEdgeLifecycle.REVOKED
-            if mode == "revoked"
-            else AdmissionEdgeLifecycle.SUPERSEDED
-        )
+        lifecycle = AdmissionEdgeLifecycle.REVOKED if mode == "revoked" else AdmissionEdgeLifecycle.SUPERSEDED
         items[position] = with_edge_state(items[position], lifecycle)
         items = list(_rebind_descendants(items, position))
     else:
@@ -447,16 +487,19 @@ def test_genuine_genesis_inactive_composes_to_lineage_inactive():
 @pytest.mark.parametrize(
     ("change", "reason"),
     (
-        ({"evaluated_at": NOW + timedelta(seconds=1)},
-         CanonicalCrtMembershipReason.SOURCE_TIME_MISMATCH),
-        ({"target_edge_id": "00000000-0000-4000-8000-000000000099"},
-         CanonicalCrtMembershipReason.SOURCE_SUBJECT_MISMATCH),
-        ({"participant_id": "1" * 64, "compressed_public_key": "02" + "1" * 64,
-          "x_only_public_key": "1" * 64},
-         CanonicalCrtMembershipReason.SOURCE_SUBJECT_MISMATCH),
-        ({"participant_id": "2" * 64, "compressed_public_key": "03" + "2" * 64,
-          "x_only_public_key": "2" * 64},
-         CanonicalCrtMembershipReason.SOURCE_SUBJECT_MISMATCH),
+        ({"evaluated_at": NOW + timedelta(seconds=1)}, CanonicalCrtMembershipReason.SOURCE_TIME_MISMATCH),
+        (
+            {"target_edge_id": "00000000-0000-4000-8000-000000000099"},
+            CanonicalCrtMembershipReason.SOURCE_SUBJECT_MISMATCH,
+        ),
+        (
+            {"participant_id": "1" * 64, "compressed_public_key": "02" + "1" * 64, "x_only_public_key": "1" * 64},
+            CanonicalCrtMembershipReason.SOURCE_SUBJECT_MISMATCH,
+        ),
+        (
+            {"participant_id": "2" * 64, "compressed_public_key": "03" + "2" * 64, "x_only_public_key": "2" * 64},
+            CanonicalCrtMembershipReason.SOURCE_SUBJECT_MISMATCH,
+        ),
         ({"depth": 2}, CanonicalCrtMembershipReason.SOURCE_SUBJECT_MISMATCH),
     ),
 )
@@ -497,9 +540,7 @@ def test_isolated_ordinary_identity_breaks_are_invalid_call_contracts(change):
         ("human_profile", "current_144"),
     ),
 )
-def test_forged_fixed_lineage_source_is_invalid_public_source_not_binding_mismatch(
-    field, value
-):
+def test_forged_fixed_lineage_source_is_invalid_public_source_not_binding_mismatch(field, value):
     source = evaluate()
     forged = object.__new__(type(source))
     for name in source.__dataclass_fields__:
@@ -516,10 +557,17 @@ def _replace_record_pair(records, old_pair, new_pair):
     return tuple(sorted(new_pair if item == old_pair else item for item in records))
 
 
-@pytest.mark.parametrize("forgery", (
-    "no_genesis", "genesis_absent", "wrong_genesis", "target_absent",
-    "wrong_target", "unrelated_correct_count",
-))
+@pytest.mark.parametrize(
+    "forgery",
+    (
+        "no_genesis",
+        "genesis_absent",
+        "wrong_genesis",
+        "target_absent",
+        "wrong_target",
+        "unrelated_correct_count",
+    ),
+)
 def test_active_ordinary_requires_semantic_genesis_and_target_pairs(forgery):
     result = ordinary_membership()
     genesis_pair = (
@@ -532,24 +580,21 @@ def test_active_ordinary_requires_semantic_genesis_and_target_pairs(forgery):
     if forgery == "no_genesis":
         changes.update(selected_genesis_record_id=None, selected_genesis_record_sha256=None)
     elif forgery == "genesis_absent":
-        changes["relevant_records"] = _replace_record_pair(
-            result.relevant_records, genesis_pair, unrelated
-        )
+        changes["relevant_records"] = _replace_record_pair(result.relevant_records, genesis_pair, unrelated)
     elif forgery == "wrong_genesis":
         changes.update(
             selected_genesis_record_id=unrelated[0],
             selected_genesis_record_sha256=unrelated[1],
         )
     elif forgery == "target_absent":
-        changes["relevant_records"] = _replace_record_pair(
-            result.relevant_records, target_pair, unrelated
-        )
+        changes["relevant_records"] = _replace_record_pair(result.relevant_records, target_pair, unrelated)
     elif forgery == "wrong_target":
         changes["target_edge_sha256"] = "8" * 64
     else:
         records = _replace_record_pair(result.relevant_records, genesis_pair, unrelated)
         changes["relevant_records"] = _replace_record_pair(
-            records, target_pair,
+            records,
+            target_pair,
             ("00000000-0000-4000-8000-000000000098", "8" * 64),
         )
     with pytest.raises(InvalidCanonicalCrtMembership):
@@ -560,8 +605,7 @@ def test_active_ordinary_requires_semantic_genesis_and_target_pairs(forgery):
     ("field", "value"),
     (
         ("subject_kind", CanonicalCrtMembershipSubjectKind.GENESIS),
-        ("source_evaluation_kind",
-         CanonicalCrtMembershipSourceKind.CANONICAL_GENESIS_EVALUATION),
+        ("source_evaluation_kind", CanonicalCrtMembershipSourceKind.CANONICAL_GENESIS_EVALUATION),
         ("source_state", "unknown"),
         ("source_reason_code", "target_edge_inactive"),
         ("state", CanonicalCrtMembershipState.EDGE_INACTIVE),
@@ -646,9 +690,7 @@ def test_control_reason_semantics_are_not_forgeable():
                 [
                     lineage_fixture()[0],
                     lineage_fixture()[1],
-                    with_edge_state(
-                        lineage_fixture()[2], AdmissionEdgeLifecycle.REVOKED
-                    ),
+                    with_edge_state(lineage_fixture()[2], AdmissionEdgeLifecycle.REVOKED),
                 ],
                 2,
             )
@@ -706,11 +748,28 @@ def test_explicit_state_reason_cross_family_forgery_rejected():
 @pytest.mark.parametrize(
     "mutation",
     (
-        "duplicate", "extra", "missing", "float", "nan", "infinity", "offset",
-        "microseconds", "uppercase_uuid", "uppercase_digest", "subject", "state",
-        "reason", "source_kind", "source_state", "source_reason",
-        "source_incompatible", "reordered", "duplicate_record", "partial_target",
-        "partial_genesis", "forged_active",
+        "duplicate",
+        "extra",
+        "missing",
+        "float",
+        "nan",
+        "infinity",
+        "offset",
+        "microseconds",
+        "uppercase_uuid",
+        "uppercase_digest",
+        "subject",
+        "state",
+        "reason",
+        "source_kind",
+        "source_state",
+        "source_reason",
+        "source_incompatible",
+        "reordered",
+        "duplicate_record",
+        "partial_target",
+        "partial_genesis",
+        "forged_active",
     ),
 )
 def test_complete_membership_parser_adversarial_matrix(mutation):
@@ -762,8 +821,6 @@ def test_complete_membership_parser_adversarial_matrix(mutation):
         data["selected_genesis_record_id"] = None
         data["selected_genesis_record_sha256"] = None
     if mutation != "duplicate":
-        encoded = json.dumps(
-            data, sort_keys=True, separators=(",", ":"), allow_nan=True
-        )
+        encoded = json.dumps(data, sort_keys=True, separators=(",", ":"), allow_nan=True)
     with pytest.raises(InvalidCanonicalCrtMembership):
         parse_canonical_crt_membership_evaluation(encoded)

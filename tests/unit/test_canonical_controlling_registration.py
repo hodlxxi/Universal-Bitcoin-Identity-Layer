@@ -93,9 +93,7 @@ def test_ordinary_subject_uses_only_exact_admission_edge_pointer():
     result = _resolve(registration.subject_xonly_pubkey, repositories)
     assert result.registration == registration
     assert result.selection_source is Source.CANONICAL_ADMISSION_EDGE
-    assert repositories[2].calls == [
-        ("get_effective_for_child", (GRAPH_ID, registration.subject_xonly_pubkey))
-    ]
+    assert repositories[2].calls == [("get_effective_for_child", (GRAPH_ID, registration.subject_xonly_pubkey))]
     assert repositories[3].calls == []
     assert repositories[4].calls == [("get", (registration.registration_id,))]
 
@@ -221,9 +219,7 @@ def test_admission_edge_graph_and_child_mismatches_fail_without_root_lookup(monk
     ):
         repositories = _repositories()
         canonical = repositories[2].value
-        values = {
-            field: getattr(canonical, field) for field in canonical.__dataclass_fields__
-        }
+        values = {field: getattr(canonical, field) for field in canonical.__dataclass_fields__}
         malformed = SimpleNamespace(**{**values, **changes})
         monkeypatch.setattr(selector_module, "parse_canonical_admission_edge", lambda _value, result=malformed: result)
         with pytest.raises(ControllingRegistrationUnavailable):
@@ -273,9 +269,7 @@ def test_process_control_exceptions_are_preserved(exception):
 
 @pytest.mark.parametrize("repository_index", (2, 4))
 @pytest.mark.parametrize("exception", (KeyboardInterrupt, SystemExit))
-def test_process_control_exceptions_after_genesis_are_preserved_for_ordinary_path(
-    repository_index, exception
-):
+def test_process_control_exceptions_after_genesis_are_preserved_for_ordinary_path(repository_index, exception):
     repositories = _repositories()
     repositories[repository_index].error = exception()
     with pytest.raises(exception):
@@ -285,9 +279,7 @@ def test_process_control_exceptions_after_genesis_are_preserved_for_ordinary_pat
 
 @pytest.mark.parametrize("repository_index", (3, 4))
 @pytest.mark.parametrize("exception", (KeyboardInterrupt, SystemExit))
-def test_process_control_exceptions_after_genesis_are_preserved_for_root_path(
-    repository_index, exception
-):
+def test_process_control_exceptions_after_genesis_are_preserved_for_root_path(repository_index, exception):
     repositories = _repositories(root=True)
     repositories[repository_index].error = exception()
     with pytest.raises(exception):

@@ -246,14 +246,10 @@ def _agent_endpoints() -> dict:
         "attestations": "/agent/attestations",
         "trust_events": "/agent/trust/events",
         "discovery": "/agent/discovery",
-        "crt_authorization_proof_discovery":
-            "/.well-known/crt-authorization-proof.json",
-        "crt_authorization_proof_catalog":
-            "/agent/crt/authorization-proofs",
-        "crt_authorization_proof_artifact":
-            "/agent/crt/authorization-proofs/<artifact_id>.json",
-        "crt_authorization_proof_verify":
-            "/agent/crt/authorization-proofs/verify",
+        "crt_authorization_proof_discovery": "/.well-known/crt-authorization-proof.json",
+        "crt_authorization_proof_catalog": "/agent/crt/authorization-proofs",
+        "crt_authorization_proof_artifact": "/agent/crt/authorization-proofs/<artifact_id>.json",
+        "crt_authorization_proof_verify": "/agent/crt/authorization-proofs/verify",
         "nostr_announcement": "/agent/nostr/announcement",
         "reputation": "/agent/reputation",
         "chain_health": "/agent/chain/health",
@@ -1181,9 +1177,7 @@ def _safe_current_entitlement_observed_at(value: object) -> bool:
     except ValueError:
         return False
     return (
-        observed_at.tzinfo is not None
-        and observed_at.utcoffset() == timedelta(0)
-        and observed_at.isoformat() == value
+        observed_at.tzinfo is not None and observed_at.utcoffset() == timedelta(0) and observed_at.isoformat() == value
     )
 
 
@@ -1198,9 +1192,9 @@ def _validated_current_entitlement_publication_fields(
         current_full_relation_satisfied = decision.current_full_relation_satisfied
         evidence_source = decision.evidence_source
         observed_at = decision.observed_at
-        valid_entitlement = (
-            identity_class is IdentityClass.LIMITED and current_full_relation_satisfied is False
-        ) or (identity_class is IdentityClass.FULL and current_full_relation_satisfied is True)
+        valid_entitlement = (identity_class is IdentityClass.LIMITED and current_full_relation_satisfied is False) or (
+            identity_class is IdentityClass.FULL and current_full_relation_satisfied is True
+        )
         if (
             decision_subject != canonical_subject
             or not valid_entitlement
@@ -1229,9 +1223,7 @@ def current_entitlement_assertion(subject: str):
         logger.exception("current entitlement assertion resolution failed")
         return jsonify({"error": "entitlement_unavailable"}), 503
 
-    publication_fields = _validated_current_entitlement_publication_fields(
-        decision, canonical_subject
-    )
+    publication_fields = _validated_current_entitlement_publication_fields(decision, canonical_subject)
     if publication_fields is None:
         return jsonify({"error": "entitlement_unavailable"}), 503
     identity_class, current_full_relation_satisfied, evidence_source, observed_at = publication_fields

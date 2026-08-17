@@ -39,11 +39,17 @@ def _install(app):
         entitlement = g.entitlement_decision
         return jsonify(
             {
-                "principal": {"sub": principal.subject, "client_id": principal.client_id,
-                              "scopes": sorted(principal.scopes), "token_contract": principal.token_contract},
-                "entitlement": {"identity": entitlement.identity_class.value,
-                                "full_relation": entitlement.current_full_relation_satisfied,
-                                "evidence": entitlement.evidence_source},
+                "principal": {
+                    "sub": principal.subject,
+                    "client_id": principal.client_id,
+                    "scopes": sorted(principal.scopes),
+                    "token_contract": principal.token_contract,
+                },
+                "entitlement": {
+                    "identity": entitlement.identity_class.value,
+                    "full_relation": entitlement.current_full_relation_satisfied,
+                    "evidence": entitlement.evidence_source,
+                },
             }
         )
 
@@ -57,25 +63,45 @@ def _real_token(app, *, scope="self:read"):
     user_id = create_user(SUBJECT)
     store_oauth_client(
         client_id,
-        {"client_secret": secret, "client_name": "Protected resource test",
-         "redirect_uris": ["https://example.test/callback"], "grant_types": ["authorization_code"],
-         "response_types": ["code"], "scope": scope, "metadata": {"trust_class": "public_dynamic"}},
+        {
+            "client_secret": secret,
+            "client_name": "Protected resource test",
+            "redirect_uris": ["https://example.test/callback"],
+            "grant_types": ["authorization_code"],
+            "response_types": ["code"],
+            "scope": scope,
+            "metadata": {"trust_class": "public_dynamic"},
+        },
     )
     cfg = app.config["APP_CONFIG"]
     jti = uuid.uuid4().hex
     token = issue_jwt_compat(
-        subject=SUBJECT, audience=client_id, jti=jti, scope=scope, token_use="access",
-        token_contract=TOKEN_CONTRACT, cfg=cfg,
+        subject=SUBJECT,
+        audience=client_id,
+        jti=jti,
+        scope=scope,
+        token_use="access",
+        token_contract=TOKEN_CONTRACT,
+        cfg=cfg,
     )
     claims = jwt.decode(token, options={"verify_signature": False})
     header = jwt.get_unverified_header(token)
     store_canonical_jwt_record(
-        jti=jti, digest=hashlib.sha256(token.encode("ascii")).hexdigest(), client_id=client_id,
-        user_id=user_id, scope=scope,
+        jti=jti,
+        digest=hashlib.sha256(token.encode("ascii")).hexdigest(),
+        client_id=client_id,
+        user_id=user_id,
+        scope=scope,
         expires_at=datetime.fromtimestamp(claims["exp"], timezone.utc).replace(tzinfo=None),
-        metadata={"token_contract": TOKEN_CONTRACT, "token_use": "access", "issuer": claims["iss"],
-                  "audience": client_id, "kid": header["kid"], "digest_algorithm": "sha256",
-                  "scope_policy_version": SCOPE_POLICY_VERSION},
+        metadata={
+            "token_contract": TOKEN_CONTRACT,
+            "token_use": "access",
+            "issuer": claims["iss"],
+            "audience": client_id,
+            "kid": header["kid"],
+            "digest_algorithm": "sha256",
+            "scope_policy_version": SCOPE_POLICY_VERSION,
+        },
     )
     return token, client_id, secret, claims
 
@@ -94,10 +120,13 @@ def test_real_end_to_end_token_protected_resource_and_introspection_parity(prote
     response = client.get("/test/canonical", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     body = response.get_json()
-    assert body["principal"] == {"sub": SUBJECT, "client_id": client_id, "scopes": ["self:read"],
-                                 "token_contract": TOKEN_CONTRACT}
-    assert body["entitlement"] == {"identity": "limited", "full_relation": False,
-                                   "evidence": "active_persisted_user"}
+    assert body["principal"] == {
+        "sub": SUBJECT,
+        "client_id": client_id,
+        "scopes": ["self:read"],
+        "token_contract": TOKEN_CONTRACT,
+    }
+    assert body["entitlement"] == {"identity": "limited", "full_relation": False, "evidence": "active_persisted_user"}
     with client.session_transaction() as state:
         assert dict(state) == {"unrelated": "preserved"}
 
@@ -107,8 +136,15 @@ def test_real_end_to_end_token_protected_resource_and_introspection_parity(prote
     assert introspection.status_code == 200
     introspected = introspection.get_json()
     assert introspected == {
-        "active": True, "client_id": client_id, "sub": SUBJECT, "exp": claims["exp"], "iat": claims["iat"],
-        "jti": claims["jti"], "scope": "self:read", "token_type": "Bearer", "token_contract": TOKEN_CONTRACT,
+        "active": True,
+        "client_id": client_id,
+        "sub": SUBJECT,
+        "exp": claims["exp"],
+        "iat": claims["iat"],
+        "jti": claims["jti"],
+        "scope": "self:read",
+        "token_type": "Bearer",
+        "token_contract": TOKEN_CONTRACT,
     }
 
 
@@ -116,16 +152,21 @@ def test_real_token_accepts_case_insensitive_bearer_scheme(protected_app):
     app = protected_app
     token, _, _, _ = _real_token(app)
     for scheme in ("bearer", "BEARER"):
-        assert app.test_client().get(
-            "/test/canonical", headers={"Authorization": f"{scheme} {token}"}
-        ).status_code == 200
+        assert (
+            app.test_client().get("/test/canonical", headers={"Authorization": f"{scheme} {token}"}).status_code == 200
+        )
 
 
 def test_header_errors_are_safe(protected_app):
     app = protected_app
     client = app.test_client()
-    for headers in ({}, {"Authorization": "Basic x"}, {"Authorization": "Bearer"},
-                    {"Authorization": "Bearer  x"}, {"Authorization": "Bearer x,y"}):
+    for headers in (
+        {},
+        {"Authorization": "Basic x"},
+        {"Authorization": "Bearer"},
+        {"Authorization": "Bearer  x"},
+        {"Authorization": "Bearer x,y"},
+    ):
         response = client.get("/test/canonical", headers=headers)
         assert response.status_code == 401
         assert response.get_json() == {"error": "invalid_token"}
@@ -183,8 +224,9 @@ def test_normal_policy_denial_is_exact_insufficient_entitlement(protected_app, m
     token, _, _, _ = _real_token(app)
     monkeypatch.setattr(
         "app.services.action_authorization.authorize_action",
-        lambda *_: ActionDecision(False, ReasonCode.INSUFFICIENT_IDENTITY, SUBJECT, None, "self_read", "self:read",
-                                  None, None, False, False),
+        lambda *_: ActionDecision(
+            False, ReasonCode.INSUFFICIENT_IDENTITY, SUBJECT, None, "self_read", "self:read", None, None, False, False
+        ),
     )
     response = app.test_client().get("/test/canonical", headers={"Authorization": f"Bearer {token}"})
     assert (response.status_code, response.get_json()) == (403, {"error": "insufficient_entitlement"})

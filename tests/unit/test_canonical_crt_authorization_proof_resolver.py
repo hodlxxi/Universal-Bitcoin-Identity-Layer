@@ -47,15 +47,12 @@ from tests.unit.test_canonical_admission_edge import NOW, genesis
 from tests.unit.test_canonical_genesis_record import record as genesis_record
 from tests.unit.test_canonical_sponsor_lineage import lineage_fixture, with_edge_state
 
-
 FULL_DIGESTS = {
     "genesis": "1e7508f12641f32e8813ddea1dd4b8bc9f0d5e862512773f36a4f414e7db4945",
     "depth3": "48f1d49935e2f5a580fab0c56d350cba036c859bdb726c38a259ef6011ec0b98",
 }
 MISSING_TARGET_DIGEST = "3b08da361c571121895f97a4c0f2f74995aa4a335b454066906dab044ed0823b"
-PR615_TEMPORAL_MISMATCH_DIGEST = (
-    "cf8aff59d98a2c0ec7bf62253fcfb1d0cce264517476ddecb6297153080e401c"
-)
+PR615_TEMPORAL_MISMATCH_DIGEST = "cf8aff59d98a2c0ec7bf62253fcfb1d0cce264517476ddecb6297153080e401c"
 
 
 def genesis_args(records=None):
@@ -88,9 +85,7 @@ def ordinary_args(items=None, **changes):
 
 
 def _evidence_with_record(item, record):
-    return CanonicalSponsorLineageEdgeEvidence(
-        record, item.trusted_registration, item.observation_evaluation
-    )
+    return CanonicalSponsorLineageEdgeEvidence(record, item.trusted_registration, item.observation_evaluation)
 
 
 def _rebind_descendants(items, changed_position):
@@ -99,9 +94,7 @@ def _rebind_descendants(items, changed_position):
             items[index],
             replace(
                 items[index].record,
-                sponsor_basis_record_sha256=canonical_admission_edge_sha256(
-                    items[index - 1].record
-                ),
+                sponsor_basis_record_sha256=canonical_admission_edge_sha256(items[index - 1].record),
             ),
         )
     return tuple(items)
@@ -145,13 +138,9 @@ def _assert_structural_limited(proof, reason):
     assert proof.controlling_depth is None
     assert proof.controlling_edge_id is None
     assert proof.source_authorization_evaluation_sha256 == (
-        canonical_crt_authorization_evaluation_sha256(
-            proof.source_authorization_evaluation
-        )
+        canonical_crt_authorization_evaluation_sha256(proof.source_authorization_evaluation)
     )
-    assert proof.source_membership_evaluation_sha256 == (
-        canonical_crt_membership_evaluation_sha256(membership)
-    )
+    assert proof.source_membership_evaluation_sha256 == (canonical_crt_membership_evaluation_sha256(membership))
     raw = canonical_crt_authorization_proof_bytes(proof)
     assert parse_canonical_crt_authorization_proof(raw) == proof
     return raw
@@ -193,9 +182,7 @@ def test_pr615_temporal_mismatch_artifact_remains_exact_valid_and_distinct():
     for artifact_id, digest in expected_artifacts.items():
         artifact = reference_artifact_bytes(artifact_id)
         assert sha256(artifact).hexdigest() == digest
-        assert canonical_crt_authorization_proof_bytes(
-            parse_canonical_crt_authorization_proof(artifact)
-        ) == artifact
+        assert canonical_crt_authorization_proof_bytes(parse_canonical_crt_authorization_proof(artifact)) == artifact
     raw = reference_artifact_bytes("unknown-ordinary-limited")
     assert sha256(raw).hexdigest() == PR615_TEMPORAL_MISMATCH_DIGEST
     proof = parse_canonical_crt_authorization_proof(raw)
@@ -246,20 +233,35 @@ def test_one_timestamp_is_passed_to_every_evaluator(monkeypatch):
     ("records", "reason"),
     (
         ((), CanonicalCrtMembershipReason.GENESIS_UNKNOWN),
-        ((replace(genesis_record(), lifecycle_state=CanonicalGenesisLifecycle.PROPOSED,
-                  effective_at=None, lifecycle_changed_at=genesis_record().created_at),),
-         CanonicalCrtMembershipReason.GENESIS_PROVISIONAL),
-        ((genesis_record(), replace(genesis_record(),
-                                    record_id="e9230000-0000-4000-8000-000000000002")),
-         CanonicalCrtMembershipReason.GENESIS_DISPUTED),
-        ((replace(
-            genesis_record(), lifecycle_state=CanonicalGenesisLifecycle.REVOKED,
-            contradiction_context=replace(
-                genesis_record().contradiction_context,
-                reason="terminal contradiction",
-                evidence_reference_ids=("canon_genesis_bootstrap_v1",),
+        (
+            (
+                replace(
+                    genesis_record(),
+                    lifecycle_state=CanonicalGenesisLifecycle.PROPOSED,
+                    effective_at=None,
+                    lifecycle_changed_at=genesis_record().created_at,
+                ),
             ),
-        ),), CanonicalCrtMembershipReason.GENESIS_LINEAGE_INACTIVE),
+            CanonicalCrtMembershipReason.GENESIS_PROVISIONAL,
+        ),
+        (
+            (genesis_record(), replace(genesis_record(), record_id="e9230000-0000-4000-8000-000000000002")),
+            CanonicalCrtMembershipReason.GENESIS_DISPUTED,
+        ),
+        (
+            (
+                replace(
+                    genesis_record(),
+                    lifecycle_state=CanonicalGenesisLifecycle.REVOKED,
+                    contradiction_context=replace(
+                        genesis_record().contradiction_context,
+                        reason="terminal contradiction",
+                        evidence_reference_ids=("canon_genesis_bootstrap_v1",),
+                    ),
+                ),
+            ),
+            CanonicalCrtMembershipReason.GENESIS_LINEAGE_INACTIVE,
+        ),
     ),
 )
 def test_genesis_evidence_failures_are_limited(records, reason):
@@ -270,19 +272,21 @@ def test_genesis_evidence_failures_are_limited(records, reason):
 
 @pytest.mark.parametrize(
     ("position", "reason"),
-    ((2, CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE),
-     (3, CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE)),
+    ((2, CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE), (3, CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE)),
 )
 def test_genuine_inactive_snapshots_remain_limited(position, reason):
     items = list(lineage_fixture(3))
     items[position - 1] = with_edge_state(items[position - 1], AdmissionEdgeLifecycle.REVOKED)
     for index in range(position, len(items)):
-        from app.services.canonical_admission_edge import canonical_admission_edge_sha256
+        from app.services.canonical_admission_edge import (
+            canonical_admission_edge_sha256 as recompute_admission_edge_sha256,
+        )
+
         items[index] = replace(
             items[index],
             record=replace(
                 items[index].record,
-                sponsor_basis_record_sha256=canonical_admission_edge_sha256(items[index - 1].record),
+                sponsor_basis_record_sha256=recompute_admission_edge_sha256(items[index - 1].record),
             ),
         )
     proof = resolve(**ordinary_args(tuple(items)))
@@ -293,10 +297,8 @@ def test_genuine_inactive_snapshots_remain_limited(position, reason):
 @pytest.mark.parametrize(
     ("position", "reason", "basis"),
     (
-        (0, CanonicalCrtMembershipReason.ANCESTOR_DISPUTED,
-         CanonicalCrtAuthorizationProofBasis.ANCESTOR_EDGE),
-        (2, CanonicalCrtMembershipReason.TARGET_DISPUTED,
-         CanonicalCrtAuthorizationProofBasis.TARGET_EDGE),
+        (0, CanonicalCrtMembershipReason.ANCESTOR_DISPUTED, CanonicalCrtAuthorizationProofBasis.ANCESTOR_EDGE),
+        (2, CanonicalCrtMembershipReason.TARGET_DISPUTED, CanonicalCrtAuthorizationProofBasis.TARGET_EDGE),
     ),
 )
 def test_target_and_ancestor_disputes_reach_exact_proof_basis(position, reason, basis):
@@ -317,9 +319,7 @@ def test_target_and_ancestor_disputes_reach_exact_proof_basis(position, reason, 
 def test_missing_immediate_parent_is_structural_limited_with_canonical_digests():
     items = lineage_fixture(3)
     proof = resolve(**ordinary_args((items[0], items[2])))
-    _assert_structural_limited(
-        proof, CanonicalCrtMembershipReason.MISSING_PARENT_EVIDENCE
-    )
+    _assert_structural_limited(proof, CanonicalCrtMembershipReason.MISSING_PARENT_EVIDENCE)
 
 
 @pytest.mark.parametrize(
@@ -330,9 +330,7 @@ def test_missing_immediate_parent_is_structural_limited_with_canonical_digests()
         ("depth", CanonicalCrtMembershipReason.PARENT_DEPTH_MISMATCH),
     ),
 )
-def test_parent_binding_failures_are_exact_structural_proofs(
-    mutation, reason, monkeypatch
-):
+def test_parent_binding_failures_are_exact_structural_proofs(mutation, reason, monkeypatch):
     items = list(lineage_fixture(3))
     target = items[2].record
     if mutation == "digest":
@@ -341,7 +339,8 @@ def test_parent_binding_failures_are_exact_structural_proofs(
         monkeypatch.setattr(CanonicalAdmissionLeg, "__post_init__", lambda self: None)
         monkeypatch.setattr(CanonicalAdmissionEdge, "__post_init__", lambda self: None)
         target = _replace_role_in_legs(
-            target, "sponsor",
+            target,
+            "sponsor",
             "02" + "7a" * 32,
         )
     else:
@@ -371,9 +370,7 @@ def test_parent_graph_or_profile_mismatch_is_exact_structural_proof(monkeypatch)
     items[1] = _evidence_with_record(items[1], forged_parent)
     items[2] = _evidence_with_record(items[2], target)
     proof = resolve(**ordinary_args(tuple(items)))
-    _assert_structural_limited(
-        proof, CanonicalCrtMembershipReason.PARENT_GRAPH_OR_PROFILE_MISMATCH
-    )
+    _assert_structural_limited(proof, CanonicalCrtMembershipReason.PARENT_GRAPH_OR_PROFILE_MISMATCH)
 
 
 def test_duplicate_edge_id_is_exact_deterministic_structural_proof():
@@ -383,9 +380,7 @@ def test_duplicate_edge_id_is_exact_deterministic_structural_proof():
     second = resolve(**args)
     assert _assert_structural_limited(
         first, CanonicalCrtMembershipReason.DUPLICATE_EDGE_ID
-    ) == _assert_structural_limited(
-        second, CanonicalCrtMembershipReason.DUPLICATE_EDGE_ID
-    )
+    ) == _assert_structural_limited(second, CanonicalCrtMembershipReason.DUPLICATE_EDGE_ID)
 
 
 def test_duplicate_edge_digest_is_exact_deterministic_structural_proof(monkeypatch):
@@ -398,16 +393,12 @@ def test_duplicate_edge_digest_is_exact_deterministic_structural_proof(monkeypat
             return collision
         return original(record)
 
-    monkeypatch.setattr(
-        lineage_module, "canonical_admission_edge_sha256", collision_sha256
-    )
+    monkeypatch.setattr(lineage_module, "canonical_admission_edge_sha256", collision_sha256)
     first = resolve(**ordinary_args(items))
     second = resolve(**ordinary_args(items))
     assert _assert_structural_limited(
         first, CanonicalCrtMembershipReason.DUPLICATE_EDGE_DIGEST
-    ) == _assert_structural_limited(
-        second, CanonicalCrtMembershipReason.DUPLICATE_EDGE_DIGEST
-    )
+    ) == _assert_structural_limited(second, CanonicalCrtMembershipReason.DUPLICATE_EDGE_DIGEST)
 
 
 def test_duplicate_child_identity_is_exact_deterministic_structural_proof(monkeypatch):
@@ -415,9 +406,7 @@ def test_duplicate_child_identity_is_exact_deterministic_structural_proof(monkey
     monkeypatch.setattr(CanonicalAdmissionEdge, "__post_init__", lambda self: None)
     items = list(lineage_fixture(3))
     duplicate_key = items[0].record.child_compressed_public_key
-    items[2] = _evidence_with_record(
-        items[2], _replace_role_in_legs(items[2].record, "child", duplicate_key)
-    )
+    items[2] = _evidence_with_record(items[2], _replace_role_in_legs(items[2].record, "child", duplicate_key))
     target = items[2].record
     changes = dict(
         participant_id=target.child_participant_id,
@@ -428,9 +417,7 @@ def test_duplicate_child_identity_is_exact_deterministic_structural_proof(monkey
     second = resolve(**ordinary_args(tuple(items), **changes))
     assert _assert_structural_limited(
         first, CanonicalCrtMembershipReason.DUPLICATE_CHILD_IDENTITY
-    ) == _assert_structural_limited(
-        second, CanonicalCrtMembershipReason.DUPLICATE_CHILD_IDENTITY
-    )
+    ) == _assert_structural_limited(second, CanonicalCrtMembershipReason.DUPLICATE_CHILD_IDENTITY)
 
 
 def test_cycle_is_exact_deterministic_structural_proof(monkeypatch):
@@ -459,14 +446,10 @@ def test_cycle_is_exact_deterministic_structural_proof(monkeypatch):
         finally:
             del lineage_module.set
 
-    monkeypatch.setattr(
-        resolver_module, "evaluate_canonical_sponsor_lineage", cycle_evaluator
-    )
+    monkeypatch.setattr(resolver_module, "evaluate_canonical_sponsor_lineage", cycle_evaluator)
     first = resolve(**ordinary_args(items))
     second = resolve(**ordinary_args(items))
-    assert _assert_structural_limited(
-        first, CanonicalCrtMembershipReason.CYCLE_DETECTED
-    ) == _assert_structural_limited(
+    assert _assert_structural_limited(first, CanonicalCrtMembershipReason.CYCLE_DETECTED) == _assert_structural_limited(
         second, CanonicalCrtMembershipReason.CYCLE_DETECTED
     )
 
@@ -484,9 +467,7 @@ def test_extraneous_evidence_is_exact_deterministic_structural_proof():
     second = resolve(**ordinary_args(items + (extra,)))
     assert _assert_structural_limited(
         first, CanonicalCrtMembershipReason.EXTRANEOUS_EDGE_EVIDENCE
-    ) == _assert_structural_limited(
-        second, CanonicalCrtMembershipReason.EXTRANEOUS_EDGE_EVIDENCE
-    )
+    ) == _assert_structural_limited(second, CanonicalCrtMembershipReason.EXTRANEOUS_EDGE_EVIDENCE)
 
 
 @pytest.mark.parametrize("bad_depth", (True, 1.0, -1, 2289))
@@ -534,9 +515,11 @@ def test_invalid_genesis_mode_matrix():
 
 @pytest.mark.parametrize(
     "timestamp",
-    (datetime(2026, 1, 1),
-     datetime(2026, 1, 1, tzinfo=timezone(timedelta(hours=1))),
-     datetime(2026, 1, 1, 0, 0, 0, 1, tzinfo=timezone.utc)),
+    (
+        datetime(2026, 1, 1),
+        datetime(2026, 1, 1, tzinfo=timezone(timedelta(hours=1))),
+        datetime(2026, 1, 1, 0, 0, 0, 1, tzinfo=timezone.utc),
+    ),
 )
 def test_noncanonical_timestamps_raise(timestamp):
     args = genesis_args()
@@ -561,15 +544,18 @@ def test_exact_source_types_and_mixed_modes_raise():
         pass
 
     with pytest.raises(InvalidCanonicalCrtAuthorizationProofResolution):
-        resolve(**genesis_args((GenesisSubclass(*(
-            getattr(genesis_record(), field)
-            for field in CanonicalGenesisRecord.__dataclass_fields__
-        )),)))
+        resolve(
+            **genesis_args(
+                (
+                    GenesisSubclass(
+                        *(getattr(genesis_record(), field) for field in CanonicalGenesisRecord.__dataclass_fields__)
+                    ),
+                )
+            )
+        )
     args = ordinary_args()
     first = args["edge_evidence"][0]
-    args["edge_evidence"] = (EvidenceSubclass(
-        first.record, first.trusted_registration, first.observation_evaluation
-    ),)
+    args["edge_evidence"] = (EvidenceSubclass(first.record, first.trusted_registration, first.observation_evaluation),)
     with pytest.raises(InvalidCanonicalCrtAuthorizationProofResolution):
         resolve(**args)
     with pytest.raises(InvalidCanonicalCrtAuthorizationProofResolution):
@@ -580,12 +566,14 @@ def test_valid_request_with_different_subject_evidence_fails_closed():
     items = lineage_fixture(3)
     before = repr(items)
     requested_key = "02" + "a1" * 32
-    proof = resolve(**ordinary_args(
-        items,
-        participant_id=requested_key[2:],
-        compressed_public_key=requested_key,
-        x_only_public_key=requested_key[2:],
-    ))
+    proof = resolve(
+        **ordinary_args(
+            items,
+            participant_id=requested_key[2:],
+            compressed_public_key=requested_key,
+            x_only_public_key=requested_key[2:],
+        )
+    )
     assert proof.authorization_class is CanonicalCrtAuthorizationClass.LIMITED
     assert proof.membership_reason_code is CanonicalCrtMembershipReason.SOURCE_SUBJECT_MISMATCH
     assert proof.proof_basis is CanonicalCrtAuthorizationProofBasis.SOURCE_BINDING

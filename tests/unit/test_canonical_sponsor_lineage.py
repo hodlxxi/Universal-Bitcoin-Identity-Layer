@@ -94,19 +94,37 @@ def child_edge(parent, reg, child_key, depth, edge_id):
         legs=(
             CanonicalAdmissionLeg(
                 AdmissionEdgeDirection.SPONSOR_TO_CHILD,
-                sponsor[2:], sponsor, sponsor[2:],
-                child_key[2:], child_key, child_key[2:],
-                early, middle, reg.mirrored_pair.earlier_leg.raw_script_hex,
-                reg.outpoints[0].txid, reg.outpoints[0].vout,
-                reg.outpoints[0].amount_sats, reg.outpoints[0].witness_script_sha256, None,
+                sponsor[2:],
+                sponsor,
+                sponsor[2:],
+                child_key[2:],
+                child_key,
+                child_key[2:],
+                early,
+                middle,
+                reg.mirrored_pair.earlier_leg.raw_script_hex,
+                reg.outpoints[0].txid,
+                reg.outpoints[0].vout,
+                reg.outpoints[0].amount_sats,
+                reg.outpoints[0].witness_script_sha256,
+                None,
             ),
             CanonicalAdmissionLeg(
                 AdmissionEdgeDirection.CHILD_TO_SPONSOR,
-                child_key[2:], child_key, child_key[2:],
-                sponsor[2:], sponsor, sponsor[2:],
-                middle, late, reg.mirrored_pair.later_leg.raw_script_hex,
-                reg.outpoints[1].txid, reg.outpoints[1].vout,
-                reg.outpoints[1].amount_sats, reg.outpoints[1].witness_script_sha256, None,
+                child_key[2:],
+                child_key,
+                child_key[2:],
+                sponsor[2:],
+                sponsor,
+                sponsor[2:],
+                middle,
+                late,
+                reg.mirrored_pair.later_leg.raw_script_hex,
+                reg.outpoints[1].txid,
+                reg.outpoints[1].vout,
+                reg.outpoints[1].amount_sats,
+                reg.outpoints[1].witness_script_sha256,
+                None,
             ),
         ),
         contradiction_context=AdmissionContradictionContext(None, (), False),
@@ -142,7 +160,10 @@ def lineage_fixture(depth=3):
             amount=789,
         )
         three = child_edge(
-            two, reg3, GREAT_GRANDCHILD, 3,
+            two,
+            reg3,
+            GREAT_GRANDCHILD,
+            3,
             "00000000-0000-4000-8000-000000000042",
         )
         items.append(CanonicalSponsorLineageEdgeEvidence(three, reg3, observed(three, reg3)))
@@ -172,9 +193,7 @@ def test_real_active_lineages(depth):
         for node in result.lineage_nodes
     )
     assert len(result.relevant_records) == 1 + 2 * depth
-    assert parse_canonical_sponsor_lineage_evaluation(
-        canonical_sponsor_lineage_evaluation_bytes(result)
-    ) == result
+    assert parse_canonical_sponsor_lineage_evaluation(canonical_sponsor_lineage_evaluation_bytes(result)) == result
 
 
 def test_depth3_determinism_and_pinned_digest():
@@ -227,25 +246,57 @@ def with_edge_state(item, lifecycle):
         contradiction_context=context,
         effective_at=NOW if lifecycle is AdmissionEdgeLifecycle.EFFECTIVE else None,
         superseded_by_edge_id=(
-            "00000000-0000-4000-8000-000000000099"
-            if lifecycle is AdmissionEdgeLifecycle.SUPERSEDED else None
+            "00000000-0000-4000-8000-000000000099" if lifecycle is AdmissionEdgeLifecycle.SUPERSEDED else None
         ),
     )
-    return CanonicalSponsorLineageEdgeEvidence(
-        record, item.trusted_registration, item.observation_evaluation
-    )
+    return CanonicalSponsorLineageEdgeEvidence(record, item.trusted_registration, item.observation_evaluation)
 
 
 @pytest.mark.parametrize(
     ("position", "lifecycle", "state", "reason"),
     (
-        (0, AdmissionEdgeLifecycle.PROPOSED, CanonicalSponsorLineageState.PROVISIONAL, CanonicalSponsorLineageReason.ANCESTOR_PROVISIONAL),
-        (0, AdmissionEdgeLifecycle.DISPUTED, CanonicalSponsorLineageState.DISPUTED, CanonicalSponsorLineageReason.ANCESTOR_DISPUTED),
-        (0, AdmissionEdgeLifecycle.REVOKED, CanonicalSponsorLineageState.LINEAGE_INACTIVE, CanonicalSponsorLineageReason.ANCESTOR_EDGE_INACTIVE),
-        (1, AdmissionEdgeLifecycle.SUPERSEDED, CanonicalSponsorLineageState.LINEAGE_INACTIVE, CanonicalSponsorLineageReason.ANCESTOR_EDGE_INACTIVE),
-        (2, AdmissionEdgeLifecycle.PROPOSED, CanonicalSponsorLineageState.PROVISIONAL, CanonicalSponsorLineageReason.TARGET_PROVISIONAL),
-        (2, AdmissionEdgeLifecycle.DISPUTED, CanonicalSponsorLineageState.DISPUTED, CanonicalSponsorLineageReason.TARGET_DISPUTED),
-        (2, AdmissionEdgeLifecycle.REVOKED, CanonicalSponsorLineageState.LINEAGE_INACTIVE, CanonicalSponsorLineageReason.TARGET_EDGE_INACTIVE),
+        (
+            0,
+            AdmissionEdgeLifecycle.PROPOSED,
+            CanonicalSponsorLineageState.PROVISIONAL,
+            CanonicalSponsorLineageReason.ANCESTOR_PROVISIONAL,
+        ),
+        (
+            0,
+            AdmissionEdgeLifecycle.DISPUTED,
+            CanonicalSponsorLineageState.DISPUTED,
+            CanonicalSponsorLineageReason.ANCESTOR_DISPUTED,
+        ),
+        (
+            0,
+            AdmissionEdgeLifecycle.REVOKED,
+            CanonicalSponsorLineageState.LINEAGE_INACTIVE,
+            CanonicalSponsorLineageReason.ANCESTOR_EDGE_INACTIVE,
+        ),
+        (
+            1,
+            AdmissionEdgeLifecycle.SUPERSEDED,
+            CanonicalSponsorLineageState.LINEAGE_INACTIVE,
+            CanonicalSponsorLineageReason.ANCESTOR_EDGE_INACTIVE,
+        ),
+        (
+            2,
+            AdmissionEdgeLifecycle.PROPOSED,
+            CanonicalSponsorLineageState.PROVISIONAL,
+            CanonicalSponsorLineageReason.TARGET_PROVISIONAL,
+        ),
+        (
+            2,
+            AdmissionEdgeLifecycle.DISPUTED,
+            CanonicalSponsorLineageState.DISPUTED,
+            CanonicalSponsorLineageReason.TARGET_DISPUTED,
+        ),
+        (
+            2,
+            AdmissionEdgeLifecycle.REVOKED,
+            CanonicalSponsorLineageState.LINEAGE_INACTIVE,
+            CanonicalSponsorLineageReason.TARGET_EDGE_INACTIVE,
+        ),
     ),
 )
 def test_root_to_target_edge_state_propagation(position, lifecycle, state, reason):
@@ -261,18 +312,36 @@ def test_root_to_target_edge_state_propagation(position, lifecycle, state, reaso
             record, items[index].trusted_registration, items[index].observation_evaluation
         )
     result = evaluate(tuple(items))
-    assert (result.state, result.reason_code, result.controlling_depth) == (
-        state, reason, position + 1
-    )
+    assert (result.state, result.reason_code, result.controlling_depth) == (state, reason, position + 1)
 
 
 @pytest.mark.parametrize(
     ("genesis_state", "genesis_reason", "state", "reason"),
     (
-        (CanonicalGenesisEvaluationState.PROVISIONAL, "proposed_only", CanonicalSponsorLineageState.PROVISIONAL, CanonicalSponsorLineageReason.GENESIS_PROVISIONAL),
-        (CanonicalGenesisEvaluationState.DISPUTED, "controlling_dispute", CanonicalSponsorLineageState.DISPUTED, CanonicalSponsorLineageReason.GENESIS_DISPUTED),
-        (CanonicalGenesisEvaluationState.LINEAGE_INACTIVE, "all_records_revoked", CanonicalSponsorLineageState.LINEAGE_INACTIVE, CanonicalSponsorLineageReason.GENESIS_LINEAGE_INACTIVE),
-        (CanonicalGenesisEvaluationState.UNKNOWN, "effective_timestamp_in_future", CanonicalSponsorLineageState.UNKNOWN, CanonicalSponsorLineageReason.GENESIS_UNKNOWN),
+        (
+            CanonicalGenesisEvaluationState.PROVISIONAL,
+            "proposed_only",
+            CanonicalSponsorLineageState.PROVISIONAL,
+            CanonicalSponsorLineageReason.GENESIS_PROVISIONAL,
+        ),
+        (
+            CanonicalGenesisEvaluationState.DISPUTED,
+            "controlling_dispute",
+            CanonicalSponsorLineageState.DISPUTED,
+            CanonicalSponsorLineageReason.GENESIS_DISPUTED,
+        ),
+        (
+            CanonicalGenesisEvaluationState.LINEAGE_INACTIVE,
+            "all_records_revoked",
+            CanonicalSponsorLineageState.LINEAGE_INACTIVE,
+            CanonicalSponsorLineageReason.GENESIS_LINEAGE_INACTIVE,
+        ),
+        (
+            CanonicalGenesisEvaluationState.UNKNOWN,
+            "effective_timestamp_in_future",
+            CanonicalSponsorLineageState.UNKNOWN,
+            CanonicalSponsorLineageReason.GENESIS_UNKNOWN,
+        ),
     ),
 )
 def test_genesis_precedes_every_descendant(genesis_state, genesis_reason, state, reason):
@@ -288,7 +357,10 @@ def test_genesis_precedes_every_descendant(genesis_state, genesis_reason, state,
     items[2] = with_edge_state(items[2], AdmissionEdgeLifecycle.DISPUTED)
     result = evaluate(tuple(items), changed)
     assert (result.state, result.reason_code, result.controlling_depth, result.controlling_edge_id) == (
-        state, reason, 0, None
+        state,
+        reason,
+        0,
+        None,
     )
 
 
@@ -327,15 +399,17 @@ def test_observation_state_propagation(position, kind, state):
     expected_reason = (
         CanonicalSponsorLineageReason.TARGET_LOCAL_EVALUATION_UNKNOWN
         if target and state is CanonicalSponsorLineageState.UNKNOWN
-        else CanonicalSponsorLineageReason.ANCESTOR_LOCAL_EVALUATION_UNKNOWN
-        if state is CanonicalSponsorLineageState.UNKNOWN
-        else CanonicalSponsorLineageReason.TARGET_EDGE_INACTIVE
-        if target
-        else CanonicalSponsorLineageReason.ANCESTOR_EDGE_INACTIVE
+        else (
+            CanonicalSponsorLineageReason.ANCESTOR_LOCAL_EVALUATION_UNKNOWN
+            if state is CanonicalSponsorLineageState.UNKNOWN
+            else (
+                CanonicalSponsorLineageReason.TARGET_EDGE_INACTIVE
+                if target
+                else CanonicalSponsorLineageReason.ANCESTOR_EDGE_INACTIVE
+            )
+        )
     )
-    assert (result.state, result.reason_code, result.controlling_depth) == (
-        state, expected_reason, position + 1
-    )
+    assert (result.state, result.reason_code, result.controlling_depth) == (state, expected_reason, position + 1)
 
 
 @pytest.mark.parametrize("position", (0, 1, 2))
@@ -355,24 +429,21 @@ def test_registration_state_propagation(position, lifecycle, state):
         lifecycle_state=lifecycle,
         superseded_by_registration_id=(
             "00000000-0000-4000-8000-000000000098"
-            if lifecycle is TrustedCovenantRegistrationLifecycle.SUPERSEDED else None
+            if lifecycle is TrustedCovenantRegistrationLifecycle.SUPERSEDED
+            else None
         ),
     )
     record = replace(
         old.record,
         trusted_registration_sha256=trusted_registration_sha256(reg),
     )
-    items[position] = CanonicalSponsorLineageEdgeEvidence(
-        record, reg, old.observation_evaluation
-    )
+    items[position] = CanonicalSponsorLineageEdgeEvidence(record, reg, old.observation_evaluation)
     for index in range(position + 1, len(items)):
         items[index] = replace(
             items[index],
             record=replace(
                 items[index].record,
-                sponsor_basis_record_sha256=canonical_admission_edge_sha256(
-                    items[index - 1].record
-                ),
+                sponsor_basis_record_sha256=canonical_admission_edge_sha256(items[index - 1].record),
             ),
         )
     result = evaluate(tuple(items))
@@ -380,15 +451,17 @@ def test_registration_state_propagation(position, lifecycle, state):
     reason = (
         CanonicalSponsorLineageReason.TARGET_DISPUTED
         if target and state is CanonicalSponsorLineageState.DISPUTED
-        else CanonicalSponsorLineageReason.ANCESTOR_DISPUTED
-        if state is CanonicalSponsorLineageState.DISPUTED
-        else CanonicalSponsorLineageReason.TARGET_EDGE_INACTIVE
-        if target
-        else CanonicalSponsorLineageReason.ANCESTOR_EDGE_INACTIVE
+        else (
+            CanonicalSponsorLineageReason.ANCESTOR_DISPUTED
+            if state is CanonicalSponsorLineageState.DISPUTED
+            else (
+                CanonicalSponsorLineageReason.TARGET_EDGE_INACTIVE
+                if target
+                else CanonicalSponsorLineageReason.ANCESTOR_EDGE_INACTIVE
+            )
+        )
     )
-    assert (result.state, result.reason_code, result.controlling_depth) == (
-        state, reason, position + 1
-    )
+    assert (result.state, result.reason_code, result.controlling_depth) == (state, reason, position + 1)
 
 
 def test_earliest_ancestor_controls_mixed_failures():
@@ -400,9 +473,7 @@ def test_earliest_ancestor_controls_mixed_failures():
             items[index],
             record=replace(
                 items[index].record,
-                sponsor_basis_record_sha256=canonical_admission_edge_sha256(
-                    items[index - 1].record
-                ),
+                sponsor_basis_record_sha256=canonical_admission_edge_sha256(items[index - 1].record),
             ),
         )
     result = evaluate(tuple(items))
@@ -415,21 +486,22 @@ def test_earliest_ancestor_controls_mixed_failures():
     (
         (0, "disputed", 2, AdmissionEdgeLifecycle.REVOKED, CanonicalSponsorLineageReason.ANCESTOR_DISPUTED, 1),
         (1, "proposed", 2, AdmissionEdgeLifecycle.REVOKED, CanonicalSponsorLineageReason.ANCESTOR_PROVISIONAL, 2),
-        (1, "binding", 2, AdmissionEdgeLifecycle.DISPUTED, CanonicalSponsorLineageReason.ANCESTOR_LOCAL_EVALUATION_UNKNOWN, 2),
+        (
+            1,
+            "binding",
+            2,
+            AdmissionEdgeLifecycle.DISPUTED,
+            CanonicalSponsorLineageReason.ANCESTOR_LOCAL_EVALUATION_UNKNOWN,
+            2,
+        ),
     ),
 )
-def test_mixed_root_to_target_precedence(
-    first_position, first_kind, later_position, later_lifecycle, reason, depth
-):
+def test_mixed_root_to_target_precedence(first_position, first_kind, later_position, later_lifecycle, reason, depth):
     items = list(lineage_fixture())
     if first_kind == "binding":
         items[first_position] = mutate_observation(items[first_position], "binding")
     else:
-        lifecycle = (
-            AdmissionEdgeLifecycle.DISPUTED
-            if first_kind == "disputed"
-            else AdmissionEdgeLifecycle.PROPOSED
-        )
+        lifecycle = AdmissionEdgeLifecycle.DISPUTED if first_kind == "disputed" else AdmissionEdgeLifecycle.PROPOSED
         items[first_position] = with_edge_state(items[first_position], lifecycle)
     items[later_position] = with_edge_state(items[later_position], later_lifecycle)
     for index in range(1, len(items)):
@@ -437,9 +509,7 @@ def test_mixed_root_to_target_precedence(
             items[index],
             record=replace(
                 items[index].record,
-                sponsor_basis_record_sha256=canonical_admission_edge_sha256(
-                    items[index - 1].record
-                ),
+                sponsor_basis_record_sha256=canonical_admission_edge_sha256(items[index - 1].record),
             ),
         )
     result = evaluate(tuple(items))

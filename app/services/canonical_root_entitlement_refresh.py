@@ -31,6 +31,7 @@ from app.services.edge_local_covenant_observation import (
 
 REFRESH_CONTRACT_VERSION = "hodlxxi.canonical_root_entitlement_refresh.v1"
 
+
 class CanonicalRootEntitlementRefreshUnavailable(RuntimeError):
     """The requested refresh could not be completed safely."""
 
@@ -100,21 +101,16 @@ def _validate_pair(
         or decision.observed_block_height != relation.observed_block_height
         or decision.incoming_sats != relation.incoming_sats
         or decision.outgoing_sats != relation.outgoing_sats
-        or decision.current_full_relation_satisfied
-        is not relation.current_full_relation_satisfied
+        or decision.current_full_relation_satisfied is not relation.current_full_relation_satisfied
         or decision.relation_reason is not relation.relation_reason
-        or decision.relation_source_evidence_sha256
-        != relation.relation_source_evidence_sha256
+        or decision.relation_source_evidence_sha256 != relation.relation_source_evidence_sha256
         or decision.policy_version != POLICY_VERSION
         or decision.evidence_source != EVIDENCE_SOURCE
         or type(decision.identity_class) is not IdentityClass
         or decision.identity_class not in (IdentityClass.FULL, IdentityClass.LIMITED)
-        or (decision.identity_class is IdentityClass.FULL)
-        is not decision.current_full_relation_satisfied
+        or (decision.identity_class is IdentityClass.FULL) is not decision.current_full_relation_satisfied
         or decision.source_evidence_sha256
-        != hashlib.sha256(
-            _canonical_source_bytes(relation, _utc(relation.observed_at))
-        ).hexdigest()
+        != hashlib.sha256(_canonical_source_bytes(relation, _utc(relation.observed_at))).hexdigest()
     ):
         raise ValueError()
     return relation, decision
@@ -130,8 +126,7 @@ def _is_exact_replay(
         and latest.evidence_source == decision.evidence_source
         and latest.source_evidence_sha256 == decision.source_evidence_sha256
         and latest.identity_class is decision.identity_class
-        and latest.current_full_relation_satisfied
-        is decision.current_full_relation_satisfied
+        and latest.current_full_relation_satisfied is decision.current_full_relation_satisfied
         and latest.observed_at == decision.observed_at
     )
 
@@ -215,9 +210,7 @@ def refresh_canonical_root_entitlement(
             observer=observer,
             rpc_factory=rpc_factory,
         )
-        decision = evaluate_canonical_root_entitlement(
-            graph_or_protocol_id, subject_xonly_pubkey, relation
-        )
+        decision = evaluate_canonical_root_entitlement(graph_or_protocol_id, subject_xonly_pubkey, relation)
         return _validate_pair(graph_or_protocol_id, subject_xonly_pubkey, relation, decision)
 
     def result(outcome, relation, decision, evidence=None):
@@ -252,9 +245,7 @@ def refresh_canonical_root_entitlement(
         ):
             raise ValueError()
         held = execution_guard.hold(subject_xonly_pubkey)
-        if not callable(getattr(held, "__enter__", None)) or not callable(
-            getattr(held, "__exit__", None)
-        ):
+        if not callable(getattr(held, "__enter__", None)) or not callable(getattr(held, "__exit__", None)):
             raise ValueError()
         with held:
             raw_latest = evidence_repository.get_latest(subject_xonly_pubkey)
@@ -271,9 +262,7 @@ def refresh_canonical_root_entitlement(
                 graph_or_protocol_id, subject_xonly_pubkey, relation
             )
             materialized = _reconstruct_evidence(materialized)
-            verified = _reconstruct_evidence(
-                evidence_repository.get_latest(subject_xonly_pubkey)
-            )
+            verified = _reconstruct_evidence(evidence_repository.get_latest(subject_xonly_pubkey))
             if verified != materialized:
                 raise ValueError()
             return result(

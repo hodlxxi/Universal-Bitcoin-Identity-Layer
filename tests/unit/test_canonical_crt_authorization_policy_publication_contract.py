@@ -1,7 +1,6 @@
 import ast
 from pathlib import Path
 
-
 ROOT = Path(__file__).parents[2]
 POLICY_MODULE = "app.services.canonical_crt_authorization_policy"
 PROOF_MODULE = "app.services.canonical_crt_authorization_proof"
@@ -40,11 +39,7 @@ def _referenced_modules(path):
             modules.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
             modules.add(node.module or "")
-            modules.update(
-                f"{node.module}.{alias.name}"
-                for alias in node.names
-                if node.module
-            )
+            modules.update(f"{node.module}.{alias.name}" for alias in node.names if node.module)
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
             if POLICY_MODULE in node.value or PROOF_MODULE in node.value:
                 modules.add(node.value)
@@ -64,10 +59,18 @@ def test_service_is_importable_and_domain_only():
     assert path.name == "canonical_crt_authorization_policy.py"
     for forbidden in (
         "from app.services.action_authorization import",
-        "import identityclass", "entitlementsnapshot",
-        "currententitlementevidencerecord", "actiondecision",
-        "authorize_action(", ".materialize(", "repository.append",
-        "flask", "sqlalchemy", "requests", "subprocess", "bitcoinrpc",
+        "import identityclass",
+        "entitlementsnapshot",
+        "currententitlementevidencerecord",
+        "actiondecision",
+        "authorize_action(",
+        ".materialize(",
+        "repository.append",
+        "flask",
+        "sqlalchemy",
+        "requests",
+        "subprocess",
+        "bitcoinrpc",
     ):
         assert forbidden not in text.lower()
 
@@ -75,7 +78,8 @@ def test_service_is_importable_and_domain_only():
 def test_no_runtime_surface_consumes_policy():
     proof_path = ROOT / "app/services/canonical_crt_authorization_proof.py"
     policy_imports = [
-        node for node in ast.walk(_tree(proof_path))
+        node
+        for node in ast.walk(_tree(proof_path))
         if isinstance(node, ast.ImportFrom) and node.module == POLICY_MODULE
     ]
     assert len(policy_imports) == 1

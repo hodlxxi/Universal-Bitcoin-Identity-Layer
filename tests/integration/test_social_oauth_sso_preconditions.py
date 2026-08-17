@@ -9,7 +9,6 @@ import pytest
 from app.auth_api_core import ACTIVE_CHALLENGES, canonical_xonly_pubkey
 from app.db_storage import create_user, get_oauth_code, get_user_by_id
 
-
 COMPRESSED = "02" + "a" * 64
 SUBJECT = "a" * 64
 REDIRECT_URI = "https://social.example/callback"

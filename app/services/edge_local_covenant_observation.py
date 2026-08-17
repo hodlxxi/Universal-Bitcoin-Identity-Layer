@@ -140,23 +140,25 @@ def observe_edge_local_covenant_relation(
 ) -> EdgeLocalCovenantRelationResult:
     """Observe one controlling edge without persisting or granting entitlement."""
     try:
-        selection = _selection(resolve_controlling_registration(
+        selection = _selection(
+            resolve_controlling_registration(
+                graph_or_protocol_id,
+                subject_xonly_pubkey,
+                evaluated_at=evaluated_at,
+                genesis_repository=genesis_repository,
+                admission_edge_repository=admission_edge_repository,
+                root_registration_binding_repository=root_registration_binding_repository,
+                trusted_registration_repository=trusted_registration_repository,
+            ),
             graph_or_protocol_id,
             subject_xonly_pubkey,
-            evaluated_at=evaluated_at,
-            genesis_repository=genesis_repository,
-            admission_edge_repository=admission_edge_repository,
-            root_registration_binding_repository=root_registration_binding_repository,
-            trusted_registration_repository=trusted_registration_repository,
-        ), graph_or_protocol_id, subject_xonly_pubkey)
+        )
         registration = selection.registration
 
         raw_funding_set = funding_set_repository.resolve_effective(registration.registration_id)
         if type(raw_funding_set) is not CanonicalCovenantFundingSet:
             raise ValueError()
-        funding_set = parse_canonical_covenant_funding_set(
-            canonical_covenant_funding_set_bytes(raw_funding_set)
-        )
+        funding_set = parse_canonical_covenant_funding_set(canonical_covenant_funding_set_bytes(raw_funding_set))
         funding_set = validate_funding_set_registration(funding_set, registration)
         if (
             funding_set.lifecycle_state is not CovenantFundingSetLifecycle.EFFECTIVE
@@ -172,6 +174,7 @@ def observe_edge_local_covenant_relation(
         if observer is None:
             if rpc_factory is None:
                 from app.utils import get_rpc_connection
+
                 rpc_factory = get_rpc_connection
             observer = TrustedBitcoinCovenantObservationAdapter(rpc_factory())
         if not callable(getattr(observer, "observe", None)):
@@ -182,12 +185,29 @@ def observe_edge_local_covenant_relation(
             or evaluation.counterparty_pubkey != registration.counterparty_xonly_pubkey
             or len(evaluation.observations) != len(trusted_outpoints)
             or {
-                (x.subject_pubkey, x.counterparty_pubkey, x.direction, x.txid, x.vout,
-                 x.amount_sats, x.script_sha256, x.descriptor_sha256)
+                (
+                    x.subject_pubkey,
+                    x.counterparty_pubkey,
+                    x.direction,
+                    x.txid,
+                    x.vout,
+                    x.amount_sats,
+                    x.script_sha256,
+                    x.descriptor_sha256,
+                )
                 for x in evaluation.observations
-            } != {
-                (x.subject_pubkey, x.counterparty_pubkey, x.direction, x.txid, x.vout,
-                 x.amount_sats, x.script_sha256, x.descriptor_sha256)
+            }
+            != {
+                (
+                    x.subject_pubkey,
+                    x.counterparty_pubkey,
+                    x.direction,
+                    x.txid,
+                    x.vout,
+                    x.amount_sats,
+                    x.script_sha256,
+                    x.descriptor_sha256,
+                )
                 for x in trusted_outpoints
             }
         ):

@@ -37,9 +37,15 @@ def _validated_argv(argv):
         values[token] = argv[index + 1]
         index += 2
     graph, subject = values.get("--graph"), values.get("--subject")
-    if (type(graph) is not str or not graph or graph.strip() != graph or len(graph) > 256
-            or type(subject) is not str or _SUBJECT.fullmatch(subject) is None
-            or len(modes) != 1):
+    if (
+        type(graph) is not str
+        or not graph
+        or graph.strip() != graph
+        or len(graph) > 256
+        or type(subject) is not str
+        or _SUBJECT.fullmatch(subject) is None
+        or len(modes) != 1
+    ):
         raise ValueError()
     lock_directory = values.get("--lock-directory")
     commit = modes[0] == "--commit"
@@ -60,6 +66,7 @@ def main(argv=None) -> int:
         return 2
     try:
         from app.services.canonical_root_entitlement_refresh_runner import run
+
         output = run(validated)
     except (KeyboardInterrupt, SystemExit):
         raise

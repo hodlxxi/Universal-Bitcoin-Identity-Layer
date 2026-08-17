@@ -16,14 +16,22 @@ NOW = datetime(2026, 8, 12, 1, 2, 3, 456789, tzinfo=timezone.utc)
 
 def result(**changes):
     values = dict(
-        graph_or_protocol_id=GRAPH, subject_xonly_pubkey=SUBJECT,
+        graph_or_protocol_id=GRAPH,
+        subject_xonly_pubkey=SUBJECT,
         counterparty_xonly_pubkey="2" * 64,
         controlling_selection_source=ControllingRegistrationSelectionSource.CANONICAL_ROOT_REGISTRATION_BINDING,
-        selector_record_id="00000000-0000-4000-8000-000000000001", selector_record_sha256="3" * 64,
-        trusted_registration_id="00000000-0000-4000-8000-000000000002", trusted_registration_sha256="4" * 64,
-        funding_set_id="00000000-0000-4000-8000-000000000003", funding_set_sha256="5" * 64,
-        recognized_outpoint_count=5, qualifying_observation_count=5, observed_at=NOW,
-        observed_block_height=900000, incoming_sats=300000, outgoing_sats=300000,
+        selector_record_id="00000000-0000-4000-8000-000000000001",
+        selector_record_sha256="3" * 64,
+        trusted_registration_id="00000000-0000-4000-8000-000000000002",
+        trusted_registration_sha256="4" * 64,
+        funding_set_id="00000000-0000-4000-8000-000000000003",
+        funding_set_sha256="5" * 64,
+        recognized_outpoint_count=5,
+        qualifying_observation_count=5,
+        observed_at=NOW,
+        observed_block_height=900000,
+        incoming_sats=300000,
+        outgoing_sats=300000,
         current_full_relation_satisfied=True,
         relation_reason=CovenantRelationReason.FULL_RELATION_SATISFIED,
         relation_source_evidence_sha256="6" * 64,
@@ -45,32 +53,44 @@ def test_real_shaped_root_relation_maps_to_ordinary_full_and_is_immutable():
         decision.identity_class = IdentityClass.LIMITED
 
 
-@pytest.mark.parametrize(("incoming", "outgoing", "qualifying", "reason"), (
-    (0, 0, 0, CovenantRelationReason.NO_QUALIFYING_OBSERVATIONS),
-    (0, 100, 1, CovenantRelationReason.MISSING_INCOMING),
-    (100, 0, 1, CovenantRelationReason.MISSING_OUTGOING),
-    (100, 99, 2, CovenantRelationReason.OUTGOING_BELOW_INCOMING),
-))
+@pytest.mark.parametrize(
+    ("incoming", "outgoing", "qualifying", "reason"),
+    (
+        (0, 0, 0, CovenantRelationReason.NO_QUALIFYING_OBSERVATIONS),
+        (0, 100, 1, CovenantRelationReason.MISSING_INCOMING),
+        (100, 0, 1, CovenantRelationReason.MISSING_OUTGOING),
+        (100, 99, 2, CovenantRelationReason.OUTGOING_BELOW_INCOMING),
+    ),
+)
 def test_legitimate_negative_summaries_map_to_limited(incoming, outgoing, qualifying, reason):
-    decision = evaluate(result(incoming_sats=incoming, outgoing_sats=outgoing,
-        qualifying_observation_count=qualifying, relation_reason=reason,
-        current_full_relation_satisfied=False))
+    decision = evaluate(
+        result(
+            incoming_sats=incoming,
+            outgoing_sats=outgoing,
+            qualifying_observation_count=qualifying,
+            relation_reason=reason,
+            current_full_relation_satisfied=False,
+        )
+    )
     assert decision.identity_class is IdentityClass.LIMITED
 
 
-@pytest.mark.parametrize("changes", (
-    {"incoming_sats": 0, "outgoing_sats": 0},
-    {"relation_reason": CovenantRelationReason.MISSING_OUTGOING},
-    {"current_full_relation_satisfied": False},
-    {"qualifying_observation_count": 0},
-    {"qualifying_observation_count": 1},
-    {"qualifying_observation_count": 6},
-    {"recognized_outpoint_count": 1},
-    {"recognized_outpoint_count": 5, "qualifying_observation_count": 5, "incoming_sats": 1, "outgoing_sats": 1},
-    {"incoming_sats": True},
-    {"selector_record_sha256": "X" * 64},
-    {"controlling_selection_source": ControllingRegistrationSelectionSource.CANONICAL_ADMISSION_EDGE},
-))
+@pytest.mark.parametrize(
+    "changes",
+    (
+        {"incoming_sats": 0, "outgoing_sats": 0},
+        {"relation_reason": CovenantRelationReason.MISSING_OUTGOING},
+        {"current_full_relation_satisfied": False},
+        {"qualifying_observation_count": 0},
+        {"qualifying_observation_count": 1},
+        {"qualifying_observation_count": 6},
+        {"recognized_outpoint_count": 1},
+        {"recognized_outpoint_count": 5, "qualifying_observation_count": 5, "incoming_sats": 1, "outgoing_sats": 1},
+        {"incoming_sats": True},
+        {"selector_record_sha256": "X" * 64},
+        {"controlling_selection_source": ControllingRegistrationSelectionSource.CANONICAL_ADMISSION_EDGE},
+    ),
+)
 def test_contradictory_or_malformed_input_is_sanitized(changes):
     with pytest.raises(policy.CanonicalRootEntitlementPolicyUnavailable) as caught:
         evaluate(result(**changes))
@@ -81,21 +101,28 @@ class StringSubclass(str):
     pass
 
 
-@pytest.mark.parametrize("changes", (
-    {"graph_or_protocol_id": StringSubclass(GRAPH)},
-    {"selector_record_id": "not-a-uuid"},
-    {"observed_at": NOW.replace(tzinfo=None)},
-    {"counterparty_xonly_pubkey": "X" * 64},
-    {"counterparty_xonly_pubkey": SUBJECT},
-))
+@pytest.mark.parametrize(
+    "changes",
+    (
+        {"graph_or_protocol_id": StringSubclass(GRAPH)},
+        {"selector_record_id": "not-a-uuid"},
+        {"observed_at": NOW.replace(tzinfo=None)},
+        {"counterparty_xonly_pubkey": "X" * 64},
+        {"counterparty_xonly_pubkey": SUBJECT},
+    ),
+)
 def test_exact_graph_and_other_malformed_domain_fields_are_unavailable(changes):
     with pytest.raises(policy.CanonicalRootEntitlementPolicyUnavailable):
         evaluate(result(**changes))
 
 
 def test_combined_money_bound_rejects_excess_and_accepts_exact_boundary():
-    base = dict(recognized_outpoint_count=5, qualifying_observation_count=2,
-        incoming_sats=1, relation_reason=CovenantRelationReason.FULL_RELATION_SATISFIED)
+    base = dict(
+        recognized_outpoint_count=5,
+        qualifying_observation_count=2,
+        incoming_sats=1,
+        relation_reason=CovenantRelationReason.FULL_RELATION_SATISFIED,
+    )
     with pytest.raises(policy.CanonicalRootEntitlementPolicyUnavailable):
         evaluate(result(outgoing_sats=MAX_BITCOIN_SATS - 1, **base))
     decision = evaluate(result(outgoing_sats=MAX_BITCOIN_SATS - 4, **base))

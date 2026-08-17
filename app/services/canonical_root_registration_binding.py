@@ -136,27 +136,29 @@ class CanonicalRootRegistrationBinding:
                 _fail("superseded_by_binding_id")
         state = self.lifecycle_state
         valid = (
-            state is RootRegistrationBindingLifecycle.PROPOSED
-            and effective is None
-            and self.superseded_by_binding_id is None
-        ) or (
-            state is RootRegistrationBindingLifecycle.EFFECTIVE
-            and effective is not None
-            and effective >= created
-            and changed >= effective
-            and self.superseded_by_binding_id is None
-        ) or (
-            state is RootRegistrationBindingLifecycle.SUPERSEDED
-            and effective is not None
-            and effective >= created
-            and changed >= effective
-            and self.superseded_by_binding_id is not None
-        ) or (
-            state in (RootRegistrationBindingLifecycle.DISPUTED, RootRegistrationBindingLifecycle.REVOKED)
-            and self.superseded_by_binding_id is None
-            and (
-                effective is None
-                or (effective >= created and changed >= effective)
+            (
+                state is RootRegistrationBindingLifecycle.PROPOSED
+                and effective is None
+                and self.superseded_by_binding_id is None
+            )
+            or (
+                state is RootRegistrationBindingLifecycle.EFFECTIVE
+                and effective is not None
+                and effective >= created
+                and changed >= effective
+                and self.superseded_by_binding_id is None
+            )
+            or (
+                state is RootRegistrationBindingLifecycle.SUPERSEDED
+                and effective is not None
+                and effective >= created
+                and changed >= effective
+                and self.superseded_by_binding_id is not None
+            )
+            or (
+                state in (RootRegistrationBindingLifecycle.DISPUTED, RootRegistrationBindingLifecycle.REVOKED)
+                and self.superseded_by_binding_id is None
+                and (effective is None or (effective >= created and changed >= effective))
             )
         )
         if not valid:
@@ -209,6 +211,7 @@ def parse_canonical_root_registration_binding(value: bytes | str | dict) -> Cano
     if type(value) is str:
         serialized = value
         try:
+
             def pairs(items):
                 result = {}
                 for key, item in items:
@@ -216,7 +219,10 @@ def parse_canonical_root_registration_binding(value: bytes | str | dict) -> Cano
                         raise ValueError()
                     result[key] = item
                 return result
-            reject = lambda _: (_ for _ in ()).throw(ValueError())
+
+            def reject(_):
+                raise ValueError()
+
             value = json.loads(value, object_pairs_hook=pairs, parse_float=reject, parse_constant=reject)
         except (ValueError, json.JSONDecodeError):
             _fail("JSON")
@@ -232,10 +238,7 @@ def parse_canonical_root_registration_binding(value: bytes | str | dict) -> Cano
                 "effective_at": _parse_time(value["effective_at"], "effective_at", True),
             }
         )
-        if (
-            serialized is not None
-            and canonical_root_registration_binding_bytes(result).decode("ascii") != serialized
-        ):
+        if serialized is not None and canonical_root_registration_binding_bytes(result).decode("ascii") != serialized:
             _fail("noncanonical JSON")
         return result
     except (TypeError, ValueError):
@@ -277,15 +280,9 @@ def validate_binding_sources(
         _fail("trusted registration")
     if (
         trusted_registration.registration_id != binding.trusted_registration_id
-        or (
-            require_digest
-            and trusted_registration_sha256(trusted_registration) != binding.trusted_registration_sha256
-        )
+        or (require_digest and trusted_registration_sha256(trusted_registration) != binding.trusted_registration_sha256)
         or trusted_registration.subject_xonly_pubkey != binding.root_x_only_public_key
-        or (
-            require_active
-            and trusted_registration.lifecycle_state is not TrustedCovenantRegistrationLifecycle.ACTIVE
-        )
+        or (require_active and trusted_registration.lifecycle_state is not TrustedCovenantRegistrationLifecycle.ACTIVE)
     ):
         _fail("trusted registration")
     return binding, trusted_registration

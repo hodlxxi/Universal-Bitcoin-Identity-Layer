@@ -88,40 +88,31 @@ class CanonicalRootEntitlementMaterializer:
                 decision.graph_or_protocol_id != graph_or_protocol_id
                 or decision.subject_xonly_pubkey != subject_xonly_pubkey
                 or type(edge_local_result) is not EdgeLocalCovenantRelationResult
-                or decision.counterparty_xonly_pubkey
-                != edge_local_result.counterparty_xonly_pubkey
+                or decision.counterparty_xonly_pubkey != edge_local_result.counterparty_xonly_pubkey
                 or decision.controlling_selection_source
                 is not ControllingRegistrationSelectionSource.CANONICAL_ROOT_REGISTRATION_BINDING
-                or decision.controlling_selection_source
-                is not edge_local_result.controlling_selection_source
+                or decision.controlling_selection_source is not edge_local_result.controlling_selection_source
                 or decision.selector_record_id != edge_local_result.selector_record_id
                 or decision.selector_record_sha256 != edge_local_result.selector_record_sha256
                 or decision.trusted_registration_id != edge_local_result.trusted_registration_id
-                or decision.trusted_registration_sha256
-                != edge_local_result.trusted_registration_sha256
+                or decision.trusted_registration_sha256 != edge_local_result.trusted_registration_sha256
                 or decision.funding_set_id != edge_local_result.funding_set_id
                 or decision.funding_set_sha256 != edge_local_result.funding_set_sha256
-                or decision.recognized_outpoint_count
-                != edge_local_result.recognized_outpoint_count
-                or decision.qualifying_observation_count
-                != edge_local_result.qualifying_observation_count
-                or decision.observed_at
-                != edge_local_result.observed_at.astimezone(timezone.utc)
+                or decision.recognized_outpoint_count != edge_local_result.recognized_outpoint_count
+                or decision.qualifying_observation_count != edge_local_result.qualifying_observation_count
+                or decision.observed_at != edge_local_result.observed_at.astimezone(timezone.utc)
                 or decision.observed_block_height != edge_local_result.observed_block_height
                 or decision.incoming_sats != edge_local_result.incoming_sats
                 or decision.outgoing_sats != edge_local_result.outgoing_sats
                 or decision.relation_reason is not edge_local_result.relation_reason
-                or decision.relation_source_evidence_sha256
-                != edge_local_result.relation_source_evidence_sha256
+                or decision.relation_source_evidence_sha256 != edge_local_result.relation_source_evidence_sha256
                 or decision.policy_version != POLICY_VERSION
                 or decision.evidence_source != EVIDENCE_SOURCE
                 or type(decision.identity_class) is not IdentityClass
                 or decision.identity_class not in (IdentityClass.FULL, IdentityClass.LIMITED)
                 or type(decision.current_full_relation_satisfied) is not bool
-                or decision.current_full_relation_satisfied
-                is not edge_local_result.current_full_relation_satisfied
-                or (decision.identity_class is IdentityClass.FULL)
-                is not decision.current_full_relation_satisfied
+                or decision.current_full_relation_satisfied is not edge_local_result.current_full_relation_satisfied
+                or (decision.identity_class is IdentityClass.FULL) is not decision.current_full_relation_satisfied
                 or type(decision.observed_at) is not datetime
                 or decision.observed_at.tzinfo is None
                 or decision.observed_at.utcoffset() is None

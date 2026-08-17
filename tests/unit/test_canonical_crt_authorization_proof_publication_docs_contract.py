@@ -1,16 +1,15 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).parents[2]
 
 
 def test_publication_document_contains_statuses_and_every_non_claim():
-    text = (
-        ROOT / "docs/CANONICAL_CRT_AUTHORIZATION_PROOF_PUBLICATION_V1.md"
-    ).read_text()
+    text = (ROOT / "docs/CANONICAL_CRT_AUTHORIZATION_PROOF_PUBLICATION_V1.md").read_text()
     for required in (
-        "IMPLEMENTED_SOURCE_ONLY", "READ_ONLY_REFERENCE_SURFACE",
-        "NOT_DEPLOYED", "NOT_LIVE_MEMBERSHIP",
+        "IMPLEMENTED_SOURCE_ONLY",
+        "READ_ONLY_REFERENCE_SURFACE",
+        "NOT_DEPLOYED",
+        "NOT_LIVE_MEMBERSHIP",
         "no live Bitcoin evidence lookup",
         "no live admission registry lookup",
         "no automatic sponsor-lineage lookup",

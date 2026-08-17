@@ -39,23 +39,27 @@ GRAPH_ID = "hodlxxi.crt_membership_graph.v1"
 NETWORK = "bitcoin"
 HUMAN_PROFILE = "legacy_777"
 MAXIMUM_CANONICAL_CHILD_DEPTH = 2288
-MANDATORY_NON_CLAIMS = tuple(sorted((
-    "no FULL/LIMITED authorization grant",
-    "no automatic Bitcoin RPC observation claim",
-    "no decentralization or universal-legitimacy proof",
-    "no fairness or informed-consent proof",
-    "no future-cooperation guarantee",
-    "no legal identity, KYC or complete personhood proof",
-    "no ownership, custody or guardianship proof",
-    "no production enforcement or deployment claim",
-    "no proof of current private-key possession",
-    "no reputation or rank grant",
-    "no runtime administration or server-privilege grant",
-    "no sincerity, loyalty, affection or trustworthiness proof",
-    "no sponsor ownership or control over a child",
-    "no validity for current_144 or cooperative admission templates",
-    "no validity outside the exact supplied evidence snapshot and evaluated_at",
-)))
+MANDATORY_NON_CLAIMS = tuple(
+    sorted(
+        (
+            "no FULL/LIMITED authorization grant",
+            "no automatic Bitcoin RPC observation claim",
+            "no decentralization or universal-legitimacy proof",
+            "no fairness or informed-consent proof",
+            "no future-cooperation guarantee",
+            "no legal identity, KYC or complete personhood proof",
+            "no ownership, custody or guardianship proof",
+            "no production enforcement or deployment claim",
+            "no proof of current private-key possession",
+            "no reputation or rank grant",
+            "no runtime administration or server-privilege grant",
+            "no sincerity, loyalty, affection or trustworthiness proof",
+            "no sponsor ownership or control over a child",
+            "no validity for current_144 or cooperative admission templates",
+            "no validity outside the exact supplied evidence snapshot and evaluated_at",
+        )
+    )
+)
 _HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 _HEX66 = re.compile(r"(?:02|03)[0-9a-f]{64}\Z")
 
@@ -102,8 +106,7 @@ class CanonicalSponsorLineageReason(Enum):
 
 
 def _utc(value: object) -> datetime:
-    if (type(value) is not datetime or value.tzinfo is None
-            or value.utcoffset() != timedelta(0) or value.microsecond):
+    if type(value) is not datetime or value.tzinfo is None or value.utcoffset() != timedelta(0) or value.microsecond:
         raise InvalidCanonicalSponsorLineage("evaluated_at")
     return value
 
@@ -133,21 +136,23 @@ class CanonicalSponsorLineageEdgeEvidence:
     observation_evaluation: CovenantRelationEvaluation | None
 
     def __post_init__(self):
-        if (type(self.record) is not CanonicalAdmissionEdge
-                or type(self.trusted_registration) is not TrustedCovenantRegistration
-                or (self.observation_evaluation is not None
-                    and type(self.observation_evaluation) is not CovenantRelationEvaluation)):
+        if (
+            type(self.record) is not CanonicalAdmissionEdge
+            or type(self.trusted_registration) is not TrustedCovenantRegistration
+            or (
+                self.observation_evaluation is not None
+                and type(self.observation_evaluation) is not CovenantRelationEvaluation
+            )
+        ):
             raise InvalidCanonicalSponsorLineage("evidence type")
         CanonicalAdmissionEdge(*(getattr(self.record, f) for f in CanonicalAdmissionEdge.__dataclass_fields__))
-        TrustedCovenantRegistration(*(
-            getattr(self.trusted_registration, f)
-            for f in TrustedCovenantRegistration.__dataclass_fields__
-        ))
+        TrustedCovenantRegistration(
+            *(getattr(self.trusted_registration, f) for f in TrustedCovenantRegistration.__dataclass_fields__)
+        )
         if self.observation_evaluation is not None:
-            CovenantRelationEvaluation(*(
-                getattr(self.observation_evaluation, f)
-                for f in CovenantRelationEvaluation.__dataclass_fields__
-            ))
+            CovenantRelationEvaluation(
+                *(getattr(self.observation_evaluation, f) for f in CovenantRelationEvaluation.__dataclass_fields__)
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,10 +178,15 @@ class CanonicalSponsorLineageNode:
     def __post_init__(self):
         if type(self.depth) is not int or not 1 <= self.depth <= MAXIMUM_CANONICAL_CHILD_DEPTH:
             raise InvalidCanonicalSponsorLineage("node depth")
-        _uuid(self.edge_id); _uuid(self.trusted_registration_id); _uuid(self.sponsor_basis_record_id)
-        for value in (self.edge_sha256, self.trusted_registration_sha256,
-                      self.sponsor_basis_record_sha256,
-                      self.local_current_evaluation_sha256):
+        _uuid(self.edge_id)
+        _uuid(self.trusted_registration_id)
+        _uuid(self.sponsor_basis_record_id)
+        for value in (
+            self.edge_sha256,
+            self.trusted_registration_sha256,
+            self.sponsor_basis_record_sha256,
+            self.local_current_evaluation_sha256,
+        ):
             _digest(value)
         if self.observation_evaluation_sha256 is not None:
             _digest(self.observation_evaluation_sha256)
@@ -209,19 +219,12 @@ class CanonicalSponsorLineageNode:
                     or self.sponsor_x_only_public_key != GENESIS_XONLY_KEY
                 )
             )
-            or (
-                self.depth > 1
-                and self.sponsor_participant_id != self.sponsor_x_only_public_key
-            )
+            or (self.depth > 1 and self.sponsor_participant_id != self.sponsor_x_only_public_key)
         ):
             raise InvalidCanonicalSponsorLineage("node participant identity")
         expected = {
-            AdmissionEdgeEvaluationState.ACTIVE: {
-                AdmissionEdgeCurrentReason.EXACT_CURRENT_EDGE_ACTIVE
-            },
-            AdmissionEdgeEvaluationState.PROVISIONAL: {
-                AdmissionEdgeCurrentReason.RECORD_PROPOSED
-            },
+            AdmissionEdgeEvaluationState.ACTIVE: {AdmissionEdgeCurrentReason.EXACT_CURRENT_EDGE_ACTIVE},
+            AdmissionEdgeEvaluationState.PROVISIONAL: {AdmissionEdgeCurrentReason.RECORD_PROPOSED},
             AdmissionEdgeEvaluationState.DISPUTED: {
                 AdmissionEdgeCurrentReason.RECORD_DISPUTED,
                 AdmissionEdgeCurrentReason.REGISTRATION_DISPUTED,
@@ -244,10 +247,11 @@ class CanonicalSponsorLineageNode:
         }
         if (
             self.local_evaluation_state not in expected
-            or self.local_evaluation_reason
-            not in expected[self.local_evaluation_state]
-            or (self.local_evaluation_state is AdmissionEdgeEvaluationState.ACTIVE
-                and self.observation_evaluation_sha256 is None)
+            or self.local_evaluation_reason not in expected[self.local_evaluation_state]
+            or (
+                self.local_evaluation_state is AdmissionEdgeEvaluationState.ACTIVE
+                and self.observation_evaluation_sha256 is None
+            )
         ):
             raise InvalidCanonicalSponsorLineage("node state reason")
 
@@ -279,13 +283,22 @@ class CanonicalSponsorLineageEvaluation:
     human_interpretation_required: bool
 
     def __post_init__(self):
-        if (self.schema, self.evaluator_version, self.verification_rule,
-            self.graph_or_protocol_id, self.network, self.human_profile) != (
-            SCHEMA, EVALUATOR_VERSION, VERIFICATION_RULE, GRAPH_ID, NETWORK, HUMAN_PROFILE
-        ) or type(self.state) is not CanonicalSponsorLineageState or type(
-            self.reason_code) is not CanonicalSponsorLineageReason:
+        if (
+            (
+                self.schema,
+                self.evaluator_version,
+                self.verification_rule,
+                self.graph_or_protocol_id,
+                self.network,
+                self.human_profile,
+            )
+            != (SCHEMA, EVALUATOR_VERSION, VERIFICATION_RULE, GRAPH_ID, NETWORK, HUMAN_PROFILE)
+            or type(self.state) is not CanonicalSponsorLineageState
+            or type(self.reason_code) is not CanonicalSponsorLineageReason
+        ):
             raise InvalidCanonicalSponsorLineage("fixed evaluation contract")
-        _uuid(self.target_edge_id); _utc(self.evaluated_at)
+        _uuid(self.target_edge_id)
+        _utc(self.evaluated_at)
         if self.explicit_non_claims != MANDATORY_NON_CLAIMS or self.human_interpretation_required is not True:
             raise InvalidCanonicalSponsorLineage("non-claims")
         target_metadata = (
@@ -295,9 +308,7 @@ class CanonicalSponsorLineageEvaluation:
             self.target_x_only_public_key,
             self.target_depth,
         )
-        if any(item is None for item in target_metadata) != all(
-            item is None for item in target_metadata
-        ):
+        if any(item is None for item in target_metadata) != all(item is None for item in target_metadata):
             raise InvalidCanonicalSponsorLineage("partial target metadata")
         if self.target_edge_sha256 is not None:
             _digest(self.target_edge_sha256)
@@ -311,20 +322,18 @@ class CanonicalSponsorLineageEvaluation:
             ):
                 raise InvalidCanonicalSponsorLineage("target metadata")
             _digest(self.target_x_only_public_key)
-        if (self.selected_genesis_record_id is None) != (
-            self.selected_genesis_record_sha256 is None
-        ):
+        if (self.selected_genesis_record_id is None) != (self.selected_genesis_record_sha256 is None):
             raise InvalidCanonicalSponsorLineage("partial genesis reference")
         if self.selected_genesis_record_id is not None:
-            _uuid(self.selected_genesis_record_id); _digest(self.selected_genesis_record_sha256)
+            _uuid(self.selected_genesis_record_id)
+            _digest(self.selected_genesis_record_sha256)
         if type(self.lineage_nodes) is not tuple or any(
             type(x) is not CanonicalSponsorLineageNode for x in self.lineage_nodes
         ):
             raise InvalidCanonicalSponsorLineage("nodes")
         if self.lineage_nodes:
             if (
-                tuple(x.depth for x in self.lineage_nodes)
-                != tuple(range(1, len(self.lineage_nodes) + 1))
+                tuple(x.depth for x in self.lineage_nodes) != tuple(range(1, len(self.lineage_nodes) + 1))
                 or self.target_depth != self.lineage_nodes[-1].depth
                 or len(self.lineage_nodes) != self.target_depth
                 or (
@@ -358,48 +367,36 @@ class CanonicalSponsorLineageEvaluation:
                         child.sponsor_basis_record_id,
                         child.sponsor_basis_record_sha256,
                     )
-                    for parent, child in zip(
-                        self.lineage_nodes, self.lineage_nodes[1:]
-                    )
+                    for parent, child in zip(self.lineage_nodes, self.lineage_nodes[1:])
                 )
             ):
                 raise InvalidCanonicalSponsorLineage("lineage continuity")
-            if (
-                self.selected_genesis_record_id is None
-                or (
-                    self.lineage_nodes[0].sponsor_basis_record_id,
-                    self.lineage_nodes[0].sponsor_basis_record_sha256,
-                )
-                != (
-                    self.selected_genesis_record_id,
-                    self.selected_genesis_record_sha256,
-                )
+            if self.selected_genesis_record_id is None or (
+                self.lineage_nodes[0].sponsor_basis_record_id,
+                self.lineage_nodes[0].sponsor_basis_record_sha256,
+            ) != (
+                self.selected_genesis_record_id,
+                self.selected_genesis_record_sha256,
             ):
                 raise InvalidCanonicalSponsorLineage("lineage genesis")
             if (
-                len({node.edge_id for node in self.lineage_nodes})
-                != len(self.lineage_nodes)
-                or len({node.edge_sha256 for node in self.lineage_nodes})
-                != len(self.lineage_nodes)
-                or len({node.child_participant_id for node in self.lineage_nodes})
-                != len(self.lineage_nodes)
-                or len({node.child_x_only_public_key for node in self.lineage_nodes})
-                != len(self.lineage_nodes)
-                or len(
-                    {
-                        (node.sponsor_participant_id, node.child_participant_id)
-                        for node in self.lineage_nodes
-                    }
-                )
+                len({node.edge_id for node in self.lineage_nodes}) != len(self.lineage_nodes)
+                or len({node.edge_sha256 for node in self.lineage_nodes}) != len(self.lineage_nodes)
+                or len({node.child_participant_id for node in self.lineage_nodes}) != len(self.lineage_nodes)
+                or len({node.child_x_only_public_key for node in self.lineage_nodes}) != len(self.lineage_nodes)
+                or len({(node.sponsor_participant_id, node.child_participant_id) for node in self.lineage_nodes})
                 != len(self.lineage_nodes)
             ):
                 raise InvalidCanonicalSponsorLineage("duplicate lineage identity")
-        if type(self.relevant_records) is not tuple or self.relevant_records != tuple(
-            sorted(self.relevant_records)
-        ) or len({x[0] for x in self.relevant_records}) != len(self.relevant_records):
+        if (
+            type(self.relevant_records) is not tuple
+            or self.relevant_records != tuple(sorted(self.relevant_records))
+            or len({x[0] for x in self.relevant_records}) != len(self.relevant_records)
+        ):
             raise InvalidCanonicalSponsorLineage("relevant records")
         for record_id, digest in self.relevant_records:
-            _uuid(record_id); _digest(digest)
+            _uuid(record_id)
+            _digest(digest)
         expected_relevant = set()
         if self.lineage_nodes:
             expected_relevant.add(
@@ -421,9 +418,7 @@ class CanonicalSponsorLineageEvaluation:
         if set(self.relevant_records) != expected_relevant:
             raise InvalidCanonicalSponsorLineage("relevant record policy")
         state_reasons = {
-            CanonicalSponsorLineageState.ACTIVE: {
-                CanonicalSponsorLineageReason.EXACT_LINEAGE_ACTIVE
-            },
+            CanonicalSponsorLineageState.ACTIVE: {CanonicalSponsorLineageReason.EXACT_LINEAGE_ACTIVE},
             CanonicalSponsorLineageState.PROVISIONAL: {
                 CanonicalSponsorLineageReason.GENESIS_PROVISIONAL,
                 CanonicalSponsorLineageReason.ANCESTOR_PROVISIONAL,
@@ -484,8 +479,7 @@ class CanonicalSponsorLineageEvaluation:
                 or self.controlling_edge_id is not None
                 or not self.lineage_nodes
                 or any(
-                    node.local_evaluation_state
-                    is not AdmissionEdgeEvaluationState.ACTIVE
+                    node.local_evaluation_state is not AdmissionEdgeEvaluationState.ACTIVE
                     for node in self.lineage_nodes
                 )
                 or len(self.relevant_records) != 1 + 2 * self.target_depth
@@ -498,16 +492,9 @@ class CanonicalSponsorLineageEvaluation:
             if (
                 type(self.controlling_depth) is not int
                 or not 1 <= self.controlling_depth <= len(self.lineage_nodes)
-                or self.controlling_edge_id
-                != self.lineage_nodes[self.controlling_depth - 1].edge_id
-                or (
-                    self.reason_code in ancestor_reasons
-                    and self.controlling_depth == self.target_depth
-                )
-                or (
-                    self.reason_code in target_reasons
-                    and self.controlling_depth != self.target_depth
-                )
+                or self.controlling_edge_id != self.lineage_nodes[self.controlling_depth - 1].edge_id
+                or (self.reason_code in ancestor_reasons and self.controlling_depth == self.target_depth)
+                or (self.reason_code in target_reasons and self.controlling_depth != self.target_depth)
             ):
                 raise InvalidCanonicalSponsorLineage("edge control")
         elif self.controlling_depth is not None or self.controlling_edge_id is not None:
@@ -518,9 +505,7 @@ def _canonical_genesis_reference(
     value: CanonicalGenesisEvaluation,
 ) -> tuple[str, str]:
     """Resolve the one immutable genesis record controlling this snapshot."""
-    value = CanonicalGenesisEvaluation(
-        *(getattr(value, field) for field in value.__dataclass_fields__)
-    )
+    value = CanonicalGenesisEvaluation(*(getattr(value, field) for field in value.__dataclass_fields__))
     if value.state is CanonicalGenesisEvaluationState.GENESIS_ACTIVE:
         selected = (
             value.selected_effective_record_id,
@@ -535,26 +520,52 @@ def _canonical_genesis_reference(
     return controlling
 
 
-def _result(reason, evaluated_at, target_edge_id, *, target=None, nodes=(), genesis=None,
-            state=CanonicalSponsorLineageState.UNKNOWN, control_depth=None, control_edge=None,
-            relevant=()):
+def _result(
+    reason,
+    evaluated_at,
+    target_edge_id,
+    *,
+    target=None,
+    nodes=(),
+    genesis=None,
+    state=CanonicalSponsorLineageState.UNKNOWN,
+    control_depth=None,
+    control_edge=None,
+    relevant=(),
+):
     return CanonicalSponsorLineageEvaluation(
-        SCHEMA, EVALUATOR_VERSION, VERIFICATION_RULE, GRAPH_ID, NETWORK, HUMAN_PROFILE,
+        SCHEMA,
+        EVALUATOR_VERSION,
+        VERIFICATION_RULE,
+        GRAPH_ID,
+        NETWORK,
+        HUMAN_PROFILE,
         target_edge_id,
         canonical_admission_edge_sha256(target) if target else None,
         target.child_participant_id if target else None,
         target.child_compressed_public_key if target else None,
         target.child_x_only_public_key if target else None,
         target.child_depth if target else None,
-        evaluated_at, state, reason, control_depth, control_edge,
-        genesis[0] if genesis else None, genesis[1] if genesis else None,
-        tuple(nodes), tuple(sorted(relevant)), MANDATORY_NON_CLAIMS, True,
+        evaluated_at,
+        state,
+        reason,
+        control_depth,
+        control_edge,
+        genesis[0] if genesis else None,
+        genesis[1] if genesis else None,
+        tuple(nodes),
+        tuple(sorted(relevant)),
+        MANDATORY_NON_CLAIMS,
+        True,
     )
 
 
 def evaluate_canonical_sponsor_lineage(
-    target_edge_id: str, *, edge_evidence: tuple[CanonicalSponsorLineageEdgeEvidence, ...],
-    genesis_evaluation: CanonicalGenesisEvaluation, evaluated_at: datetime,
+    target_edge_id: str,
+    *,
+    edge_evidence: tuple[CanonicalSponsorLineageEdgeEvidence, ...],
+    genesis_evaluation: CanonicalGenesisEvaluation,
+    evaluated_at: datetime,
 ) -> CanonicalSponsorLineageEvaluation:
     """Resolve and evaluate one exact finite lineage snapshot, fail closed."""
     evaluated_at = _utc(evaluated_at)
@@ -562,17 +573,18 @@ def evaluate_canonical_sponsor_lineage(
     try:
         if type(edge_evidence) is not tuple:
             raise InvalidCanonicalSponsorLineage("evidence tuple")
-        genesis_evaluation = CanonicalGenesisEvaluation(*(
-            getattr(genesis_evaluation, f) for f in CanonicalGenesisEvaluation.__dataclass_fields__
-        ))
-        rebuilt = tuple(CanonicalSponsorLineageEdgeEvidence(
-            x.record, x.trusted_registration, x.observation_evaluation
-        ) for x in edge_evidence if type(x) is CanonicalSponsorLineageEdgeEvidence)
+        genesis_evaluation = CanonicalGenesisEvaluation(
+            *(getattr(genesis_evaluation, f) for f in CanonicalGenesisEvaluation.__dataclass_fields__)
+        )
+        rebuilt = tuple(
+            CanonicalSponsorLineageEdgeEvidence(x.record, x.trusted_registration, x.observation_evaluation)
+            for x in edge_evidence
+            if type(x) is CanonicalSponsorLineageEdgeEvidence
+        )
         if len(rebuilt) != len(edge_evidence):
             raise InvalidCanonicalSponsorLineage("evidence type")
     except Exception:
-        return _result(CanonicalSponsorLineageReason.MALFORMED_OR_UNTRUSTED_INPUT,
-                       evaluated_at, target_edge_id)
+        return _result(CanonicalSponsorLineageReason.MALFORMED_OR_UNTRUSTED_INPUT, evaluated_at, target_edge_id)
     ids = [x.record.edge_id for x in rebuilt]
     if len(ids) != len(set(ids)):
         return _result(CanonicalSponsorLineageReason.DUPLICATE_EDGE_ID, evaluated_at, target_edge_id)
@@ -584,28 +596,32 @@ def evaluate_canonical_sponsor_lineage(
         return _result(CanonicalSponsorLineageReason.MISSING_TARGET_EVIDENCE, evaluated_at, target_edge_id)
     target = index[target_edge_id].record
     if target.child_depth > MAXIMUM_CANONICAL_CHILD_DEPTH:
-        return _result(CanonicalSponsorLineageReason.MAXIMUM_DEPTH_EXCEEDED,
-                       evaluated_at, target_edge_id, target=target)
+        return _result(
+            CanonicalSponsorLineageReason.MAXIMUM_DEPTH_EXCEEDED, evaluated_at, target_edge_id, target=target
+        )
     path, visited_ids, visited_digests, child_ids, child_keys = [], set(), set(), set(), set()
     current = index[target_edge_id]
     while True:
         record = current.record
         digest = canonical_admission_edge_sha256(record)
         if record.edge_id in visited_ids or digest in visited_digests:
-            return _result(CanonicalSponsorLineageReason.CYCLE_DETECTED,
-                           evaluated_at, target_edge_id, target=target)
+            return _result(CanonicalSponsorLineageReason.CYCLE_DETECTED, evaluated_at, target_edge_id, target=target)
         if record.child_participant_id in child_ids or record.child_x_only_public_key in child_keys:
-            return _result(CanonicalSponsorLineageReason.DUPLICATE_CHILD_IDENTITY,
-                           evaluated_at, target_edge_id, target=target)
-        visited_ids.add(record.edge_id); visited_digests.add(digest)
-        child_ids.add(record.child_participant_id); child_keys.add(record.child_x_only_public_key)
+            return _result(
+                CanonicalSponsorLineageReason.DUPLICATE_CHILD_IDENTITY, evaluated_at, target_edge_id, target=target
+            )
+        visited_ids.add(record.edge_id)
+        visited_digests.add(digest)
+        child_ids.add(record.child_participant_id)
+        child_keys.add(record.child_x_only_public_key)
         path.append(current)
         if record.child_depth == 1:
             break
         parent = index.get(record.sponsor_basis_record_id)
         if parent is None:
-            return _result(CanonicalSponsorLineageReason.MISSING_PARENT_EVIDENCE,
-                           evaluated_at, target_edge_id, target=target)
+            return _result(
+                CanonicalSponsorLineageReason.MISSING_PARENT_EVIDENCE, evaluated_at, target_edge_id, target=target
+            )
         p = parent.record
         if canonical_admission_edge_sha256(p) != record.sponsor_basis_record_sha256:
             reason = CanonicalSponsorLineageReason.PARENT_DIGEST_MISMATCH
@@ -614,8 +630,10 @@ def evaluate_canonical_sponsor_lineage(
         elif p.child_depth != record.sponsor_depth or record.child_depth != record.sponsor_depth + 1:
             reason = CanonicalSponsorLineageReason.PARENT_DEPTH_MISMATCH
         elif (p.child_participant_id, p.child_compressed_public_key, p.child_x_only_public_key) != (
-            record.sponsor_participant_id, record.sponsor_compressed_public_key,
-            record.sponsor_x_only_public_key):
+            record.sponsor_participant_id,
+            record.sponsor_compressed_public_key,
+            record.sponsor_x_only_public_key,
+        ):
             reason = CanonicalSponsorLineageReason.PARENT_IDENTITY_MISMATCH
         else:
             current = parent
@@ -623,8 +641,9 @@ def evaluate_canonical_sponsor_lineage(
         return _result(reason, evaluated_at, target_edge_id, target=target)
     path.reverse()
     if len(path) != target.child_depth or len(rebuilt) != target.child_depth:
-        return _result(CanonicalSponsorLineageReason.EXTRANEOUS_EDGE_EVIDENCE,
-                       evaluated_at, target_edge_id, target=target)
+        return _result(
+            CanonicalSponsorLineageReason.EXTRANEOUS_EDGE_EVIDENCE, evaluated_at, target_edge_id, target=target
+        )
     try:
         genesis = _canonical_genesis_reference(genesis_evaluation)
     except InvalidCanonicalSponsorLineage:
@@ -635,50 +654,85 @@ def evaluate_canonical_sponsor_lineage(
             target=target,
         )
     root = path[0].record
-    if root.sponsor_basis_record_id != genesis[0] or (
-        root.sponsor_basis_record_sha256 != genesis[1]
-    ):
-        return _result(CanonicalSponsorLineageReason.PARENT_DIGEST_MISMATCH,
-                       evaluated_at, target_edge_id, target=target)
+    if root.sponsor_basis_record_id != genesis[0] or (root.sponsor_basis_record_sha256 != genesis[1]):
+        return _result(
+            CanonicalSponsorLineageReason.PARENT_DIGEST_MISMATCH, evaluated_at, target_edge_id, target=target
+        )
     nodes, locals_, relevant = [], [], [genesis]
     for position, evidence in enumerate(path):
         parent = None if position == 0 else path[position - 1].record
         local = evaluate_canonical_admission_edge_current(
-            evidence.record, trusted_registration=evidence.trusted_registration,
+            evidence.record,
+            trusted_registration=evidence.trusted_registration,
             observation_evaluation=evidence.observation_evaluation,
             genesis_evaluation=genesis_evaluation if position == 0 else None,
-            parent_edge=parent, evaluated_at=evaluated_at,
+            parent_edge=parent,
+            evaluated_at=evaluated_at,
         )
         locals_.append(local)
         record, registration = evidence.record, evidence.trusted_registration
-        nodes.append(CanonicalSponsorLineageNode(
-            record.child_depth, record.edge_id, canonical_admission_edge_sha256(record),
-            record.sponsor_participant_id, record.sponsor_compressed_public_key,
-            record.sponsor_x_only_public_key, record.child_participant_id,
-            record.child_compressed_public_key, record.child_x_only_public_key,
-            local.state, local.reason_code, registration.registration_id,
-            trusted_registration_sha256(registration), record.sponsor_basis_record_id,
-            record.sponsor_basis_record_sha256,
-            (None if evidence.observation_evaluation is None else
-             covenant_relation_source_sha256(evidence.observation_evaluation)),
-            canonical_admission_edge_current_evaluation_sha256(local),
-        ))
-        relevant.extend(((record.edge_id, canonical_admission_edge_sha256(record)),
-                         (registration.registration_id, trusted_registration_sha256(registration))))
+        nodes.append(
+            CanonicalSponsorLineageNode(
+                record.child_depth,
+                record.edge_id,
+                canonical_admission_edge_sha256(record),
+                record.sponsor_participant_id,
+                record.sponsor_compressed_public_key,
+                record.sponsor_x_only_public_key,
+                record.child_participant_id,
+                record.child_compressed_public_key,
+                record.child_x_only_public_key,
+                local.state,
+                local.reason_code,
+                registration.registration_id,
+                trusted_registration_sha256(registration),
+                record.sponsor_basis_record_id,
+                record.sponsor_basis_record_sha256,
+                (
+                    None
+                    if evidence.observation_evaluation is None
+                    else covenant_relation_source_sha256(evidence.observation_evaluation)
+                ),
+                canonical_admission_edge_current_evaluation_sha256(local),
+            )
+        )
+        relevant.extend(
+            (
+                (record.edge_id, canonical_admission_edge_sha256(record)),
+                (registration.registration_id, trusted_registration_sha256(registration)),
+            )
+        )
     genesis_map = {
-        CanonicalGenesisEvaluationState.PROVISIONAL: (CanonicalSponsorLineageState.PROVISIONAL,
-            CanonicalSponsorLineageReason.GENESIS_PROVISIONAL),
-        CanonicalGenesisEvaluationState.DISPUTED: (CanonicalSponsorLineageState.DISPUTED,
-            CanonicalSponsorLineageReason.GENESIS_DISPUTED),
-        CanonicalGenesisEvaluationState.LINEAGE_INACTIVE: (CanonicalSponsorLineageState.LINEAGE_INACTIVE,
-            CanonicalSponsorLineageReason.GENESIS_LINEAGE_INACTIVE),
-        CanonicalGenesisEvaluationState.UNKNOWN: (CanonicalSponsorLineageState.UNKNOWN,
-            CanonicalSponsorLineageReason.GENESIS_UNKNOWN),
+        CanonicalGenesisEvaluationState.PROVISIONAL: (
+            CanonicalSponsorLineageState.PROVISIONAL,
+            CanonicalSponsorLineageReason.GENESIS_PROVISIONAL,
+        ),
+        CanonicalGenesisEvaluationState.DISPUTED: (
+            CanonicalSponsorLineageState.DISPUTED,
+            CanonicalSponsorLineageReason.GENESIS_DISPUTED,
+        ),
+        CanonicalGenesisEvaluationState.LINEAGE_INACTIVE: (
+            CanonicalSponsorLineageState.LINEAGE_INACTIVE,
+            CanonicalSponsorLineageReason.GENESIS_LINEAGE_INACTIVE,
+        ),
+        CanonicalGenesisEvaluationState.UNKNOWN: (
+            CanonicalSponsorLineageState.UNKNOWN,
+            CanonicalSponsorLineageReason.GENESIS_UNKNOWN,
+        ),
     }
     if genesis_evaluation.state in genesis_map:
         state, reason = genesis_map[genesis_evaluation.state]
-        return _result(reason, evaluated_at, target_edge_id, target=target, nodes=nodes,
-                       genesis=genesis, state=state, control_depth=0, relevant=relevant)
+        return _result(
+            reason,
+            evaluated_at,
+            target_edge_id,
+            target=target,
+            nodes=nodes,
+            genesis=genesis,
+            state=state,
+            control_depth=0,
+            relevant=relevant,
+        )
     for position, local in enumerate(locals_, 1):
         if local.state is AdmissionEdgeEvaluationState.ACTIVE:
             continue
@@ -686,28 +740,60 @@ def evaluate_canonical_sponsor_lineage(
         mapping = {
             AdmissionEdgeEvaluationState.PROVISIONAL: (
                 CanonicalSponsorLineageState.PROVISIONAL,
-                CanonicalSponsorLineageReason.TARGET_PROVISIONAL if target_control
-                else CanonicalSponsorLineageReason.ANCESTOR_PROVISIONAL),
+                (
+                    CanonicalSponsorLineageReason.TARGET_PROVISIONAL
+                    if target_control
+                    else CanonicalSponsorLineageReason.ANCESTOR_PROVISIONAL
+                ),
+            ),
             AdmissionEdgeEvaluationState.DISPUTED: (
                 CanonicalSponsorLineageState.DISPUTED,
-                CanonicalSponsorLineageReason.TARGET_DISPUTED if target_control
-                else CanonicalSponsorLineageReason.ANCESTOR_DISPUTED),
+                (
+                    CanonicalSponsorLineageReason.TARGET_DISPUTED
+                    if target_control
+                    else CanonicalSponsorLineageReason.ANCESTOR_DISPUTED
+                ),
+            ),
             AdmissionEdgeEvaluationState.EDGE_INACTIVE: (
                 CanonicalSponsorLineageState.LINEAGE_INACTIVE,
-                CanonicalSponsorLineageReason.TARGET_EDGE_INACTIVE if target_control
-                else CanonicalSponsorLineageReason.ANCESTOR_EDGE_INACTIVE),
+                (
+                    CanonicalSponsorLineageReason.TARGET_EDGE_INACTIVE
+                    if target_control
+                    else CanonicalSponsorLineageReason.ANCESTOR_EDGE_INACTIVE
+                ),
+            ),
             AdmissionEdgeEvaluationState.UNKNOWN: (
                 CanonicalSponsorLineageState.UNKNOWN,
-                CanonicalSponsorLineageReason.TARGET_LOCAL_EVALUATION_UNKNOWN if target_control
-                else CanonicalSponsorLineageReason.ANCESTOR_LOCAL_EVALUATION_UNKNOWN),
+                (
+                    CanonicalSponsorLineageReason.TARGET_LOCAL_EVALUATION_UNKNOWN
+                    if target_control
+                    else CanonicalSponsorLineageReason.ANCESTOR_LOCAL_EVALUATION_UNKNOWN
+                ),
+            ),
         }
         state, reason = mapping[local.state]
-        return _result(reason, evaluated_at, target_edge_id, target=target, nodes=nodes,
-                       genesis=genesis, state=state, control_depth=position,
-                       control_edge=local.edge_id, relevant=relevant)
-    return _result(CanonicalSponsorLineageReason.EXACT_LINEAGE_ACTIVE, evaluated_at,
-                   target_edge_id, target=target, nodes=nodes, genesis=genesis,
-                   state=CanonicalSponsorLineageState.ACTIVE, relevant=relevant)
+        return _result(
+            reason,
+            evaluated_at,
+            target_edge_id,
+            target=target,
+            nodes=nodes,
+            genesis=genesis,
+            state=state,
+            control_depth=position,
+            control_edge=local.edge_id,
+            relevant=relevant,
+        )
+    return _result(
+        CanonicalSponsorLineageReason.EXACT_LINEAGE_ACTIVE,
+        evaluated_at,
+        target_edge_id,
+        target=target,
+        nodes=nodes,
+        genesis=genesis,
+        state=CanonicalSponsorLineageState.ACTIVE,
+        relevant=relevant,
+    )
 
 
 def _dict(value: CanonicalSponsorLineageEvaluation) -> dict:
@@ -735,15 +821,16 @@ def canonical_sponsor_lineage_evaluation_bytes(value: CanonicalSponsorLineageEva
     if type(value) is not CanonicalSponsorLineageEvaluation:
         raise InvalidCanonicalSponsorLineage("evaluation type")
     try:
-        value = CanonicalSponsorLineageEvaluation(*(
-            getattr(value, f) for f in CanonicalSponsorLineageEvaluation.__dataclass_fields__
-        ))
+        value = CanonicalSponsorLineageEvaluation(
+            *(getattr(value, f) for f in CanonicalSponsorLineageEvaluation.__dataclass_fields__)
+        )
     except InvalidCanonicalSponsorLineage:
         raise
     except Exception:
         raise InvalidCanonicalSponsorLineage("evaluation value") from None
-    return json.dumps(_dict(value), sort_keys=True, separators=(",", ":"),
-                      ensure_ascii=True, allow_nan=False).encode("ascii")
+    return json.dumps(_dict(value), sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode(
+        "ascii"
+    )
 
 
 def canonical_sponsor_lineage_evaluation_sha256(value: CanonicalSponsorLineageEvaluation) -> str:
@@ -759,6 +846,7 @@ def parse_canonical_sponsor_lineage_evaluation(value: bytes | str) -> CanonicalS
     if type(value) is not str:
         raise InvalidCanonicalSponsorLineage("JSON")
     try:
+
         def pairs(items):
             result = {}
             for key, item in items:
@@ -777,35 +865,32 @@ def parse_canonical_sponsor_lineage_evaluation(value: bytes | str) -> CanonicalS
             raise ValueError()
         nodes = data["lineage_nodes"]
         if type(nodes) is not list or any(
-            type(x) is not dict or set(x) != set(CanonicalSponsorLineageNode.__dataclass_fields__)
-            for x in nodes
+            type(x) is not dict or set(x) != set(CanonicalSponsorLineageNode.__dataclass_fields__) for x in nodes
         ):
             raise ValueError()
         timestamp = data["evaluated_at"]
         if type(timestamp) is not str or not timestamp.endswith("Z"):
             raise ValueError()
-        result = CanonicalSponsorLineageEvaluation(**{
-            **data,
-            "evaluated_at": datetime.fromisoformat(timestamp[:-1] + "+00:00"),
-            "state": CanonicalSponsorLineageState(data["state"]),
-            "reason_code": CanonicalSponsorLineageReason(data["reason_code"]),
-            "lineage_nodes": tuple(
-                CanonicalSponsorLineageNode(
-                    **{
-                        **x,
-                        "local_evaluation_state": AdmissionEdgeEvaluationState(
-                            x["local_evaluation_state"]
-                        ),
-                        "local_evaluation_reason": AdmissionEdgeCurrentReason(
-                            x["local_evaluation_reason"]
-                        ),
-                    }
-                )
-                for x in nodes
-            ),
-            "relevant_records": tuple(tuple(x) for x in data["relevant_records"]),
-            "explicit_non_claims": tuple(data["explicit_non_claims"]),
-        })
+        result = CanonicalSponsorLineageEvaluation(
+            **{
+                **data,
+                "evaluated_at": datetime.fromisoformat(timestamp[:-1] + "+00:00"),
+                "state": CanonicalSponsorLineageState(data["state"]),
+                "reason_code": CanonicalSponsorLineageReason(data["reason_code"]),
+                "lineage_nodes": tuple(
+                    CanonicalSponsorLineageNode(
+                        **{
+                            **x,
+                            "local_evaluation_state": AdmissionEdgeEvaluationState(x["local_evaluation_state"]),
+                            "local_evaluation_reason": AdmissionEdgeCurrentReason(x["local_evaluation_reason"]),
+                        }
+                    )
+                    for x in nodes
+                ),
+                "relevant_records": tuple(tuple(x) for x in data["relevant_records"]),
+                "explicit_non_claims": tuple(data["explicit_non_claims"]),
+            }
+        )
     except Exception:
         raise InvalidCanonicalSponsorLineage("JSON") from None
     if canonical_sponsor_lineage_evaluation_bytes(result).decode("ascii") != value:

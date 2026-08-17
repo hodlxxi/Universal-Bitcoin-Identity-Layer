@@ -93,9 +93,13 @@ def canonical_token_factory(monkeypatch):
             record(default_record)
         if persist:
             store_canonical_jwt_record(
-                jti=default_record["jti"], digest=default_record["digest"], client_id=default_record["client_id"],
-                user_id=default_record["user_id"], scope=default_record["scope"],
-                expires_at=default_record["expires_at"], metadata=default_record["metadata"],
+                jti=default_record["jti"],
+                digest=default_record["digest"],
+                client_id=default_record["client_id"],
+                user_id=default_record["user_id"],
+                scope=default_record["scope"],
+                expires_at=default_record["expires_at"],
+                metadata=default_record["metadata"],
             )
         else:
             monkeypatch.setattr(
@@ -116,8 +120,20 @@ def test_shared_header_parser_accepts_case_insensitive_scheme(scheme):
 
 @pytest.mark.parametrize(
     "header",
-    [None, "", "Basic value", "Bearer", "Bearer ", " Bearer value", "Bearer  value", "Bearer\tvalue",
-     "Bearer value ", "Bearer val ue", "Bearer value,other", "Bearer value,Bearer other"],
+    [
+        None,
+        "",
+        "Basic value",
+        "Bearer",
+        "Bearer ",
+        " Bearer value",
+        "Bearer  value",
+        "Bearer\tvalue",
+        "Bearer value ",
+        "Bearer val ue",
+        "Bearer value,other",
+        "Bearer value,Bearer other",
+    ],
 )
 def test_shared_header_parser_rejects_ambiguous_credentials(header):
     with pytest.raises(BearerHeaderError):
@@ -132,9 +148,21 @@ def test_shared_header_parser_enforces_size_bound():
 
 @pytest.mark.parametrize(
     ("credential", "expected"),
-    [("a.b.c", True), ("A_-0.b.c", True), ("a.b", False), ("a.b.c.d", False), ("a..c", False),
-     (".b.c", False), ("a.b.", False), ("a.b.c=", False), ("a+b.c.d", False), ("a/b.c.d", False),
-     ("a.b.c d", False), ("opaque", False), (None, False)],
+    [
+        ("a.b.c", True),
+        ("A_-0.b.c", True),
+        ("a.b", False),
+        ("a.b.c.d", False),
+        ("a..c", False),
+        (".b.c", False),
+        ("a.b.", False),
+        ("a.b.c=", False),
+        ("a+b.c.d", False),
+        ("a/b.c.d", False),
+        ("a.b.c d", False),
+        ("opaque", False),
+        (None, False),
+    ],
 )
 def test_compact_jwt_classifier_exact_boundary(credential, expected):
     assert has_compact_jwt_shape(credential) is expected
@@ -171,7 +199,9 @@ def test_rejects_every_non_rs256_algorithm(canonical_token_factory, alg):
     header, payload, signature = token.split(".")
     decoded = json.loads(base64.urlsafe_b64decode(header + "=="))
     decoded["alg"] = alg
-    altered = base64.urlsafe_b64encode(json.dumps(decoded).encode()).decode().rstrip("=") + "." + payload + "." + signature
+    altered = (
+        base64.urlsafe_b64encode(json.dumps(decoded).encode()).decode().rstrip("=") + "." + payload + "." + signature
+    )
     with pytest.raises(BearerValidationError):
         validate_canonical_access_token_with_config(altered, config=config)
 
@@ -193,14 +223,31 @@ def test_rejects_invalid_signature(canonical_token_factory):
 @pytest.mark.parametrize(
     "claims",
     [
-        {"iss": "https://wrong.test"}, {"aud": "wrong-client"}, {"aud": ["client"]},
+        {"iss": "https://wrong.test"},
+        {"aud": "wrong-client"},
+        {"aud": ["client"]},
         {"exp": 1},
-        *[{name: _MISSING} for name in ("iss", "aud", "sub", "iat", "exp", "jti", "scope", "token_use", "token_contract")],
-        {"jti": ""}, {"jti": "x" * (MAX_JTI_LENGTH + 1)}, {"token_use": "refresh"},
-        {"token_contract": "other"}, {"sub": "02" + SUBJECT}, {"sub": SUBJECT.upper()}, {"sub": "bad"},
-        {"scope": " self:read"}, {"scope": "unknown"}, {"scope": "read"}, {"scope": "write"},
-        {"scope": "admin"}, {"scope": "operator"}, {"scope": "*"}, {"scope": "self:read self:read"},
-        {"scope": "self:read profile"}, {"scope": "covenant:draft:create"},
+        *[
+            {name: _MISSING}
+            for name in ("iss", "aud", "sub", "iat", "exp", "jti", "scope", "token_use", "token_contract")
+        ],
+        {"jti": ""},
+        {"jti": "x" * (MAX_JTI_LENGTH + 1)},
+        {"token_use": "refresh"},
+        {"token_contract": "other"},
+        {"sub": "02" + SUBJECT},
+        {"sub": SUBJECT.upper()},
+        {"sub": "bad"},
+        {"scope": " self:read"},
+        {"scope": "unknown"},
+        {"scope": "read"},
+        {"scope": "write"},
+        {"scope": "admin"},
+        {"scope": "operator"},
+        {"scope": "*"},
+        {"scope": "self:read self:read"},
+        {"scope": "self:read profile"},
+        {"scope": "covenant:draft:create"},
     ],
 )
 def test_rejects_invalid_claim_contract(canonical_token_factory, claims):
@@ -219,14 +266,22 @@ def test_rejects_future_iat_computed_at_execution_time(canonical_token_factory):
 @pytest.mark.parametrize(
     "mutation",
     [
-        lambda r: r.update(digest="0" * 64), lambda r: r.update(client_id="other"),
-        lambda r: r.update(user_id="other"), lambda r: r["user"].update(id="other"),
-        lambda r: r["user"].update(pubkey="b" * 64), lambda r: r["user"].update(is_active=False),
-        lambda r: r.update(expires_at=r["expires_at"] + timedelta(seconds=1)), lambda r: r.update(is_revoked=True),
-        lambda r: r.update(metadata=None), lambda r: r["metadata"].update(token_contract="other"),
-        lambda r: r["metadata"].update(issuer="other"), lambda r: r["metadata"].update(audience="other"),
-        lambda r: r["metadata"].update(kid="other"), lambda r: r["metadata"].update(digest_algorithm="md5"),
-        lambda r: r["metadata"].update(scope_policy_version="other"), lambda r: r.update(scope="profile"),
+        lambda r: r.update(digest="0" * 64),
+        lambda r: r.update(client_id="other"),
+        lambda r: r.update(user_id="other"),
+        lambda r: r["user"].update(id="other"),
+        lambda r: r["user"].update(pubkey="b" * 64),
+        lambda r: r["user"].update(is_active=False),
+        lambda r: r.update(expires_at=r["expires_at"] + timedelta(seconds=1)),
+        lambda r: r.update(is_revoked=True),
+        lambda r: r.update(metadata=None),
+        lambda r: r["metadata"].update(token_contract="other"),
+        lambda r: r["metadata"].update(issuer="other"),
+        lambda r: r["metadata"].update(audience="other"),
+        lambda r: r["metadata"].update(kid="other"),
+        lambda r: r["metadata"].update(digest_algorithm="md5"),
+        lambda r: r["metadata"].update(scope_policy_version="other"),
+        lambda r: r.update(scope="profile"),
     ],
 )
 def test_rejects_issuance_record_disagreement(canonical_token_factory, mutation):
@@ -238,10 +293,12 @@ def test_rejects_issuance_record_disagreement(canonical_token_factory, mutation)
 def test_missing_record_and_service_failures_fail_closed(canonical_token_factory, monkeypatch, caplog):
     token, claims, _, config = canonical_token_factory(persist=False)
     for outcome in (None, RuntimeError("database unavailable")):
+
         def load(_jti, value=outcome):
             if isinstance(value, Exception):
                 raise value
             return value
+
         monkeypatch.setattr("app.services.oauth_bearer_validation.get_canonical_jwt_record_by_jti", load)
         with pytest.raises(BearerValidationError):
             validate_canonical_access_token_with_config(token, config=config)
@@ -254,6 +311,8 @@ def test_expected_client_and_key_loader_failures_fail_closed(canonical_token_fac
     token, _, _, config = canonical_token_factory(persist=False)
     with pytest.raises(BearerValidationError):
         validate_canonical_access_token_with_config(token, config=config, expected_client_id="other")
-    monkeypatch.setattr("app.services.oauth_bearer_validation.get_key_by_kid", lambda *_: (_ for _ in ()).throw(OSError()))
+    monkeypatch.setattr(
+        "app.services.oauth_bearer_validation.get_key_by_kid", lambda *_: (_ for _ in ()).throw(OSError())
+    )
     with pytest.raises(BearerValidationError):
         validate_canonical_access_token_with_config(token, config=config)

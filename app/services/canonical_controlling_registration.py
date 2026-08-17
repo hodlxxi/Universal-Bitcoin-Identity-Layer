@@ -138,9 +138,7 @@ def resolve_controlling_registration(
             selector_id = selector.edge_id
             selector_digest = canonical_admission_edge_sha256(selector)
 
-        registration = _registration(
-            trusted_registration_repository.get(selector.trusted_registration_id)
-        )
+        registration = _registration(trusted_registration_repository.get(selector.trusted_registration_id))
         if (
             registration.registration_id != selector.trusted_registration_id
             or registration.lifecycle_state is not TrustedCovenantRegistrationLifecycle.ACTIVE

@@ -37,20 +37,16 @@ def authorization(source=None):
     return evaluate_canonical_crt_authorization(source or ordinary_membership())
 
 
-def assert_strict_authorization(source, expected_state, expected_membership_reason,
-                                expected_authorization_reason):
+def assert_strict_authorization(source, expected_state, expected_membership_reason, expected_authorization_reason):
     result = authorization(source)
-    assert (source.state, source.reason_code) == (
-        expected_state, expected_membership_reason
-    )
+    assert (source.state, source.reason_code) == (expected_state, expected_membership_reason)
     assert (result.authorization_class, result.reason_code) == (
-        CanonicalCrtAuthorizationClass.LIMITED, expected_authorization_reason
+        CanonicalCrtAuthorizationClass.LIMITED,
+        expected_authorization_reason,
     )
     assert result.current_full_membership_satisfied is False
     assert result.source_membership_evaluation == source
-    assert result.source_membership_evaluation_sha256 == (
-        canonical_crt_membership_evaluation_sha256(source)
-    )
+    assert result.source_membership_evaluation_sha256 == (canonical_crt_membership_evaluation_sha256(source))
     assert (
         result.participant_id,
         result.target_edge_id,
@@ -82,12 +78,8 @@ def test_active_ordinary_is_full_and_source_bound(depth):
     )
     assert result.current_full_membership_satisfied is True
     assert result.source_membership_evaluation == source
-    assert result.source_membership_evaluation_sha256 == (
-        canonical_crt_membership_evaluation_sha256(source)
-    )
-    assert parse_canonical_crt_authorization_evaluation(
-        canonical_crt_authorization_evaluation_bytes(result)
-    ) == result
+    assert result.source_membership_evaluation_sha256 == (canonical_crt_membership_evaluation_sha256(source))
+    assert parse_canonical_crt_authorization_evaluation(canonical_crt_authorization_evaluation_bytes(result)) == result
 
 
 def test_active_genesis_is_full_and_pinned():
@@ -105,15 +97,11 @@ def test_active_genesis_is_full_and_pinned():
 
 @pytest.mark.parametrize("depth", (True, False, 1.0, 3.0))
 def test_direct_constructor_rejects_non_exact_integer_depth(depth):
-    base = authorization(
-        ordinary_membership(evaluate(lineage_fixture(3 if depth == 3.0 else 1)))
-    )
+    base = authorization(ordinary_membership(evaluate(lineage_fixture(3 if depth == 3.0 else 1))))
     with pytest.raises(InvalidCanonicalCrtAuthorization):
         replace(base, depth=depth)
     with pytest.raises(InvalidCanonicalCrtAuthorization):
-        canonical_crt_authorization_evaluation_bytes(
-            object.__new__(CanonicalCrtAuthorizationEvaluation)
-        )
+        canonical_crt_authorization_evaluation_bytes(object.__new__(CanonicalCrtAuthorizationEvaluation))
 
 
 @pytest.mark.parametrize(
@@ -144,9 +132,7 @@ def test_direct_constructor_rejects_datetime_subclass():
         pass
 
     base = authorization()
-    forged = DatetimeSubclass.fromtimestamp(
-        base.evaluated_at.timestamp(), tz=base.evaluated_at.tzinfo
-    )
+    forged = DatetimeSubclass.fromtimestamp(base.evaluated_at.timestamp(), tz=base.evaluated_at.tzinfo)
     with pytest.raises(InvalidCanonicalCrtAuthorization):
         replace(base, evaluated_at=forged)
 
@@ -177,20 +163,14 @@ def test_every_accepted_policy_result_strictly_self_round_trips():
 def test_genuine_pr611_pr612_inactive_composition(position, kind):
     items = list(lineage_fixture(3))
     if kind in {"revoked", "superseded"}:
-        lifecycle = (
-            AdmissionEdgeLifecycle.REVOKED
-            if kind == "revoked"
-            else AdmissionEdgeLifecycle.SUPERSEDED
-        )
+        lifecycle = AdmissionEdgeLifecycle.REVOKED if kind == "revoked" else AdmissionEdgeLifecycle.SUPERSEDED
         items[position] = with_edge_state(items[position], lifecycle)
         for index in range(position + 1, len(items)):
             items[index] = replace(
                 items[index],
                 record=replace(
                     items[index].record,
-                    sponsor_basis_record_sha256=canonical_admission_edge_sha256(
-                        items[index - 1].record
-                    ),
+                    sponsor_basis_record_sha256=canonical_admission_edge_sha256(items[index - 1].record),
                 ),
             )
     else:
@@ -198,17 +178,20 @@ def test_genuine_pr611_pr612_inactive_composition(position, kind):
     lineage = evaluate(tuple(items))
     membership = ordinary_membership(lineage)
     target = position == 2
-    assert membership.source_evaluation_sha256 == (
-        canonical_sponsor_lineage_evaluation_sha256(lineage)
-    )
+    assert membership.source_evaluation_sha256 == (canonical_sponsor_lineage_evaluation_sha256(lineage))
     assert_strict_authorization(
         membership,
-        CanonicalCrtMembershipState.EDGE_INACTIVE
-        if target else CanonicalCrtMembershipState.LINEAGE_INACTIVE,
-        CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE
-        if target else CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE,
-        CanonicalCrtAuthorizationReason.EDGE_INACTIVE_MEMBERSHIP_LIMITED
-        if target else CanonicalCrtAuthorizationReason.LINEAGE_INACTIVE_MEMBERSHIP_LIMITED,
+        CanonicalCrtMembershipState.EDGE_INACTIVE if target else CanonicalCrtMembershipState.LINEAGE_INACTIVE,
+        (
+            CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE
+            if target
+            else CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE
+        ),
+        (
+            CanonicalCrtAuthorizationReason.EDGE_INACTIVE_MEMBERSHIP_LIMITED
+            if target
+            else CanonicalCrtAuthorizationReason.LINEAGE_INACTIVE_MEMBERSHIP_LIMITED
+        ),
     )
 
 
@@ -298,21 +281,31 @@ def test_genuine_pr611_pr612_unknown_propagation(kind, reason, monkeypatch):
 @pytest.mark.parametrize(
     ("state", "reason", "policy_reason"),
     (
-        (CanonicalCrtMembershipState.PROVISIONAL,
-         CanonicalCrtMembershipReason.TARGET_PROVISIONAL,
-         CanonicalCrtAuthorizationReason.PROVISIONAL_MEMBERSHIP_LIMITED),
-        (CanonicalCrtMembershipState.EDGE_INACTIVE,
-         CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE,
-         CanonicalCrtAuthorizationReason.EDGE_INACTIVE_MEMBERSHIP_LIMITED),
-        (CanonicalCrtMembershipState.LINEAGE_INACTIVE,
-         CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE,
-         CanonicalCrtAuthorizationReason.LINEAGE_INACTIVE_MEMBERSHIP_LIMITED),
-        (CanonicalCrtMembershipState.DISPUTED,
-         CanonicalCrtMembershipReason.TARGET_DISPUTED,
-         CanonicalCrtAuthorizationReason.DISPUTED_MEMBERSHIP_LIMITED),
-        (CanonicalCrtMembershipState.UNKNOWN,
-         CanonicalCrtMembershipReason.SOURCE_TIME_MISMATCH,
-         CanonicalCrtAuthorizationReason.UNKNOWN_MEMBERSHIP_LIMITED),
+        (
+            CanonicalCrtMembershipState.PROVISIONAL,
+            CanonicalCrtMembershipReason.TARGET_PROVISIONAL,
+            CanonicalCrtAuthorizationReason.PROVISIONAL_MEMBERSHIP_LIMITED,
+        ),
+        (
+            CanonicalCrtMembershipState.EDGE_INACTIVE,
+            CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE,
+            CanonicalCrtAuthorizationReason.EDGE_INACTIVE_MEMBERSHIP_LIMITED,
+        ),
+        (
+            CanonicalCrtMembershipState.LINEAGE_INACTIVE,
+            CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE,
+            CanonicalCrtAuthorizationReason.LINEAGE_INACTIVE_MEMBERSHIP_LIMITED,
+        ),
+        (
+            CanonicalCrtMembershipState.DISPUTED,
+            CanonicalCrtMembershipReason.TARGET_DISPUTED,
+            CanonicalCrtAuthorizationReason.DISPUTED_MEMBERSHIP_LIMITED,
+        ),
+        (
+            CanonicalCrtMembershipState.UNKNOWN,
+            CanonicalCrtMembershipReason.SOURCE_TIME_MISMATCH,
+            CanonicalCrtAuthorizationReason.UNKNOWN_MEMBERSHIP_LIMITED,
+        ),
     ),
 )
 def test_every_non_active_state_is_limited(state, reason, policy_reason):
@@ -333,9 +326,7 @@ def test_every_non_active_state_is_limited(state, reason, policy_reason):
             source_reason_code=reason.value,
             controlling_depth=control,
             controlling_edge_id=(
-                source.target_edge_id
-                if control == source.depth
-                else evaluate().lineage_nodes[0].edge_id
+                source.target_edge_id if control == source.depth else evaluate().lineage_nodes[0].edge_id
             ),
         )
     else:
@@ -366,9 +357,7 @@ def test_every_membership_reason_family_maps_without_skips(membership_reason):
                 evaluated_at=genesis_source.evaluated_at,
             )
         else:
-            binding = ordinary_membership(
-                evaluated_at=NOW.replace(year=NOW.year + 1)
-            )
+            binding = ordinary_membership(evaluated_at=NOW.replace(year=NOW.year + 1))
             source = replace(binding, reason_code=membership_reason)
     else:
         lineage_reason = CanonicalSponsorLineageReason(membership_reason.value)
@@ -376,12 +365,16 @@ def test_every_membership_reason_family_maps_without_skips(membership_reason):
         state = (
             CanonicalSponsorLineageState.PROVISIONAL
             if "provisional" in lineage_reason.value
-            else CanonicalSponsorLineageState.DISPUTED
-            if "disputed" in lineage_reason.value
-            else CanonicalSponsorLineageState.LINEAGE_INACTIVE
-            if lineage_reason.value.endswith("edge_inactive")
-            or lineage_reason is CanonicalSponsorLineageReason.GENESIS_LINEAGE_INACTIVE
-            else CanonicalSponsorLineageState.UNKNOWN
+            else (
+                CanonicalSponsorLineageState.DISPUTED
+                if "disputed" in lineage_reason.value
+                else (
+                    CanonicalSponsorLineageState.LINEAGE_INACTIVE
+                    if lineage_reason.value.endswith("edge_inactive")
+                    or lineage_reason is CanonicalSponsorLineageReason.GENESIS_LINEAGE_INACTIVE
+                    else CanonicalSponsorLineageState.UNKNOWN
+                )
+            )
         )
         changes = {"state": state, "reason_code": lineage_reason}
         if lineage_reason in {
@@ -404,11 +397,7 @@ def test_every_membership_reason_family_maps_without_skips(membership_reason):
         elif lineage_reason.value.startswith("genesis_"):
             changes.update(controlling_depth=0, controlling_edge_id=None)
         elif lineage_reason.value.startswith(("ancestor_", "target_")):
-            position = (
-                lineage.target_depth
-                if lineage_reason.value.startswith("target_")
-                else 1
-            )
+            position = lineage.target_depth if lineage_reason.value.startswith("target_") else 1
             changes.update(
                 controlling_depth=position,
                 controlling_edge_id=lineage.lineage_nodes[position - 1].edge_id,
@@ -489,9 +478,7 @@ def test_forged_nested_membership_is_translated():
     source = result.source_membership_evaluation
     forged = object.__new__(type(source))
     for field in source.__dataclass_fields__:
-        object.__setattr__(
-            forged, field, "wrong" if field == "schema" else getattr(source, field)
-        )
+        object.__setattr__(forged, field, "wrong" if field == "schema" else getattr(source, field))
     with pytest.raises(InvalidCanonicalCrtAuthorization):
         replace(result, source_membership_evaluation=forged)
     with pytest.raises(InvalidCanonicalCrtAuthorization):
@@ -522,16 +509,12 @@ def test_valid_nested_source_substitution_matrix_is_rejected():
         replace(
             result,
             source_membership_evaluation=other,
-            source_membership_evaluation_sha256=(
-                canonical_crt_membership_evaluation_sha256(other)
-            ),
+            source_membership_evaluation_sha256=(canonical_crt_membership_evaluation_sha256(other)),
         )
     with pytest.raises(InvalidCanonicalCrtAuthorization):
         replace(
             result,
-            source_membership_evaluation_sha256=(
-                canonical_crt_membership_evaluation_sha256(other)
-            ),
+            source_membership_evaluation_sha256=(canonical_crt_membership_evaluation_sha256(other)),
         )
 
 
@@ -548,10 +531,7 @@ def test_valid_nested_source_substitution_matrix_is_rejected():
 def test_invalid_nested_source_shapes_are_authorization_errors(changes):
     result = authorization()
     source = result.source_membership_evaluation
-    resolved = {
-        field: value(source) if callable(value) else value
-        for field, value in changes.items()
-    }
+    resolved = {field: value(source) if callable(value) else value for field, value in changes.items()}
     with pytest.raises(InvalidCanonicalCrtAuthorization):
         replace(
             result,
@@ -562,10 +542,8 @@ def test_invalid_nested_source_shapes_are_authorization_errors(changes):
 @pytest.mark.parametrize(
     ("source_factory", "reason"),
     (
-        (genesis_membership,
-         CanonicalCrtAuthorizationReason.EXACT_PARTICIPANT_MEMBERSHIP_FULL),
-        (ordinary_membership,
-         CanonicalCrtAuthorizationReason.EXACT_GENESIS_MEMBERSHIP_FULL),
+        (genesis_membership, CanonicalCrtAuthorizationReason.EXACT_PARTICIPANT_MEMBERSHIP_FULL),
+        (ordinary_membership, CanonicalCrtAuthorizationReason.EXACT_GENESIS_MEMBERSHIP_FULL),
     ),
 )
 def test_full_reasons_cannot_cross_membership_states(source_factory, reason):
@@ -576,36 +554,37 @@ def test_full_reasons_cannot_cross_membership_states(source_factory, reason):
 @pytest.mark.parametrize(
     ("state", "membership_reason", "wrong_reason"),
     (
-        (CanonicalCrtMembershipState.EDGE_INACTIVE,
-         CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE,
-         CanonicalCrtAuthorizationReason.LINEAGE_INACTIVE_MEMBERSHIP_LIMITED),
-        (CanonicalCrtMembershipState.LINEAGE_INACTIVE,
-         CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE,
-         CanonicalCrtAuthorizationReason.EDGE_INACTIVE_MEMBERSHIP_LIMITED),
-        (CanonicalCrtMembershipState.PROVISIONAL,
-         CanonicalCrtMembershipReason.TARGET_PROVISIONAL,
-         CanonicalCrtAuthorizationReason.DISPUTED_MEMBERSHIP_LIMITED),
-        (CanonicalCrtMembershipState.UNKNOWN,
-         CanonicalCrtMembershipReason.SOURCE_TIME_MISMATCH,
-         CanonicalCrtAuthorizationReason.PROVISIONAL_MEMBERSHIP_LIMITED),
+        (
+            CanonicalCrtMembershipState.EDGE_INACTIVE,
+            CanonicalCrtMembershipReason.TARGET_EDGE_INACTIVE,
+            CanonicalCrtAuthorizationReason.LINEAGE_INACTIVE_MEMBERSHIP_LIMITED,
+        ),
+        (
+            CanonicalCrtMembershipState.LINEAGE_INACTIVE,
+            CanonicalCrtMembershipReason.ANCESTOR_EDGE_INACTIVE,
+            CanonicalCrtAuthorizationReason.EDGE_INACTIVE_MEMBERSHIP_LIMITED,
+        ),
+        (
+            CanonicalCrtMembershipState.PROVISIONAL,
+            CanonicalCrtMembershipReason.TARGET_PROVISIONAL,
+            CanonicalCrtAuthorizationReason.DISPUTED_MEMBERSHIP_LIMITED,
+        ),
+        (
+            CanonicalCrtMembershipState.UNKNOWN,
+            CanonicalCrtMembershipReason.SOURCE_TIME_MISMATCH,
+            CanonicalCrtAuthorizationReason.PROVISIONAL_MEMBERSHIP_LIMITED,
+        ),
     ),
 )
-def test_limited_reasons_cannot_cross_membership_states(
-    state, membership_reason, wrong_reason
-):
+def test_limited_reasons_cannot_cross_membership_states(state, membership_reason, wrong_reason):
     source = ordinary_membership(evaluated_at=NOW + timedelta(seconds=1))
     if state is not CanonicalCrtMembershipState.UNKNOWN:
-        control = (
-            source.depth
-            if membership_reason.value.startswith("target_")
-            else 1
-        )
+        control = source.depth if membership_reason.value.startswith("target_") else 1
         source = replace(
             ordinary_membership(),
             state=state,
             reason_code=membership_reason,
-            source_state="provisional"
-            if state is CanonicalCrtMembershipState.PROVISIONAL else "lineage_inactive",
+            source_state="provisional" if state is CanonicalCrtMembershipState.PROVISIONAL else "lineage_inactive",
             source_reason_code=membership_reason.value,
             controlling_depth=control,
             controlling_edge_id=(
@@ -621,23 +600,42 @@ def test_limited_reasons_cannot_cross_membership_states(
 @pytest.mark.parametrize(
     "mutation",
     (
-        "duplicate_top", "duplicate_nested", "extra_top", "extra_nested",
-        "missing_top", "missing_nested", "true_top", "false_top",
-        "float_top_one", "float_top_three", "float_nested", "nan",
-        "infinity", "offset_top", "offset_nested", "microseconds",
-        "uppercase_uuid", "uppercase_digest", "wrong_class", "wrong_reason",
-        "wrong_nested_state", "wrong_nested_reason", "digest_mismatch",
-        "reordered_records", "duplicate_records", "identity_mismatch",
-        "full_from_unknown", "limited_from_active", "boolean_mismatch",
+        "duplicate_top",
+        "duplicate_nested",
+        "extra_top",
+        "extra_nested",
+        "missing_top",
+        "missing_nested",
+        "true_top",
+        "false_top",
+        "float_top_one",
+        "float_top_three",
+        "float_nested",
+        "nan",
+        "infinity",
+        "offset_top",
+        "offset_nested",
+        "microseconds",
+        "uppercase_uuid",
+        "uppercase_digest",
+        "wrong_class",
+        "wrong_reason",
+        "wrong_nested_state",
+        "wrong_nested_reason",
+        "digest_mismatch",
+        "reordered_records",
+        "duplicate_records",
+        "identity_mismatch",
+        "full_from_unknown",
+        "limited_from_active",
+        "boolean_mismatch",
         "noncanonical_order",
     ),
 )
 def test_parser_adversarial_matrix(mutation):
     active = authorization()
     if mutation in {"full_from_unknown"}:
-        active = authorization(
-            ordinary_membership(evaluated_at=NOW.replace(year=NOW.year + 1))
-        )
+        active = authorization(ordinary_membership(evaluated_at=NOW.replace(year=NOW.year + 1)))
     text = canonical_crt_authorization_evaluation_bytes(active).decode("ascii")
     data = json.loads(text)
     nested = data["source_membership_evaluation"]
@@ -660,16 +658,12 @@ def test_parser_adversarial_matrix(mutation):
         data["depth"] = False
     elif mutation == "float_top_one":
         active = authorization(ordinary_membership(evaluate(lineage_fixture(1))))
-        data = json.loads(
-            canonical_crt_authorization_evaluation_bytes(active).decode("ascii")
-        )
+        data = json.loads(canonical_crt_authorization_evaluation_bytes(active).decode("ascii"))
         data["depth"] = 1.0
         nested = data["source_membership_evaluation"]
     elif mutation == "float_top_three":
         active = authorization(ordinary_membership(evaluate(lineage_fixture(3))))
-        data = json.loads(
-            canonical_crt_authorization_evaluation_bytes(active).decode("ascii")
-        )
+        data = json.loads(canonical_crt_authorization_evaluation_bytes(active).decode("ascii"))
         data["depth"] = 3.0
         nested = data["source_membership_evaluation"]
     elif mutation == "float_nested":
@@ -685,13 +679,9 @@ def test_parser_adversarial_matrix(mutation):
     elif mutation == "microseconds":
         data["evaluated_at"] = data["evaluated_at"][:-1] + ".000001Z"
     elif mutation == "uppercase_uuid":
-        nested["selected_genesis_record_id"] = (
-            nested["selected_genesis_record_id"].upper()
-        )
+        nested["selected_genesis_record_id"] = nested["selected_genesis_record_id"].upper()
     elif mutation == "uppercase_digest":
-        data["source_membership_evaluation_sha256"] = (
-            data["source_membership_evaluation_sha256"].upper()
-        )
+        data["source_membership_evaluation_sha256"] = data["source_membership_evaluation_sha256"].upper()
     elif mutation == "wrong_class":
         data["authorization_class"] = "operator"
     elif mutation == "wrong_reason":
@@ -719,9 +709,7 @@ def test_parser_adversarial_matrix(mutation):
     elif mutation == "boolean_mismatch":
         data["current_full_membership_satisfied"] = False
     else:
-        raw = json.dumps(
-            dict(reversed(tuple(data.items()))), separators=(",", ":"), sort_keys=False
-        )
+        raw = json.dumps(dict(reversed(tuple(data.items()))), separators=(",", ":"), sort_keys=False)
     if raw is None:
         raw = json.dumps(data, sort_keys=True, separators=(",", ":"), allow_nan=True)
     with pytest.raises(InvalidCanonicalCrtAuthorization):
@@ -730,12 +718,8 @@ def test_parser_adversarial_matrix(mutation):
 
 def test_determinism_and_pinned_digests():
     genesis_full = authorization(genesis_membership())
-    depth3_full = authorization(
-        ordinary_membership(evaluate(lineage_fixture(3)))
-    )
-    unknown = authorization(
-        ordinary_membership(evaluated_at=NOW.replace(year=NOW.year + 1))
-    )
+    depth3_full = authorization(ordinary_membership(evaluate(lineage_fixture(3))))
+    unknown = authorization(ordinary_membership(evaluated_at=NOW.replace(year=NOW.year + 1)))
     assert canonical_crt_authorization_evaluation_sha256(genesis_full) == (
         "c63f6f83f287898e192e41f50b428801423e2ad1a23c92d2cba38dad2ebba16f"
     )
@@ -745,6 +729,7 @@ def test_determinism_and_pinned_digests():
     assert canonical_crt_authorization_evaluation_sha256(unknown) == (
         "91841e6f2cecb1c77a555de553e2044a37ea48d941e0c5680fb2e2a351059434"
     )
-    assert canonical_crt_membership_evaluation_sha256(
-        depth3_full.source_membership_evaluation
-    ) == "b79a29168180ba897a81ebbd8143262be6196b93c5603317a16831a3a9c1cee3"
+    assert (
+        canonical_crt_membership_evaluation_sha256(depth3_full.source_membership_evaluation)
+        == "b79a29168180ba897a81ebbd8143262be6196b93c5603317a16831a3a9c1cee3"
+    )
