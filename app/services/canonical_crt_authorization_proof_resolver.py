@@ -33,7 +33,6 @@ from app.services.canonical_crt_authorization_proof import (
     parse_canonical_crt_authorization_proof,
 )
 
-
 STATUS = (
     "IMPLEMENTED_DORMANT",
     "READ_ONLY_EXPLICIT_SNAPSHOT_COMPOSITION",
@@ -121,10 +120,7 @@ def _validate_request(
         raise InvalidCanonicalCrtAuthorizationProofResolution("request primitives")
     if any(type(record) is not CanonicalGenesisRecord for record in genesis_records):
         raise InvalidCanonicalCrtAuthorizationProofResolution("genesis record type")
-    if any(
-        type(evidence) is not CanonicalSponsorLineageEdgeEvidence
-        for evidence in edge_evidence
-    ):
+    if any(type(evidence) is not CanonicalSponsorLineageEdgeEvidence for evidence in edge_evidence):
         raise InvalidCanonicalCrtAuthorizationProofResolution("edge evidence type")
 
     genesis_mode = participant_id == PARTICIPANT_ID or depth == 0
@@ -197,6 +193,4 @@ def resolve_canonical_crt_authorization_proof_from_snapshot(
     membership = evaluate_canonical_crt_membership(**membership_arguments)
     authorization = evaluate_canonical_crt_authorization(membership)
     proof = build_canonical_crt_authorization_proof(authorization)
-    return parse_canonical_crt_authorization_proof(
-        canonical_crt_authorization_proof_bytes(proof)
-    )
+    return parse_canonical_crt_authorization_proof(canonical_crt_authorization_proof_bytes(proof))

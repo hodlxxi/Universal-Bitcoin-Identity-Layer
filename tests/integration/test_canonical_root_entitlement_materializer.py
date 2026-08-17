@@ -22,11 +22,23 @@ NOW = datetime(2026, 8, 13, 12, 0, 0, 123456, tzinfo=timezone.utc)
 
 def relation(subject=SUBJECT, observed_at=None, *, full=True):
     return EdgeLocalCovenantRelationResult(
-        GRAPH, subject, "c" * 64,
+        GRAPH,
+        subject,
+        "c" * 64,
         ControllingRegistrationSelectionSource.CANONICAL_ROOT_REGISTRATION_BINDING,
-        str(uuid.uuid4()), "1" * 64, str(uuid.uuid4()), "2" * 64,
-        str(uuid.uuid4()), "3" * 64, 5, 5 if full else 1,
-        observed_at or NOW, 900000, 300000, 300000 if full else 0, full,
+        str(uuid.uuid4()),
+        "1" * 64,
+        str(uuid.uuid4()),
+        "2" * 64,
+        str(uuid.uuid4()),
+        "3" * 64,
+        5,
+        5 if full else 1,
+        observed_at or NOW,
+        900000,
+        300000,
+        300000 if full else 0,
+        full,
         CovenantRelationReason.FULL_RELATION_SATISFIED if full else CovenantRelationReason.MISSING_OUTGOING,
         "4" * 64,
     )
@@ -39,9 +51,7 @@ def baseline(subject):
 def test_isolated_repository_resolver_expiry_newer_limited_and_subject_isolation(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'materializer.db'}")
     CurrentEntitlementEvidence.__table__.create(engine)
-    repository = SqlAlchemyCurrentEntitlementEvidenceRepository(
-        sessionmaker(bind=engine, expire_on_commit=False)
-    )
+    repository = SqlAlchemyCurrentEntitlementEvidenceRepository(sessionmaker(bind=engine, expire_on_commit=False))
 
     full = CanonicalRootEntitlementMaterializer(
         repository, clock=lambda: NOW, uuid_factory=lambda: uuid.UUID(int=1)
@@ -49,12 +59,18 @@ def test_isolated_repository_resolver_expiry_newer_limited_and_subject_isolation
     assert repository.get_latest(SUBJECT) == full
     assert repository.get_latest(OTHER) is None
     assert full.observed_at.microsecond == 123456
-    assert EvidenceBackedCurrentEntitlementResolver(
-        repository, clock=lambda: NOW + timedelta(seconds=1), active_user_resolver=baseline
-    )(SUBJECT).identity_class is IdentityClass.FULL
-    assert EvidenceBackedCurrentEntitlementResolver(
-        repository, clock=lambda: full.valid_until, active_user_resolver=baseline
-    )(SUBJECT).identity_class is IdentityClass.LIMITED
+    assert (
+        EvidenceBackedCurrentEntitlementResolver(
+            repository, clock=lambda: NOW + timedelta(seconds=1), active_user_resolver=baseline
+        )(SUBJECT).identity_class
+        is IdentityClass.FULL
+    )
+    assert (
+        EvidenceBackedCurrentEntitlementResolver(
+            repository, clock=lambda: full.valid_until, active_user_resolver=baseline
+        )(SUBJECT).identity_class
+        is IdentityClass.LIMITED
+    )
 
     newer_limited = CanonicalRootEntitlementMaterializer(
         repository,
@@ -68,16 +84,31 @@ def test_isolated_repository_resolver_expiry_newer_limited_and_subject_isolation
     ).materialize(GRAPH, OTHER, relation(OTHER, NOW + timedelta(seconds=3)))
     assert repository.get_latest(SUBJECT) == newer_limited
     assert repository.get_latest(OTHER) == other_full
-    assert EvidenceBackedCurrentEntitlementResolver(
-        repository, clock=lambda: NOW + timedelta(seconds=4), active_user_resolver=baseline
-    )(SUBJECT).identity_class is IdentityClass.LIMITED
+    assert (
+        EvidenceBackedCurrentEntitlementResolver(
+            repository, clock=lambda: NOW + timedelta(seconds=4), active_user_resolver=baseline
+        )(SUBJECT).identity_class
+        is IdentityClass.LIMITED
+    )
 
 
 def test_materializer_has_no_active_or_publication_coupling():
     source = (Path(__file__).parents[2] / "app/services/canonical_root_entitlement_materializer.py").read_text()
     forbidden = (
-        "get_rpc_connection", "listunspent", "scantxoutset", "descriptor", "wallet",
-        "os.environ", "SPECIAL_USERS", "session_scope", "get_user_by_pubkey",
-        "commit(", "flush(", "rollback(", "get_latest(", "blueprints", "scheduler",
+        "get_rpc_connection",
+        "listunspent",
+        "scantxoutset",
+        "descriptor",
+        "wallet",
+        "os.environ",
+        "SPECIAL_USERS",
+        "session_scope",
+        "get_user_by_pubkey",
+        "commit(",
+        "flush(",
+        "rollback(",
+        "get_latest(",
+        "blueprints",
+        "scheduler",
     )
     assert not any(value in source for value in forbidden)

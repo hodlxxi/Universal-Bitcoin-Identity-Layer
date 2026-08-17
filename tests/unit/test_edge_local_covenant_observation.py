@@ -68,24 +68,41 @@ class Observer:
         self.calls.append(outpoints)
         if self.error:
             raise self.error
-        observations = tuple(CovenantRelationObservation(
-            OBSERVATION_SCHEMA, item.subject_pubkey, item.counterparty_pubkey,
-            item.direction, item.txid, item.vout, item.amount_sats,
-            item.script_sha256, item.descriptor_sha256,
-            0 if (item.txid, item.vout) in self.spent else self.confirmations,
-            (item.txid, item.vout) not in self.spent,
-        ) for item in outpoints)
+        observations = tuple(
+            CovenantRelationObservation(
+                OBSERVATION_SCHEMA,
+                item.subject_pubkey,
+                item.counterparty_pubkey,
+                item.direction,
+                item.txid,
+                item.vout,
+                item.amount_sats,
+                item.script_sha256,
+                item.descriptor_sha256,
+                0 if (item.txid, item.vout) in self.spent else self.confirmations,
+                (item.txid, item.vout) not in self.spent,
+            )
+            for item in outpoints
+        )
         return CovenantRelationEvaluation(
-            EVALUATION_SCHEMA, "bitcoin", outpoints[0].subject_pubkey,
-            outpoints[0].counterparty_pubkey, NOW, 900000, observations,
+            EVALUATION_SCHEMA,
+            "bitcoin",
+            outpoints[0].subject_pubkey,
+            outpoints[0].counterparty_pubkey,
+            NOW,
+            900000,
+            observations,
         )
 
 
 def _selection(registration):
     return ControllingRegistrationSelection(
-        GRAPH, registration.subject_xonly_pubkey,
+        GRAPH,
+        registration.subject_xonly_pubkey,
         ControllingRegistrationSelectionSource.CANONICAL_ADMISSION_EDGE,
-        "00000000-0000-4000-8000-000000000020", "9" * 64, registration,
+        "00000000-0000-4000-8000-000000000020",
+        "9" * 64,
+        registration,
     )
 
 
@@ -102,10 +119,14 @@ def _run(monkeypatch, *, funding_set=None, observer=None, selector_error=None):
     monkeypatch.setattr(service, "resolve_controlling_registration", select)
     repository = FundingRepository(funding_set or fixtures.funding())
     result = observe_edge_local_covenant_relation(
-        GRAPH, registration.subject_xonly_pubkey, evaluated_at=NOW,
-        genesis_repository=object(), admission_edge_repository=object(),
+        GRAPH,
+        registration.subject_xonly_pubkey,
+        evaluated_at=NOW,
+        genesis_repository=object(),
+        admission_edge_repository=object(),
         root_registration_binding_repository=object(),
-        trusted_registration_repository=object(), funding_set_repository=repository,
+        trusted_registration_repository=object(),
+        funding_set_repository=repository,
         observer=observer or Observer(),
     )
     return result, calls, repository
@@ -119,9 +140,7 @@ def test_effective_funding_set_materializes_all_exact_trusted_outpoints():
     assert outpoints[0].subject_pubkey == value.subject_xonly_pubkey
     assert outpoints[0].counterparty_pubkey == value.counterparty_xonly_pubkey
     assert outpoints[0].descriptor_sha256 == "c" * 64
-    assert outpoints[0].script_sha256 == p2wsh_script_pubkey_sha256(
-        value.recognized_outpoints[0].witness_script_sha256
-    )
+    assert outpoints[0].script_sha256 == p2wsh_script_pubkey_sha256(value.recognized_outpoints[0].witness_script_sha256)
     inactive = replace(value, lifecycle_state=CovenantFundingSetLifecycle.DISPUTED)
     with pytest.raises(InvalidCanonicalCovenantFundingSet):
         trusted_outpoints_from_canonical_funding_set(inactive)
@@ -164,26 +183,41 @@ def test_insufficient_confirmations_are_non_qualifying(monkeypatch):
     assert result.relation_reason is CovenantRelationReason.NO_QUALIFYING_OBSERVATIONS
 
 
-@pytest.mark.parametrize(("direction", "amount", "expected", "satisfied"), (
-    (CovenantDirection.OUTGOING, 50000, (300000, 350000), True),
-    (CovenantDirection.INCOMING, 50000, (350000, 300000), False),
-))
+@pytest.mark.parametrize(
+    ("direction", "amount", "expected", "satisfied"),
+    (
+        (CovenantDirection.OUTGOING, 50000, (300000, 350000), True),
+        (CovenantDirection.INCOMING, 50000, (350000, 300000), False),
+    ),
+)
 def test_unequal_counts_and_unpaired_amounts_follow_total_relation_policy(
-    monkeypatch, direction, amount, expected, satisfied,
+    monkeypatch,
+    direction,
+    amount,
+    expected,
+    satisfied,
 ):
     registration = fixtures.registration()
     base = fixtures.funding()
-    script = (registration.mirrored_pair.incoming_leg_script_sha256
-              if direction is CovenantDirection.INCOMING
-              else registration.mirrored_pair.outgoing_leg_script_sha256)
+    script = (
+        registration.mirrored_pair.incoming_leg_script_sha256
+        if direction is CovenantDirection.INCOMING
+        else registration.mirrored_pair.outgoing_leg_script_sha256
+    )
     extra = RecognizedCovenantFundingOutpoint(
-        direction, "f" * 64, 8, amount, script,
+        direction,
+        "f" * 64,
+        8,
+        amount,
+        script,
     )
     funding_set = create_canonical_covenant_funding_set(
         funding_set_id="00000000-0000-4000-8000-000000000011",
         trusted_registration=registration,
         lifecycle_state=CovenantFundingSetLifecycle.EFFECTIVE,
-        created_at=NOW, lifecycle_changed_at=NOW, effective_at=NOW,
+        created_at=NOW,
+        lifecycle_changed_at=NOW,
+        effective_at=NOW,
         recognized_outpoints=base.recognized_outpoints + (extra,),
     )
     result, _, _ = _run(monkeypatch, funding_set=funding_set)
@@ -199,10 +233,15 @@ def test_dependency_failures_are_sanitized(monkeypatch, error):
     repository = FundingRepository(fixtures.funding(), error=error)
     with pytest.raises(EdgeLocalCovenantObservationUnavailable) as caught:
         observe_edge_local_covenant_relation(
-            GRAPH, registration.subject_xonly_pubkey, evaluated_at=NOW,
-            genesis_repository=object(), admission_edge_repository=object(),
-            root_registration_binding_repository=object(), trusted_registration_repository=object(),
-            funding_set_repository=repository, observer=Observer(),
+            GRAPH,
+            registration.subject_xonly_pubkey,
+            evaluated_at=NOW,
+            genesis_repository=object(),
+            admission_edge_repository=object(),
+            root_registration_binding_repository=object(),
+            trusted_registration_repository=object(),
+            funding_set_repository=repository,
+            observer=Observer(),
         )
     assert str(caught.value) == "edge-local covenant observation unavailable"
     assert "secret" not in str(caught.value)
@@ -265,9 +304,13 @@ def test_default_composition_uses_configured_rpc_and_existing_adapter(monkeypatc
     monkeypatch.setattr(service, "TrustedBitcoinCovenantObservationAdapter", adapter)
     monkeypatch.setattr(app.utils, "get_rpc_connection", lambda: rpc)
     result = observe_edge_local_covenant_relation(
-        GRAPH, registration.subject_xonly_pubkey, evaluated_at=NOW,
-        genesis_repository=object(), admission_edge_repository=object(),
-        root_registration_binding_repository=object(), trusted_registration_repository=object(),
+        GRAPH,
+        registration.subject_xonly_pubkey,
+        evaluated_at=NOW,
+        genesis_repository=object(),
+        admission_edge_repository=object(),
+        root_registration_binding_repository=object(),
+        trusted_registration_repository=object(),
         funding_set_repository=FundingRepository(fixtures.funding()),
     )
     assert constructed == [rpc]

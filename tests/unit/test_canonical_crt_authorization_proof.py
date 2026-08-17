@@ -34,9 +34,7 @@ from app.services.canonical_sponsor_lineage import (
 
 
 def proof(source=None):
-    authorization = evaluate_canonical_crt_authorization(
-        source or ordinary_membership()
-    )
+    authorization = evaluate_canonical_crt_authorization(source or ordinary_membership())
     return build_canonical_crt_authorization_proof(authorization)
 
 
@@ -46,16 +44,9 @@ def test_active_ordinary_full_matrix(depth):
     authorization = evaluate_canonical_crt_authorization(membership)
     result = build_canonical_crt_authorization_proof(authorization)
     assert result.source_authorization_evaluation == authorization
-    assert result.source_membership_evaluation_sha256 == (
-        canonical_crt_membership_evaluation_sha256(membership)
-    )
-    assert result.proof_conclusion is (
-        CanonicalCrtAuthorizationProofConclusion
-        .FULL_BY_EXACT_PARTICIPANT_MEMBERSHIP
-    )
-    assert result.proof_basis is (
-        CanonicalCrtAuthorizationProofBasis.COMPLETE_SPONSOR_LINEAGE
-    )
+    assert result.source_membership_evaluation_sha256 == (canonical_crt_membership_evaluation_sha256(membership))
+    assert result.proof_conclusion is (CanonicalCrtAuthorizationProofConclusion.FULL_BY_EXACT_PARTICIPANT_MEMBERSHIP)
+    assert result.proof_basis is (CanonicalCrtAuthorizationProofBasis.COMPLETE_SPONSOR_LINEAGE)
     assert result.canonical_explanation == (
         "authorization_class=full; "
         "authorization_reason=exact_participant_membership_full; "
@@ -71,10 +62,7 @@ def test_active_ordinary_full_matrix(depth):
 def test_active_genesis_full_matrix():
     membership = genesis_membership()
     result = proof(membership)
-    assert result.proof_conclusion is (
-        CanonicalCrtAuthorizationProofConclusion
-        .FULL_BY_EXACT_GENESIS_MEMBERSHIP
-    )
+    assert result.proof_conclusion is (CanonicalCrtAuthorizationProofConclusion.FULL_BY_EXACT_GENESIS_MEMBERSHIP)
     assert result.proof_basis is CanonicalCrtAuthorizationProofBasis.GENESIS_RECORD
     assert result.subject_kind.value == "genesis"
     assert result.controlling_depth is membership.controlling_depth is None
@@ -84,24 +72,28 @@ def test_active_genesis_full_matrix():
 def _genesis_evaluation(case):
     item = genesis_record()
     if case == "proposed_only":
-        records = (replace(
-            item,
-            lifecycle_state=CanonicalGenesisLifecycle.PROPOSED,
-            effective_at=None,
-            lifecycle_changed_at=item.created_at,
-        ),)
+        records = (
+            replace(
+                item,
+                lifecycle_state=CanonicalGenesisLifecycle.PROPOSED,
+                effective_at=None,
+                lifecycle_changed_at=item.created_at,
+            ),
+        )
         evaluated_at = item.created_at
     elif case == "controlling_dispute":
-        records = (replace(
-            item,
-            lifecycle_state=CanonicalGenesisLifecycle.DISPUTED,
-            contradiction_context=replace(
-                item.contradiction_context,
-                reason="unresolved dispute",
-                evidence_reference_ids=("canon_genesis_bootstrap_v1",),
-                unresolved_controlling_dispute=True,
+        records = (
+            replace(
+                item,
+                lifecycle_state=CanonicalGenesisLifecycle.DISPUTED,
+                contradiction_context=replace(
+                    item.contradiction_context,
+                    reason="unresolved dispute",
+                    evidence_reference_ids=("canon_genesis_bootstrap_v1",),
+                    unresolved_controlling_dispute=True,
+                ),
             ),
-        ),)
+        )
         evaluated_at = item.effective_at
     elif case == "multiple_effective_records":
         records = (
@@ -113,15 +105,17 @@ def _genesis_evaluation(case):
         )
         evaluated_at = item.effective_at
     elif case == "all_records_revoked":
-        records = (replace(
-            item,
-            lifecycle_state=CanonicalGenesisLifecycle.REVOKED,
-            contradiction_context=replace(
-                item.contradiction_context,
-                reason="terminal contradiction",
-                evidence_reference_ids=("canon_genesis_bootstrap_v1",),
+        records = (
+            replace(
+                item,
+                lifecycle_state=CanonicalGenesisLifecycle.REVOKED,
+                contradiction_context=replace(
+                    item.contradiction_context,
+                    reason="terminal contradiction",
+                    evidence_reference_ids=("canon_genesis_bootstrap_v1",),
+                ),
             ),
-        ),)
+        )
         evaluated_at = item.effective_at
     elif case == "no_records":
         records = ()
@@ -139,22 +133,19 @@ def _genesis_evaluation(case):
 @pytest.mark.parametrize(
     ("case", "state", "reason", "conclusion"),
     (
-        ("proposed_only", "provisional", "genesis_provisional",
-         "limited_by_provisional_membership"),
-        ("controlling_dispute", "disputed", "genesis_disputed",
-         "limited_by_disputed_membership"),
-        ("multiple_effective_records", "disputed", "genesis_disputed",
-         "limited_by_disputed_membership"),
-        ("all_records_revoked", "lineage_inactive", "genesis_lineage_inactive",
-         "limited_by_lineage_inactivity"),
-        ("no_records", "unknown", "genesis_unknown",
-         "limited_by_unknown_membership"),
-        ("effective_timestamp_in_future", "unknown", "genesis_unknown",
-         "limited_by_unknown_membership"),
+        ("proposed_only", "provisional", "genesis_provisional", "limited_by_provisional_membership"),
+        ("controlling_dispute", "disputed", "genesis_disputed", "limited_by_disputed_membership"),
+        ("multiple_effective_records", "disputed", "genesis_disputed", "limited_by_disputed_membership"),
+        ("all_records_revoked", "lineage_inactive", "genesis_lineage_inactive", "limited_by_lineage_inactivity"),
+        ("no_records", "unknown", "genesis_unknown", "limited_by_unknown_membership"),
+        ("effective_timestamp_in_future", "unknown", "genesis_unknown", "limited_by_unknown_membership"),
     ),
 )
 def test_genuine_genesis_limited_composition(
-    case, state, reason, conclusion,
+    case,
+    state,
+    reason,
+    conclusion,
 ):
     genesis_evaluation = _genesis_evaluation(case)
     membership = genesis_membership(genesis_evaluation)
@@ -166,24 +157,16 @@ def test_genuine_genesis_limited_composition(
     assert result.source_authorization_evaluation_sha256 == (
         canonical_crt_authorization_evaluation_sha256(authorization)
     )
-    assert result.source_authorization_evaluation.source_membership_evaluation == (
-        membership
-    )
-    assert result.source_membership_evaluation_sha256 == (
-        canonical_crt_membership_evaluation_sha256(membership)
-    )
+    assert result.source_authorization_evaluation.source_membership_evaluation == (membership)
+    assert result.source_membership_evaluation_sha256 == (canonical_crt_membership_evaluation_sha256(membership))
     assert result.membership_state.value == state
     assert result.membership_reason_code.value == reason
     assert result.proof_conclusion.value == conclusion
     assert result.proof_basis.value == "genesis_record"
     assert result.controlling_depth == membership.controlling_depth == 0
     assert result.controlling_edge_id is membership.controlling_edge_id is None
-    assert result.selected_genesis_record_id == (
-        membership.selected_genesis_record_id
-    )
-    assert result.selected_genesis_record_sha256 == (
-        membership.selected_genesis_record_sha256
-    )
+    assert result.selected_genesis_record_id == (membership.selected_genesis_record_id)
+    assert result.selected_genesis_record_sha256 == (membership.selected_genesis_record_sha256)
     assert result.selected_genesis_record_id is None
     assert result.selected_genesis_record_sha256 is None
     assert result.canonical_explanation == (
@@ -198,14 +181,10 @@ def test_genuine_genesis_limited_composition(
 
 
 def test_unknown_limited_is_a_valid_proof():
-    result = proof(
-        ordinary_membership(evaluated_at=NOW.replace(year=NOW.year + 1))
-    )
+    result = proof(ordinary_membership(evaluated_at=NOW.replace(year=NOW.year + 1)))
     assert result.authorization_class.value == "limited"
     assert result.current_full_membership_satisfied is False
-    assert result.proof_conclusion is (
-        CanonicalCrtAuthorizationProofConclusion.LIMITED_BY_UNKNOWN_MEMBERSHIP
-    )
+    assert result.proof_conclusion is (CanonicalCrtAuthorizationProofConclusion.LIMITED_BY_UNKNOWN_MEMBERSHIP)
     assert result.proof_basis is CanonicalCrtAuthorizationProofBasis.SOURCE_BINDING
 
 
@@ -229,9 +208,7 @@ def test_genesis_source_binding_precedes_genesis_record(reason):
         # These are valid defensive canonical result objects.  The membership
         # contract permits all source-binding reasons on the same unknown
         # genesis-subject result shape; runtime reachability is not asserted.
-        binding = genesis_membership(
-            evaluated_at=genesis_record().effective_at + timedelta(seconds=1)
-        )
+        binding = genesis_membership(evaluated_at=genesis_record().effective_at + timedelta(seconds=1))
         membership = replace(binding, reason_code=reason)
     authorization = evaluate_canonical_crt_authorization(membership)
     result = build_canonical_crt_authorization_proof(authorization)
@@ -240,12 +217,8 @@ def test_genesis_source_binding_precedes_genesis_record(reason):
     assert result.controlling_depth is membership.controlling_depth is None
     assert result.controlling_edge_id is membership.controlling_edge_id is None
     assert result.source_authorization_evaluation == authorization
-    assert result.source_membership_evaluation_sha256 == (
-        canonical_crt_membership_evaluation_sha256(membership)
-    )
-    assert result.canonical_explanation.endswith(
-        f"membership_reason={reason.value}; proof_basis=source_binding"
-    )
+    assert result.source_membership_evaluation_sha256 == (canonical_crt_membership_evaluation_sha256(membership))
+    assert result.canonical_explanation.endswith(f"membership_reason={reason.value}; proof_basis=source_binding")
     encoded = canonical_crt_authorization_proof_bytes(result)
     assert parse_canonical_crt_authorization_proof(encoded) == result
 
@@ -276,44 +249,26 @@ def test_collection_primitive_types_are_exact(mutation):
     if mutation == "outer_records_tuple":
         changes = {"relevant_records": _TupleSubclass(records)}
     elif mutation == "inner_records_tuple":
-        changes = {
-            "relevant_records": (_TupleSubclass(records[0]),) + records[1:]
-        }
+        changes = {"relevant_records": (_TupleSubclass(records[0]),) + records[1:]}
     elif mutation == "record_id_string":
-        changes = {
-            "relevant_records": (
-                (_StringSubclass(records[0][0]), records[0][1]),
-            ) + records[1:]
-        }
+        changes = {"relevant_records": ((_StringSubclass(records[0][0]), records[0][1]),) + records[1:]}
     elif mutation == "record_digest_string":
-        changes = {
-            "relevant_records": (
-                (records[0][0], _StringSubclass(records[0][1])),
-            ) + records[1:]
-        }
+        changes = {"relevant_records": ((records[0][0], _StringSubclass(records[0][1])),) + records[1:]}
     elif mutation == "nonclaims_tuple":
         changes = {"explicit_non_claims": _TupleSubclass(nonclaims)}
     else:
-        changes = {
-            "explicit_non_claims": (
-                _StringSubclass(nonclaims[0]),
-            ) + nonclaims[1:]
-        }
+        changes = {"explicit_non_claims": (_StringSubclass(nonclaims[0]),) + nonclaims[1:]}
     with pytest.raises(InvalidCanonicalCrtAuthorizationProof):
         replace(result, **changes)
 
 
 def test_mappings_are_explicit_immutable_and_exhaustive():
-    assert set(proof_module._CONCLUSION_BY_REASON) == set(
-        CanonicalCrtAuthorizationReason
-    )
-    assert set(proof_module._BASIS_BY_REASON) == set(
-        CanonicalCrtMembershipReason
-    )
+    assert set(proof_module._CONCLUSION_BY_REASON) == set(CanonicalCrtAuthorizationReason)
+    assert set(proof_module._BASIS_BY_REASON) == set(CanonicalCrtMembershipReason)
     with pytest.raises(TypeError):
-        proof_module._BASIS_BY_REASON[
-            CanonicalCrtMembershipReason.GENESIS_UNKNOWN
-        ] = CanonicalCrtAuthorizationProofBasis.SOURCE_BINDING
+        proof_module._BASIS_BY_REASON[CanonicalCrtMembershipReason.GENESIS_UNKNOWN] = (
+            CanonicalCrtAuthorizationProofBasis.SOURCE_BINDING
+        )
 
 
 def _membership_for_reason(reason):
@@ -330,8 +285,7 @@ def _membership_for_reason(reason):
         case = {
             CanonicalCrtMembershipReason.GENESIS_PROVISIONAL: "proposed_only",
             CanonicalCrtMembershipReason.GENESIS_DISPUTED: "controlling_dispute",
-            CanonicalCrtMembershipReason.GENESIS_LINEAGE_INACTIVE:
-                "all_records_revoked",
+            CanonicalCrtMembershipReason.GENESIS_LINEAGE_INACTIVE: "all_records_revoked",
             CanonicalCrtMembershipReason.GENESIS_UNKNOWN: "no_records",
         }[reason]
         return genesis_membership(_genesis_evaluation(case))
@@ -343,9 +297,7 @@ def _membership_for_reason(reason):
                 genesis_evaluation=genesis(),
                 evaluated_at=genesis().evaluated_at,
             )
-        binding = ordinary_membership(
-            evaluated_at=NOW.replace(year=NOW.year + 1)
-        )
+        binding = ordinary_membership(evaluated_at=NOW.replace(year=NOW.year + 1))
         return replace(binding, reason_code=reason)
 
     lineage_reason = CanonicalSponsorLineageReason(reason.value)
@@ -353,12 +305,16 @@ def _membership_for_reason(reason):
     state = (
         CanonicalSponsorLineageState.PROVISIONAL
         if "provisional" in lineage_reason.value
-        else CanonicalSponsorLineageState.DISPUTED
-        if "disputed" in lineage_reason.value
-        else CanonicalSponsorLineageState.LINEAGE_INACTIVE
-        if lineage_reason.value.endswith("edge_inactive")
-        or lineage_reason is CanonicalSponsorLineageReason.GENESIS_LINEAGE_INACTIVE
-        else CanonicalSponsorLineageState.UNKNOWN
+        else (
+            CanonicalSponsorLineageState.DISPUTED
+            if "disputed" in lineage_reason.value
+            else (
+                CanonicalSponsorLineageState.LINEAGE_INACTIVE
+                if lineage_reason.value.endswith("edge_inactive")
+                or lineage_reason is CanonicalSponsorLineageReason.GENESIS_LINEAGE_INACTIVE
+                else CanonicalSponsorLineageState.UNKNOWN
+            )
+        )
     )
     changes = {"state": state, "reason_code": lineage_reason}
     if lineage_reason in {
@@ -381,11 +337,7 @@ def _membership_for_reason(reason):
     elif lineage_reason.value.startswith("genesis_"):
         changes.update(controlling_depth=0, controlling_edge_id=None)
     elif lineage_reason.value.startswith(("ancestor_", "target_")):
-        position = (
-            lineage.target_depth
-            if lineage_reason.value.startswith("target_")
-            else 1
-        )
+        position = lineage.target_depth if lineage_reason.value.startswith("target_") else 1
         changes.update(
             controlling_depth=position,
             controlling_edge_id=lineage.lineage_nodes[position - 1].edge_id,
@@ -415,9 +367,7 @@ def test_every_membership_reason_executes_a_complete_proof(membership_reason):
     assert result.source_authorization_evaluation_sha256 == (
         canonical_crt_authorization_evaluation_sha256(authorization)
     )
-    assert result.source_membership_evaluation_sha256 == (
-        canonical_crt_membership_evaluation_sha256(membership)
-    )
+    assert result.source_membership_evaluation_sha256 == (canonical_crt_membership_evaluation_sha256(membership))
     flattened_authorization_fields = (
         "graph_or_protocol_id",
         "network",
@@ -451,9 +401,7 @@ def test_every_membership_reason_executes_a_complete_proof(membership_reason):
     )
     for field in flattened_membership_fields:
         assert getattr(result, field) == getattr(membership, field)
-    assert result.proof_conclusion is (
-        proof_module._CONCLUSION_BY_REASON[authorization.reason_code]
-    )
+    assert result.proof_conclusion is (proof_module._CONCLUSION_BY_REASON[authorization.reason_code])
     assert result.proof_basis is expected_basis
     assert result.canonical_explanation == proof_module._explanation(
         authorization.authorization_class,
@@ -479,9 +427,7 @@ def test_active_genesis_control_forgery_rejected():
 
 
 def test_genesis_source_binding_control_forgery_rejected():
-    membership = genesis_membership(
-        evaluated_at=genesis_record().effective_at + timedelta(seconds=1)
-    )
+    membership = genesis_membership(evaluated_at=genesis_record().effective_at + timedelta(seconds=1))
     source = proof(membership)
     assert source.proof_basis is CanonicalCrtAuthorizationProofBasis.SOURCE_BINDING
     with pytest.raises(InvalidCanonicalCrtAuthorizationProof):
@@ -502,9 +448,7 @@ def test_genesis_source_binding_control_forgery_rejected():
     ),
 )
 def test_all_basis_families_are_named(reason, basis):
-    assert proof_module._BASIS_BY_REASON[
-        CanonicalCrtMembershipReason(reason)
-    ].value == basis
+    assert proof_module._BASIS_BY_REASON[CanonicalCrtMembershipReason(reason)].value == basis
 
 
 @pytest.mark.parametrize(
@@ -533,8 +477,7 @@ def test_public_builder_failure_contract(value):
         ("proof_basis", CanonicalCrtAuthorizationProofBasis.TARGET_EDGE),
         (
             "proof_conclusion",
-            CanonicalCrtAuthorizationProofConclusion
-            .FULL_BY_EXACT_GENESIS_MEMBERSHIP,
+            CanonicalCrtAuthorizationProofConclusion.FULL_BY_EXACT_GENESIS_MEMBERSHIP,
         ),
     ),
 )
@@ -545,30 +488,43 @@ def test_constructor_forgery_rejected(field, value):
 
 def test_valid_nested_source_substitution_rejected():
     base = proof(ordinary_membership(evaluate(lineage_fixture(3))))
-    other = evaluate_canonical_crt_authorization(
-        ordinary_membership(evaluate(lineage_fixture(2)))
-    )
+    other = evaluate_canonical_crt_authorization(ordinary_membership(evaluate(lineage_fixture(2))))
     with pytest.raises(InvalidCanonicalCrtAuthorizationProof):
         replace(
             base,
             source_authorization_evaluation=other,
-            source_authorization_evaluation_sha256=(
-                canonical_crt_authorization_evaluation_sha256(other)
-            ),
+            source_authorization_evaluation_sha256=(canonical_crt_authorization_evaluation_sha256(other)),
         )
 
 
 @pytest.mark.parametrize(
     "mutation",
     (
-        "duplicate_top", "duplicate_authorization", "duplicate_membership",
-        "extra_top", "extra_authorization", "extra_membership",
-        "missing_top", "missing_authorization", "missing_membership",
-        "float_top", "float_authorization", "float_membership", "nan",
-        "infinity", "boolean_depth", "offset", "microseconds",
-        "wrong_conclusion", "wrong_basis", "wrong_explanation",
-        "authorization_digest", "membership_digest", "reordered_records",
-        "duplicate_records", "noncanonical_order",
+        "duplicate_top",
+        "duplicate_authorization",
+        "duplicate_membership",
+        "extra_top",
+        "extra_authorization",
+        "extra_membership",
+        "missing_top",
+        "missing_authorization",
+        "missing_membership",
+        "float_top",
+        "float_authorization",
+        "float_membership",
+        "nan",
+        "infinity",
+        "boolean_depth",
+        "offset",
+        "microseconds",
+        "wrong_conclusion",
+        "wrong_basis",
+        "wrong_explanation",
+        "authorization_digest",
+        "membership_digest",
+        "reordered_records",
+        "duplicate_records",
+        "noncanonical_order",
     ),
 )
 def test_parser_adversarial_matrix(mutation):
@@ -628,12 +584,12 @@ def test_parser_adversarial_matrix(mutation):
     elif mutation == "noncanonical_order":
         raw = json.dumps(dict(reversed(tuple(data.items()))), separators=(",", ":"))
     if mutation not in {
-        "duplicate_top", "duplicate_authorization", "duplicate_membership",
+        "duplicate_top",
+        "duplicate_authorization",
+        "duplicate_membership",
         "noncanonical_order",
     }:
-        raw = json.dumps(
-            data, sort_keys=True, separators=(",", ":"), allow_nan=True
-        )
+        raw = json.dumps(data, sort_keys=True, separators=(",", ":"), allow_nan=True)
     with pytest.raises(InvalidCanonicalCrtAuthorizationProof):
         parse_canonical_crt_authorization_proof(raw)
 
@@ -641,9 +597,7 @@ def test_parser_adversarial_matrix(mutation):
 def test_pinned_proof_and_unchanged_source_digests():
     genesis = proof(genesis_membership())
     depth3 = proof(ordinary_membership(evaluate(lineage_fixture(3))))
-    unknown = proof(
-        ordinary_membership(evaluated_at=NOW.replace(year=NOW.year + 1))
-    )
+    unknown = proof(ordinary_membership(evaluated_at=NOW.replace(year=NOW.year + 1)))
     assert canonical_crt_authorization_proof_sha256(genesis) == (
         "1e7508f12641f32e8813ddea1dd4b8bc9f0d5e862512773f36a4f414e7db4945"
     )

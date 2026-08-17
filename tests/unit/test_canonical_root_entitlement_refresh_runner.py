@@ -13,14 +13,15 @@ from app.services.action_authorization import IdentityClass
 from app.services.canonical_controlling_registration import ControllingRegistrationSelectionSource
 from app.services.canonical_root_entitlement_policy import evaluate_canonical_root_entitlement
 from app.services.canonical_root_entitlement_refresh import (
-    REFRESH_CONTRACT_VERSION, CanonicalRootEntitlementRefreshMode,
-    CanonicalRootEntitlementRefreshOutcome, CanonicalRootEntitlementRefreshResult,
+    REFRESH_CONTRACT_VERSION,
+    CanonicalRootEntitlementRefreshMode,
+    CanonicalRootEntitlementRefreshOutcome,
+    CanonicalRootEntitlementRefreshResult,
 )
 from app.services.covenant_relation import CovenantRelationReason
 from app.services.current_entitlement_evidence import CONTRACT_VERSION, CurrentEntitlementEvidenceRecord
 from app.services.edge_local_covenant_observation import EdgeLocalCovenantRelationResult
 import app.services.canonical_root_entitlement_refresh_runner as runner
-
 
 SUBJECT = "a" * 64
 OTHER = "b" * 64
@@ -30,12 +31,22 @@ NOW = datetime(2026, 8, 13, 12, tzinfo=timezone.utc)
 
 def refresh_result(mode=CanonicalRootEntitlementRefreshMode.DRY_RUN, *, limited=False, unchanged=False):
     relation = EdgeLocalCovenantRelationResult(
-        GRAPH, SUBJECT, OTHER,
+        GRAPH,
+        SUBJECT,
+        OTHER,
         ControllingRegistrationSelectionSource.CANONICAL_ROOT_REGISTRATION_BINDING,
-        "00000000-0000-4000-8000-000000000001", "1" * 64,
-        "00000000-0000-4000-8000-000000000002", "2" * 64,
-        "00000000-0000-4000-8000-000000000003", "3" * 64,
-        5, 1 if limited else 5, NOW, 900000, 300000, 0 if limited else 300000,
+        "00000000-0000-4000-8000-000000000001",
+        "1" * 64,
+        "00000000-0000-4000-8000-000000000002",
+        "2" * 64,
+        "00000000-0000-4000-8000-000000000003",
+        "3" * 64,
+        5,
+        1 if limited else 5,
+        NOW,
+        900000,
+        300000,
+        0 if limited else 300000,
         not limited,
         CovenantRelationReason.MISSING_OUTGOING if limited else CovenantRelationReason.FULL_RELATION_SATISFIED,
         "4" * 64,
@@ -44,17 +55,37 @@ def refresh_result(mode=CanonicalRootEntitlementRefreshMode.DRY_RUN, *, limited=
     if mode is CanonicalRootEntitlementRefreshMode.DRY_RUN:
         outcome, evidence, appended = CanonicalRootEntitlementRefreshOutcome.PREVIEW, None, False
     else:
-        outcome = CanonicalRootEntitlementRefreshOutcome.UNCHANGED if unchanged else CanonicalRootEntitlementRefreshOutcome.APPENDED
+        outcome = (
+            CanonicalRootEntitlementRefreshOutcome.UNCHANGED
+            if unchanged
+            else CanonicalRootEntitlementRefreshOutcome.APPENDED
+        )
         appended = not unchanged
         evidence = CurrentEntitlementEvidenceRecord(
-            "00000000-0000-4000-8000-000000000010", CONTRACT_VERSION, SUBJECT,
-            decision.identity_class, decision.current_full_relation_satisfied,
-            decision.evidence_source, decision.policy_version, decision.source_evidence_sha256,
-            NOW, NOW + timedelta(seconds=300), None, NOW,
+            "00000000-0000-4000-8000-000000000010",
+            CONTRACT_VERSION,
+            SUBJECT,
+            decision.identity_class,
+            decision.current_full_relation_satisfied,
+            decision.evidence_source,
+            decision.policy_version,
+            decision.source_evidence_sha256,
+            NOW,
+            NOW + timedelta(seconds=300),
+            None,
+            NOW,
         )
     return CanonicalRootEntitlementRefreshResult(
-        REFRESH_CONTRACT_VERSION, mode, outcome, GRAPH, SUBJECT, NOW,
-        relation, decision, evidence, appended,
+        REFRESH_CONTRACT_VERSION,
+        mode,
+        outcome,
+        GRAPH,
+        SUBJECT,
+        NOW,
+        relation,
+        decision,
+        evidence,
+        appended,
     )
 
 
@@ -64,10 +95,16 @@ def argv(*extra):
 
 @pytest.mark.parametrize(
     "bad",
-    [[], ["--dry-run"], argv("--dry-run", "extra"), argv("--dry-run", "--commit"),
-     ["--graph", GRAPH, "--graph", GRAPH, "--subject", SUBJECT, "--dry-run"],
-     ["--graph", GRAPH, "--subject", SUBJECT.upper(), "--dry-run"],
-     argv("--commit"), argv("--dry-run", "--lock-directory", "/tmp")],
+    [
+        [],
+        ["--dry-run"],
+        argv("--dry-run", "extra"),
+        argv("--dry-run", "--commit"),
+        ["--graph", GRAPH, "--graph", GRAPH, "--subject", SUBJECT, "--dry-run"],
+        ["--graph", GRAPH, "--subject", SUBJECT.upper(), "--dry-run"],
+        argv("--commit"),
+        argv("--dry-run", "--lock-directory", "/tmp"),
+    ],
 )
 def test_closed_argument_contract(bad):
     with pytest.raises(runner.CanonicalRootEntitlementRefreshRunnerUnavailable):
@@ -81,14 +118,17 @@ def test_argument_validation_precedes_dependency_construction():
     assert calls == []
 
 
-@pytest.mark.parametrize("bad", [
-    [],
-    ["--commit"],
-    argv("--dry-run", "extra"),
-    argv("--dry-run", "--commit"),
-    ["--graph", GRAPH, "--graph", GRAPH, "--subject", SUBJECT, "--dry-run"],
-    argv("--unknown", "value", "--dry-run"),
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        [],
+        ["--commit"],
+        argv("--dry-run", "extra"),
+        argv("--dry-run", "--commit"),
+        ["--graph", GRAPH, "--graph", GRAPH, "--subject", SUBJECT, "--dry-run"],
+        argv("--unknown", "value", "--dry-run"),
+    ],
+)
 def test_cli_invalid_argv_precedes_every_application_import(monkeypatch, bad, capsys):
     real_import = builtins.__import__
 
@@ -156,11 +196,16 @@ def test_dry_run_executes_once_without_evidence_or_guard(monkeypatch, limited):
     modes = []
     payload = runner.execute_request(
         runner.parse_runner_argv(argv("--dry-run")),
-        dependency_factory=lambda mode: modes.append(mode) or {
-            "genesis_repository": object(), "admission_edge_repository": object(),
-            "root_registration_binding_repository": object(), "trusted_registration_repository": object(),
-            "funding_set_repository": object(), "rpc_factory": object(),
-        }, clock=lambda: NOW,
+        dependency_factory=lambda mode: modes.append(mode)
+        or {
+            "genesis_repository": object(),
+            "admission_edge_repository": object(),
+            "root_registration_binding_repository": object(),
+            "trusted_registration_repository": object(),
+            "funding_set_repository": object(),
+            "rpc_factory": object(),
+        },
+        clock=lambda: NOW,
     )
     assert modes == [CanonicalRootEntitlementRefreshMode.DRY_RUN] and len(calls) == 1
     assert "execution_guard" not in calls[0][2] and "evidence_repository" not in calls[0][2]
@@ -173,14 +218,14 @@ def test_commit_executes_once_and_projects_closed_outcomes(tmp_path, monkeypatch
     calls = []
     monkeypatch.setattr(
         "app.services.canonical_root_entitlement_refresh.refresh_canonical_root_entitlement",
-        lambda graph, subject, **kwargs: calls.append(kwargs) or refresh_result(
-            CanonicalRootEntitlementRefreshMode.COMMIT, limited=limited, unchanged=unchanged
-        ),
+        lambda graph, subject, **kwargs: calls.append(kwargs)
+        or refresh_result(CanonicalRootEntitlementRefreshMode.COMMIT, limited=limited, unchanged=unchanged),
     )
     request = runner.parse_runner_argv(argv("--commit", "--lock-directory", str(tmp_path)))
     payload = runner.execute_request(
         request,
-        dependency_factory=lambda _mode: {"evidence_repository": object()}, clock=lambda: NOW,
+        dependency_factory=lambda _mode: {"evidence_repository": object()},
+        clock=lambda: NOW,
     )
     assert len(calls) == 1 and type(calls[0]["execution_guard"]) is runner.LinuxSubjectFileExecutionGuard
     assert calls[0]["execution_guard"]._directory_descriptor is None
@@ -199,7 +244,8 @@ def test_malformed_nested_result_fails_closed():
 def test_nested_subclasses_fail_closed(field):
     result = refresh_result(
         CanonicalRootEntitlementRefreshMode.COMMIT
-        if field == "evidence" else CanonicalRootEntitlementRefreshMode.DRY_RUN
+        if field == "evidence"
+        else CanonicalRootEntitlementRefreshMode.DRY_RUN
     )
     original = getattr(result, field)
     subclass = type("Forged", (type(original),), {})
@@ -238,9 +284,7 @@ def test_guard_rejects_relative_symlink_non_directory_and_public_directory(tmp_p
 
 
 @pytest.mark.parametrize("interrupt_type", [KeyboardInterrupt, SystemExit])
-def test_guard_construction_preserves_interrupt_when_cleanup_close_fails(
-    tmp_path, monkeypatch, interrupt_type
-):
+def test_guard_construction_preserves_interrupt_when_cleanup_close_fails(tmp_path, monkeypatch, interrupt_type):
     def interrupted_fstat(_descriptor):
         monkeypatch.setattr(runner.os, "close", lambda _fd: (_ for _ in ()).throw(OSError("private")))
         raise interrupt_type()
@@ -317,9 +361,7 @@ def test_execute_request_closes_guard_on_malformed_result(tmp_path, monkeypatch)
         captured.append(kwargs["execution_guard"])
         return object()
 
-    monkeypatch.setattr(
-        "app.services.canonical_root_entitlement_refresh.refresh_canonical_root_entitlement", malformed
-    )
+    monkeypatch.setattr("app.services.canonical_root_entitlement_refresh.refresh_canonical_root_entitlement", malformed)
     request = runner.parse_runner_argv(argv("--commit", "--lock-directory", str(tmp_path)))
     with pytest.raises(runner.CanonicalRootEntitlementRefreshRunnerUnavailable):
         runner.execute_request(
@@ -329,9 +371,7 @@ def test_execute_request_closes_guard_on_malformed_result(tmp_path, monkeypatch)
 
 
 @pytest.mark.parametrize("interrupt_type", [KeyboardInterrupt, SystemExit])
-def test_execute_request_closes_guard_and_preserves_orchestrator_interrupt(
-    tmp_path, monkeypatch, interrupt_type
-):
+def test_execute_request_closes_guard_and_preserves_orchestrator_interrupt(tmp_path, monkeypatch, interrupt_type):
     captured = []
 
     def interrupted(_graph, _subject, **kwargs):
@@ -359,8 +399,11 @@ with LinuxSubjectFileExecutionGuard(sys.argv[1]).hold(sys.argv[2]):
 """
     process = subprocess.Popen(
         [sys.executable, "-c", child, str(tmp_path), SUBJECT],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, cwd=str(Path(__file__).resolve().parents[2]),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=str(Path(__file__).resolve().parents[2]),
     )
     try:
         assert process.stdout is not None and process.stdout.readline() == "ready\n"
@@ -461,11 +504,14 @@ def test_ordinary_release_failure_is_sanitized_and_cleanup_is_attempted(tmp_path
     assert len(unlocks) == 1 and len(closes) == 2
 
 
-@pytest.mark.parametrize("field,value", [
-    ("recognized_outpoint_count", -1),
-    ("observed_block_height", -1),
-    ("incoming_sats", runner.MAX_BITCOIN_SATS + 1),
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("recognized_outpoint_count", -1),
+        ("observed_block_height", -1),
+        ("incoming_sats", runner.MAX_BITCOIN_SATS + 1),
+    ],
+)
 def test_coordinated_invalid_numeric_result_fails_closed(field, value):
     result = refresh_result()
     object.__setattr__(result.edge_local_result, field, value)

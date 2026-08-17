@@ -177,9 +177,7 @@ def validate_canonical_access_token_with_config(
         raise BearerValidationError("invalid canonical access token") from exc
 
 
-def validate_canonical_access_token(
-    encoded_token: str, *, expected_client_id: str | None = None
-) -> BearerPrincipal:
+def validate_canonical_access_token(encoded_token: str, *, expected_client_id: str | None = None) -> BearerPrincipal:
     """Flask adapter for canonical bearer validation."""
     from flask import current_app
 

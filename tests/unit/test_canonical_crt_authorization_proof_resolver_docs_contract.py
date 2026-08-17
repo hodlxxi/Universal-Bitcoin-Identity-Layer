@@ -5,7 +5,6 @@ from app.services.canonical_crt_authorization_proof_resolver import (
     STATUS,
 )
 
-
 DOC = Path("docs/CANONICAL_CRT_AUTHORIZATION_PROOF_RESOLVER_V1.md")
 
 

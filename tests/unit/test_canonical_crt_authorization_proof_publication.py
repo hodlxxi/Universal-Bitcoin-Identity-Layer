@@ -18,14 +18,10 @@ from app.services.canonical_crt_authorization_proof_publication import (
     verify_submitted_proof,
 )
 
-
 EXPECTED = {
-    "depth-3-full":
-        "48f1d49935e2f5a580fab0c56d350cba036c859bdb726c38a259ef6011ec0b98",
-    "e923-full":
-        "1e7508f12641f32e8813ddea1dd4b8bc9f0d5e862512773f36a4f414e7db4945",
-    "unknown-ordinary-limited":
-        "cf8aff59d98a2c0ec7bf62253fcfb1d0cce264517476ddecb6297153080e401c",
+    "depth-3-full": "48f1d49935e2f5a580fab0c56d350cba036c859bdb726c38a259ef6011ec0b98",
+    "e923-full": "1e7508f12641f32e8813ddea1dd4b8bc9f0d5e862512773f36a4f414e7db4945",
+    "unknown-ordinary-limited": "cf8aff59d98a2c0ec7bf62253fcfb1d0cce264517476ddecb6297153080e401c",
 }
 
 
@@ -47,8 +43,12 @@ def test_three_exact_immutable_reference_artifacts():
 
 def test_unknown_ids_never_resolve_paths():
     for artifact_id in (
-        "E923-full", "../e923-full", "%2e%2e%2fe923-full",
-        "/e923-full", "e923-full.json", "e923-full/other",
+        "E923-full",
+        "../e923-full",
+        "%2e%2e%2fe923-full",
+        "/e923-full",
+        "e923-full.json",
+        "e923-full/other",
     ):
         assert reference_artifact_bytes(artifact_id) is None
 
@@ -87,10 +87,5 @@ def test_verification_uses_exact_parser_result_and_is_deterministic():
 
 
 def test_artifact_files_are_only_the_registry_files():
-    directory = (
-        Path(__file__).parents[2] / "app/public_artifacts"
-        / "canonical_crt_authorization_proof/v1"
-    )
-    assert {path.name for path in directory.iterdir()} == {
-        f"{artifact_id}.json" for artifact_id in EXPECTED
-    }
+    directory = Path(__file__).parents[2] / "app/public_artifacts" / "canonical_crt_authorization_proof/v1"
+    assert {path.name for path in directory.iterdir()} == {f"{artifact_id}.json" for artifact_id in EXPECTED}

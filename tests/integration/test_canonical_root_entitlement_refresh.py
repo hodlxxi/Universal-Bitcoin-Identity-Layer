@@ -33,9 +33,7 @@ class Guard:
 def test_temporary_sqlite_append_then_exact_replay_is_unchanged(tmp_path, monkeypatch):
     engine = create_engine(f"sqlite:///{tmp_path / 'refresh.db'}")
     CurrentEntitlementEvidence.__table__.create(engine)
-    repository = SqlAlchemyCurrentEntitlementEvidenceRepository(
-        sessionmaker(bind=engine, expire_on_commit=False)
-    )
+    repository = SqlAlchemyCurrentEntitlementEvidenceRepository(sessionmaker(bind=engine, expire_on_commit=False))
     relation = EdgeLocalCovenantRelationResult(
         GRAPH,
         SUBJECT,
@@ -63,9 +61,7 @@ def test_temporary_sqlite_append_then_exact_replay_is_unchanged(tmp_path, monkey
         "observe_edge_local_covenant_relation",
         lambda graph, subject, **kwargs: observations.append((graph, subject, kwargs)) or relation,
     )
-    identifiers = iter(
-        [uuid.UUID("00000000-0000-4000-8000-000000000010")]
-    )
+    identifiers = iter([uuid.UUID("00000000-0000-4000-8000-000000000010")])
     monkeypatch.setattr(
         service,
         "CanonicalRootEntitlementMaterializer",

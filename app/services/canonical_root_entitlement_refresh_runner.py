@@ -87,7 +87,8 @@ def parse_runner_argv(argv: Sequence[str]) -> RunnerRequest:
         if lock_directory is not None and not os.path.isabs(lock_directory):
             raise ValueError()
         return RunnerRequest(
-            graph, subject,
+            graph,
+            subject,
             CanonicalRootEntitlementRefreshMode.COMMIT if commit else CanonicalRootEntitlementRefreshMode.DRY_RUN,
             lock_directory,
         )
@@ -236,30 +237,43 @@ def _utc_text(value: object) -> str:
 def normalized_result(result: object, request: RunnerRequest) -> dict[str, object]:
     """Return a closed, bounded operational projection of an exact result."""
     if type(result) is not CanonicalRootEntitlementRefreshResult:
-        raise CanonicalRootEntitlementRefreshRunnerUnavailable(commit_boundary=request.mode is CanonicalRootEntitlementRefreshMode.COMMIT)
+        raise CanonicalRootEntitlementRefreshRunnerUnavailable(
+            commit_boundary=request.mode is CanonicalRootEntitlementRefreshMode.COMMIT
+        )
     try:
         if (
             type(result.edge_local_result) is not EdgeLocalCovenantRelationResult
             or type(result.decision) is not CanonicalRootEntitlementDecision
-            or (
-                result.evidence is not None
-                and type(result.evidence) is not CurrentEntitlementEvidenceRecord
-            )
+            or (result.evidence is not None and type(result.evidence) is not CurrentEntitlementEvidenceRecord)
         ):
             raise ValueError()
         relation = EdgeLocalCovenantRelationResult(
-            *(getattr(result.edge_local_result, field) for field in EdgeLocalCovenantRelationResult.__dataclass_fields__)
+            *(
+                getattr(result.edge_local_result, field)
+                for field in EdgeLocalCovenantRelationResult.__dataclass_fields__
+            )
         )
         decision = CanonicalRootEntitlementDecision(
             *(getattr(result.decision, field) for field in CanonicalRootEntitlementDecision.__dataclass_fields__)
         )
-        evidence = None if result.evidence is None else CurrentEntitlementEvidenceRecord(
-            *(getattr(result.evidence, field) for field in CurrentEntitlementEvidenceRecord.__dataclass_fields__)
+        evidence = (
+            None
+            if result.evidence is None
+            else CurrentEntitlementEvidenceRecord(
+                *(getattr(result.evidence, field) for field in CurrentEntitlementEvidenceRecord.__dataclass_fields__)
+            )
         )
         canonical = CanonicalRootEntitlementRefreshResult(
-            result.contract_version, result.mode, result.outcome,
-            result.graph_or_protocol_id, result.subject_xonly_pubkey,
-            result.evaluated_at, relation, decision, evidence, result.append_performed,
+            result.contract_version,
+            result.mode,
+            result.outcome,
+            result.graph_or_protocol_id,
+            result.subject_xonly_pubkey,
+            result.evaluated_at,
+            relation,
+            decision,
+            evidence,
+            result.append_performed,
         )
         numeric = (
             relation.recognized_outpoint_count,
@@ -270,8 +284,7 @@ def normalized_result(result: object, request: RunnerRequest) -> dict[str, objec
         )
         if (
             canonical.contract_version != REFRESH_CONTRACT_VERSION
-            or
-            result.graph_or_protocol_id != request.graph_or_protocol_id
+            or result.graph_or_protocol_id != request.graph_or_protocol_id
             or result.subject_xonly_pubkey != request.subject_xonly_pubkey
             or result.mode is not request.mode
             or type(decision.identity_class) is not IdentityClass
@@ -341,22 +354,24 @@ def normalized_result(result: object, request: RunnerRequest) -> dict[str, objec
     except CanonicalRootEntitlementRefreshRunnerUnavailable:
         raise
     except Exception:
-        raise CanonicalRootEntitlementRefreshRunnerUnavailable(commit_boundary=request.mode is CanonicalRootEntitlementRefreshMode.COMMIT) from None
+        raise CanonicalRootEntitlementRefreshRunnerUnavailable(
+            commit_boundary=request.mode is CanonicalRootEntitlementRefreshMode.COMMIT
+        ) from None
 
 
 def _runtime_dependencies(mode: CanonicalRootEntitlementRefreshMode) -> dict[str, object]:
     """Lazily assemble existing adapters after argv validation."""
     # Refuse the application's development fallbacks. Values remain entirely
     # outside argv and are never included in output or errors.
-    if not all(os.environ.get(name) for name in (
-        "DATABASE_URL", "RPC_HOST", "RPC_PORT", "RPC_USER", "RPC_PASSWORD"
-    )):
+    if not all(os.environ.get(name) for name in ("DATABASE_URL", "RPC_HOST", "RPC_PORT", "RPC_USER", "RPC_PASSWORD")):
         raise CanonicalRootEntitlementRefreshRunnerUnavailable()
     from app.database import get_session, init_database
     from app.services.canonical_admission_edge_storage import SqlAlchemyCanonicalAdmissionEdgeRepository
     from app.services.canonical_covenant_funding_set_storage import SqlAlchemyCanonicalCovenantFundingSetRepository
     from app.services.canonical_genesis_record_storage import SqlAlchemyCanonicalGenesisRecordRepository
-    from app.services.canonical_root_registration_binding_storage import SqlAlchemyCanonicalRootRegistrationBindingRepository
+    from app.services.canonical_root_registration_binding_storage import (
+        SqlAlchemyCanonicalRootRegistrationBindingRepository,
+    )
     from app.services.trusted_covenant_registration_storage import SqlAlchemyTrustedCovenantRegistrationRepository
     from app.utils import get_rpc_connection
 
@@ -367,15 +382,18 @@ def _runtime_dependencies(mode: CanonicalRootEntitlementRefreshMode) -> dict[str
     binding = SqlAlchemyCanonicalRootRegistrationBindingRepository(
         get_session, genesis_repository=genesis, trusted_registration_repository=trusted
     )
-    funding = SqlAlchemyCanonicalCovenantFundingSetRepository(
-        get_session, trusted_registration_repository=trusted
+    funding = SqlAlchemyCanonicalCovenantFundingSetRepository(get_session, trusted_registration_repository=trusted)
+    dependencies = dict(
+        genesis_repository=genesis,
+        admission_edge_repository=admission,
+        root_registration_binding_repository=binding,
+        trusted_registration_repository=trusted,
+        funding_set_repository=funding,
+        rpc_factory=get_rpc_connection,
     )
-    dependencies = dict(genesis_repository=genesis, admission_edge_repository=admission,
-                root_registration_binding_repository=binding,
-                trusted_registration_repository=trusted, funding_set_repository=funding,
-                rpc_factory=get_rpc_connection)
     if mode is CanonicalRootEntitlementRefreshMode.COMMIT:
         from app.services.current_entitlement_evidence_storage import SqlAlchemyCurrentEntitlementEvidenceRepository
+
         dependencies["evidence_repository"] = SqlAlchemyCurrentEntitlementEvidenceRepository(get_session)
     return dependencies
 
@@ -392,6 +410,7 @@ def execute_request(
     try:
         dependencies = dependency_factory(request.mode)
         from app.services.canonical_root_entitlement_refresh import refresh_canonical_root_entitlement
+
         kwargs = dict(evaluated_at=clock(), mode=request.mode, **dependencies)
         if commit:
             guard = LinuxSubjectFileExecutionGuard(request.lock_directory)  # type: ignore[arg-type]
@@ -420,7 +439,11 @@ def execute_request(
     return payload
 
 
-def run(argv: Sequence[str], *, dependency_factory: Callable[[CanonicalRootEntitlementRefreshMode], dict[str, object]] = _runtime_dependencies) -> str:
+def run(
+    argv: Sequence[str],
+    *,
+    dependency_factory: Callable[[CanonicalRootEntitlementRefreshMode], dict[str, object]] = _runtime_dependencies,
+) -> str:
     request = parse_runner_argv(argv)
     payload = execute_request(request, dependency_factory=dependency_factory)
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)

@@ -393,7 +393,10 @@ def authorize():
             )
             user_pubkey = admitted.subject
         except Exception:
-            return jsonify({"error": "access_denied", "error_description": "Authenticated session is not eligible"}), 403
+            return (
+                jsonify({"error": "access_denied", "error_description": "Authenticated session is not eligible"}),
+                403,
+            )
 
         # Generate authorization code
         auth_code = secrets.token_urlsafe(32)

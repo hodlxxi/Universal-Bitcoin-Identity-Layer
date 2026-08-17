@@ -30,14 +30,25 @@ def _legacy(token=None, *, metadata=None, expires=None):
     token = token or f"opaque-token-{suffix}"
     store_oauth_client(
         client_id,
-        {"client_secret": "secret", "client_name": "Legacy", "redirect_uris": ["https://example.test/cb"],
-         "grant_types": ["authorization_code"], "response_types": ["code"], "scope": "read_limited"},
+        {
+            "client_secret": "secret",
+            "client_name": "Legacy",
+            "redirect_uris": ["https://example.test/cb"],
+            "grant_types": ["authorization_code"],
+            "response_types": ["code"],
+            "scope": "read_limited",
+        },
     )
     store_oauth_token(
         token_id,
-        {"access_token": token, "client_id": client_id, "user_id": user_id, "scope": "read_limited",
-         "access_token_expires_at": (expires or datetime.utcnow() + timedelta(hours=1)).isoformat(),
-         "metadata": metadata},
+        {
+            "access_token": token,
+            "client_id": client_id,
+            "user_id": user_id,
+            "scope": "read_limited",
+            "access_token_expires_at": (expires or datetime.utcnow() + timedelta(hours=1)).isoformat(),
+            "metadata": metadata,
+        },
     )
     return user_id, token_id, token
 
@@ -102,7 +113,6 @@ def test_expired_revoked_and_inactive_users_fail_closed(legacy_app):
     assert app.test_client().get("/test/legacy", headers={"Authorization": f"Bearer {revoked}"}).status_code == 401
 
 
-
 def test_missing_user_fails_closed_through_actual_decorator(legacy_app, monkeypatch):
     app = legacy_app
     monkeypatch.setattr(
@@ -110,16 +120,19 @@ def test_missing_user_fails_closed_through_actual_decorator(legacy_app, monkeypa
         lambda _token: {"user_id": "missing-user", "scope": "read_limited", "client_id": "legacy-client"},
     )
     monkeypatch.setattr("app.oauth_utils.get_user_by_id", lambda _user_id: None)
-    assert app.test_client().get(
-        "/test/legacy", headers={"Authorization": "Bearer opaque-missing-user"}
-    ).status_code == 401
+    assert (
+        app.test_client().get("/test/legacy", headers={"Authorization": "Bearer opaque-missing-user"}).status_code
+        == 401
+    )
 
 
 def test_canonical_records_never_authenticate_as_opaque(legacy_app):
     app = legacy_app
-    cases = [("d" * 64, {"token_contract": "hodlxxi.oauth.access-token.v1"}),
-             ("canonical-metadata", {"token_use": "access"}),
-             ("canonical-digest", {"digest_algorithm": "sha256"})]
+    cases = [
+        ("d" * 64, {"token_contract": "hodlxxi.oauth.access-token.v1"}),
+        ("canonical-metadata", {"token_use": "access"}),
+        ("canonical-digest", {"digest_algorithm": "sha256"}),
+    ]
     for credential, metadata in cases:
         _legacy(credential, metadata=metadata)
         response = app.test_client().get("/test/legacy", headers={"Authorization": f"Bearer {credential}"})
@@ -131,25 +144,21 @@ def test_valid_or_invalid_signature_jwt_shape_never_enters_opaque_lookup(legacy_
     monkeypatch.setattr("app.oauth_utils.get_oauth_token", lambda token: get_oauth_token(token))
     for credential in ("abc.def.ghi", "eyJhbGciOiJSUzI1NiJ9.e30.signature"):
         _legacy(credential)
-        assert app.test_client().get(
-            "/test/legacy", headers={"Authorization": f"Bearer {credential}"}
-        ).status_code == 401
+        assert (
+            app.test_client().get("/test/legacy", headers={"Authorization": f"Bearer {credential}"}).status_code == 401
+        )
 
 
 def test_database_failure_fails_closed(legacy_app, monkeypatch):
     app = legacy_app
     monkeypatch.setattr("app.oauth_utils.get_oauth_token", lambda _token: (_ for _ in ()).throw(RuntimeError()))
-    assert app.test_client().get(
-        "/test/legacy", headers={"Authorization": "Bearer opaque"}
-    ).status_code == 401
+    assert app.test_client().get("/test/legacy", headers={"Authorization": "Bearer opaque"}).status_code == 401
     monkeypatch.setattr(
         "app.oauth_utils.get_oauth_token",
         lambda _token: {"user_id": "user", "scope": "read_limited", "client_id": "client"},
     )
     monkeypatch.setattr("app.oauth_utils.get_user_by_id", lambda _user_id: (_ for _ in ()).throw(RuntimeError()))
-    assert app.test_client().get(
-        "/test/legacy", headers={"Authorization": "Bearer opaque"}
-    ).status_code == 401
+    assert app.test_client().get("/test/legacy", headers={"Authorization": "Bearer opaque"}).status_code == 401
 
 
 def test_insufficient_scope_does_not_disclose_provided_scopes(legacy_app):

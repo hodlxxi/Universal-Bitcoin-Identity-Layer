@@ -14,7 +14,6 @@ from app.services.canonical_crt_authorization_proof_publication import (
     reference_artifact_bytes,
 )
 
-
 IDS = ("depth-3-full", "e923-full", "unknown-ordinary-limited")
 
 
@@ -22,16 +21,12 @@ def test_discovery_catalog_and_agent_discovery(client):
     discovery = client.get("/.well-known/crt-authorization-proof.json")
     assert discovery.status_code == 200
     assert discovery.get_json()["publication_mode"] == "reference_artifacts_only"
-    assert discovery.get_json()["explicit_non_claims"] == list(
-        PUBLICATION_NON_CLAIMS
-    )
+    assert discovery.get_json()["explicit_non_claims"] == list(PUBLICATION_NON_CLAIMS)
     assert len(discovery.get_json()["explicit_non_claims"]) == 17
     catalog = client.get("/agent/crt/authorization-proofs")
     assert catalog.status_code == 200
     assert [x["artifact_id"] for x in catalog.get_json()["artifacts"]] == list(IDS)
-    assert catalog.get_json() == client.get(
-        "/agent/crt/authorization-proofs"
-    ).get_json()
+    assert catalog.get_json() == client.get("/agent/crt/authorization-proofs").get_json()
     agent = client.get("/agent/discovery").get_json()
     block = agent["crt_authorization_proof"]
     assert block["status"] == "IMPLEMENTED_SOURCE_ONLY"
@@ -42,27 +37,26 @@ def test_discovery_catalog_and_agent_discovery(client):
 
 @pytest.mark.parametrize("artifact_id", IDS)
 def test_exact_artifact_download_with_safe_headers(client, artifact_id):
-    response = client.get(
-        f"/agent/crt/authorization-proofs/{artifact_id}.json"
-    )
+    response = client.get(f"/agent/crt/authorization-proofs/{artifact_id}.json")
     assert response.status_code == 200
     assert response.data == reference_artifact_bytes(artifact_id)
     assert response.mimetype == "application/json"
     assert response.headers["ETag"] == f'"{sha256(response.data).hexdigest()}"'
-    assert response.headers["Content-Disposition"] == (
-        f'inline; filename="{artifact_id}.json"'
-    )
+    assert response.headers["Content-Disposition"] == (f'inline; filename="{artifact_id}.json"')
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert "immutable" in response.headers["Cache-Control"]
 
 
-@pytest.mark.parametrize("path", (
-    "/agent/crt/authorization-proofs/nope.json",
-    "/agent/crt/authorization-proofs/E923-full.json",
-    "/agent/crt/authorization-proofs/e923-full.txt",
-    "/agent/crt/authorization-proofs/%2e%2e%2fe923-full.json",
-    "/agent/crt/authorization-proofs/%2Fe923-full.json",
-))
+@pytest.mark.parametrize(
+    "path",
+    (
+        "/agent/crt/authorization-proofs/nope.json",
+        "/agent/crt/authorization-proofs/E923-full.json",
+        "/agent/crt/authorization-proofs/e923-full.txt",
+        "/agent/crt/authorization-proofs/%2e%2e%2fe923-full.json",
+        "/agent/crt/authorization-proofs/%2Fe923-full.json",
+    ),
+)
 def test_unknown_malformed_and_traversal_ids_are_404(client, path):
     assert client.get(path).status_code == 404
 
@@ -85,8 +79,10 @@ def test_valid_verification_is_stable_and_non_claiming(client):
     assert body["schema"] == VERIFICATION_RESULT_SCHEMA
     assert body["valid"] is True
     for field in (
-        "authenticity_verified", "currentness_verified",
-        "live_evidence_verified", "runtime_authorization_granted",
+        "authenticity_verified",
+        "currentness_verified",
+        "live_evidence_verified",
+        "runtime_authorization_granted",
     ):
         assert body[field] is False
     proof = parse_canonical_crt_authorization_proof(raw)
@@ -96,7 +92,8 @@ def test_valid_verification_is_stable_and_non_claiming(client):
 
 @pytest.mark.parametrize("artifact_id", IDS)
 def test_all_artifacts_and_verification_preserve_proof_non_claims(
-    client, artifact_id,
+    client,
+    artifact_id,
 ):
     raw = reference_artifact_bytes(artifact_id)
     proof = parse_canonical_crt_authorization_proof(raw)
@@ -120,16 +117,27 @@ def _raw_data():
 
 
 def _canonical(data):
-    return json.dumps(
-        data, sort_keys=True, separators=(",", ":"), allow_nan=True
-    ).encode("ascii")
+    return json.dumps(data, sort_keys=True, separators=(",", ":"), allow_nan=True).encode("ascii")
 
 
-@pytest.mark.parametrize("mutation", (
-    "extra", "missing", "float", "boolean", "nan", "infinity", "offset",
-    "microseconds", "source_digest", "conclusion", "basis", "explanation",
-    "noncanonical",
-))
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "extra",
+        "missing",
+        "float",
+        "boolean",
+        "nan",
+        "infinity",
+        "offset",
+        "microseconds",
+        "source_digest",
+        "conclusion",
+        "basis",
+        "explanation",
+        "noncanonical",
+    ),
+)
 def test_adversarial_noncanonical_matrix_fails_closed(client, mutation):
     data = _raw_data()
     if mutation == "extra":
@@ -161,7 +169,8 @@ def test_adversarial_noncanonical_matrix_fails_closed(client, mutation):
             dict(reversed(tuple(data.items()))),
             separators=(",", ":"),
         ).encode()
-        if mutation == "noncanonical" else _canonical(data)
+        if mutation == "noncanonical"
+        else _canonical(data)
     )
     response = client.post(
         "/agent/crt/authorization-proofs/verify",
@@ -200,19 +209,20 @@ def test_size_empty_and_media_type_boundaries(client):
     endpoint = "/agent/crt/authorization-proofs/verify"
     assert client.post(endpoint, data=b"", content_type="application/json").status_code == 400
     assert client.post(endpoint, data=b"{}", content_type="text/plain").status_code == 415
-    assert client.post(
-        endpoint,
-        data=b"x" * (MAX_VERIFICATION_BODY_SIZE + 1),
-        content_type="application/json",
-    ).status_code == 413
+    assert (
+        client.post(
+            endpoint,
+            data=b"x" * (MAX_VERIFICATION_BODY_SIZE + 1),
+            content_type="application/json",
+        ).status_code
+        == 413
+    )
 
 
 def test_get_routes_do_not_modify_artifacts(client):
     from pathlib import Path
-    directory = (
-        Path(__file__).parents[2] / "app/public_artifacts"
-        / "canonical_crt_authorization_proof/v1"
-    )
+
+    directory = Path(__file__).parents[2] / "app/public_artifacts" / "canonical_crt_authorization_proof/v1"
     before = {p.name: (p.stat().st_mtime_ns, p.read_bytes()) for p in directory.iterdir()}
     client.get("/.well-known/crt-authorization-proof.json")
     client.get("/agent/crt/authorization-proofs")
@@ -223,7 +233,8 @@ def test_get_routes_do_not_modify_artifacts(client):
 
 
 def test_routes_are_isolated_from_database_rpc_network_and_writes(
-    client, monkeypatch,
+    client,
+    monkeypatch,
 ):
     def forbidden(*args, **kwargs):
         raise AssertionError("forbidden runtime dependency called")
@@ -239,15 +250,14 @@ def test_routes_are_isolated_from_database_rpc_network_and_writes(
     monkeypatch.setattr(Path, "write_bytes", forbidden)
     monkeypatch.setattr(Path, "write_text", forbidden)
 
-    assert client.get(
-        "/.well-known/crt-authorization-proof.json"
-    ).status_code == 200
+    assert client.get("/.well-known/crt-authorization-proof.json").status_code == 200
     assert client.get("/agent/crt/authorization-proofs").status_code == 200
-    assert client.get(
-        "/agent/crt/authorization-proofs/e923-full.json"
-    ).status_code == 200
-    assert client.post(
-        "/agent/crt/authorization-proofs/verify",
-        data=reference_artifact_bytes("e923-full"),
-        content_type="application/json",
-    ).status_code == 200
+    assert client.get("/agent/crt/authorization-proofs/e923-full.json").status_code == 200
+    assert (
+        client.post(
+            "/agent/crt/authorization-proofs/verify",
+            data=reference_artifact_bytes("e923-full"),
+            content_type="application/json",
+        ).status_code
+        == 200
+    )

@@ -263,8 +263,7 @@ class SqlAlchemyCanonicalRootRegistrationBindingRepository:
             (
                 CanonicalRootRegistrationBindingRow.graph_or_protocol_id == graph_or_protocol_id,
                 CanonicalRootRegistrationBindingRow.root_x_only_public_key == _subject(root_x_only_public_key),
-                CanonicalRootRegistrationBindingRow.lifecycle_state
-                == RootRegistrationBindingLifecycle.EFFECTIVE.value,
+                CanonicalRootRegistrationBindingRow.lifecycle_state == RootRegistrationBindingLifecycle.EFFECTIVE.value,
             )
         )
         if len(rows) != 1:

@@ -23,7 +23,9 @@ def test_in_memory_sqlalchemy_exact_read_only_resolution():
     genesis_repository = SqlAlchemyCanonicalGenesisRecordRepository(factory)
     edge_repository = SqlAlchemyCanonicalAdmissionEdgeRepository(factory)
     registration_repository = SqlAlchemyTrustedCovenantRegistrationRepository(factory)
-    genesis_record = parse_canonical_genesis_record(Path("docs/data/e923_canonical_genesis_record_v1.json").read_bytes())
+    genesis_record = parse_canonical_genesis_record(
+        Path("docs/data/e923_canonical_genesis_record_v1.json").read_bytes()
+    )
     registration_record = registration()
     edge_record = edge(registration_record)
     genesis_repository.append(genesis_record)

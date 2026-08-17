@@ -17,9 +17,7 @@ from tests.unit.test_canonical_genesis_record import record
 
 def test_genesis_evaluation_canonical_identity_and_pinned_digest():
     item = record()
-    result = evaluate_canonical_genesis(
-        (item,), graph_or_protocol_id=GRAPH_ID, evaluated_at=item.effective_at
-    )
+    result = evaluate_canonical_genesis((item,), graph_or_protocol_id=GRAPH_ID, evaluated_at=item.effective_at)
     encoded = canonical_genesis_evaluation_bytes(result)
     assert parse_canonical_genesis_evaluation(encoded) == result
     assert canonical_genesis_evaluation_sha256(result) == (
@@ -30,9 +28,7 @@ def test_genesis_evaluation_canonical_identity_and_pinned_digest():
 @pytest.mark.parametrize("mutation", ("duplicate", "extra", "missing", "float", "nan", "enum", "time"))
 def test_genesis_evaluation_parser_is_strict(mutation):
     item = record()
-    result = evaluate_canonical_genesis(
-        (item,), graph_or_protocol_id=GRAPH_ID, evaluated_at=item.effective_at
-    )
+    result = evaluate_canonical_genesis((item,), graph_or_protocol_id=GRAPH_ID, evaluated_at=item.effective_at)
     text = canonical_genesis_evaluation_bytes(result).decode("ascii")
     data = json.loads(text)
     if mutation == "duplicate":
@@ -69,41 +65,37 @@ def test_genesis_evaluation_parser_is_strict(mutation):
 )
 def test_all_five_genesis_evaluation_states_round_trip(state, reason):
     item = record()
-    active = evaluate_canonical_genesis(
-        (item,), graph_or_protocol_id=GRAPH_ID, evaluated_at=item.effective_at
-    )
+    active = evaluate_canonical_genesis((item,), graph_or_protocol_id=GRAPH_ID, evaluated_at=item.effective_at)
     value = replace(
         active,
         state=state,
         reason_code=reason,
         selected_effective_record_id=(
-            active.selected_effective_record_id
-            if state is CanonicalGenesisEvaluationState.GENESIS_ACTIVE
-            else None
+            active.selected_effective_record_id if state is CanonicalGenesisEvaluationState.GENESIS_ACTIVE else None
         ),
         selected_effective_record_sha256=(
-            active.selected_effective_record_sha256
-            if state is CanonicalGenesisEvaluationState.GENESIS_ACTIVE
-            else None
+            active.selected_effective_record_sha256 if state is CanonicalGenesisEvaluationState.GENESIS_ACTIVE else None
         ),
     )
-    assert parse_canonical_genesis_evaluation(
-        canonical_genesis_evaluation_bytes(value)
-    ) == value
+    assert parse_canonical_genesis_evaluation(canonical_genesis_evaluation_bytes(value)) == value
 
 
 @pytest.mark.parametrize(
     "mutation",
     (
-        "infinity", "microseconds", "uppercase_uuid", "uppercase_digest",
-        "unsorted", "duplicate_record", "partial_selected", "state_reason",
+        "infinity",
+        "microseconds",
+        "uppercase_uuid",
+        "uppercase_digest",
+        "unsorted",
+        "duplicate_record",
+        "partial_selected",
+        "state_reason",
     ),
 )
 def test_genesis_evaluation_complete_adversarial_matrix(mutation):
     item = record()
-    active = evaluate_canonical_genesis(
-        (item,), graph_or_protocol_id=GRAPH_ID, evaluated_at=item.effective_at
-    )
+    active = evaluate_canonical_genesis((item,), graph_or_protocol_id=GRAPH_ID, evaluated_at=item.effective_at)
     if mutation == "unsorted":
         active = replace(
             active,
@@ -111,9 +103,9 @@ def test_genesis_evaluation_complete_adversarial_matrix(mutation):
             reason_code="controlling_dispute",
             selected_effective_record_id=None,
             selected_effective_record_sha256=None,
-            relevant_records=tuple(sorted(active.relevant_records + (
-                ("00000000-0000-4000-8000-000000000099", "9" * 64),
-            ))),
+            relevant_records=tuple(
+                sorted(active.relevant_records + (("00000000-0000-4000-8000-000000000099", "9" * 64),))
+            ),
         )
     data = json.loads(canonical_genesis_evaluation_bytes(active))
     if mutation == "infinity":

@@ -2,7 +2,6 @@ import json
 import re
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 JP = ROOT / "docs/data/production_compatibility_inventory_v1.json"
 DP = ROOT / "docs/PRODUCTION_COMPATIBILITY_INVENTORY_V1.md"
@@ -26,42 +25,24 @@ REQUIRED_GROUPS = {
 }
 
 REQUIRED_BLOCKERS = {
-    "PRODUCTION_SCHEMA_TRUTH_UNKNOWN":
-        "REQUIRES_READ_ONLY_DATABASE_METADATA_AUDIT",
-    "MIGRATION_LEDGER_TRUTH_UNKNOWN":
-        "REQUIRES_READ_ONLY_DATABASE_METADATA_AUDIT",
-    "MIGRATION_REHEARSAL_ABSENT":
-        "REQUIRES_SANITIZED_REHEARSAL",
-    "ROLLBACK_SQL_ABSENT_OR_INCOMPLETE":
-        "OPERATOR_DECISION_REQUIRED",
-    "OLD_CODE_NEW_SCHEMA_COMPATIBILITY":
-        "REQUIRES_SANITIZED_REHEARSAL",
-    "NEW_CODE_OLD_SCHEMA_COMPATIBILITY":
-        "REQUIRES_SANITIZED_REHEARSAL",
-    "UNIQUENESS_FK_CONFLICT_RISK":
-        "REQUIRES_READ_ONLY_DATABASE_METADATA_AUDIT",
-    "POSTGRESQL_LOCK_DURATION_RISK":
-        "REQUIRES_SANITIZED_REHEARSAL",
-    "BACKUP_RESTORE_REHEARSAL":
-        "REQUIRES_SANITIZED_REHEARSAL",
-    "STAGING_RUNTIME_NOT_PROVEN_BY_REPOSITORY":
-        "REQUIRES_READ_ONLY_HOST_AUDIT",
-    "OAUTH_OIDC_JWT_COMPATIBILITY":
-        "REQUIRES_SANITIZED_REHEARSAL",
-    "APPLICATION_STARTUP_IMPORT_COMPATIBILITY":
-        "REQUIRES_SANITIZED_REHEARSAL",
-    "FEATURE_FLAG_AND_ROLLBACK_CONTROLS":
-        "OPERATOR_DECISION_REQUIRED",
-    "SHADOW_COMPARISON_NOT_IMPLEMENTED":
-        "DEFERRED",
-    "CANONICAL_ENTITLEMENT_NOT_IMPLEMENTED":
-        "DEFERRED",
-    "PRODUCTION_BITCOIN_RPC_ORCHESTRATION_NOT_IMPLEMENTED":
-        "DEFERRED",
-    "LEGACY_BALANCE_TO_FULL_ACTIVE":
-        "VERIFIED_FROM_REPOSITORY",
-    "SIGNED_PORTABLE_AUTHORITY_AND_FEDERATION_DEFERRED":
-        "DEFERRED",
+    "PRODUCTION_SCHEMA_TRUTH_UNKNOWN": "REQUIRES_READ_ONLY_DATABASE_METADATA_AUDIT",
+    "MIGRATION_LEDGER_TRUTH_UNKNOWN": "REQUIRES_READ_ONLY_DATABASE_METADATA_AUDIT",
+    "MIGRATION_REHEARSAL_ABSENT": "REQUIRES_SANITIZED_REHEARSAL",
+    "ROLLBACK_SQL_ABSENT_OR_INCOMPLETE": "OPERATOR_DECISION_REQUIRED",
+    "OLD_CODE_NEW_SCHEMA_COMPATIBILITY": "REQUIRES_SANITIZED_REHEARSAL",
+    "NEW_CODE_OLD_SCHEMA_COMPATIBILITY": "REQUIRES_SANITIZED_REHEARSAL",
+    "UNIQUENESS_FK_CONFLICT_RISK": "REQUIRES_READ_ONLY_DATABASE_METADATA_AUDIT",
+    "POSTGRESQL_LOCK_DURATION_RISK": "REQUIRES_SANITIZED_REHEARSAL",
+    "BACKUP_RESTORE_REHEARSAL": "REQUIRES_SANITIZED_REHEARSAL",
+    "STAGING_RUNTIME_NOT_PROVEN_BY_REPOSITORY": "REQUIRES_READ_ONLY_HOST_AUDIT",
+    "OAUTH_OIDC_JWT_COMPATIBILITY": "REQUIRES_SANITIZED_REHEARSAL",
+    "APPLICATION_STARTUP_IMPORT_COMPATIBILITY": "REQUIRES_SANITIZED_REHEARSAL",
+    "FEATURE_FLAG_AND_ROLLBACK_CONTROLS": "OPERATOR_DECISION_REQUIRED",
+    "SHADOW_COMPARISON_NOT_IMPLEMENTED": "DEFERRED",
+    "CANONICAL_ENTITLEMENT_NOT_IMPLEMENTED": "DEFERRED",
+    "PRODUCTION_BITCOIN_RPC_ORCHESTRATION_NOT_IMPLEMENTED": "DEFERRED",
+    "LEGACY_BALANCE_TO_FULL_ACTIVE": "VERIFIED_FROM_REPOSITORY",
+    "SIGNED_PORTABLE_AUTHORITY_AND_FEDERATION_DEFERRED": "DEFERRED",
 }
 
 REQUIRED_DECISIONS = [
@@ -127,9 +108,7 @@ def data():
 def test_basis_schema_counts_and_json():
     value = data()
 
-    assert value["schema"] == (
-        "hodlxxi.production_compatibility_inventory.v1"
-    )
+    assert value["schema"] == ("hodlxxi.production_compatibility_inventory.v1")
     assert value["inventory_version"] == "1"
 
     assert (
@@ -184,10 +163,7 @@ def test_exact_migrations_once():
     }
 
     assert all(set(item) == required_fields for item in migrations)
-    assert all(
-        item["rehearsal_status"] == "NOT_PROVEN_FROM_REPOSITORY"
-        for item in migrations
-    )
+    assert all(item["rehearsal_status"] == "NOT_PROVEN_FROM_REPOSITORY" for item in migrations)
 
 
 def test_groups_trains_blockers_and_decisions_are_exact():
@@ -211,15 +187,10 @@ def test_groups_trains_blockers_and_decisions_are_exact():
         "rollback_boundary",
         "explicit_non_claims",
     }
-    assert all(
-        set(item) == required_group_fields
-        for item in value["component_groups"]
-    )
+    assert all(set(item) == required_group_fields for item in value["component_groups"])
 
     trains = value["release_trains"]
-    assert [item["id"] for item in trains] == [
-        f"TRAIN_{number}" for number in range(11)
-    ]
+    assert [item["id"] for item in trains] == [f"TRAIN_{number}" for number in range(11)]
     assert [item["order"] for item in trains] == list(range(11))
 
     required_train_fields = {
@@ -238,10 +209,7 @@ def test_groups_trains_blockers_and_decisions_are_exact():
     }
     assert all(set(item) == required_train_fields for item in trains)
 
-    blockers = {
-        item["id"]: item["status"]
-        for item in value["production_blockers"]
-    }
+    blockers = {item["id"]: item["status"] for item in value["production_blockers"]}
     assert blockers == REQUIRED_BLOCKERS
     assert value["operator_decisions"] == REQUIRED_DECISIONS
 
@@ -276,22 +244,15 @@ def test_document_terms_compass_readme_and_basis():
     assert "PRODUCTION_COMPATIBILITY_INVENTORY_V1.md" in readme
 
     groups = {item["id"]: item for item in value["component_groups"]}
-    assert groups["ACTIVE_RUNTIME_COMPATIBILITY"][
-        "current_staging_status"
-    ].startswith("ACTIVE_")
-    assert groups["DORMANT_CRT_DOMAIN"][
-        "current_staging_status"
-    ].startswith("IMPLEMENTED_DORMANT")
-    assert "NOT_DEPLOYED" in groups["READ_ONLY_PROOF_SURFACE"][
-        "production_status"
-    ]
+    assert groups["ACTIVE_RUNTIME_COMPATIBILITY"]["current_staging_status"].startswith("ACTIVE_")
+    assert groups["DORMANT_CRT_DOMAIN"]["current_staging_status"].startswith("IMPLEMENTED_DORMANT")
+    assert "NOT_DEPLOYED" in groups["READ_ONLY_PROOF_SURFACE"]["production_status"]
 
 
 def test_no_secret_fields_or_nondeterministic_timestamp():
     value = data()
     forbidden = re.compile(
-        r"(^|_)(password|secret|private_key|macaroon|credential|"
-        r"token_value|wallet_seed)($|_)",
+        r"(^|_)(password|secret|private_key|macaroon|credential|" r"token_value|wallet_seed)($|_)",
         re.IGNORECASE,
     )
 

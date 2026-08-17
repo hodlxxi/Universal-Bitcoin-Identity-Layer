@@ -33,9 +33,7 @@ def test_migration_has_normalized_tables_constraints_and_indexes():
         "ck_trusted_outpoint_witness_script_hash",
     )
     assert all(value in SQL for value in required_names)
-    pair_declaration = next(
-        line.strip() for line in SQL.splitlines() if line.strip().startswith("pair_sha256 ")
-    )
+    pair_declaration = next(line.strip() for line in SQL.splitlines() if line.strip().startswith("pair_sha256 "))
     assert pair_declaration == "pair_sha256 VARCHAR(64) NOT NULL,"
     assert "CREATE INDEX IF NOT EXISTS idx_trusted_registration_pair" in SQL
     assert "CREATE UNIQUE INDEX IF NOT EXISTS idx_trusted_registration_pair" not in SQL
@@ -43,4 +41,6 @@ def test_migration_has_normalized_tables_constraints_and_indexes():
 
 def test_migration_contains_no_runtime_or_destructive_commands():
     lowered = SQL.lower()
-    assert all(value not in lowered for value in ("drop table", "truncate", "delete from", "systemctl", "docker", "curl "))
+    assert all(
+        value not in lowered for value in ("drop table", "truncate", "delete from", "systemctl", "docker", "curl ")
+    )

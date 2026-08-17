@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[2]
 JSON_PATH = ROOT / "docs/data/production_host_database_metadata_audit_v1.json"
 DOC_PATH = ROOT / "docs/PRODUCTION_HOST_DATABASE_METADATA_AUDIT_V1.md"
@@ -23,19 +22,33 @@ MIGRATIONS = [
     "migrations/2026-07-26_canonical_e923_genesis_record_v1.sql",
 ]
 BLOCKERS = [
-    "PRODUCTION_SCHEMA_TRUTH_UNKNOWN", "MIGRATION_LEDGER_TRUTH_UNKNOWN",
-    "MIGRATION_REHEARSAL_ABSENT", "ROLLBACK_SQL_ABSENT_OR_INCOMPLETE",
-    "OLD_CODE_NEW_SCHEMA_COMPATIBILITY", "NEW_CODE_OLD_SCHEMA_COMPATIBILITY",
-    "UNIQUENESS_FK_CONFLICT_RISK", "POSTGRESQL_LOCK_DURATION_RISK",
-    "BACKUP_RESTORE_REHEARSAL", "STAGING_RUNTIME_NOT_PROVEN_BY_REPOSITORY",
-    "OAUTH_OIDC_JWT_COMPATIBILITY", "APPLICATION_STARTUP_IMPORT_COMPATIBILITY",
-    "FEATURE_FLAG_AND_ROLLBACK_CONTROLS", "SHADOW_COMPARISON_NOT_IMPLEMENTED",
+    "PRODUCTION_SCHEMA_TRUTH_UNKNOWN",
+    "MIGRATION_LEDGER_TRUTH_UNKNOWN",
+    "MIGRATION_REHEARSAL_ABSENT",
+    "ROLLBACK_SQL_ABSENT_OR_INCOMPLETE",
+    "OLD_CODE_NEW_SCHEMA_COMPATIBILITY",
+    "NEW_CODE_OLD_SCHEMA_COMPATIBILITY",
+    "UNIQUENESS_FK_CONFLICT_RISK",
+    "POSTGRESQL_LOCK_DURATION_RISK",
+    "BACKUP_RESTORE_REHEARSAL",
+    "STAGING_RUNTIME_NOT_PROVEN_BY_REPOSITORY",
+    "OAUTH_OIDC_JWT_COMPATIBILITY",
+    "APPLICATION_STARTUP_IMPORT_COMPATIBILITY",
+    "FEATURE_FLAG_AND_ROLLBACK_CONTROLS",
+    "SHADOW_COMPARISON_NOT_IMPLEMENTED",
     "CANONICAL_ENTITLEMENT_NOT_IMPLEMENTED",
     "PRODUCTION_BITCOIN_RPC_ORCHESTRATION_NOT_IMPLEMENTED",
     "LEGACY_BALANCE_TO_FULL_ACTIVE",
     "SIGNED_PORTABLE_AUTHORITY_AND_FEDERATION_DEFERRED",
 ]
-DISPOSITIONS = {"RESOLVED_BY_HOST_METADATA", "RESOLVED_BY_DATABASE_CATALOG", "PARTIALLY_RESOLVED", "STILL_BLOCKED", "DEFERRED", "OPERATOR_DECISION_REQUIRED"}
+DISPOSITIONS = {
+    "RESOLVED_BY_HOST_METADATA",
+    "RESOLVED_BY_DATABASE_CATALOG",
+    "PARTIALLY_RESOLVED",
+    "STILL_BLOCKED",
+    "DEFERRED",
+    "OPERATOR_DECISION_REQUIRED",
+}
 EXPECTED_BLOCKER_STATUSES = [
     "PARTIALLY_RESOLVED",
     "PARTIALLY_RESOLVED",
@@ -57,16 +70,33 @@ EXPECTED_BLOCKER_STATUSES = [
     "DEFERRED",
 ]
 NON_CLAIMS = [
-    "no deployment approval", "no deployment performed", "no migration applied",
-    "no migration rehearsal", "no database write", "no application-row inspection",
-    "no production data export", "no environment value inspection", "no secret inspection",
-    "no credential inspection", "no service restart", "no runtime configuration change",
-    "no route change", "no authentication behavior change", "no authorization behavior change",
-    "no Bitcoin RPC call", "no LND call", "no wallet operation",
-    "no backup proof from tooling presence", "no restore proof",
-    "no startup compatibility proof", "no OAuth/OIDC/JWT compatibility proof",
-    "no production readiness claim", "no legacy cutover", "no proof signing",
-    "no portable authority", "no federation or replication",
+    "no deployment approval",
+    "no deployment performed",
+    "no migration applied",
+    "no migration rehearsal",
+    "no database write",
+    "no application-row inspection",
+    "no production data export",
+    "no environment value inspection",
+    "no secret inspection",
+    "no credential inspection",
+    "no service restart",
+    "no runtime configuration change",
+    "no route change",
+    "no authentication behavior change",
+    "no authorization behavior change",
+    "no Bitcoin RPC call",
+    "no LND call",
+    "no wallet operation",
+    "no backup proof from tooling presence",
+    "no restore proof",
+    "no startup compatibility proof",
+    "no OAuth/OIDC/JWT compatibility proof",
+    "no production readiness claim",
+    "no legacy cutover",
+    "no proof signing",
+    "no portable authority",
+    "no federation or replication",
 ]
 
 
@@ -112,7 +142,16 @@ def validate(data):
         lowered = path[-1].lower()
         assert lowered not in {"database_name", "dbname", "db_name", "generated_at", "timestamp"}
         assert not lowered.endswith("_timestamp")
-        assert lowered not in {"environment_value", "env_value", "secret", "password", "credential", "token_value", "private_key", "macaroon"}
+        assert lowered not in {
+            "environment_value",
+            "env_value",
+            "secret",
+            "password",
+            "credential",
+            "token_value",
+            "private_key",
+            "macaroon",
+        }
         if isinstance(value, str):
             candidates = re.findall(r"(?<![\w])(?:\d{1,3}\.){3}\d{1,3}(?![\w])", value)
             candidates += re.findall(r"(?<![\w])(?:[0-9A-Fa-f]{0,4}:){2,}[0-9A-Fa-f:%]*(?![\w])", value)
@@ -126,7 +165,10 @@ def validate(data):
     readiness = data["migration_readiness"]
     assert len(readiness) == 7
     assert [item["migration_file"] for item in readiness] == MIGRATIONS
-    assert all(item["status"] in {"PRESENT_COMPATIBLE_NOT_PROVEN", "ABSENT", "PARTIAL_OR_CONFLICT_POSSIBLE", "UNKNOWN"} for item in readiness)
+    assert all(
+        item["status"] in {"PRESENT_COMPATIBLE_NOT_PROVEN", "ABSENT", "PARTIAL_OR_CONFLICT_POSSIBLE", "UNKNOWN"}
+        for item in readiness
+    )
     for item in readiness:
         if item["production_structure_presence"] == "ABSENT":
             assert item["status"] != "PRESENT_COMPATIBLE_NOT_PROVEN"
@@ -138,10 +180,22 @@ def validate(data):
 
     trains = data["release_train_disposition"]
     assert trains == [
-        {"train":"TRAIN_0","status":"COMPLETE","reason":"Repository and metadata inventory complete."},
-        {"train":"TRAIN_1","status":"NOT_RELEASE_APPROVED","reason":"Requires sanitized production-like startup and auth compatibility rehearsal."},
-        {"train":"TRAIN_2","status":"NOT_RELEASE_APPROVED","reason":"Requires migration and backup/restore rehearsals."},
-        {"train":"TRAINS_3_THROUGH_10","status":"DEPENDENT_ON_PR6_21_GATES","reason":"Existing ordered gates remain binding."},
+        {"train": "TRAIN_0", "status": "COMPLETE", "reason": "Repository and metadata inventory complete."},
+        {
+            "train": "TRAIN_1",
+            "status": "NOT_RELEASE_APPROVED",
+            "reason": "Requires sanitized production-like startup and auth compatibility rehearsal.",
+        },
+        {
+            "train": "TRAIN_2",
+            "status": "NOT_RELEASE_APPROVED",
+            "reason": "Requires migration and backup/restore rehearsals.",
+        },
+        {
+            "train": "TRAINS_3_THROUGH_10",
+            "status": "DEPENDENT_ON_PR6_21_GATES",
+            "reason": "Existing ordered gates remain binding.",
+        },
     ]
     assert data["explicit_non_claims"] == NON_CLAIMS
     backup = data["backup_restore"]
@@ -171,11 +225,19 @@ def test_human_contract_and_readme_link():
     assert "PRODUCTION_HOST_DATABASE_METADATA_AUDIT_V1.md" in README_PATH.read_text()
 
 
-@pytest.mark.parametrize("mutation", [
-    "database_name", "ip_literal", "report_sha", "train_1_approved",
-    "missing_migration_compatible", "blocker_resolved", "non_claim_removed",
-    "environment_value",
-])
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "database_name",
+        "ip_literal",
+        "report_sha",
+        "train_1_approved",
+        "missing_migration_compatible",
+        "blocker_resolved",
+        "non_claim_removed",
+        "environment_value",
+    ],
+)
 def test_negative_mutations(mutation):
     data = copy.deepcopy(load())
     if mutation == "database_name":

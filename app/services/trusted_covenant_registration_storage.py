@@ -182,11 +182,7 @@ class SqlAlchemyTrustedCovenantRegistrationRepository:
         registration_id = _canonical_id(registration_id)
         try:
             with self._session_factory() as session:
-                rows = (
-                    session.query(RegistrationRow)
-                    .filter(RegistrationRow.registration_id == registration_id)
-                    .all()
-                )
+                rows = session.query(RegistrationRow).filter(RegistrationRow.registration_id == registration_id).all()
                 if not rows:
                     return None
                 if len(rows) != 1:
@@ -205,9 +201,7 @@ class SqlAlchemyTrustedCovenantRegistrationRepository:
         except Exception:
             raise TrustedCovenantRegistrationStorageError() from None
 
-    def get_active_outpoints(
-        self, registration_id: str
-    ) -> tuple[TrustedCovenantOutpoint, ...] | None:
+    def get_active_outpoints(self, registration_id: str) -> tuple[TrustedCovenantOutpoint, ...] | None:
         registration = self.get(registration_id)
         if registration is None:
             return None

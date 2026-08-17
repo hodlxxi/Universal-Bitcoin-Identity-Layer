@@ -10,7 +10,6 @@ from app.services.canonical_oauth_browser_subject import (
     resolve_oauth_browser_subject,
 )
 
-
 SUBJECT = "a" * 64
 COMPRESSED = "02" + SUBJECT
 USER_ID = "canonical-user"
@@ -46,7 +45,9 @@ def test_persistence_rejects_string_subclasses_and_preserves_interrupts():
     with pytest.raises(ValueError):
         persist_verified_browser_subject(StringLike(COMPRESSED))
     with pytest.raises(KeyboardInterrupt):
-        persist_verified_browser_subject(COMPRESSED, create_user_fn=lambda _: (_ for _ in ()).throw(KeyboardInterrupt()))
+        persist_verified_browser_subject(
+            COMPRESSED, create_user_fn=lambda _: (_ for _ in ()).throw(KeyboardInterrupt())
+        )
     with pytest.raises(SystemExit):
         persist_verified_browser_subject(COMPRESSED, create_user_fn=lambda _: (_ for _ in ()).throw(SystemExit()))
 
@@ -104,7 +105,7 @@ def test_oauth_resolution_rejects_malformed_adapter_and_preserves_interrupts():
 def test_cookie_domain_default_is_host_only_with_explicit_override_support():
     source = inspect.getsource(legacy_app).replace(" ", "")
     assert 'os.getenv("SESSION_COOKIE_DOMAIN")' in source
-    assert 'if_cookie_domain:' in source
+    assert "if_cookie_domain:" in source
     assert 'app.config.setdefault("SESSION_COOKIE_DOMAIN",None)' in source
     assert legacy_app.app.config["SESSION_COOKIE_SECURE"] is True
     assert legacy_app.app.config["SESSION_COOKIE_SAMESITE"] == "Lax"

@@ -32,7 +32,9 @@ def _module(name, path):
     return module
 
 
-registration_fixtures = _module("registration_fixtures_for_root_binding", "tests/unit/test_trusted_covenant_registration.py")
+registration_fixtures = _module(
+    "registration_fixtures_for_root_binding", "tests/unit/test_trusted_covenant_registration.py"
+)
 genesis_fixtures = _module("genesis_fixtures_for_root_binding", "tests/unit/test_canonical_genesis_record.py")
 NOW = datetime(2026, 8, 11, tzinfo=timezone.utc)
 
@@ -71,9 +73,10 @@ def test_exact_round_trip_digest_and_source_validation():
     genesis, registration = sources()
     assert parse_canonical_root_registration_binding(canonical_root_registration_binding_bytes(value)) == value
     assert len(canonical_root_registration_binding_sha256(value)) == 64
-    assert validate_binding_sources(
-        value, genesis_evaluation=genesis, trusted_registration=registration
-    ) == (value, registration)
+    assert validate_binding_sources(value, genesis_evaluation=genesis, trusted_registration=registration) == (
+        value,
+        registration,
+    )
 
 
 @pytest.mark.parametrize(
@@ -131,9 +134,7 @@ def test_construction_rejects_binding_subclasses():
 
     value = binding()
     with pytest.raises(InvalidCanonicalRootRegistrationBinding, match="binding type"):
-        BindingSubclass(
-            *(getattr(value, field) for field in CanonicalRootRegistrationBinding.__dataclass_fields__)
-        )
+        BindingSubclass(*(getattr(value, field) for field in CanonicalRootRegistrationBinding.__dataclass_fields__))
 
 
 @pytest.mark.parametrize("state", tuple(Lifecycle))
@@ -158,9 +159,7 @@ def test_lifecycle_transitions_enforce_identity_and_terminal_states():
     with pytest.raises(InvalidCanonicalRootRegistrationBinding):
         validate_root_registration_binding_transition(revoked, effective)
     with pytest.raises(InvalidCanonicalRootRegistrationBinding):
-        validate_root_registration_binding_transition(
-            proposed, replace(effective, root_x_only_public_key="f" * 64)
-        )
+        validate_root_registration_binding_transition(proposed, replace(effective, root_x_only_public_key="f" * 64))
 
 
 def test_never_effective_proposal_keeps_effective_at_empty_when_deactivated():
@@ -185,9 +184,7 @@ def test_genesis_and_registration_disagreement_fail_closed():
             genesis_evaluation=genesis,
             trusted_registration=registration,
         )
-    inactive = registration_fixtures.registration(
-        state=TrustedCovenantRegistrationLifecycle.REVOKED
-    )
+    inactive = registration_fixtures.registration(state=TrustedCovenantRegistrationLifecycle.REVOKED)
     with pytest.raises(InvalidCanonicalRootRegistrationBinding):
         validate_binding_sources(
             replace(
@@ -207,8 +204,16 @@ def test_genesis_and_registration_disagreement_fail_closed():
 
 def test_contract_has_selection_fields_only():
     assert set(CanonicalRootRegistrationBinding.__dataclass_fields__) == {
-        "schema", "binding_version", "binding_id", "graph_or_protocol_id",
-        "root_x_only_public_key", "trusted_registration_id", "trusted_registration_sha256",
-        "lifecycle_state", "created_at", "lifecycle_changed_at", "effective_at",
+        "schema",
+        "binding_version",
+        "binding_id",
+        "graph_or_protocol_id",
+        "root_x_only_public_key",
+        "trusted_registration_id",
+        "trusted_registration_sha256",
+        "lifecycle_state",
+        "created_at",
+        "lifecycle_changed_at",
+        "effective_at",
         "superseded_by_binding_id",
     }

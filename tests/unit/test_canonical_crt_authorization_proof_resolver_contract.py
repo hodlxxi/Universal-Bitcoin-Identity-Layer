@@ -1,7 +1,6 @@
 import ast
 from pathlib import Path
 
-
 MODULE = Path("app/services/canonical_crt_authorization_proof_resolver.py")
 APPROVED = {
     "app.services.canonical_genesis_record",
@@ -44,9 +43,11 @@ def test_imports_are_only_standard_library_and_approved_domain_modules():
 
 
 def test_authoritative_calls_are_structurally_present_in_order():
-    resolver = next(node for node in _tree().body
-                    if isinstance(node, ast.FunctionDef)
-                    and node.name == "resolve_canonical_crt_authorization_proof_from_snapshot")
+    resolver = next(
+        node
+        for node in _tree().body
+        if isinstance(node, ast.FunctionDef) and node.name == "resolve_canonical_crt_authorization_proof_from_snapshot"
+    )
     calls = [_dotted(node.func) for node in ast.walk(resolver) if isinstance(node, ast.Call)]
     for name in SEQUENCE:
         assert name in calls
@@ -57,18 +58,39 @@ def test_authoritative_calls_are_structurally_present_in_order():
 
 def test_no_dynamic_import_write_publication_or_runtime_adapter_structure():
     forbidden_calls = {
-        "__import__", "compile", "eval", "exec", "open", "setattr", "delattr",
-        "write", "write_text", "write_bytes", "request", "urlopen", "connect",
-        "commit", "flush", "add", "delete",
+        "__import__",
+        "compile",
+        "eval",
+        "exec",
+        "open",
+        "setattr",
+        "delattr",
+        "write",
+        "write_text",
+        "write_bytes",
+        "request",
+        "urlopen",
+        "connect",
+        "commit",
+        "flush",
+        "add",
+        "delete",
     }
-    forbidden_nodes = (ast.AsyncFunctionDef, ast.Await, ast.Yield, ast.YieldFrom,
-                       ast.Delete, ast.Global, ast.Nonlocal)
+    forbidden_nodes = (ast.AsyncFunctionDef, ast.Await, ast.Yield, ast.YieldFrom, ast.Delete, ast.Global, ast.Nonlocal)
     assert not any(isinstance(node, forbidden_nodes) for node in ast.walk(_tree()))
     for node in ast.walk(_tree()):
         if isinstance(node, ast.Call):
             called = _dotted(node.func)
             assert called not in forbidden_calls
             assert called.split(".")[-1] not in {
-                "write", "write_text", "write_bytes", "request", "urlopen",
-                "connect", "commit", "flush", "add", "delete",
+                "write",
+                "write_text",
+                "write_bytes",
+                "request",
+                "urlopen",
+                "connect",
+                "commit",
+                "flush",
+                "add",
+                "delete",
             }

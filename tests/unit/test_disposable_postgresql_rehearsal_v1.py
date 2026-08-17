@@ -37,10 +37,7 @@ EXPECTED_RELATIONAL_CONSTRAINTS = frozenset(
         "trusted_covenant_registered_outpoints|p|id|||",
         "trusted_covenant_registered_outpoints|u|registration_id,direction|||",
         "trusted_covenant_registered_outpoints|u|txid,vout|||",
-        (
-            "trusted_covenant_registered_outpoints|f|registration_id|"
-            "trusted_covenant_registrations|registration_id|c"
-        ),
+        ("trusted_covenant_registered_outpoints|f|registration_id|" "trusted_covenant_registrations|registration_id|c"),
         "canonical_admission_edges|p|edge_id|||",
         "canonical_admission_edges|u|trusted_registration_id|||",
         "canonical_admission_edges|u|trusted_registration_sha256|||",
@@ -57,10 +54,7 @@ EXPECTED_RELATIONAL_CONSTRAINTS = frozenset(
         "canonical_covenant_funding_sets|u|canonical_funding_set_sha256|||",
         "canonical_covenant_funding_outpoints|p|id|||",
         "canonical_covenant_funding_outpoints|u|funding_set_id,txid,vout|||",
-        (
-            "canonical_covenant_funding_outpoints|f|funding_set_id|"
-            "canonical_covenant_funding_sets|funding_set_id|c"
-        ),
+        ("canonical_covenant_funding_outpoints|f|funding_set_id|" "canonical_covenant_funding_sets|funding_set_id|c"),
     }
 )
 
@@ -298,9 +292,7 @@ PHASE_11_FAIL_CLOSED_CASES = (
     (
         "column type changed",
         "column",
-        successful_command(
-            changed_catalog_output("column", '"varchar","character varying(36)"', '"int8","bigint"')
-        ),
+        successful_command(changed_catalog_output("column", '"varchar","character varying(36)"', '"int8","bigint"')),
         "COLUMN_SEMANTICS_MISMATCH",
     ),
     (
@@ -459,8 +451,7 @@ def execute_request(tmp_path: Path, **changes) -> rehearsal.ExecuteRequest:
 
 
 PROBE_IMPORT_FAILURE_DETAIL = (
-    "postgresql://probe-user:probe-password@database.invalid/private "
-    "/tmp/private/probe.py credential=probe-secret"
+    "postgresql://probe-user:probe-password@database.invalid/private " "/tmp/private/probe.py credential=probe-secret"
 )
 
 
@@ -469,13 +460,11 @@ def run_probe_with_factory_import(tmp_path: Path, factory_statement: str) -> sub
     app_directory.mkdir()
     (app_directory / "__init__.py").write_text("", encoding="utf-8")
     (app_directory / "utils.py").write_text(
-        "def get_rpc_connection():\n"
-        "    raise AssertionError('unguarded Bitcoin RPC access')\n",
+        "def get_rpc_connection():\n" "    raise AssertionError('unguarded Bitcoin RPC access')\n",
         encoding="utf-8",
     )
     (tmp_path / "requests.py").write_text(
-        textwrap.dedent(
-            """
+        textwrap.dedent("""
             class Session:
                 def request(self, *_args, **_kwargs):
                     raise AssertionError("unguarded HTTP access")
@@ -485,13 +474,11 @@ def run_probe_with_factory_import(tmp_path: Path, factory_statement: str) -> sub
 
             sessions = Sessions()
             sessions.Session = Session
-            """
-        ),
+            """),
         encoding="utf-8",
     )
     (tmp_path / "redis.py").write_text(
-        textwrap.dedent(
-            """
+        textwrap.dedent("""
             class ConnectionError(Exception):
                 pass
 
@@ -510,12 +497,10 @@ def run_probe_with_factory_import(tmp_path: Path, factory_statement: str) -> sub
 
             client = Client()
             client.Redis = Redis
-            """
-        ),
+            """),
         encoding="utf-8",
     )
-    factory_source = textwrap.dedent(
-        f"""
+    factory_source = textwrap.dedent(f"""
         import __main__
         import smtplib
         import socket
@@ -551,8 +536,7 @@ def run_probe_with_factory_import(tmp_path: Path, factory_statement: str) -> sub
         print({PROBE_IMPORT_FAILURE_DETAIL!r})
         sys.stderr.write(__file__ + " " + {PROBE_IMPORT_FAILURE_DETAIL!r} + "\\n")
         {factory_statement}
-        """
-    )
+        """)
     (app_directory / "factory.py").write_text(factory_source, encoding="utf-8")
     return subprocess.run(
         [sys.executable, "-c", rehearsal.PROBE_PROGRAM, "startup"],
@@ -601,9 +585,7 @@ class SyntheticProbeFailure(RuntimeError):
 def probe_function(name: str) -> ast.FunctionDef:
     program = ast.parse(rehearsal.PROBE_PROGRAM)
     return next(
-        statement
-        for statement in program.body
-        if isinstance(statement, ast.FunctionDef) and statement.name == name
+        statement for statement in program.body if isinstance(statement, ast.FunctionDef) and statement.name == name
     )
 
 
@@ -744,9 +726,7 @@ def id_token_verification_block() -> ast.Try:
         for statement in function.body
         if isinstance(statement, ast.Try)
         and any(
-            isinstance(node, ast.Name)
-            and node.id == "id_signing_key"
-            and isinstance(node.ctx, ast.Store)
+            isinstance(node, ast.Name) and node.id == "id_signing_key" and isinstance(node.ctx, ast.Store)
             for node in ast.walk(statement)
         )
     )
@@ -839,19 +819,13 @@ class SuccessfulRehearsalRunner:
             else frozenset(relational_constraints)
         )
         self.index_semantics = (
-            rehearsal.MIGRATION_8_9_INDEX_SEMANTICS
-            if index_semantics is None
-            else frozenset(index_semantics)
+            rehearsal.MIGRATION_8_9_INDEX_SEMANTICS if index_semantics is None else frozenset(index_semantics)
         )
         self.check_semantics = (
-            rehearsal.MIGRATION_8_9_CHECK_SEMANTICS
-            if check_semantics is None
-            else frozenset(check_semantics)
+            rehearsal.MIGRATION_8_9_CHECK_SEMANTICS if check_semantics is None else frozenset(check_semantics)
         )
         self.serial_semantics = (
-            rehearsal.MIGRATION_8_9_SERIAL_SEMANTICS
-            if serial_semantics is None
-            else frozenset(serial_semantics)
+            rehearsal.MIGRATION_8_9_SERIAL_SEMANTICS if serial_semantics is None else frozenset(serial_semantics)
         )
         self.phase_11_source_results = dict(phase_11_source_results or {})
         self.phase_11_restored_results = dict(phase_11_restored_results or {})
@@ -1050,22 +1024,16 @@ def test_phase_11_accepts_catalog_equivalence_when_normalized_pg_dump_text_diffe
     assert outcome.evidence_code == "RESTORE_COMPARISON_COMPLETE"
     assert rehearsal.SHA256_PATTERN.fullmatch(str(outcome.artifact_sha256))
     schema_dump_calls = [
-        call
-        for call in runner.calls
-        if Path(call["argv"][0]).name == "pg_dump" and "--schema-only" in call["argv"]
+        call for call in runner.calls if Path(call["argv"][0]).name == "pg_dump" and "--schema-only" in call["argv"]
     ]
     assert len(schema_dump_calls) == 2
     ownership_calls = [
         call
         for call in runner.calls
-        if "--command" in call["argv"]
-        and "pg_get_userbyid" in call["argv"][call["argv"].index("--command") + 1]
+        if "--command" in call["argv"] and "pg_get_userbyid" in call["argv"][call["argv"].index("--command") + 1]
     ]
     assert len(ownership_calls) == 2
-    assert all(
-        "c.relkind::text" in call["argv"][call["argv"].index("--command") + 1]
-        for call in ownership_calls
-    )
+    assert all("c.relkind::text" in call["argv"][call["argv"].index("--command") + 1] for call in ownership_calls)
 
 
 @pytest.mark.parametrize(
@@ -1373,10 +1341,7 @@ def test_migrated_catalog_contract_includes_inline_unique_checks_and_foreign_key
     assert "canonical_root_registration_bindings|11" in checks
     assert "canonical_covenant_funding_sets|11" in checks
     assert "canonical_covenant_funding_outpoints|6" in checks
-    assert (
-        "canonical_root_registration_bindings|uq_root_registration_binding_effective_root"
-        in indexes
-    )
+    assert "canonical_root_registration_bindings|uq_root_registration_binding_effective_root" in indexes
     assert "canonical_covenant_funding_sets|uq_funding_set_effective_registration" in indexes
     assert "canonical_covenant_funding_outpoints|idx_funding_outpoint_set" in indexes
 
@@ -1486,8 +1451,7 @@ def test_phase_06_rejects_wrong_new_partial_index_predicate(tmp_path):
 def test_phase_06_check_column_sets_remain_fail_closed(tmp_path, mutation):
     actual = set(rehearsal.MIGRATION_8_9_CHECK_SEMANTICS)
     identity = (
-        "canonical_covenant_funding_sets|ck_funding_set_participants|"
-        "counterparty_xonly_pubkey,subject_xonly_pubkey"
+        "canonical_covenant_funding_sets|ck_funding_set_participants|" "counterparty_xonly_pubkey,subject_xonly_pubkey"
     )
     actual.remove(identity)
     if mutation == "missing":
@@ -1500,9 +1464,7 @@ def test_phase_06_check_column_sets_remain_fail_closed(tmp_path, mutation):
             )
         )
     else:
-        actual.add(
-            identity.replace("counterparty_xonly_pubkey", "renamed_xonly_pubkey")
-        )
+        actual.add(identity.replace("counterparty_xonly_pubkey", "renamed_xonly_pubkey"))
     runner = SuccessfulRehearsalRunner(check_semantics=actual)
     result = rehearsal.RehearsalHarness(
         runner,
@@ -1563,9 +1525,7 @@ def test_phase_06_uses_location_normalized_parse_tree_equivalence_for_checks_and
 def test_phase_06_index_predicate_classification_remains_strict_and_fail_closed():
     index_sql = rehearsal.PHASE_6_INDEX_SEMANTICS_SQL
     partial_indexes = {
-        item.split("|")[1]
-        for item in rehearsal.MIGRATION_8_9_INDEX_SEMANTICS
-        if item.endswith("|partial")
+        item.split("|")[1] for item in rehearsal.MIGRATION_8_9_INDEX_SEMANTICS if item.endswith("|partial")
     }
 
     assert partial_indexes == {
@@ -1575,10 +1535,7 @@ def test_phase_06_index_predicate_classification_remains_strict_and_fail_closed(
     assert index_sql.count("THEN 'partial'") == 1
     assert index_sql.count("THEN 'none'") == 1
     assert index_sql.count("ELSE 'mismatch'") == 1
-    assert (
-        "mapping.reference_index_name IS NULL AND index_catalog.indpred IS NULL"
-        in index_sql
-    )
+    assert "mapping.reference_index_name IS NULL AND index_catalog.indpred IS NULL" in index_sql
     assert "reference_catalog.indpred IS NOT NULL" in index_sql
     assert index_sql.count("'phase_6_root_effective_reference'") == 1
     assert index_sql.count("'phase_6_funding_set_effective_reference'") == 1
@@ -1595,9 +1552,7 @@ def test_phase_06_pg_node_tree_normalization_is_exactly_location_only():
     def normalize(value: str) -> str:
         return pattern.sub(replacement, value)
 
-    assert normalize(":location 0 :location 42 :location -7}") == (
-        ":location -1 :location -1 :location -1}"
-    )
+    assert normalize(":location 0 :location 42 :location -7}") == (":location -1 :location -1 :location -1}")
     for value in (
         ":location +7 ",
         ":location 7x ",

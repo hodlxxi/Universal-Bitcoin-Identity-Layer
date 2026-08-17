@@ -13,7 +13,9 @@ from app.services.canonical_controlling_registration import (
     ControllingRegistrationSelectionSource,
 )
 from app.services.covenant_relation import (
-    EVALUATION_SCHEMA, OBSERVATION_SCHEMA, CovenantRelationEvaluation,
+    EVALUATION_SCHEMA,
+    OBSERVATION_SCHEMA,
+    CovenantRelationEvaluation,
     CovenantRelationObservation,
 )
 from app.services.canonical_covenant_funding_set_storage import (
@@ -36,9 +38,12 @@ def test_repository_read_precedes_bitcoin_observation_and_no_write_api_is_used(m
     registration = fixtures.registration()
     events = []
     selection = ControllingRegistrationSelection(
-        "graph", registration.subject_xonly_pubkey,
+        "graph",
+        registration.subject_xonly_pubkey,
         ControllingRegistrationSelectionSource.CANONICAL_ADMISSION_EDGE,
-        "00000000-0000-4000-8000-000000000020", "9" * 64, registration,
+        "00000000-0000-4000-8000-000000000020",
+        "9" * 64,
+        registration,
     )
     monkeypatch.setattr(service, "resolve_controlling_registration", lambda *a, **k: selection)
 
@@ -51,21 +56,42 @@ def test_repository_read_precedes_bitcoin_observation_and_no_write_api_is_used(m
         def observe(self, outpoints):
             assert events == ["repository_read_closed"]
             events.append("bitcoin_observation")
-            observations = tuple(CovenantRelationObservation(
-                OBSERVATION_SCHEMA, x.subject_pubkey, x.counterparty_pubkey,
-                x.direction, x.txid, x.vout, x.amount_sats, x.script_sha256,
-                x.descriptor_sha256, 1, True,
-            ) for x in outpoints)
+            observations = tuple(
+                CovenantRelationObservation(
+                    OBSERVATION_SCHEMA,
+                    x.subject_pubkey,
+                    x.counterparty_pubkey,
+                    x.direction,
+                    x.txid,
+                    x.vout,
+                    x.amount_sats,
+                    x.script_sha256,
+                    x.descriptor_sha256,
+                    1,
+                    True,
+                )
+                for x in outpoints
+            )
             return CovenantRelationEvaluation(
-                EVALUATION_SCHEMA, "bitcoin", registration.subject_xonly_pubkey,
-                registration.counterparty_xonly_pubkey, NOW, 900000, observations,
+                EVALUATION_SCHEMA,
+                "bitcoin",
+                registration.subject_xonly_pubkey,
+                registration.counterparty_xonly_pubkey,
+                NOW,
+                900000,
+                observations,
             )
 
     result = service.observe_edge_local_covenant_relation(
-        "graph", registration.subject_xonly_pubkey, evaluated_at=NOW,
-        genesis_repository=object(), admission_edge_repository=object(),
-        root_registration_binding_repository=object(), trusted_registration_repository=object(),
-        funding_set_repository=Repository(), observer=Observer(),
+        "graph",
+        registration.subject_xonly_pubkey,
+        evaluated_at=NOW,
+        genesis_repository=object(),
+        admission_edge_repository=object(),
+        root_registration_binding_repository=object(),
+        trusted_registration_repository=object(),
+        funding_set_repository=Repository(),
+        observer=Observer(),
     )
     assert events == ["repository_read_closed", "bitcoin_observation"]
     assert result.qualifying_observation_count == 5
@@ -75,9 +101,12 @@ def test_repository_read_precedes_bitcoin_observation_and_no_write_api_is_used(m
 def test_real_repository_session_closes_before_rpc_and_operation_does_not_write(monkeypatch, tmp_path):
     registration = fixtures.registration()
     selection = ControllingRegistrationSelection(
-        "graph", registration.subject_xonly_pubkey,
+        "graph",
+        registration.subject_xonly_pubkey,
         ControllingRegistrationSelectionSource.CANONICAL_ADMISSION_EDGE,
-        "00000000-0000-4000-8000-000000000020", "9" * 64, registration,
+        "00000000-0000-4000-8000-000000000020",
+        "9" * 64,
+        registration,
     )
     monkeypatch.setattr(service, "resolve_controlling_registration", lambda *a, **k: selection)
     engine = create_engine(f"sqlite:///{tmp_path / 'edge-local.db'}")
@@ -103,7 +132,8 @@ def test_real_repository_session_closes_before_rpc_and_operation_does_not_write(
             return registration if identifier == registration.registration_id else None
 
     repository = SqlAlchemyCanonicalCovenantFundingSetRepository(
-        factory, trusted_registration_repository=Registrations(),
+        factory,
+        trusted_registration_repository=Registrations(),
     )
     repository.append(fixtures.funding())
 
@@ -119,21 +149,42 @@ def test_real_repository_session_closes_before_rpc_and_operation_does_not_write(
     class Observer:
         def observe(self, outpoints):
             assert TrackingSession.open_count == 0
-            observations = tuple(CovenantRelationObservation(
-                OBSERVATION_SCHEMA, x.subject_pubkey, x.counterparty_pubkey,
-                x.direction, x.txid, x.vout, x.amount_sats, x.script_sha256,
-                x.descriptor_sha256, 1, True,
-            ) for x in outpoints)
+            observations = tuple(
+                CovenantRelationObservation(
+                    OBSERVATION_SCHEMA,
+                    x.subject_pubkey,
+                    x.counterparty_pubkey,
+                    x.direction,
+                    x.txid,
+                    x.vout,
+                    x.amount_sats,
+                    x.script_sha256,
+                    x.descriptor_sha256,
+                    1,
+                    True,
+                )
+                for x in outpoints
+            )
             return CovenantRelationEvaluation(
-                EVALUATION_SCHEMA, "bitcoin", registration.subject_xonly_pubkey,
-                registration.counterparty_xonly_pubkey, NOW, 900000, observations,
+                EVALUATION_SCHEMA,
+                "bitcoin",
+                registration.subject_xonly_pubkey,
+                registration.counterparty_xonly_pubkey,
+                NOW,
+                900000,
+                observations,
             )
 
     result = service.observe_edge_local_covenant_relation(
-        "graph", registration.subject_xonly_pubkey, evaluated_at=NOW,
-        genesis_repository=object(), admission_edge_repository=object(),
-        root_registration_binding_repository=object(), trusted_registration_repository=object(),
-        funding_set_repository=repository, observer=Observer(),
+        "graph",
+        registration.subject_xonly_pubkey,
+        evaluated_at=NOW,
+        genesis_repository=object(),
+        admission_edge_repository=object(),
+        root_registration_binding_repository=object(),
+        trusted_registration_repository=object(),
+        funding_set_repository=repository,
+        observer=Observer(),
     )
     assert result.qualifying_observation_count == 5
     assert result.observed_at == NOW

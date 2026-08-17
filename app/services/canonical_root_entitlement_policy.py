@@ -133,15 +133,23 @@ def evaluate_canonical_root_entitlement(
         _digest(subject_xonly_pubkey)
         _digest(result.subject_xonly_pubkey)
         _digest(result.counterparty_xonly_pubkey)
-        if result.subject_xonly_pubkey != subject_xonly_pubkey or subject_xonly_pubkey == result.counterparty_xonly_pubkey:
+        if (
+            result.subject_xonly_pubkey != subject_xonly_pubkey
+            or subject_xonly_pubkey == result.counterparty_xonly_pubkey
+        ):
             raise ValueError()
-        if result.controlling_selection_source is not ControllingRegistrationSelectionSource.CANONICAL_ROOT_REGISTRATION_BINDING:
+        if (
+            result.controlling_selection_source
+            is not ControllingRegistrationSelectionSource.CANONICAL_ROOT_REGISTRATION_BINDING
+        ):
             raise ValueError()
         for value in (result.selector_record_id, result.trusted_registration_id, result.funding_set_id):
             _identifier(value)
         for value in (
-            result.selector_record_sha256, result.trusted_registration_sha256,
-            result.funding_set_sha256, result.relation_source_evidence_sha256,
+            result.selector_record_sha256,
+            result.trusted_registration_sha256,
+            result.funding_set_sha256,
+            result.relation_source_evidence_sha256,
         ):
             _digest(value)
         observed_at = _timestamp(result.observed_at)
@@ -152,7 +160,10 @@ def evaluate_canonical_root_entitlement(
         _integer(result.outgoing_sats, 0)
         if result.qualifying_observation_count > result.recognized_outpoint_count:
             raise ValueError()
-        if type(result.relation_reason) is not CovenantRelationReason or type(result.current_full_relation_satisfied) is not bool:
+        if (
+            type(result.relation_reason) is not CovenantRelationReason
+            or type(result.current_full_relation_satisfied) is not bool
+        ):
             raise ValueError()
         expected_reason = _reason(result.incoming_sats, result.outgoing_sats)
         if result.relation_reason is not expected_reason:
@@ -173,16 +184,28 @@ def evaluate_canonical_root_entitlement(
             raise ValueError()
         source_hash = hashlib.sha256(_canonical_source_bytes(result, observed_at)).hexdigest()
         return CanonicalRootEntitlementDecision(
-            POLICY_VERSION, graph_or_protocol_id, subject_xonly_pubkey,
+            POLICY_VERSION,
+            graph_or_protocol_id,
+            subject_xonly_pubkey,
             result.counterparty_xonly_pubkey,
             IdentityClass.FULL if full else IdentityClass.LIMITED,
-            full, expected_reason, EVIDENCE_SOURCE, source_hash, observed_at,
-            result.observed_block_height, result.controlling_selection_source,
-            result.selector_record_id, result.selector_record_sha256,
-            result.trusted_registration_id, result.trusted_registration_sha256,
-            result.funding_set_id, result.funding_set_sha256,
-            result.recognized_outpoint_count, result.qualifying_observation_count,
-            result.incoming_sats, result.outgoing_sats,
+            full,
+            expected_reason,
+            EVIDENCE_SOURCE,
+            source_hash,
+            observed_at,
+            result.observed_block_height,
+            result.controlling_selection_source,
+            result.selector_record_id,
+            result.selector_record_sha256,
+            result.trusted_registration_id,
+            result.trusted_registration_sha256,
+            result.funding_set_id,
+            result.funding_set_sha256,
+            result.recognized_outpoint_count,
+            result.qualifying_observation_count,
+            result.incoming_sats,
+            result.outgoing_sats,
             result.relation_source_evidence_sha256,
         )
     except (KeyboardInterrupt, SystemExit):

@@ -69,9 +69,7 @@ class Repository:
 
 def service(repository=None, *, now=NOW, uuid_factory=lambda: IDENTIFIER):
     repository = repository or Repository()
-    return CanonicalRootEntitlementMaterializer(
-        repository, clock=lambda: now, uuid_factory=uuid_factory
-    ), repository
+    return CanonicalRootEntitlementMaterializer(repository, clock=lambda: now, uuid_factory=uuid_factory), repository
 
 
 def test_real_shaped_result_calls_policy_and_maps_exact_full_evidence(monkeypatch):
@@ -147,9 +145,9 @@ def test_non_utc_clock_is_normalized_and_called_once():
         return NOW.astimezone(timezone(timedelta(hours=-4)))
 
     repository = Repository()
-    record = CanonicalRootEntitlementMaterializer(
-        repository, clock=clock, uuid_factory=lambda: IDENTIFIER
-    ).materialize(GRAPH, SUBJECT, relation())
+    record = CanonicalRootEntitlementMaterializer(repository, clock=clock, uuid_factory=lambda: IDENTIFIER).materialize(
+        GRAPH, SUBJECT, relation()
+    )
     assert calls == [1]
     assert record.created_at == NOW
     assert record.created_at.tzinfo is timezone.utc
@@ -181,9 +179,7 @@ def test_malformed_dependencies_clock_uuid_and_repository_failure_are_sanitized(
         (lambda: NOW, lambda: str(IDENTIFIER), Repository()),
         (lambda: NOW, lambda: IDENTIFIER, Repository(RuntimeError("private database detail"))),
     ):
-        instance = CanonicalRootEntitlementMaterializer(
-            repository, clock=clock, uuid_factory=uuid_factory
-        )
+        instance = CanonicalRootEntitlementMaterializer(repository, clock=clock, uuid_factory=uuid_factory)
         with pytest.raises(CanonicalRootEntitlementMaterializationUnavailable) as caught:
             instance.materialize(GRAPH, SUBJECT, relation())
         assert "private" not in str(caught.value)
@@ -228,9 +224,7 @@ def test_malformed_policy_return_is_rejected_before_uuid_and_append(monkeypatch)
         ("source_evidence_sha256", "b" * 64),
     ],
 )
-def test_policy_return_with_mismatched_or_admission_provenance_never_appends(
-    monkeypatch, field, value
-):
+def test_policy_return_with_mismatched_or_admission_provenance_never_appends(monkeypatch, field, value):
     decision = evaluate_canonical_root_entitlement(GRAPH, SUBJECT, relation())
     monkeypatch.setattr(
         materializer_module,

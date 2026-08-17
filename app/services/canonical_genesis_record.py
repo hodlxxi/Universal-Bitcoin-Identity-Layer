@@ -425,7 +425,9 @@ def parse_canonical_genesis_record(value: bytes | str | dict) -> CanonicalGenesi
             raise InvalidCanonicalGenesisRecord("UTF-8") from None
     if type(value) is str:
         try:
-            reject_number = lambda _: (_ for _ in ()).throw(ValueError())
+
+            def reject_number(_):
+                raise ValueError()
 
             def reject_duplicate_keys(pairs):
                 result = {}
@@ -642,6 +644,7 @@ def parse_canonical_genesis_evaluation(value: bytes | str) -> CanonicalGenesisEv
     if type(value) is not str:
         raise InvalidCanonicalGenesisRecord("evaluation JSON")
     try:
+
         def reject_duplicate_keys(pairs):
             result = {}
             for key, item in pairs:
@@ -650,7 +653,9 @@ def parse_canonical_genesis_evaluation(value: bytes | str) -> CanonicalGenesisEv
                 result[key] = item
             return result
 
-        reject_number = lambda _: (_ for _ in ()).throw(ValueError())
+        def reject_number(_):
+            raise ValueError()
+
         data = json.loads(
             value,
             parse_float=reject_number,

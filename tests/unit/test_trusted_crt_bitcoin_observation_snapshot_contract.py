@@ -17,26 +17,50 @@ def test_static_dependency_rpc_and_surface_contract():
         "app.services.covenant_relation",
     }
     assert {x for x in imports if x.startswith("app.services.")} == allowed_services
-    forbidden = ("flask", "sqlalchemy", "app.models", "app.db_storage", "subprocess", "socket",
-                 "requests", "urllib", "http", "current_entitlement", "action_authorization",
-                 "canonical_crt_authorization_proof_resolver")
+    forbidden = (
+        "flask",
+        "sqlalchemy",
+        "app.models",
+        "app.db_storage",
+        "subprocess",
+        "socket",
+        "requests",
+        "urllib",
+        "http",
+        "current_entitlement",
+        "action_authorization",
+        "canonical_crt_authorization_proof_resolver",
+    )
     assert not any(name == item or name.startswith(item + ".") for name in imports for item in forbidden)
     assert not any("storage" in name for name in imports)
-    called_attrs = {node.func.attr for node in ast.walk(tree)
-                    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)}
+    called_attrs = {
+        node.func.attr for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
     rpc_like = {name for name in called_attrs if name.startswith(("getblock", "getbestblock", "gettxout"))}
     assert rpc_like == {"getblockcount", "getbestblockhash", "getblockhash", "gettxout"}
-    forbidden_calls = {"listunspent", "scantxoutset", "importdescriptor", "importmulti",
-                       "sendrawtransaction", "signrawtransaction", "getrawtransaction",
-                       "eval", "exec", "__import__"}
-    called_names = {node.func.id for node in ast.walk(tree)
-                    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
+    forbidden_calls = {
+        "listunspent",
+        "scantxoutset",
+        "importdescriptor",
+        "importmulti",
+        "sendrawtransaction",
+        "signrawtransaction",
+        "getrawtransaction",
+        "eval",
+        "exec",
+        "__import__",
+    }
+    called_names = {
+        node.func.id for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
     assert forbidden_calls.isdisjoint(called_attrs | called_names)
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module == "app.services.trusted_covenant_observation":
             assert all(not alias.name.startswith("_") for alias in node.names)
     source = PATH.read_text().lower()
-    assert not any(token in source for token in ("@app.route", "mcp.tool", "argparse", "click.command", "scheduler.add"))
+    assert not any(
+        token in source for token in ("@app.route", "mcp.tool", "argparse", "click.command", "scheduler.add")
+    )
 
 
 def test_documentation_exact_status_and_nonclaims():

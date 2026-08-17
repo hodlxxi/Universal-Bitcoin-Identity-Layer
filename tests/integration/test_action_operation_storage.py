@@ -75,7 +75,10 @@ def receipt(
 ):
     key = ec.derive_private_key(9, ec.SECP256K1())
     pub = key.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.CompressedPoint).hex()
-    signer = lambda message: key.sign(message, ec.ECDSA(hashes.SHA256())).hex()
+
+    def signer(message):
+        return key.sign(message, ec.ECDSA(hashes.SHA256())).hex()
+
     return create_action_receipt(
         signer=signer,
         signer_public_key=pub,

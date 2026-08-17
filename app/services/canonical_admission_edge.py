@@ -952,8 +952,7 @@ class CanonicalAdmissionEdgeCurrentEvaluation:
             or type(self.sponsor_depth) is not int
             or type(self.child_depth) is not int
             or self.child_depth != self.sponsor_depth + 1
-            or (self.early_height, self.middle_height, self.late_height)
-            != cascade_heights(self.child_depth)
+            or (self.early_height, self.middle_height, self.late_height) != cascade_heights(self.child_depth)
             or self.child_participant_id != self.child_x_only_public_key
             or (
                 self.sponsor_depth == 0
@@ -963,19 +962,12 @@ class CanonicalAdmissionEdgeCurrentEvaluation:
                     or self.sponsor_x_only_public_key != GENESIS_XONLY_KEY
                 )
             )
-            or (
-                self.sponsor_depth > 0
-                and self.sponsor_participant_id != self.sponsor_x_only_public_key
-            )
+            or (self.sponsor_depth > 0 and self.sponsor_participant_id != self.sponsor_x_only_public_key)
         ):
             _fail("current evaluation identity or arithmetic")
         expected = {
-            AdmissionEdgeEvaluationState.ACTIVE: {
-                AdmissionEdgeCurrentReason.EXACT_CURRENT_EDGE_ACTIVE
-            },
-            AdmissionEdgeEvaluationState.PROVISIONAL: {
-                AdmissionEdgeCurrentReason.RECORD_PROPOSED
-            },
+            AdmissionEdgeEvaluationState.ACTIVE: {AdmissionEdgeCurrentReason.EXACT_CURRENT_EDGE_ACTIVE},
+            AdmissionEdgeEvaluationState.PROVISIONAL: {AdmissionEdgeCurrentReason.RECORD_PROPOSED},
             AdmissionEdgeEvaluationState.DISPUTED: {
                 AdmissionEdgeCurrentReason.RECORD_DISPUTED,
                 AdmissionEdgeCurrentReason.REGISTRATION_DISPUTED,
@@ -1121,9 +1113,7 @@ def _evaluate_canonical_admission_edge(
     observation_digest = None
     try:
         if current_only:
-            validate_immediate_sponsor_basis(
-                record, genesis_evaluation=genesis_evaluation, parent_edge=parent_edge
-            )
+            validate_immediate_sponsor_basis(record, genesis_evaluation=genesis_evaluation, parent_edge=parent_edge)
         elif record.child_depth == 1:
             validate_admission_sources(
                 record,
@@ -1342,16 +1332,10 @@ def _evaluate_canonical_admission_edge(
                 (record.sponsor_basis_record_id, record.sponsor_basis_record_sha256),
             )
         )
-    result_type = (
-        CanonicalAdmissionEdgeCurrentEvaluation
-        if current_only
-        else CanonicalAdmissionEdgeEvaluation
-    )
+    result_type = CanonicalAdmissionEdgeCurrentEvaluation if current_only else CanonicalAdmissionEdgeEvaluation
     result_reason = (
         AdmissionEdgeCurrentReason(
-            "exact_current_edge_active"
-            if state is AdmissionEdgeEvaluationState.ACTIVE
-            else reason.value
+            "exact_current_edge_active" if state is AdmissionEdgeEvaluationState.ACTIVE else reason.value
         )
         if current_only
         else reason
@@ -1444,9 +1428,7 @@ def canonical_admission_edge_current_evaluation_bytes(
 ) -> bytes:
     if type(value) is not CanonicalAdmissionEdgeCurrentEvaluation:
         _fail("current evaluation type")
-    value = CanonicalAdmissionEdgeCurrentEvaluation(
-        *(getattr(value, field) for field in value.__dataclass_fields__)
-    )
+    value = CanonicalAdmissionEdgeCurrentEvaluation(*(getattr(value, field) for field in value.__dataclass_fields__))
     return json.dumps(
         _current_evaluation_dict(value),
         sort_keys=True,
@@ -1501,14 +1483,10 @@ def parse_canonical_admission_edge_current_evaluation(
         result = CanonicalAdmissionEdgeCurrentEvaluation(
             **{
                 **data,
-                "evaluated_at": datetime.fromisoformat(
-                    data["evaluated_at"][:-1] + "+00:00"
-                ),
+                "evaluated_at": datetime.fromisoformat(data["evaluated_at"][:-1] + "+00:00"),
                 "state": AdmissionEdgeEvaluationState(data["state"]),
                 "reason_code": AdmissionEdgeCurrentReason(data["reason_code"]),
-                "relevant_records": tuple(
-                    tuple(item) for item in data["relevant_records"]
-                ),
+                "relevant_records": tuple(tuple(item) for item in data["relevant_records"]),
                 "explicit_non_claims": tuple(data["explicit_non_claims"]),
             }
         )

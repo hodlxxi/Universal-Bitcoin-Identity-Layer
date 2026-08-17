@@ -12,9 +12,7 @@ class BearerHeaderError(ValueError):
     """The Authorization header is not one unambiguous bearer credential."""
 
 
-def parse_bearer_authorization_header(
-    header: object, *, max_credential_length: int = DEFAULT_MAX_BEARER_LENGTH
-) -> str:
+def parse_bearer_authorization_header(header: object, *, max_credential_length: int = DEFAULT_MAX_BEARER_LENGTH) -> str:
     """Return the credential from exactly ``Bearer<SP>credential``.
 
     The scheme is case-insensitive. Multiple values, commas, surrounding or

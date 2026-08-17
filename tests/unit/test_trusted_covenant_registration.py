@@ -77,9 +77,7 @@ def registration(*, state=TrustedCovenantRegistrationLifecycle.ACTIVE, reverse=F
         RegisteredCovenantOutpoint(
             CovenantDirection.INCOMING, "a" * 64, 0, 123, validated.incoming_leg_script_sha256, "c" * 64
         ),
-        RegisteredCovenantOutpoint(
-            CovenantDirection.OUTGOING, "b" * 64, 7, 456, validated.outgoing_leg_script_sha256
-        ),
+        RegisteredCovenantOutpoint(CovenantDirection.OUTGOING, "b" * 64, 7, 456, validated.outgoing_leg_script_sha256),
     )
     return create_trusted_covenant_registration(
         validated,
@@ -157,13 +155,9 @@ def test_materialized_native_p2wsh_definitions_observe_real_core_style_outputs()
             return responses[(txid, vout)]
 
     for definition, binding in zip(definitions, value.outpoints):
-        assert definition.script_sha256 == p2wsh_script_pubkey_sha256(
-            binding.witness_script_sha256
-        )
+        assert definition.script_sha256 == p2wsh_script_pubkey_sha256(binding.witness_script_sha256)
         assert definition.script_sha256 != binding.witness_script_sha256
-    evaluation = TrustedBitcoinCovenantObservationAdapter(Rpc(), clock=lambda: NOW).observe(
-        definitions
-    )
+    evaluation = TrustedBitcoinCovenantObservationAdapter(Rpc(), clock=lambda: NOW).observe(definitions)
     assert len(evaluation.observations) == 2
     assert all(observation.unspent for observation in evaluation.observations)
 
@@ -261,7 +255,9 @@ def test_duplicate_outpoint_direction_script_and_noncanonical_inputs_fail():
     ),
 )
 def test_only_active_materializes(state):
-    superseded = "00000000-0000-4000-8000-000000000002" if state is TrustedCovenantRegistrationLifecycle.SUPERSEDED else None
+    superseded = (
+        "00000000-0000-4000-8000-000000000002" if state is TrustedCovenantRegistrationLifecycle.SUPERSEDED else None
+    )
     with pytest.raises(InvalidTrustedCovenantRegistration):
         trusted_outpoints_from_registration(registration(state=state, superseded=superseded))
 

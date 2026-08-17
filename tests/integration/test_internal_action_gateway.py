@@ -104,9 +104,11 @@ def test_real_atomic_step_up_gateway_consumes_reserves_receipts_and_replays(tmp_
     actor_key = PrivateKey()
     actor = PublicKeyXOnly.from_secret(actor_key.secret).format().hex()
     signer_key = ec.derive_private_key(29, ec.SECP256K1())
-    signer_public = signer_key.public_key().public_bytes(
-        serialization.Encoding.X962, serialization.PublicFormat.CompressedPoint
-    ).hex()
+    signer_public = (
+        signer_key.public_key()
+        .public_bytes(serialization.Encoding.X962, serialization.PublicFormat.CompressedPoint)
+        .hex()
+    )
     engine = create_engine(
         f"sqlite:///{tmp_path / 'step-up-gateway.db'}",
         connect_args={"check_same_thread": False, "timeout": 30},

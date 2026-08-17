@@ -33,7 +33,9 @@ def item(identifier="00000000-0000-4000-8000-000000000001", state=TrustedCovenan
         pair,
         (
             RegisteredCovenantOutpoint(CovenantDirection.INCOMING, tx * 64, 0, 10, pair.incoming_leg_script_sha256),
-            RegisteredCovenantOutpoint(CovenantDirection.OUTGOING, chr(ord(tx) + 1) * 64, 1, 20, pair.outgoing_leg_script_sha256),
+            RegisteredCovenantOutpoint(
+                CovenantDirection.OUTGOING, chr(ord(tx) + 1) * 64, 1, 20, pair.outgoing_leg_script_sha256
+            ),
         ),
         registration_id=identifier,
         lifecycle_state=state,
@@ -46,9 +48,7 @@ def item(identifier="00000000-0000-4000-8000-000000000001", state=TrustedCovenan
 def storage(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'registrations.db'}")
     Base.metadata.create_all(engine)
-    repository = SqlAlchemyTrustedCovenantRegistrationRepository(
-        sessionmaker(bind=engine, expire_on_commit=False)
-    )
+    repository = SqlAlchemyTrustedCovenantRegistrationRepository(sessionmaker(bind=engine, expire_on_commit=False))
     return engine, repository
 
 
@@ -58,16 +58,14 @@ def test_metadata_tables_indexes_constraints():
         TrustedCovenantRegistration.__table__.c.earlier_leg_script_hex,
         TrustedCovenantRegistration.__table__.c.later_leg_script_hex,
     }
-    registration_constraints = {
-        constraint.name for constraint in TrustedCovenantRegistration.__table__.constraints
-    }
+    registration_constraints = {constraint.name for constraint in TrustedCovenantRegistration.__table__.constraints}
     assert {
         "ck_trusted_registration_distinct_participants",
         "ck_trusted_registration_distinct_scripts",
     } <= registration_constraints
-    assert {
-        index.name: index.unique for index in TrustedCovenantRegistration.__table__.indexes
-    }["idx_trusted_registration_pair"] is False
+    assert {index.name: index.unique for index in TrustedCovenantRegistration.__table__.indexes}[
+        "idx_trusted_registration_pair"
+    ] is False
     assert TrustedCovenantRegistration.__table__.c.pair_sha256.unique is not True
     assert TrustedCovenantRegisteredOutpoint.__table__.c.witness_script_sha256 is not None
     engine = create_engine("sqlite:///:memory:")
@@ -130,9 +128,7 @@ def test_child_uniqueness_failure_rolls_back_parent_and_partial_children(storage
     with pytest.raises(TrustedCovenantRegistrationStorageError):
         repository.append(failed)
     with engine.connect() as connection:
-        parent_count = connection.execute(
-            text("SELECT count(*) FROM trusted_covenant_registrations")
-        ).scalar_one()
+        parent_count = connection.execute(text("SELECT count(*) FROM trusted_covenant_registrations")).scalar_one()
         child_count = connection.execute(
             text("SELECT count(*) FROM trusted_covenant_registered_outpoints")
         ).scalar_one()
@@ -155,23 +151,34 @@ def test_malformed_rows_fail_closed(storage, mutation):
         connection.execute(text("PRAGMA ignore_check_constraints = ON"))
         if mutation == "missing":
             connection.execute(
-                text("DELETE FROM trusted_covenant_registered_outpoints WHERE id = "
-                     "(SELECT min(id) FROM trusted_covenant_registered_outpoints)")
+                text(
+                    "DELETE FROM trusted_covenant_registered_outpoints WHERE id = "
+                    "(SELECT min(id) FROM trusted_covenant_registered_outpoints)"
+                )
             )
         elif mutation == "extra":
-            connection.execute(text(
-                "INSERT INTO trusted_covenant_registered_outpoints "
-                "(registration_id,direction,txid,vout,amount_sats,witness_script_sha256) "
-                "VALUES (:id,'sideways',:txid,4,1,:script)"
-            ), {"id": expected.registration_id, "txid": "f" * 64, "script": expected.outpoints[0].witness_script_sha256})
+            connection.execute(
+                text(
+                    "INSERT INTO trusted_covenant_registered_outpoints "
+                    "(registration_id,direction,txid,vout,amount_sats,witness_script_sha256) "
+                    "VALUES (:id,'sideways',:txid,4,1,:script)"
+                ),
+                {
+                    "id": expected.registration_id,
+                    "txid": "f" * 64,
+                    "script": expected.outpoints[0].witness_script_sha256,
+                },
+            )
         elif mutation == "script":
-            connection.execute(text(
-                "UPDATE trusted_covenant_registrations SET earlier_leg_script_hex='00' WHERE registration_id=:id"
-            ), {"id": expected.registration_id})
+            connection.execute(
+                text("UPDATE trusted_covenant_registrations SET earlier_leg_script_hex='00' WHERE registration_id=:id"),
+                {"id": expected.registration_id},
+            )
         else:
-            connection.execute(text(
-                "UPDATE trusted_covenant_registrations SET registration_sha256=:hash WHERE registration_id=:id"
-            ), {"id": expected.registration_id, "hash": "f" * 64})
+            connection.execute(
+                text("UPDATE trusted_covenant_registrations SET registration_sha256=:hash WHERE registration_id=:id"),
+                {"id": expected.registration_id, "hash": "f" * 64},
+            )
     with pytest.raises(TrustedCovenantRegistrationStorageError):
         repository.get(expected.registration_id)
 
