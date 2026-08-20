@@ -14,7 +14,7 @@ import time
 from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from flask import Blueprint, current_app, jsonify, redirect, request, session
 
@@ -383,7 +383,7 @@ def authorize():
         if "logged_in_pubkey" not in session:
             # Redirect to login with return URL
             login_return = _safe_local_redirect_target(request.full_path, fallback="/oauth/authorize")
-            return redirect(f"/login?return_to={login_return}")
+            return redirect("/login?" + urlencode({"next": login_return}))
         raw_subject = session.get("logged_in_pubkey")
         try:
             admitted = resolve_oauth_browser_subject(
