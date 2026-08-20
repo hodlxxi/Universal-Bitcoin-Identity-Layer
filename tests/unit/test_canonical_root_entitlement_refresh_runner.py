@@ -205,9 +205,10 @@ def test_dry_run_executes_once_without_evidence_or_guard(monkeypatch, limited):
             "funding_set_repository": object(),
             "rpc_factory": object(),
         },
-        clock=lambda: NOW,
+        clock=lambda: NOW.replace(microsecond=123456),
     )
     assert modes == [CanonicalRootEntitlementRefreshMode.DRY_RUN] and len(calls) == 1
+    assert calls[0][2]["evaluated_at"] == NOW
     assert "execution_guard" not in calls[0][2] and "evidence_repository" not in calls[0][2]
     assert payload["identity_class"] == (IdentityClass.LIMITED if limited else IdentityClass.FULL).value
     assert payload["outcome"] == "preview" and payload["append_performed"] is False
