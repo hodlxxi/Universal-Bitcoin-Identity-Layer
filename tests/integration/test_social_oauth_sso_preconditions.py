@@ -66,7 +66,13 @@ def test_actually_missing_login_redirects_to_login(client):
     registration = _register(client)
     response = client.get("/oauth/authorize", query_string=_query(registration))
     assert response.status_code == 302
-    assert response.location.startswith("/login?")
+    parsed = urlparse(response.location)
+    values = parse_qs(parsed.query)
+    assert parsed.path == "/login"
+    assert "return_to" not in values
+    continuation = urlparse(values["next"][0])
+    assert continuation.path == "/oauth/authorize"
+    assert parse_qs(continuation.query) == {key: [value] for key, value in _query(registration).items()}
 
 
 @pytest.mark.parametrize(
