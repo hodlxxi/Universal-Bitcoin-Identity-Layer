@@ -411,7 +411,7 @@ def execute_request(
         dependencies = dependency_factory(request.mode)
         from app.services.canonical_root_entitlement_refresh import refresh_canonical_root_entitlement
 
-        kwargs = dict(evaluated_at=clock(), mode=request.mode, **dependencies)
+        kwargs = dict(evaluated_at=clock().replace(microsecond=0), mode=request.mode, **dependencies)
         if commit:
             guard = LinuxSubjectFileExecutionGuard(request.lock_directory)  # type: ignore[arg-type]
             kwargs["execution_guard"] = guard
