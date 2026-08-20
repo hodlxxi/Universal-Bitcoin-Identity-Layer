@@ -106,8 +106,14 @@ def test_manifest_rebuilds_exact_domain_chain():
     assert bundle.trusted_registration.delta_profile.value == "legacy_777"
     assert bundle.trusted_registration.pair_sha256 == "14d28942ffe57c022413f45d293d22f3500e5a2aaf8facac29fa823595430866"
     assert len(bundle.funding_set.recognized_outpoints) == 5
-    assert sum(x.amount_sats for x in bundle.funding_set.recognized_outpoints if x.direction is CovenantDirection.INCOMING) == 300000
-    assert sum(x.amount_sats for x in bundle.funding_set.recognized_outpoints if x.direction is CovenantDirection.OUTGOING) == 300000
+    assert (
+        sum(x.amount_sats for x in bundle.funding_set.recognized_outpoints if x.direction is CovenantDirection.INCOMING)
+        == 300000
+    )
+    assert (
+        sum(x.amount_sats for x in bundle.funding_set.recognized_outpoints if x.direction is CovenantDirection.OUTGOING)
+        == 300000
+    )
 
 
 def test_dry_run_is_zero_write_preview():
@@ -171,9 +177,7 @@ def test_conflicting_existing_identity_fails_closed_before_append():
 
 def test_runner_argv_requires_explicit_commit_ack_and_absolute_lock():
     assert parse_bootstrap_argv(["--dry-run"]) == BootstrapRequest(BootstrapMode.DRY_RUN, None)
-    commit = parse_bootstrap_argv(
-        ["--commit", "--lock-directory", "/private/lock", "--ack", COMMIT_ACK]
-    )
+    commit = parse_bootstrap_argv(["--commit", "--lock-directory", "/private/lock", "--ack", COMMIT_ACK])
     assert commit == BootstrapRequest(BootstrapMode.COMMIT, "/private/lock")
     for argv in (
         ["--commit"],

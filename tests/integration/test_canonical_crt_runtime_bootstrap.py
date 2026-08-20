@@ -9,7 +9,9 @@ from app.models import Base
 from app.services.canonical_covenant_funding_set_storage import SqlAlchemyCanonicalCovenantFundingSetRepository
 from app.services.canonical_crt_runtime_bootstrap import BootstrapMode, execute_bootstrap, load_bootstrap_bundle
 from app.services.canonical_genesis_record_storage import SqlAlchemyCanonicalGenesisRecordRepository
-from app.services.canonical_root_registration_binding_storage import SqlAlchemyCanonicalRootRegistrationBindingRepository
+from app.services.canonical_root_registration_binding_storage import (
+    SqlAlchemyCanonicalRootRegistrationBindingRepository,
+)
 from app.services.trusted_covenant_registration_storage import SqlAlchemyTrustedCovenantRegistrationRepository
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -53,9 +55,18 @@ def test_sqlalchemy_bootstrap_commit_replay_and_no_entitlement_write(repositorie
     assert repos["genesis_repository"].get(bundle.genesis.record_id) == bundle.genesis
     stored_registration = repos["trusted_registration_repository"].get(bundle.trusted_registration.registration_id)
     assert stored_registration == bundle.trusted_registration
-    assert stored_registration.mirrored_pair.earlier_leg.raw_script_hex == bundle.trusted_registration.mirrored_pair.earlier_leg.raw_script_hex
-    assert stored_registration.mirrored_pair.later_leg.raw_script_hex == bundle.trusted_registration.mirrored_pair.later_leg.raw_script_hex
-    assert repos["root_registration_binding_repository"].get(bundle.root_registration_binding.binding_id) == bundle.root_registration_binding
+    assert (
+        stored_registration.mirrored_pair.earlier_leg.raw_script_hex
+        == bundle.trusted_registration.mirrored_pair.earlier_leg.raw_script_hex
+    )
+    assert (
+        stored_registration.mirrored_pair.later_leg.raw_script_hex
+        == bundle.trusted_registration.mirrored_pair.later_leg.raw_script_hex
+    )
+    assert (
+        repos["root_registration_binding_repository"].get(bundle.root_registration_binding.binding_id)
+        == bundle.root_registration_binding
+    )
     assert repos["funding_set_repository"].get(bundle.funding_set.funding_set_id) == bundle.funding_set
 
     with factory() as session:
@@ -80,10 +91,19 @@ def test_sqlalchemy_partial_resume_preserves_exact_prior_rows(repositories):
         "funding_set": "appended",
     }
     assert repos["genesis_repository"].list_for_graph(bundle.graph_or_protocol_id) == (bundle.genesis,)
-    assert repos["trusted_registration_repository"].get(bundle.trusted_registration.registration_id) == bundle.trusted_registration
-    assert repos["root_registration_binding_repository"].resolve_effective(
-        bundle.graph_or_protocol_id,
-        bundle.subject_xonly_pubkey,
-        evaluated_at=NOW,
-    ) == bundle.root_registration_binding
-    assert repos["funding_set_repository"].resolve_effective(bundle.trusted_registration.registration_id) == bundle.funding_set
+    assert (
+        repos["trusted_registration_repository"].get(bundle.trusted_registration.registration_id)
+        == bundle.trusted_registration
+    )
+    assert (
+        repos["root_registration_binding_repository"].resolve_effective(
+            bundle.graph_or_protocol_id,
+            bundle.subject_xonly_pubkey,
+            evaluated_at=NOW,
+        )
+        == bundle.root_registration_binding
+    )
+    assert (
+        repos["funding_set_repository"].resolve_effective(bundle.trusted_registration.registration_id)
+        == bundle.funding_set
+    )

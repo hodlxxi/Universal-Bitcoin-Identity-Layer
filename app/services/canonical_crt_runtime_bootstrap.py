@@ -64,6 +64,7 @@ _TOP_LEVEL_FIELDS = {
     "schema",
     "source_release_sha",
     "subject_xonly_pubkey",
+    "trusted_registration",
 }
 _POLICY_FIELDS = {
     "installs_scheduler",
@@ -184,11 +185,16 @@ def load_bootstrap_bundle(repository_root: Path | str, *, evaluated_at: datetime
             raise ValueError()
         record = trusted_meta["canonical_record"]
         pair_meta = trusted_meta["mirrored_pair"]
-        if type(record) is not dict or type(pair_meta) is not dict or set(pair_meta) != {
-            "earlier_leg_script_hex",
-            "later_leg_script_hex",
-            "pair_sha256",
-        }:
+        if (
+            type(record) is not dict
+            or type(pair_meta) is not dict
+            or set(pair_meta)
+            != {
+                "earlier_leg_script_hex",
+                "later_leg_script_hex",
+                "pair_sha256",
+            }
+        ):
             raise ValueError()
         if record.get("delta_profile") != CovenantDeltaProfile.LEGACY_777.value:
             raise ValueError()
@@ -198,7 +204,10 @@ def load_bootstrap_bundle(repository_root: Path | str, *, evaluated_at: datetime
             subject_pubkey=record["subject_pubkey"],
             allowed_delta_profiles=(CovenantDeltaProfile.LEGACY_777,),
         )
-        if mirrored_covenant_pair_sha256(pair) != pair_meta["pair_sha256"] or pair_meta["pair_sha256"] != record["pair_sha256"]:
+        if (
+            mirrored_covenant_pair_sha256(pair) != pair_meta["pair_sha256"]
+            or pair_meta["pair_sha256"] != record["pair_sha256"]
+        ):
             raise ValueError()
         raw_outpoints = record.get("outpoints")
         if type(raw_outpoints) is not list:
@@ -281,7 +290,9 @@ def load_bootstrap_bundle(repository_root: Path | str, *, evaluated_at: datetime
 
 def _same_genesis(existing, expected) -> bool:
     try:
-        return type(existing) is CanonicalGenesisRecord and canonical_genesis_record_bytes(existing) == canonical_genesis_record_bytes(expected)
+        return type(existing) is CanonicalGenesisRecord and canonical_genesis_record_bytes(
+            existing
+        ) == canonical_genesis_record_bytes(expected)
     except Exception:
         return False
 
@@ -291,7 +302,8 @@ def _same_trusted(existing, expected) -> bool:
         return (
             type(existing) is TrustedCovenantRegistration
             and canonical_trusted_registration_bytes(existing) == canonical_trusted_registration_bytes(expected)
-            and mirrored_covenant_pair_sha256(existing.mirrored_pair) == mirrored_covenant_pair_sha256(expected.mirrored_pair)
+            and mirrored_covenant_pair_sha256(existing.mirrored_pair)
+            == mirrored_covenant_pair_sha256(expected.mirrored_pair)
             and existing.mirrored_pair.earlier_leg.raw_script_hex == expected.mirrored_pair.earlier_leg.raw_script_hex
             and existing.mirrored_pair.later_leg.raw_script_hex == expected.mirrored_pair.later_leg.raw_script_hex
         )
@@ -301,14 +313,18 @@ def _same_trusted(existing, expected) -> bool:
 
 def _same_binding(existing, expected) -> bool:
     try:
-        return type(existing) is CanonicalRootRegistrationBinding and canonical_root_registration_binding_bytes(existing) == canonical_root_registration_binding_bytes(expected)
+        return type(existing) is CanonicalRootRegistrationBinding and canonical_root_registration_binding_bytes(
+            existing
+        ) == canonical_root_registration_binding_bytes(expected)
     except Exception:
         return False
 
 
 def _same_funding(existing, expected) -> bool:
     try:
-        return type(existing) is CanonicalCovenantFundingSet and canonical_covenant_funding_set_bytes(existing) == canonical_covenant_funding_set_bytes(expected)
+        return type(existing) is CanonicalCovenantFundingSet and canonical_covenant_funding_set_bytes(
+            existing
+        ) == canonical_covenant_funding_set_bytes(expected)
     except Exception:
         return False
 
@@ -336,7 +352,9 @@ def _state(
         current = {
             "genesis": genesis_repository.get(bundle.genesis.record_id),
             "trusted_registration": trusted_registration_repository.get(bundle.trusted_registration.registration_id),
-            "root_registration_binding": root_registration_binding_repository.get(bundle.root_registration_binding.binding_id),
+            "root_registration_binding": root_registration_binding_repository.get(
+                bundle.root_registration_binding.binding_id
+            ),
             "funding_set": funding_set_repository.get(bundle.funding_set.funding_set_id),
         }
         expected = {
@@ -367,7 +385,9 @@ def _state(
         raise BootstrapUnavailable() from None
 
 
-def _result(bundle: BootstrapBundle, mode: BootstrapMode, actions: dict[str, str], *, append_performed: bool) -> dict[str, object]:
+def _result(
+    bundle: BootstrapBundle, mode: BootstrapMode, actions: dict[str, str], *, append_performed: bool
+) -> dict[str, object]:
     if set(actions) != set(_STEP_NAMES):
         raise ValueError()
     outcome = "preview" if mode is BootstrapMode.DRY_RUN else ("applied" if append_performed else "unchanged")

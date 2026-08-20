@@ -74,7 +74,9 @@ def _runtime_dependencies() -> dict[str, object]:
         from app.database import get_session, init_database
         from app.services.canonical_covenant_funding_set_storage import SqlAlchemyCanonicalCovenantFundingSetRepository
         from app.services.canonical_genesis_record_storage import SqlAlchemyCanonicalGenesisRecordRepository
-        from app.services.canonical_root_registration_binding_storage import SqlAlchemyCanonicalRootRegistrationBindingRepository
+        from app.services.canonical_root_registration_binding_storage import (
+            SqlAlchemyCanonicalRootRegistrationBindingRepository,
+        )
         from app.services.trusted_covenant_registration_storage import SqlAlchemyTrustedCovenantRegistrationRepository
 
         init_database(create_tables=False)
