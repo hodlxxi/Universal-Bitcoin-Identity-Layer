@@ -1,0 +1,139 @@
+{
+  "bootstrap_policy": {
+    "installs_scheduler": false,
+    "performs_bitcoin_observation": false,
+    "registration_anchor_selection": "exact_manifest_pinned",
+    "registration_anchor_selection_note": "Bootstrap V1 deliberately pins the matched 122223-sat incoming/outgoing pair. This is a source-controlled bootstrap convention, not a protocol-wide anchor-selection rule.",
+    "writes_entitlement_evidence": false
+  },
+  "funding_set": {
+    "canonical_record": {
+      "counterparty_xonly_pubkey": "2f664095c520438506ddea8f584be08aeef210bc7ec37817a56478a489b72a8c",
+      "created_at": "2026-08-12T20:34:14Z",
+      "effective_at": "2026-08-12T20:34:14Z",
+      "funding_set_id": "0eddca9f-3e94-48a2-b961-8ec7fd50d047",
+      "funding_set_version": "hodlxxi.canonical_recognized_covenant_funding_set_service.v1",
+      "lifecycle_changed_at": "2026-08-12T20:34:14Z",
+      "lifecycle_state": "effective",
+      "pair_sha256": "14d28942ffe57c022413f45d293d22f3500e5a2aaf8facac29fa823595430866",
+      "recognized_outpoints": [
+        {
+          "amount_sats": 122223,
+          "descriptor_sha256": null,
+          "direction": "incoming",
+          "txid": "9b868ccae2a3036f9742c5a46acac5c7be80f2519f4f0bde5d09000a9eb8200e",
+          "vout": 40,
+          "witness_script_sha256": "05ad7330848fecfd467efbe4d1bcd0f3468362cf57e190a91c345b63a152e933"
+        },
+        {
+          "amount_sats": 133129,
+          "descriptor_sha256": null,
+          "direction": "incoming",
+          "txid": "e1edaa81ad93c9a9af8a8ef421cd2334c61f1c543dd8d141e22a47e6356f8fe7",
+          "vout": 29,
+          "witness_script_sha256": "05ad7330848fecfd467efbe4d1bcd0f3468362cf57e190a91c345b63a152e933"
+        },
+        {
+          "amount_sats": 44648,
+          "descriptor_sha256": null,
+          "direction": "incoming",
+          "txid": "e558faf8d852ca4ab5608a4e4e8587a2f2e56caaf0854ba517639eb9e9aaa0bc",
+          "vout": 147,
+          "witness_script_sha256": "05ad7330848fecfd467efbe4d1bcd0f3468362cf57e190a91c345b63a152e933"
+        },
+        {
+          "amount_sats": 122223,
+          "descriptor_sha256": null,
+          "direction": "outgoing",
+          "txid": "32c0206750e255aa0a761d1aab7d06d9501be4e60dbf079affae896d3056638e",
+          "vout": 84,
+          "witness_script_sha256": "1cab64b6031e287169dc7e6074d3be597228d1aa0cc6727d968df19b2be1a654"
+        },
+        {
+          "amount_sats": 177777,
+          "descriptor_sha256": null,
+          "direction": "outgoing",
+          "txid": "e33ed3550b5c0e987da9b2656857140eee550860e84c7e43175c7e2ee4a41848",
+          "vout": 59,
+          "witness_script_sha256": "1cab64b6031e287169dc7e6074d3be597228d1aa0cc6727d968df19b2be1a654"
+        }
+      ],
+      "schema": "hodlxxi.canonical_recognized_covenant_funding_set.v1",
+      "subject_xonly_pubkey": "3d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923",
+      "superseded_by_funding_set_id": null,
+      "trusted_registration_id": "169faaad-6706-4fd1-a219-426a90f41c21",
+      "trusted_registration_sha256": "f90cca1f5a762c9f37c30f26afb6ab3de3d5f4ac44dede0f313bf42f82e2f484"
+    },
+    "canonical_record_sha256": "f6ed282503840b0638a6b3f65c25e6d019aa33d4a708c3a2d1ee7e93f400348d"
+  },
+  "genesis": {
+    "canonical_record_sha256": "df0445177ad8e913ef18dbf4670e8f8bc7a23f8adb14b9d87d4425dc3c5b1339",
+    "source_path": "docs/data/e923_canonical_genesis_record_v1.json"
+  },
+  "graph_or_protocol_id": "hodlxxi.crt_membership_graph.v1",
+  "root_registration_binding": {
+    "canonical_record": {
+      "binding_id": "a4b40826-62d6-4def-a614-71d02a22bd27",
+      "binding_version": "hodlxxi.canonical_root_registration_binding_service.v1",
+      "created_at": "2026-08-12T20:34:14Z",
+      "effective_at": "2026-08-12T20:34:14Z",
+      "graph_or_protocol_id": "hodlxxi.crt_membership_graph.v1",
+      "lifecycle_changed_at": "2026-08-12T20:34:14Z",
+      "lifecycle_state": "effective",
+      "root_x_only_public_key": "3d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923",
+      "schema": "hodlxxi.canonical_root_registration_binding.v1",
+      "superseded_by_binding_id": null,
+      "trusted_registration_id": "169faaad-6706-4fd1-a219-426a90f41c21",
+      "trusted_registration_sha256": "f90cca1f5a762c9f37c30f26afb6ab3de3d5f4ac44dede0f313bf42f82e2f484"
+    },
+    "canonical_record_sha256": "325a6777412df38c4b294b03e7a347d37f65671a9fc7a4fb95e8a247a425df65"
+  },
+  "schema": "hodlxxi.canonical_crt_runtime_bootstrap_manifest.v1",
+  "source_release_sha": "fa87d2a8561df513f7ae243485869d2fc0ef9098",
+  "subject_xonly_pubkey": "3d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923",
+  "trusted_registration": {
+    "canonical_record": {
+      "counterparty_pubkey": "032f664095c520438506ddea8f584be08aeef210bc7ec37817a56478a489b72a8c",
+      "counterparty_xonly_pubkey": "2f664095c520438506ddea8f584be08aeef210bc7ec37817a56478a489b72a8c",
+      "delta_blocks": 777,
+      "delta_profile": "legacy_777",
+      "lifecycle_changed_at": "2026-08-12T20:34:14Z",
+      "lifecycle_state": "active",
+      "network": "bitcoin",
+      "outpoints": [
+        {
+          "amount_sats": 122223,
+          "descriptor_sha256": null,
+          "direction": "incoming",
+          "txid": "9b868ccae2a3036f9742c5a46acac5c7be80f2519f4f0bde5d09000a9eb8200e",
+          "vout": 40,
+          "witness_script_sha256": "05ad7330848fecfd467efbe4d1bcd0f3468362cf57e190a91c345b63a152e933"
+        },
+        {
+          "amount_sats": 122223,
+          "descriptor_sha256": null,
+          "direction": "outgoing",
+          "txid": "32c0206750e255aa0a761d1aab7d06d9501be4e60dbf079affae896d3056638e",
+          "vout": 84,
+          "witness_script_sha256": "1cab64b6031e287169dc7e6074d3be597228d1aa0cc6727d968df19b2be1a654"
+        }
+      ],
+      "pair_sha256": "14d28942ffe57c022413f45d293d22f3500e5a2aaf8facac29fa823595430866",
+      "registered_at": "2026-08-12T20:34:14Z",
+      "registration_id": "169faaad-6706-4fd1-a219-426a90f41c21",
+      "registration_version": "hodlxxi.trusted_covenant_registration_service.v1",
+      "schema": "hodlxxi.trusted_covenant_registration.v1",
+      "subject_pubkey": "023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923",
+      "subject_xonly_pubkey": "3d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923",
+      "superseded_by_registration_id": null,
+      "template_family": "cltv_only",
+      "validator_version": "hodlxxi.mirrored_covenant_pair_validator.v1"
+    },
+    "canonical_record_sha256": "f90cca1f5a762c9f37c30f26afb6ab3de3d5f4ac44dede0f313bf42f82e2f484",
+    "mirrored_pair": {
+      "earlier_leg_script_hex": "6303681d1bb17521023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923ac670371201bb17521032f664095c520438506ddea8f584be08aeef210bc7ec37817a56478a489b72a8cac68",
+      "later_leg_script_hex": "630371201bb17521032f664095c520438506ddea8f584be08aeef210bc7ec37817a56478a489b72a8cac67037a231bb17521023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923ac68",
+      "pair_sha256": "14d28942ffe57c022413f45d293d22f3500e5a2aaf8facac29fa823595430866"
+    }
+  }
+}
