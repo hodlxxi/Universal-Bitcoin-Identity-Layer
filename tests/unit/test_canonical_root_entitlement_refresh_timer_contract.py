@@ -4,7 +4,6 @@ from pathlib import Path
 import re
 import shlex
 
-
 ROOT = Path(__file__).resolve().parents[2]
 SYSTEMD = ROOT / "deployment" / "systemd"
 DOC = ROOT / "docs" / "CANONICAL_ROOT_ENTITLEMENT_REFRESH_TIMER_V1.md"
