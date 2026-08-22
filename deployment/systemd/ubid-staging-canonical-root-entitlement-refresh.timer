@@ -1,0 +1,12 @@
+[Unit]
+Description=Schedule UBID staging canonical-root entitlement refresh
+
+[Timer]
+Unit=ubid-staging-canonical-root-entitlement-refresh.service
+OnBootSec=30s
+OnUnitInactiveSec=120s
+AccuracySec=5s
+RandomizedDelaySec=5s
+
+[Install]
+WantedBy=timers.target
