@@ -1,0 +1,47 @@
+[Unit]
+Description=HODLXXI canonical-root entitlement refresh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hodlxxi
+Group=hodlxxi
+WorkingDirectory=/srv/ubid
+EnvironmentFile=/etc/hodlxxi/hodlxxi.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+ExecStart=/srv/ubid/venv/bin/python /srv/ubid/scripts/canonical_root_entitlement_refresh.py --graph hodlxxi.crt_membership_graph.v1 --subject 3d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923 --commit --lock-directory /run/hodlxxi-canonical-root-locks
+TimeoutStartSec=90s
+
+RuntimeDirectory=hodlxxi-canonical-root-locks
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+ReadWritePaths=/run/hodlxxi-canonical-root-locks
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+DevicePolicy=closed
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+KeyringMode=private
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SocketBindDeny=any
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hodlxxi-canonical-root-entitlement-refresh
