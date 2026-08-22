@@ -17,7 +17,7 @@ TimeoutStartSec=90s
 RuntimeDirectory=ubid-staging-canonical-root-locks
 RuntimeDirectoryMode=0700
 RuntimeDirectoryPreserve=yes
-ReadWritePaths=/run/ubid-staging-canonical-root-locks
+ReadWritePaths=/run/ubid-staging-canonical-root-locks /srv/ubid-staging/runtime
 
 NoNewPrivileges=yes
 PrivateTmp=yes
