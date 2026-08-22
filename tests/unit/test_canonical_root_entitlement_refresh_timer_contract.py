@@ -18,6 +18,7 @@ PRODUCTION = {
     "python": "/srv/ubid/venv/bin/python",
     "script": "/srv/ubid/scripts/canonical_root_entitlement_refresh.py",
     "runtime_directory": "hodlxxi-canonical-root-locks",
+    "additional_read_write_paths": (),
 }
 STAGING = {
     "stem": "ubid-staging-canonical-root-entitlement-refresh",
@@ -28,6 +29,7 @@ STAGING = {
     "python": "/srv/ubid-staging/venv-staging/bin/python",
     "script": "/srv/ubid-staging/scripts/canonical_root_entitlement_refresh.py",
     "runtime_directory": "ubid-staging-canonical-root-locks",
+    "additional_read_write_paths": ("/srv/ubid-staging/runtime",),
 }
 
 HARDENING = {
@@ -110,7 +112,9 @@ def test_services_bind_manifest_and_exact_isolated_runtime_contracts():
         assert service["runtimeDirectory".lower()] == environment["runtime_directory"]
         assert service["runtimedirectorymode"] == "0700"
         assert service["runtimedirectorypreserve"] == "yes"
-        assert service["readwritepaths"] == lock_directory
+        expected_read_write_paths = " ".join((lock_directory, *environment["additional_read_write_paths"]))
+        assert service["readwritepaths"] == expected_read_write_paths
+        assert f"{other['working_directory']}/runtime" not in service["readwritepaths"].split()
         assert all(service[key] == value for key, value in HARDENING.items())
 
         text = path.read_text(encoding="utf-8")

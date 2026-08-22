@@ -34,6 +34,19 @@ Perform these steps in order:
 7. Run the production service as a manual oneshot and verify success.
 8. Enable the production timer and observe its refresh results.
 
+## Staging storage write boundary
+
+The staging deployment uses SQLite beneath `/srv/ubid-staging/runtime`.
+Because the staging oneshot runs with `ProtectSystem=strict`, its service
+authorizes that exact runtime directory in addition to its subject-lock
+directory. SQLite may create its transaction journal or WAL files beside the
+database, so authorizing only the database file would not provide a complete
+commit boundary.
+
+This permission does not authorize the staging checkout, logs, JWKS directory,
+`/var/lib`, or any production path. The production service does not inherit the
+staging runtime permission.
+
 ## Rollback
 
 Rollback is the reverse environment order: disable the production timer first if it
@@ -47,6 +60,10 @@ system fails closed.
 Evidence rows are immutable. At a 120-second cadence, one subject has an upper bound
 of about 720 successful refreshes per day (fewer when an exact replay is unchanged).
 This change makes no retention-policy change.
+
+The staging runtime permission is a host write-boundary correction. It makes no
+database-schema, policy, Social, OAuth, bootstrap, retention, or authorization
+change.
 
 This contract makes no Social, OAuth, database-schema, policy, bootstrap, or
 application change. It adds no grant, fallback identity, authority override, runner,
