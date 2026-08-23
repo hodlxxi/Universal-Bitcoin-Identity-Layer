@@ -157,11 +157,7 @@ def _entitlements(snapshot: dict, records: list, now: int) -> dict[str, dict]:
 def _x25519_public_key(value: object) -> str:
     key = _subject(value)
     key_bytes = bytes.fromhex(key)
-    if (
-        key in _PROHIBITED_X25519
-        or key_bytes[31] & 0x80
-        or int.from_bytes(key_bytes, "little") >= X25519_FIELD_PRIME
-    ):
+    if key in _PROHIBITED_X25519 or key_bytes[31] & 0x80 or int.from_bytes(key_bytes, "little") >= X25519_FIELD_PRIME:
         raise _InvalidSource
     return key
 
@@ -245,10 +241,7 @@ def build_full_recipient_directory(entitlement_snapshot: object, binding_snapsho
         expires_at = min(entitlement_source["expiresAt"], binding_source["expiresAt"], issued_at + MAX_VALIDITY_MS)
         if issued_at > normalized_now or normalized_now >= expires_at or issued_at >= expires_at:
             raise _InvalidSource
-        if any(
-            binding["validFrom"] < issued_at or binding["expiresAt"] > expires_at
-            for binding in bindings.values()
-        ):
+        if any(binding["validFrom"] < issued_at or binding["expiresAt"] > expires_at for binding in bindings.values()):
             raise _InvalidSource
 
         snapshot_id = _digest(entitlement_source, binding_source, issued_at, expires_at)
