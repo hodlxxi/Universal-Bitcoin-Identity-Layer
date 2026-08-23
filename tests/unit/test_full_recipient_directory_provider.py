@@ -54,8 +54,8 @@ def sources(subjects=(SUBJECT_A, SUBJECT_B)):
                 "algorithm": "x25519-v1",
                 "version": 1,
                 "publicKey": keys[subject],
-                "validFrom": NOW - 250,
-                "expiresAt": NOW + 200_000,
+                "validFrom": NOW - 750,
+                "expiresAt": NOW + 325_000,
                 "revoked": False,
             }
             for subject in subjects
@@ -77,26 +77,26 @@ def test_exact_output_and_deterministic_snapshot_digest():
         "schema": "hodlxxi.full_recipient_directory.v1",
         "version": 1,
         "source": "hodlxxi-crt",
-        "snapshotId": "sha256:f94e0153db33b5738b460656328eecb5f2b6d58e0b705f2617934dc3ab359050",
+        "snapshotId": "sha256:a725a741e7cb8f8982463558f8cb016547f0080d4489abc921d4dd5e8be53a53",
         "complete": True,
         "issuedAt": NOW - 500,
         "expiresAt": NOW + 299_500,
         "recipients": [
             {
-                "snapshotId": "sha256:f94e0153db33b5738b460656328eecb5f2b6d58e0b705f2617934dc3ab359050",
+                "snapshotId": "sha256:a725a741e7cb8f8982463558f8cb016547f0080d4489abc921d4dd5e8be53a53",
                 "subject": SUBJECT_A,
                 "encryptionKey": {
                     "algorithm": "x25519-v1",
                     "version": 1,
                     "publicKey": KEY_A,
-                    "validFrom": NOW - 250,
-                    "expiresAt": NOW + 200_000,
+                    "validFrom": NOW - 750,
+                    "expiresAt": NOW + 325_000,
                     "revoked": False,
                 },
                 "authority": {
                     "source": "hodlxxi-crt",
                     "version": 1,
-                    "snapshotId": "sha256:f94e0153db33b5738b460656328eecb5f2b6d58e0b705f2617934dc3ab359050",
+                    "snapshotId": "sha256:a725a741e7cb8f8982463558f8cb016547f0080d4489abc921d4dd5e8be53a53",
                     "subject": SUBJECT_A,
                     "status": "full",
                     "expiresAt": NOW + 299_500,
@@ -112,6 +112,31 @@ def test_complete_empty_directory_is_valid_and_deterministic():
     second = build_full_recipient_directory(deepcopy(entitlements), deepcopy(bindings), now=NOW)
     assert first == second
     assert first["complete"] is True and first["recipients"] == []
+
+
+def test_binding_covering_directory_and_exact_boundaries_are_accepted():
+    entitlements, bindings = sources((SUBJECT_A,))
+    covering = build_full_recipient_directory(entitlements, bindings, now=NOW)
+    assert covering["recipients"][0]["encryptionKey"]["validFrom"] < covering["issuedAt"]
+    assert covering["recipients"][0]["encryptionKey"]["expiresAt"] > covering["expiresAt"]
+
+    bindings["bindings"][0]["validFrom"] = covering["issuedAt"]
+    bindings["bindings"][0]["expiresAt"] = covering["expiresAt"]
+    exact = build_full_recipient_directory(entitlements, bindings, now=NOW)
+    assert exact["recipients"][0]["encryptionKey"]["validFrom"] == exact["issuedAt"]
+    assert exact["recipients"][0]["encryptionKey"]["expiresAt"] == exact["expiresAt"]
+
+
+def test_binding_must_cover_complete_directory_interval():
+    mutations = (
+        lambda binding: binding.update(validFrom=NOW - 499),
+        lambda binding: binding.update(expiresAt=NOW + 299_499),
+        lambda binding: binding.update(expiresAt=NOW + 200_000),
+    )
+    for mutate in mutations:
+        entitlements, bindings = sources((SUBJECT_A,))
+        mutate(bindings["bindings"][0])
+        unavailable(entitlements, bindings)
 
 
 @pytest.mark.parametrize("which", ["entitlements", "bindings"])

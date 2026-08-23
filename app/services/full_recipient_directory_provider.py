@@ -241,7 +241,7 @@ def build_full_recipient_directory(entitlement_snapshot: object, binding_snapsho
         expires_at = min(entitlement_source["expiresAt"], binding_source["expiresAt"], issued_at + MAX_VALIDITY_MS)
         if issued_at > normalized_now or normalized_now >= expires_at or issued_at >= expires_at:
             raise _InvalidSource
-        if any(binding["validFrom"] < issued_at or binding["expiresAt"] > expires_at for binding in bindings.values()):
+        if any(binding["validFrom"] > issued_at or binding["expiresAt"] < expires_at for binding in bindings.values()):
             raise _InvalidSource
 
         snapshot_id = _digest(entitlement_source, binding_source, issued_at, expires_at)

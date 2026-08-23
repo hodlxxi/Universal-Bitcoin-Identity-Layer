@@ -35,8 +35,8 @@ exactly `snapshotId`, `subject`, `algorithm`, `version`, `publicKey`,
 refer to the enclosing snapshot, and must match the entitlement subject set
 exactly. A key has algorithm `x25519-v1`, a positive safe-integer version, a
 unique canonical lowercase 64-hex public encoding different from the signing
-subject, `revoked: false`, and a current window fully contained by the resulting
-directory interval.
+subject, `revoked: false`, and a current window that covers the complete
+resulting directory interval. Equality at both interval boundaries is valid.
 Known low-order/prohibited encodings and high-bit aliases are rejected; no
 private key is accepted or retained.
 
