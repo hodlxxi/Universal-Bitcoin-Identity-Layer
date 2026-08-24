@@ -222,6 +222,8 @@ def _parse_and_verify_dict(payload: object, *, authenticated_subject: object) ->
             bytes.fromhex(signature), bytes.fromhex(expected)
         ):
             raise ValueError
+        if public_key == subject:
+            raise ValueError
         return BindingStatement(
             STATEMENT_SCHEMA,
             subject,

@@ -862,6 +862,44 @@ def test_valid_real_bip340_register_rotate_revoke_chain(repository):
     assert service.current_snapshot()["bindings"] == []
 
 
+def test_valid_real_bip340_subject_equal_public_key_rejected_without_mutation(repository):
+    private_key = PrivateKey((4).to_bytes(32, "big"))
+    subject = real_subject(private_key)
+    assert validate_x25519_public_key(subject) == subject
+
+    service = X25519IdentityBindingRegistry(repository, clock=lambda: NOW)
+    first = signed_payload(private_key, public_key=KEY_A, nonce="17" * 32)
+    assert service.apply(encoded(first), authenticated_subject=subject) == first
+    before_rows = stored_rows(repository)
+    before_snapshot = service.current_snapshot()
+    assert active_rows(repository) == [(first["digest"], KEY_A, "register")]
+
+    adversarial = signed_payload(
+        private_key,
+        public_key=subject,
+        version=2,
+        operation="rotate",
+        prior=first["digest"],
+        nonce="18" * 32,
+    )
+    assert PublicKeyXOnly(bytes.fromhex(subject)).verify(
+        bytes.fromhex(adversarial["signature"]),
+        bytes.fromhex(adversarial["digest"]),
+    )
+
+    with pytest.raises(BindingRegistryUnavailable) as parsed_error:
+        parse_and_verify_statement(encoded(adversarial), authenticated_subject=subject)
+    assert str(parsed_error.value) == contract.UNAVAILABLE_MESSAGE
+
+    with pytest.raises(BindingRegistryUnavailable) as service_error:
+        service.apply(encoded(adversarial), authenticated_subject=subject)
+
+    assert str(service_error.value) == contract.UNAVAILABLE_MESSAGE
+    assert stored_rows(repository) == before_rows
+    assert active_rows(repository) == [(first["digest"], KEY_A, "register")]
+    assert service.current_snapshot() == before_snapshot
+
+
 @pytest.mark.parametrize(
     "changes",
     [
