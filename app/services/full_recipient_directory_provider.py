@@ -154,12 +154,31 @@ def _entitlements(snapshot: dict, records: list, now: int) -> dict[str, dict]:
     return {record["subject"]: record for record in normalized}
 
 
+def validate_x25519_public_key(value: object) -> str:
+    """Return one canonical public X25519 encoding or raise ``ValueError``.
+
+    This is the single public-key-only validation boundary shared by directory
+    ingestion and the durable identity-binding registry.
+    """
+    try:
+        key = _subject(value)
+        key_bytes = bytes.fromhex(key)
+        if (
+            key in _PROHIBITED_X25519
+            or key_bytes[31] & 0x80
+            or int.from_bytes(key_bytes, "little") >= X25519_FIELD_PRIME
+        ):
+            raise ValueError("invalid X25519 public key")
+        return key
+    except (_InvalidSource, TypeError, ValueError):
+        raise ValueError("invalid X25519 public key") from None
+
+
 def _x25519_public_key(value: object) -> str:
-    key = _subject(value)
-    key_bytes = bytes.fromhex(key)
-    if key in _PROHIBITED_X25519 or key_bytes[31] & 0x80 or int.from_bytes(key_bytes, "little") >= X25519_FIELD_PRIME:
-        raise _InvalidSource
-    return key
+    try:
+        return validate_x25519_public_key(value)
+    except ValueError:
+        raise _InvalidSource from None
 
 
 def _bindings(snapshot: dict, records: list, now: int) -> dict[str, dict]:
