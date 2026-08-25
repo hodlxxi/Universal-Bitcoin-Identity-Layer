@@ -27,3 +27,20 @@ SHA-256 digest, never the JWT. Introspection authenticates the client and requir
 the verified JWT to agree exactly with its unrevoked issuance record.
 
 No schema migration is required. Legacy opaque token lookup remains unchanged.
+
+## Confidential service domain
+
+Human browser OAuth and confidential service credentials are separate domains.
+The source-only confidential boundary uses `grant_type=client_credentials`,
+`token_use=client_assertion` with
+`purpose=service_client_authentication` for client authentication, and
+`token_use=service_access` with `purpose=social_full_directory_read` for its
+access token. Its only scope is the exact string
+`social:full-directory:read`. This scope is intentionally not added to human
+scope discovery, dynamic registration, browser authorization, or the canonical
+human bearer principal.
+
+Consequently, a human access token cannot satisfy the service contract and a
+service token cannot satisfy the human bearer contract. Neither token conveys
+Full entitlement or authority beyond its independently evaluated policy. The
+service token is a short-lived bearer credential and is not replay-resistant.

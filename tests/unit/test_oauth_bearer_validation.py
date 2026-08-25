@@ -32,6 +32,40 @@ SUBJECT = "a" * 64
 CONTRACT = "hodlxxi.oauth.access-token.v1"
 
 
+def test_service_token_cannot_validate_as_canonical_human_bearer(monkeypatch):
+    """A valid service signature still fails the human token-use contract."""
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    audience = "https://social.example/full-directory"
+    token = jwt.encode(
+        {
+            "iss": "https://identity.example",
+            "aud": audience,
+            "sub": "service:social-full-directory",
+            "azp": "social-confidential-backend",
+            "iat": 1_500_000_000,
+            "exp": 4_000_000_000,
+            "jti": "synthetic-service-token",
+            "scope": "social:full-directory:read",
+            "grant_type": "client_credentials",
+            "token_use": "service_access",
+            "purpose": "social_full_directory_read",
+        },
+        key,
+        algorithm="RS256",
+        headers={"kid": "synthetic-service-key"},
+    )
+    monkeypatch.setattr(
+        "app.services.oauth_bearer_validation.get_canonical_jwt_record_by_jti",
+        lambda _jti: {"client_id": audience},
+    )
+    monkeypatch.setattr("app.services.oauth_bearer_validation.get_key_by_kid", lambda _directory, _kid: key)
+    with pytest.raises(BearerValidationError):
+        validate_canonical_access_token_with_config(
+            token,
+            config=BearerValidationConfig(issuer="https://identity.example", jwks_dir="unused"),
+        )
+
+
 @pytest.fixture
 def canonical_token_factory(monkeypatch):
     cfg = get_config()
