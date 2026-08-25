@@ -27,6 +27,41 @@ class EntitlementDecision:
     observed_at: str | None = None
 
 
+def require_active_persisted_user(subject_pubkey: str, user) -> str:
+    """Return the canonical subject only when the persisted user is active."""
+
+    try:
+        subject = canonical_xonly_pubkey(subject_pubkey)
+    except (TypeError, ValueError) as exc:
+        raise EntitlementDenied("invalid subject") from exc
+    if subject_pubkey != subject:
+        raise EntitlementDenied("noncanonical subject")
+    if not isinstance(user, dict) or user.get("pubkey") != subject or user.get("is_active") is not True:
+        raise EntitlementDenied("no current entitlement")
+    return subject
+
+
+def evaluate_current_entitlement_evidence(evidence, *, subject: str, now: datetime):
+    """Validate one latest record and return it with its canonical Full state."""
+
+    from app.services.current_entitlement_evidence import CurrentEntitlementEvidenceRecord
+
+    evidence = CurrentEntitlementEvidenceRecord(**vars(evidence))
+    if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("invalid clock")
+    now = now.astimezone(timezone.utc)
+    if evidence.subject_pubkey != subject:
+        raise ValueError("evidence subject mismatch")
+    if evidence.observed_at > now + timedelta(seconds=60):
+        raise ValueError("evidence exceeds future skew")
+    current_full = (
+        evidence.revoked_at is None
+        and evidence.observed_at <= now < evidence.valid_until
+        and evidence.identity_class is IdentityClass.FULL
+    )
+    return evidence, current_full
+
+
 def resolve_current_entitlement(subject_pubkey: str) -> EntitlementDecision:
     try:
         subject = canonical_xonly_pubkey(subject_pubkey)
@@ -38,8 +73,7 @@ def resolve_current_entitlement(subject_pubkey: str) -> EntitlementDecision:
         user = get_user_by_pubkey(subject)
     except Exception as exc:
         raise EntitlementUnavailable("persisted user state unavailable") from exc
-    if not isinstance(user, dict) or user.get("pubkey") != subject or user.get("is_active") is not True:
-        raise EntitlementDenied("no current entitlement")
+    require_active_persisted_user(subject, user)
     return EntitlementDecision(subject, IdentityClass.LIMITED, False, "active_persisted_user")
 
 
@@ -80,27 +114,13 @@ class EvidenceBackedCurrentEntitlementResolver:
         if evidence is None:
             return baseline
         try:
-            from app.services.current_entitlement_evidence import CurrentEntitlementEvidenceRecord
-
-            evidence = CurrentEntitlementEvidenceRecord(**vars(evidence))
             now = self._clock()
-            if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
-                raise ValueError("invalid clock")
-            now = now.astimezone(timezone.utc)
-            if evidence.subject_pubkey != baseline.subject:
-                raise ValueError("evidence subject mismatch")
-            if evidence.observed_at > now + timedelta(seconds=60):
-                raise ValueError("evidence exceeds future skew")
+            evidence, current_full = evaluate_current_entitlement_evidence(evidence, subject=baseline.subject, now=now)
         except Exception as exc:
             raise EntitlementUnavailable("malformed entitlement evidence") from exc
 
         observed_at = evidence.observed_at.isoformat()
-        if (
-            evidence.revoked_at is not None
-            or now < evidence.observed_at
-            or now >= evidence.valid_until
-            or evidence.identity_class is IdentityClass.LIMITED
-        ):
+        if not current_full:
             return EntitlementDecision(
                 baseline.subject,
                 IdentityClass.LIMITED,

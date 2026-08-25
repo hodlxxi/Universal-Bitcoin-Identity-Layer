@@ -9,6 +9,7 @@ from app.services.current_entitlement import (
     EntitlementDenied,
     EntitlementUnavailable,
     EvidenceBackedCurrentEntitlementResolver,
+    evaluate_current_entitlement_evidence,
     resolve_current_entitlement,
     resolve_runtime_current_entitlement,
 )
@@ -290,3 +291,16 @@ def test_runtime_resolver_session_factory_path_is_read_only_and_closes_session()
 def test_runtime_resolver_rejects_ambiguous_storage_injection():
     with pytest.raises(ValueError, match="repository or session factory"):
         resolve_runtime_current_entitlement(SUBJECT, repository=Repository(), session_factory=lambda: None)
+
+
+def test_shared_evidence_evaluator_matches_resolver_state_semantics():
+    full, is_full = evaluate_current_entitlement_evidence(evidence(), subject=SUBJECT, now=NOW)
+    assert full == evidence(evidence_id=full.evidence_id)
+    assert is_full is True
+    for record in (
+        evidence(IdentityClass.LIMITED),
+        evidence(revoked_at=NOW),
+        evidence(valid_until=NOW),
+        evidence(observed_at=NOW + timedelta(seconds=1), created_at=NOW + timedelta(seconds=1)),
+    ):
+        assert evaluate_current_entitlement_evidence(record, subject=SUBJECT, now=NOW)[1] is False
