@@ -8,10 +8,14 @@ snapshots: authoritative current-Full entitlement evidence for the entire
 eligible population and explicit X25519 public-key bindings for exactly that
 population. A generic unavailable error replaces every invalid result.
 
-The existing per-subject current-entitlement table, resolver, and public
-assertion do not prove population completeness and are not read by this
-provider. Live acquisition is therefore unavailable. No cache is presented as
-a complete directory.
+The separate dormant Full Entitlement Snapshot V1 reader now obtains the
+entitlement input from the complete bounded `current_entitlement_evidence`
+population and active persisted-user proof from `users` in one transaction.
+Tied logical latest evidence or missing active-user proof makes that source
+snapshot generically unavailable. The directory builder remains purely injected
+and is not wired to that reader. Existing per-subject resolution and public
+assertion still do not prove population completeness. Live acquisition and
+delivery remain unavailable, and no cache is presented as a complete directory.
 
 ## Injected contracts
 
@@ -65,8 +69,8 @@ unavailable without disclosing subjects, counts, lookup outcomes, or details.
 
 ## Explicit non-claims
 
-This adds no HTTP route, authentication surface, public enumeration, database
-query or migration, key registration, key custody, runtime wiring, encryption,
+This adds no HTTP route, authentication surface, public enumeration, migration,
+key registration, key custody, runtime wiring, encryption,
 decryption, key agreement, protected transport, UI, dependency, or deployment.
 It does not derive an encryption key from, or equate it with, a Nostr or other
 authentication/signing subject. It does not log recipient data, call a network,
