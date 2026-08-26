@@ -218,6 +218,29 @@ def test_issuance_fails_closed_without_atomic_consume(material, configured, cons
         )
 
 
+def test_oversized_generated_service_token_does_not_consume_assertion(material, configured):
+    encoded_assertion = assertion(material)
+    prospective_service_token = service_token(material)
+
+    assert len(encoded_assertion) < len(prospective_service_token)
+
+    capped = replace(configured, max_credential_length=len(encoded_assertion))
+    replay_calls = []
+
+    with pytest.raises(CredentialUnavailable, match="^credential service unavailable$"):
+        issue_service_access_token(
+            encoded_assertion,
+            config=capped,
+            replay_consumer=lambda jti, deadline: replay_calls.append((jti, deadline)) is None,
+            signing_key=material[1],
+            signing_kid="service-key",
+            now=NOW,
+            token_jti="service-token-1",
+        )
+
+    assert replay_calls == []
+
+
 def test_issuance_fails_closed_when_replay_store_raises(material, configured):
     def unavailable(_jti, _deadline):
         raise OSError("internal detail")

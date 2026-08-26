@@ -50,9 +50,13 @@ local process setting, so the final accepted integer second is
 `exp + MAX_CLOCK_SKEW_SECONDS` and the earliest safe value is
 `exp + MAX_CLOCK_SKEW_SECONDS + 1`. A store that honors this exclusive deadline
 is safe across allowed rolling skew changes from zero through five seconds.
-Absence, failure, or a non-success result makes issuance unavailable. This
-repository supplies only the dependency boundary, not that store. A service
-access token remains a bearer credential: this implementation does not consume
+The generated service access token is encoded and checked against the configured
+credential-size cap before the client assertion is consumed. An unusably
+oversized generated token therefore cannot burn a valid one-shot assertion.
+Absence, failure, or a non-success replay-consumer result makes issuance
+unavailable. This repository supplies only the dependency boundary, not that
+store. A service access token remains a bearer credential: this implementation
+does not consume
 its `jti` and therefore does not claim bearer-token replay resistance. Its short
 lifetime limits, but does not eliminate, replay exposure.
 

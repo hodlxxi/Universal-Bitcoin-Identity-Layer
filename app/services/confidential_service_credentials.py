@@ -232,13 +232,6 @@ def issue_service_access_token(
     assertion_jti, assertion_exp = validate_client_assertion(encoded_assertion, config=config, now=current)
     if not callable(replay_consumer):
         raise CredentialUnavailable("credential service unavailable")
-    replay_retention_deadline = assertion_exp + MAX_CLOCK_SKEW_SECONDS + 1
-    try:
-        consumed = replay_consumer(assertion_jti, replay_retention_deadline)
-    except Exception:
-        consumed = False
-    if consumed is not True:
-        raise CredentialUnavailable("credential service unavailable")
     jti = _identifier(token_jti if token_jti is not None else uuid.uuid4().hex, MAX_JTI_LENGTH)
     kid = _identifier(signing_kid, MAX_KID_LENGTH)
     payload = {
@@ -254,11 +247,22 @@ def issue_service_access_token(
         "exp": current + MAX_LIFETIME_SECONDS,
         "jti": jti,
     }
+    encoded_token = None
     try:
-        return jwt.encode(payload, signing_key, algorithm=ALGORITHM, headers={"kid": kid})
+        encoded_token = jwt.encode(payload, signing_key, algorithm=ALGORITHM, headers={"kid": kid})
     except Exception:
         pass
-    raise CredentialUnavailable("credential service unavailable")
+    if not isinstance(encoded_token, str) or len(encoded_token) > config.max_credential_length:
+        raise CredentialUnavailable("credential service unavailable")
+
+    replay_retention_deadline = assertion_exp + MAX_CLOCK_SKEW_SECONDS + 1
+    try:
+        consumed = replay_consumer(assertion_jti, replay_retention_deadline)
+    except Exception:
+        consumed = False
+    if consumed is not True:
+        raise CredentialUnavailable("credential service unavailable")
+    return encoded_token
 
 
 def verify_service_access_token(
