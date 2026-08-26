@@ -12,6 +12,7 @@ from app.services.confidential_service_credentials import (
     ConfidentialServiceConfig,
     CredentialDenied,
     CredentialUnavailable,
+    MAX_CLOCK_SKEW_SECONDS,
     VerifiedServiceCredential,
     issue_service_access_token,
     validate_client_assertion,
@@ -73,12 +74,40 @@ def assertion(material, **changes):
     )
 
 
+def service_token(material, **changes):
+    claims = {
+        "iss": ISSUER,
+        "aud": RESOURCE,
+        "sub": PRINCIPAL,
+        "azp": CLIENT,
+        "scope": "social:full-directory:read",
+        "grant_type": "client_credentials",
+        "token_use": "service_access",
+        "purpose": "social_full_directory_read",
+        "iat": NOW,
+        "exp": NOW + 60,
+        "jti": "service-token-1",
+    }
+    headers = {"kid": "service-key"}
+    claims.update(changes.pop("claims", {}))
+    headers.update(changes.pop("headers", {}))
+    return jwt.encode(
+        claims, changes.pop("key", material[1]), algorithm=changes.pop("algorithm", "RS256"), headers=headers
+    )
+
+
+def base64url_uint_with_leading_zero(value):
+    assert isinstance(value, str)
+    return jwt.utils.base64url_encode(b"\x00" + jwt.utils.base64url_decode(value.encode())).decode()
+
+
 def test_disabled_by_default(material):
     with pytest.raises(CredentialDenied, match="^credential denied$"):
         validate_client_assertion(assertion(material), config=ConfidentialServiceConfig(), now=NOW)
 
 
-def test_valid_assertion_is_verified_and_issued_once_with_default_skew_deadline(material, configured):
+def test_distinct_client_and_service_keys_remain_valid_and_issue_once_with_default_skew_deadline(material, configured):
+    assert (material[2]["n"], material[2]["e"]) != (material[3]["n"], material[3]["e"])
     calls = []
     encoded = issue_service_access_token(
         assertion(material),
@@ -98,21 +127,27 @@ def test_valid_assertion_is_verified_and_issued_once_with_default_skew_deadline(
         evidence.scope = "other"
 
 
-def test_zero_skew_replay_deadline_is_one_second_after_assertion_exp(material, configured):
-    zero_skew = replace(configured, clock_skew_seconds=0)
+@pytest.mark.parametrize("clock_skew_seconds", [0, MAX_CLOCK_SKEW_SECONDS])
+def test_replay_deadline_uses_protocol_maximum_for_allowed_skew_settings(material, configured, clock_skew_seconds):
+    skew_config = replace(configured, clock_skew_seconds=clock_skew_seconds)
     calls = []
 
     issue_service_access_token(
         assertion(material),
-        config=zero_skew,
+        config=skew_config,
         replay_consumer=lambda jti, deadline: calls.append((jti, deadline)) is None,
         signing_key=material[1],
         signing_kid="service-key",
-        now=NOW + 60,
-        token_jti="service-token-1",
+        now=NOW,
+        token_jti=f"service-token-{clock_skew_seconds}",
     )
 
-    assert calls == [("assertion-1", NOW + 61)]
+    assert calls == [("assertion-1", NOW + 60 + MAX_CLOCK_SKEW_SECONDS + 1)]
+
+
+def test_zero_skew_assertion_still_expires_without_local_grace(material, configured):
+    zero_skew = replace(configured, clock_skew_seconds=0)
+
     with pytest.raises(CredentialDenied, match="^credential denied$"):
         validate_client_assertion(assertion(material), config=zero_skew, now=NOW + 61)
 
@@ -126,10 +161,11 @@ def test_assertion_accepts_final_default_skew_second_without_changing_public_res
         validate_client_assertion(assertion(material), config=configured, now=NOW + 66)
 
 
-def test_replay_marker_rejects_reuse_through_default_skew_acceptance_window(material, configured):
+def test_replay_marker_rejects_reuse_through_complete_maximum_acceptance_window(material, configured):
+    max_skew_config = replace(configured, clock_skew_seconds=MAX_CLOCK_SKEW_SECONDS)
     encoded = assertion(material)
-    first_accepted = NOW - configured.clock_skew_seconds
-    last_accepted = NOW + 60 + configured.clock_skew_seconds
+    first_accepted = NOW - MAX_CLOCK_SKEW_SECONDS
+    last_accepted = NOW + 60 + MAX_CLOCK_SKEW_SECONDS
     retention_deadline = last_accepted + 1
     clock = {"now": first_accepted}
     markers = {}
@@ -145,7 +181,7 @@ def test_replay_marker_rejects_reuse_through_default_skew_acceptance_window(mate
 
     issue_service_access_token(
         encoded,
-        config=configured,
+        config=max_skew_config,
         replay_consumer=consume_once,
         signing_key=material[1],
         signing_kid="service-key",
@@ -158,7 +194,7 @@ def test_replay_marker_rejects_reuse_through_default_skew_acceptance_window(mate
         with pytest.raises(CredentialUnavailable, match="^credential service unavailable$"):
             issue_service_access_token(
                 encoded,
-                config=configured,
+                config=max_skew_config,
                 replay_consumer=consume_once,
                 signing_key=material[1],
                 signing_kid="service-key",
@@ -236,6 +272,57 @@ def test_rejects_unknown_and_ambiguous_key_selection(material, configured):
     duplicate = replace(configured, client_jwks=(material[2], dict(material[2])))
     with pytest.raises(CredentialDenied):
         validate_client_assertion(assertion(material), config=duplicate, now=NOW)
+
+
+def test_rejects_identical_client_and_service_jwk(material, configured):
+    overlapping = replace(configured, service_jwks=(material[2],))
+
+    with pytest.raises(CredentialDenied, match="^credential denied$"):
+        validate_client_assertion(assertion(material), config=overlapping, now=NOW)
+
+
+def test_rejects_client_and_service_jwk_with_same_rsa_numbers_and_different_kid(material, configured):
+    overlapping_service_key = dict(material[2], kid="service-key-alias")
+    overlapping = replace(configured, service_jwks=(overlapping_service_key,))
+
+    with pytest.raises(CredentialDenied, match="^credential denied$"):
+        validate_client_assertion(assertion(material), config=overlapping, now=NOW)
+
+
+def test_rejects_client_and_service_jwk_with_equivalent_rsa_integer_encoding(material, configured):
+    overlapping_service_key = dict(
+        material[2],
+        kid="service-key-alias",
+        n=base64url_uint_with_leading_zero(material[2]["n"]),
+        e=base64url_uint_with_leading_zero(material[2]["e"]),
+    )
+    assert overlapping_service_key["n"] != material[2]["n"]
+    assert overlapping_service_key["e"] != material[2]["e"]
+    overlapping = replace(configured, service_jwks=(overlapping_service_key,))
+
+    with pytest.raises(CredentialDenied, match="^credential denied$"):
+        validate_client_assertion(assertion(material), config=overlapping, now=NOW)
+
+
+def test_invalid_overlapping_configuration_grants_no_issuance_or_verification_authority(material, configured):
+    overlapping = replace(configured, service_jwks=(material[2],))
+    replay_calls = []
+
+    with pytest.raises(CredentialDenied, match="^credential denied$"):
+        issue_service_access_token(
+            assertion(material),
+            config=overlapping,
+            replay_consumer=lambda jti, deadline: replay_calls.append((jti, deadline)) is None,
+            signing_key=material[1],
+            signing_kid="service-key",
+            now=NOW,
+            token_jti="service-token-1",
+        )
+    assert replay_calls == []
+
+    client_signed_service_token = service_token(material, key=material[0], headers={"kid": "client-key"})
+    with pytest.raises(CredentialDenied, match="^credential denied$"):
+        verify_service_access_token(client_signed_service_token, config=overlapping, now=NOW)
 
 
 def test_rejects_algorithm_confusion_and_invalid_signature(material, configured):

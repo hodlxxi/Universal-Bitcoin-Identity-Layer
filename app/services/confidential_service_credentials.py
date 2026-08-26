@@ -29,6 +29,7 @@ MAX_LIFETIME_SECONDS = 60
 MAX_CLOCK_SKEW_SECONDS = 5
 MAX_JTI_LENGTH = 128
 MAX_KID_LENGTH = 255
+RSA_PRIVATE_PARAMETERS = ("d", "p", "q", "dp", "dq", "qi", "oth", "k")
 
 
 class CredentialDenied(ValueError):
@@ -103,6 +104,7 @@ def _configuration(config: ConfidentialServiceConfig) -> None:
         or config.max_credential_length > DEFAULT_MAX_BEARER_LENGTH
     ):
         _deny()
+    _ensure_separate_rsa_public_keys(config.client_jwks, config.service_jwks)
 
 
 def _integer(value: object) -> int:
@@ -115,6 +117,25 @@ def _identifier(value: object, maximum: int) -> str:
     if not isinstance(value, str) or not value or len(value) > maximum or value.strip() != value:
         _deny()
     return value
+
+
+def _rsa_public_parameters(key: Mapping[str, object]) -> tuple[int, int]:
+    if key.get("kty") != "RSA" or key.get("use") != "sig" or key.get("alg") != ALGORITHM:
+        _deny()
+    if any(name in key for name in RSA_PRIVATE_PARAMETERS):
+        _deny()
+    public_key = RSAAlgorithm.from_jwk(json.dumps(dict(key)))
+    numbers = public_key.public_numbers()
+    return numbers.n, numbers.e
+
+
+def _ensure_separate_rsa_public_keys(
+    client_jwks: Sequence[Mapping[str, object]], service_jwks: Sequence[Mapping[str, object]]
+) -> None:
+    client_parameters = {_rsa_public_parameters(key) for key in client_jwks}
+    for service_key in service_jwks:
+        if _rsa_public_parameters(service_key) in client_parameters:
+            _deny()
 
 
 def _select_rsa_key(encoded: str, keys: Sequence[Mapping[str, object]], maximum: int):
@@ -130,7 +151,7 @@ def _select_rsa_key(encoded: str, keys: Sequence[Mapping[str, object]], maximum:
     key = matches[0]
     if key.get("kty") != "RSA" or key.get("use") != "sig" or key.get("alg") != ALGORITHM:
         _deny()
-    if any(name in key for name in ("d", "p", "q", "dp", "dq", "qi", "k")):
+    if any(name in key for name in RSA_PRIVATE_PARAMETERS):
         _deny()
     return RSAAlgorithm.from_jwk(json.dumps(dict(key)))
 
@@ -211,7 +232,7 @@ def issue_service_access_token(
     assertion_jti, assertion_exp = validate_client_assertion(encoded_assertion, config=config, now=current)
     if not callable(replay_consumer):
         raise CredentialUnavailable("credential service unavailable")
-    replay_retention_deadline = assertion_exp + config.clock_skew_seconds + 1
+    replay_retention_deadline = assertion_exp + MAX_CLOCK_SKEW_SECONDS + 1
     try:
         consumed = replay_consumer(assertion_jti, replay_retention_deadline)
     except Exception:
