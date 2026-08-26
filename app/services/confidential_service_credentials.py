@@ -255,6 +255,15 @@ def issue_service_access_token(
     if not isinstance(encoded_token, str) or len(encoded_token) > config.max_credential_length:
         raise CredentialUnavailable("credential service unavailable")
 
+    # The supplied signer dependency is not authority by itself.  Prove that the
+    # generated token is signed by exactly one configured service verification
+    # key and satisfies the complete service-token contract before consuming the
+    # one-shot client assertion.
+    try:
+        verify_service_access_token(encoded_token, config=config, now=current)
+    except Exception:
+        raise CredentialUnavailable("credential service unavailable") from None
+
     replay_retention_deadline = assertion_exp + MAX_CLOCK_SKEW_SECONDS + 1
     try:
         consumed = replay_consumer(assertion_jti, replay_retention_deadline)

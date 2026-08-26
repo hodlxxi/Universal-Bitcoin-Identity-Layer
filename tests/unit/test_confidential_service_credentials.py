@@ -241,6 +241,41 @@ def test_oversized_generated_service_token_does_not_consume_assertion(material, 
     assert replay_calls == []
 
 
+def test_untrusted_service_signer_does_not_consume_assertion(material, configured):
+    rogue_signing_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    replay_calls = []
+
+    with pytest.raises(CredentialUnavailable, match="^credential service unavailable$"):
+        issue_service_access_token(
+            assertion(material),
+            config=configured,
+            replay_consumer=lambda jti, deadline: replay_calls.append((jti, deadline)) is None,
+            signing_key=rogue_signing_key,
+            signing_kid="service-key",
+            now=NOW,
+            token_jti="service-token-1",
+        )
+
+    assert replay_calls == []
+
+
+def test_unknown_service_signing_kid_does_not_consume_assertion(material, configured):
+    replay_calls = []
+
+    with pytest.raises(CredentialUnavailable, match="^credential service unavailable$"):
+        issue_service_access_token(
+            assertion(material),
+            config=configured,
+            replay_consumer=lambda jti, deadline: replay_calls.append((jti, deadline)) is None,
+            signing_key=material[1],
+            signing_kid="unknown-service-key",
+            now=NOW,
+            token_jti="service-token-1",
+        )
+
+    assert replay_calls == []
+
+
 def test_issuance_fails_closed_when_replay_store_raises(material, configured):
     def unavailable(_jti, _deadline):
         raise OSError("internal detail")

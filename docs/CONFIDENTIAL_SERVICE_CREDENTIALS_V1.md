@@ -50,9 +50,12 @@ local process setting, so the final accepted integer second is
 `exp + MAX_CLOCK_SKEW_SECONDS` and the earliest safe value is
 `exp + MAX_CLOCK_SKEW_SECONDS + 1`. A store that honors this exclusive deadline
 is safe across allowed rolling skew changes from zero through five seconds.
-The generated service access token is encoded and checked against the configured
-credential-size cap before the client assertion is consumed. An unusably
-oversized generated token therefore cannot burn a valid one-shot assertion.
+The generated service access token is encoded, checked against the configured
+credential-size cap, and cryptographically self-verified against the configured
+service JWK trust set before the client assertion is consumed. The supplied
+signing key and `kid` are dependencies, not authority by themselves. An
+untrusted signer, unknown signing `kid`, or unusably oversized generated token
+therefore cannot burn a valid one-shot assertion.
 Absence, failure, or a non-success replay-consumer result makes issuance
 unavailable. This repository supplies only the dependency boundary, not that
 store. A service access token remains a bearer credential: this implementation
