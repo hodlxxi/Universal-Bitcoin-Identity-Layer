@@ -37,11 +37,17 @@ logged or returned.
 ## Replay and operational prerequisites
 
 Issuance requires a future durable, shared, atomic consume-once store for each
-client-assertion `jti`. Absence, failure, or a non-success result makes issuance
-unavailable. This repository supplies only the dependency boundary, not that
-store. A service access token remains a bearer credential: this implementation
-does not consume its `jti` and therefore does not claim bearer-token replay
-resistance. Its short lifetime limits, but does not eliminate, replay exposure.
+client-assertion `jti`. The replay consumer is called as
+`replay_consumer(jti, retention_deadline_exclusive)`. The second argument is not
+the assertion `exp`; it is the earliest exclusive deadline at which the consumed
+marker may be removed. Because the final accepted integer second is
+`exp + clock_skew_seconds`, the earliest safe value is
+`exp + clock_skew_seconds + 1`. Absence, failure, or a non-success result makes
+issuance unavailable. This repository supplies only the dependency boundary, not
+that store. A service access token remains a bearer credential: this
+implementation does not consume its `jti` and therefore does not claim
+bearer-token replay resistance. Its short lifetime limits, but does not
+eliminate, replay exposure.
 
 Future work must register the asymmetric confidential client and its public
 keys, provision protected signing keys outside source, provide the shared replay

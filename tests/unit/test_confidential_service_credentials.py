@@ -78,19 +78,19 @@ def test_disabled_by_default(material):
         validate_client_assertion(assertion(material), config=ConfidentialServiceConfig(), now=NOW)
 
 
-def test_valid_assertion_is_verified_and_issued_once(material, configured):
+def test_valid_assertion_is_verified_and_issued_once_with_default_skew_deadline(material, configured):
     calls = []
     encoded = issue_service_access_token(
         assertion(material),
         config=configured,
-        replay_consumer=lambda jti, exp: calls.append((jti, exp)) is None,
+        replay_consumer=lambda jti, deadline: calls.append((jti, deadline)) is None,
         signing_key=material[1],
         signing_kid="service-key",
         now=NOW,
         token_jti="service-token-1",
     )
     evidence = verify_service_access_token(encoded, config=configured, now=NOW + 1)
-    assert calls == [("assertion-1", NOW + 60)]
+    assert calls == [("assertion-1", NOW + 66)]
     assert evidence == VerifiedServiceCredential(
         PRINCIPAL, CLIENT, "social:full-directory:read", NOW, NOW + 60, "service-token-1"
     )
@@ -98,7 +98,78 @@ def test_valid_assertion_is_verified_and_issued_once(material, configured):
         evidence.scope = "other"
 
 
-@pytest.mark.parametrize("consumer", [None, lambda _jti, _exp: False, lambda _jti, _exp: None])
+def test_zero_skew_replay_deadline_is_one_second_after_assertion_exp(material, configured):
+    zero_skew = replace(configured, clock_skew_seconds=0)
+    calls = []
+
+    issue_service_access_token(
+        assertion(material),
+        config=zero_skew,
+        replay_consumer=lambda jti, deadline: calls.append((jti, deadline)) is None,
+        signing_key=material[1],
+        signing_kid="service-key",
+        now=NOW + 60,
+        token_jti="service-token-1",
+    )
+
+    assert calls == [("assertion-1", NOW + 61)]
+    with pytest.raises(CredentialDenied, match="^credential denied$"):
+        validate_client_assertion(assertion(material), config=zero_skew, now=NOW + 61)
+
+
+def test_assertion_accepts_final_default_skew_second_without_changing_public_result(material, configured):
+    assert validate_client_assertion(assertion(material), config=configured, now=NOW + 65) == (
+        "assertion-1",
+        NOW + 60,
+    )
+    with pytest.raises(CredentialDenied, match="^credential denied$"):
+        validate_client_assertion(assertion(material), config=configured, now=NOW + 66)
+
+
+def test_replay_marker_rejects_reuse_through_default_skew_acceptance_window(material, configured):
+    encoded = assertion(material)
+    first_accepted = NOW - configured.clock_skew_seconds
+    last_accepted = NOW + 60 + configured.clock_skew_seconds
+    retention_deadline = last_accepted + 1
+    clock = {"now": first_accepted}
+    markers = {}
+
+    def consume_once(jti, retention_deadline):
+        for consumed_jti, deadline in tuple(markers.items()):
+            if deadline <= clock["now"]:
+                del markers[consumed_jti]
+        if jti in markers:
+            return False
+        markers[jti] = retention_deadline
+        return True
+
+    issue_service_access_token(
+        encoded,
+        config=configured,
+        replay_consumer=consume_once,
+        signing_key=material[1],
+        signing_kid="service-key",
+        now=first_accepted,
+        token_jti="service-token-1",
+    )
+
+    for accepted_now in range(first_accepted, retention_deadline):
+        clock["now"] = accepted_now
+        with pytest.raises(CredentialUnavailable, match="^credential service unavailable$"):
+            issue_service_access_token(
+                encoded,
+                config=configured,
+                replay_consumer=consume_once,
+                signing_key=material[1],
+                signing_kid="service-key",
+                now=accepted_now,
+                token_jti=f"service-token-{accepted_now}",
+            )
+
+    assert markers == {"assertion-1": retention_deadline}
+
+
+@pytest.mark.parametrize("consumer", [None, lambda _jti, _deadline: False, lambda _jti, _deadline: None])
 def test_issuance_fails_closed_without_atomic_consume(material, configured, consumer):
     with pytest.raises(CredentialUnavailable, match="^credential service unavailable$"):
         issue_service_access_token(
@@ -112,7 +183,7 @@ def test_issuance_fails_closed_without_atomic_consume(material, configured, cons
 
 
 def test_issuance_fails_closed_when_replay_store_raises(material, configured):
-    def unavailable(_jti, _exp):
+    def unavailable(_jti, _deadline):
         raise OSError("internal detail")
 
     with pytest.raises(CredentialUnavailable, match="^credential service unavailable$"):
@@ -210,7 +281,7 @@ def test_public_errors_suppress_internal_exception_chains(material, configured):
     assert denied.value.__cause__ is None
     assert denied.value.__context__ is None
 
-    def unavailable(_jti, _exp):
+    def unavailable(_jti, _deadline):
         raise OSError("internal")
 
     with pytest.raises(CredentialUnavailable) as unavailable_error:

@@ -211,8 +211,9 @@ def issue_service_access_token(
     assertion_jti, assertion_exp = validate_client_assertion(encoded_assertion, config=config, now=current)
     if not callable(replay_consumer):
         raise CredentialUnavailable("credential service unavailable")
+    replay_retention_deadline = assertion_exp + config.clock_skew_seconds + 1
     try:
-        consumed = replay_consumer(assertion_jti, assertion_exp)
+        consumed = replay_consumer(assertion_jti, replay_retention_deadline)
     except Exception:
         consumed = False
     if consumed is not True:
