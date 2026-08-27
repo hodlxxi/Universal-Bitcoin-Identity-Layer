@@ -11,6 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.schema import CreateTable
 
 import app.services.x25519_identity_binding_registry as contract
+import app.services.x25519_identity_binding_registry_storage as storage
 from app.models import X25519IdentityBinding
 from app.services.full_recipient_directory_provider import validate_x25519_public_key
 from app.services.x25519_identity_binding_registry import (
@@ -1270,6 +1271,37 @@ def test_malformed_persisted_signature_fails_snapshot_closed(monkeypatch, reposi
     service = X25519IdentityBindingRegistry(repository, clock=lambda: NOW)
     with pytest.raises(BindingRegistryUnavailable):
         service.current_snapshot()
+
+
+def test_snapshot_bounds_active_population_before_chain_validation(monkeypatch, repository):
+    first = parsed(
+        monkeypatch,
+        subject=SUBJECT_A,
+        public_key=KEY_A,
+        nonce="f0" * 32,
+    )
+    second = parsed(
+        monkeypatch,
+        subject=SUBJECT_B,
+        public_key=KEY_B,
+        nonce="f1" * 32,
+    )
+    repository.apply(first, NOW)
+    repository.apply(second, NOW)
+    before = stored_rows(repository)
+    calls = []
+
+    def fail_if_called(*_args, **_kwargs):
+        calls.append(True)
+        raise AssertionError("chain validation must not run for oversized population")
+
+    monkeypatch.setattr(storage, "_valid_authority_chain", fail_if_called)
+
+    with pytest.raises(BindingRegistryUnavailable):
+        repository.current_snapshot(NOW, 1)
+
+    assert calls == []
+    assert stored_rows(repository) == before
 
 
 def test_snapshot_rejects_missing_predecessor_without_mutation(repository):
