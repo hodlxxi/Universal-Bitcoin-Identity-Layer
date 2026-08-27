@@ -103,19 +103,27 @@ partial output.
 ## Authoritative read boundary
 
 The reader begins one database transaction, captures the trusted snapshot time,
-and first validates every active row and its complete predecessor chain at that
-exact time. An expired active row, a not-yet-valid active row, an active
+and first selects active rows in deterministic subject-and-version order with a
+hard database bound of `maximum + 1`. If that bounded selection returns more
+than `maximum` rows, the reader fails the whole snapshot closed immediately with
+the generic `x25519 identity binding registry unavailable` error, before any
+predecessor-chain traversal. It never truncates the active population to satisfy
+the caller's bound.
+
+For an admissible population of at most `maximum` active rows, that bounded
+selection is the complete active population. The reader then validates every
+selected active row and its complete predecessor chain at the exact trusted
+snapshot time. An expired active row, a not-yet-valid active row, an active
 revocation row, or any temporally invalid predecessor in an active chain fails
-the whole snapshot closed with the generic
-`x25519 identity binding registry unavailable` error. Only after that strict
-active-row validation does the reader select current non-revoked bindings in
-subject order and request one row beyond the caller's bound. It returns each
-current binding with the validated chain deadline to the service boundary. The
-snapshot `expiresAt` is no later than the configured 300-second snapshot TTL,
+the whole snapshot closed with the same generic error. The already validated
+chains are reused directly to construct the snapshot in subject order; no second
+unbounded active-row traversal is performed.
+
+The snapshot `expiresAt` is no later than the configured 300-second snapshot TTL,
 every returned active head expiration, and every predecessor expiration required
 by every returned chain. A missing, malformed, or already expired chain deadline
-also fails the whole snapshot closed with the same generic error. It never
-truncates or silently omits invalid active rows. An empty registry produces a
+also fails the whole snapshot closed with the same generic error. The reader
+never silently omits an invalid active row. An empty registry produces a
 complete empty snapshot, and inactive revocation history is ignored. No private
 or credential material is selected or returned.
 
