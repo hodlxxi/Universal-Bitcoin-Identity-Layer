@@ -55,6 +55,30 @@ def _compile_action_operation_uuid_default_sqlite(_element, _compiler, **_kwargs
     return "''"
 
 
+class _CanonicalLowerHex(ColumnElement):
+    """Dialect-safe fixed lowercase hexadecimal check expression."""
+
+    inherit_cache = True
+    type = Boolean()
+
+    def __init__(self, column_name, length):
+        self.column_name = column_name
+        self.length = length
+
+
+@compiles(_CanonicalLowerHex)
+@compiles(_CanonicalLowerHex, "postgresql")
+def _compile_canonical_lower_hex(element, compiler, **_kwargs):
+    column = compiler.preparer.quote(element.column_name)
+    return f"{column} ~ '^[0-9a-f]{{{element.length}}}$'"
+
+
+@compiles(_CanonicalLowerHex, "sqlite")
+def _compile_canonical_lower_hex_sqlite(element, compiler, **_kwargs):
+    column = compiler.preparer.quote(element.column_name)
+    return f"{column} REGEXP '^[0-9a-f]{{{element.length}}}$'"
+
+
 class User(Base):
     """
     User model - Bitcoin pubkey-based identity.
@@ -1428,4 +1452,78 @@ class ActionOperation(Base):
         ),
         Index("idx_action_operations_operation_state", "state"),
         Index("idx_action_operations_updated_at", "updated_at"),
+    )
+
+
+class X25519IdentityBinding(Base):
+    """Append-only identity-authorized X25519 lifecycle evidence."""
+
+    __tablename__ = "x25519_identity_bindings"
+
+    binding_id = Column(String(64), primary_key=True)
+    contract_version = Column(String(64), nullable=False)
+    subject_pubkey = Column(String(64), nullable=False)
+    algorithm = Column(String(16), nullable=False)
+    public_key = Column(String(64), nullable=False)
+    binding_version = Column(BigInteger, nullable=False)
+    valid_from = Column(DateTime(timezone=True), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    operation = Column(String(8), nullable=False)
+    prior_binding_id = Column(
+        String(64), ForeignKey("x25519_identity_bindings.binding_id", name="fk_x25519_binding_prior")
+    )
+    nonce = Column(String(64), nullable=False, unique=True)
+    statement_sha256 = Column(String(64), nullable=False, unique=True)
+    signature_format = Column(String(32), nullable=False)
+    identity_signature = Column(String(128), nullable=False)
+    active = Column(Boolean, nullable=False, default=False)
+    retired_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("subject_pubkey", "binding_version", name="uq_x25519_binding_subject_version"),
+        CheckConstraint(
+            "contract_version = 'hodlxxi.x25519_identity_binding_statement.v1'",
+            name="ck_x25519_binding_contract",
+        ),
+        CheckConstraint("algorithm = 'x25519-v1'", name="ck_x25519_binding_algorithm"),
+        CheckConstraint(_CanonicalLowerHex("binding_id", 64), name="ck_x25519_binding_id"),
+        CheckConstraint(_CanonicalLowerHex("subject_pubkey", 64), name="ck_x25519_binding_subject"),
+        CheckConstraint(_CanonicalLowerHex("public_key", 64), name="ck_x25519_binding_public_key"),
+        CheckConstraint("binding_version BETWEEN 1 AND 9007199254740991", name="ck_x25519_binding_safe_version"),
+        CheckConstraint("valid_from < expires_at", name="ck_x25519_binding_validity"),
+        CheckConstraint("operation IN ('register','rotate','revoke')", name="ck_x25519_binding_operation"),
+        CheckConstraint(
+            "(operation = 'register' AND prior_binding_id IS NULL AND binding_version = 1) OR "
+            "(operation IN ('rotate','revoke') AND prior_binding_id IS NOT NULL)",
+            name="ck_x25519_binding_prior",
+        ),
+        CheckConstraint(_CanonicalLowerHex("nonce", 64), name="ck_x25519_binding_nonce"),
+        CheckConstraint(
+            _CanonicalLowerHex("statement_sha256", 64) & text("binding_id = statement_sha256"),
+            name="ck_x25519_binding_digest",
+        ),
+        CheckConstraint(_CanonicalLowerHex("identity_signature", 128), name="ck_x25519_binding_signature"),
+        CheckConstraint("signature_format = 'bip340_schnorr_sha256'", name="ck_x25519_binding_signature_format"),
+        CheckConstraint(
+            "(active = true AND operation IN ('register','rotate') AND retired_at IS NULL) OR "
+            "(active = false AND retired_at IS NOT NULL)",
+            name="ck_x25519_binding_active_state",
+        ),
+        Index(
+            "uq_x25519_binding_active_subject",
+            "subject_pubkey",
+            unique=True,
+            postgresql_where=text("active = true"),
+            sqlite_where=text("active = 1"),
+        ),
+        Index(
+            "uq_x25519_binding_active_public_key",
+            "public_key",
+            unique=True,
+            postgresql_where=text("active = true"),
+            sqlite_where=text("active = 1"),
+        ),
+        Index("idx_x25519_binding_current_order", "active", "subject_pubkey"),
+        Index("idx_x25519_binding_expires_at", "expires_at"),
     )

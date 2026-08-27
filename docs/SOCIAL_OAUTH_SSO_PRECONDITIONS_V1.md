@@ -23,7 +23,15 @@ Production must separately remove any broad `.hodlxxi.com` environment value
 before `social.hodlxxi.com` is deployed. Secure, HttpOnly, and SameSite=Lax
 cookie protections remain required.
 
-A future Social application must use a confidential backend. Its OAuth client
-secret must never be exposed to browser JavaScript. Social deployment, live
-OAuth-client registration, DNS, proxy, service, and environment changes are
-outside this change.
+A future Social application must use an asymmetrically authenticated
+confidential backend. Its private key must never be exposed to browser
+JavaScript. Future operation requires explicit confidential-client and public
+key registration, a durable shared atomic consume-once store for client
+assertion `jti` values, private transport, and deliberate token-endpoint and
+protected-route wiring. Social deployment, live OAuth-client registration,
+DNS, proxy, service, and environment changes are outside this change.
+
+The source-only credential mechanics do not authorize Social and do not deliver
+directory data. V1.24b2 Social authorization and V1.24c delivery remain
+unavailable. Service access tokens are bearer credentials; their replay is not
+prevented by the source boundary.
