@@ -242,19 +242,30 @@ def _retire(row: X25519IdentityBinding, timestamp: datetime):
     )
 
 
-def _validate_all_active_rows(session, valid_at: datetime) -> None:
+def _validated_bounded_active_chains(
+    session,
+    valid_at: datetime,
+    maximum: int,
+) -> list[_ValidatedAuthorityChain]:
     timestamp = _aware(valid_at)
+    if type(maximum) is not int or maximum < 0:
+        raise BindingRegistryUnavailable()
+
     rows = (
         session.execute(
             select(X25519IdentityBinding)
             .where(X25519IdentityBinding.active.is_(True))
             .order_by(X25519IdentityBinding.subject_pubkey, X25519IdentityBinding.binding_version)
+            .limit(maximum + 1)
             .with_for_update()
         )
         .scalars()
         .all()
     )
-    for row in rows:
+    if len(rows) > maximum:
+        raise BindingRegistryUnavailable()
+
+    return [
         _valid_authority_chain(
             session,
             row,
@@ -262,6 +273,8 @@ def _validate_all_active_rows(session, valid_at: datetime) -> None:
             head_active=True,
             valid_at=timestamp,
         )
+        for row in rows
+    ]
 
 
 class SqlAlchemyX25519IdentityBindingRepository:
@@ -390,37 +403,15 @@ class SqlAlchemyX25519IdentityBindingRepository:
             with self._session_factory() as session:
                 transaction = session.begin()
                 try:
-                    # The explicit read transaction starts before candidate
-                    # selection and also contains predecessor-chain validation.
-                    _validate_all_active_rows(session, timestamp)
-                    rows = (
-                        session.execute(
-                            select(X25519IdentityBinding)
-                            .where(
-                                X25519IdentityBinding.active.is_(True),
-                                X25519IdentityBinding.operation.in_(("register", "rotate")),
-                                X25519IdentityBinding.valid_from <= timestamp,
-                                X25519IdentityBinding.expires_at > timestamp,
-                            )
-                            .order_by(X25519IdentityBinding.subject_pubkey)
-                            .limit(maximum + 1)
-                            .with_for_update()
-                        )
-                        .scalars()
-                        .all()
+                    # Bound the complete active population before traversing
+                    # any predecessor chain. Oversized populations therefore
+                    # fail with bounded rows/locks/validation work.
+                    chains = _validated_bounded_active_chains(
+                        session,
+                        timestamp,
+                        maximum,
                     )
-                    if len(rows) > maximum:
-                        raise BindingRegistryUnavailable()
-                    result = []
-                    for row in rows:
-                        chain = _valid_authority_chain(
-                            session,
-                            row,
-                            expected_subject=row.subject_pubkey,
-                            head_active=True,
-                            valid_at=timestamp,
-                        )
-                        result.append(SnapshotBinding(chain.head, chain.expires_at))
+                    result = [SnapshotBinding(chain.head, chain.expires_at) for chain in chains]
                 except Exception:
                     if transaction.is_active:
                         transaction.rollback()
