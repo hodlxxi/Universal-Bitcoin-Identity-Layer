@@ -1,9 +1,10 @@
 # Confidential Service Credentials V1
 
-This source-only boundary implements the credential mechanics required before a
-future Social backend can request Full-directory reads. It is disabled by
-default and is not wired to Flask, a token endpoint, a route, configuration,
-transport, registration, or deployment.
+This boundary implements the credential mechanics required before a future
+Social backend can request Full-directory reads. A source-level Flask adapter
+now exists, but it is disabled by default and is not registered unless every
+explicit dependency validates. It is not configured, activated, or deployed by
+this change.
 
 ## Standards and claim contract
 
@@ -61,17 +62,20 @@ unavailable. The repository now supplies a dedicated, source-only PostgreSQL
 adapter and forward migration for this dependency, documented in
 `CONFIDENTIAL_SERVICE_ASSERTION_REPLAY_STORE_V1.md`. It stores only SHA-256
 over the exact UTF-8 JTI and uses PostgreSQL uniqueness for shared atomic
-consume-once behavior. The adapter is not wired into runtime and the migration
-is not applied by this source change. A service access token remains a bearer
+consume-once behavior. The disabled internal-delivery runtime now injects this
+adapter into issuance; the migration is not added or applied by that source
+change. A service access token remains a bearer
 credential: this implementation does not consume
 its `jti` and therefore does not claim bearer-token replay resistance. Its short
 lifetime limits, but does not eliminate, replay exposure.
 
-Future runtime work must deliberately apply the migration, register the
-asymmetric confidential client and its public keys, provision protected signing
-keys outside source, inject the replay adapter, add private authenticated
-transport, and wire a token endpoint and protected route. None of that runtime
-activation is implemented here.
+Future activation must deliberately apply the existing migration where needed,
+register the asymmetric confidential client and its public keys, provision
+protected signing keys outside source, provision the dedicated alias secret,
+and install private network enforcement. The source token and protected
+directory routes are documented in
+`PRIVACY_FULL_DIRECTORY_INTERNAL_DELIVERY_V1.md`; no production activation is
+implemented here.
 
 ## Authority limits
 

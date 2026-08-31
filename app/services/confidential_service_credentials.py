@@ -1,7 +1,7 @@
-"""Pure, disabled-by-default confidential service credential boundary.
+"""Pure confidential service credential boundary with explicit dependencies.
 
-This module deliberately provides no HTTP route, application wiring, key loading,
-or replay-store implementation.  All trust inputs are explicit dependencies.
+HTTP and storage adapters live in separate modules and call this API without
+changing its credential format or authority contract.
 """
 
 from __future__ import annotations
@@ -105,6 +105,17 @@ def _configuration(config: ConfidentialServiceConfig) -> None:
     ):
         _deny()
     _ensure_separate_rsa_public_keys(config.client_jwks, config.service_jwks)
+
+
+def validate_confidential_service_config(config: ConfidentialServiceConfig) -> None:
+    """Validate the complete disabled-by-default service trust configuration."""
+
+    try:
+        _configuration(config)
+    except CredentialDenied:
+        raise
+    except Exception:
+        _deny()
 
 
 def _integer(value: object) -> int:
@@ -317,5 +328,6 @@ __all__ = [
     "VerifiedServiceCredential",
     "issue_service_access_token",
     "validate_client_assertion",
+    "validate_confidential_service_config",
     "verify_service_access_token",
 ]

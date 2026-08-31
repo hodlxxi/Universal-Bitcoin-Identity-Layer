@@ -5,9 +5,11 @@
 `PrivacySafeFullDirectoryV1` is a backend-only core contract for asking one
 question: for this canonical current-Full viewer, what is the complete current
 Full population represented by viewer-specific opaque aliases? It is
-implemented and unit-testable, but it is not wired into the application,
-Social, a browser, an agent surface, or any HTTP route. It performs no runtime
-mutation merely by constructing a directory.
+implemented and unit-testable. A disabled-by-default internal Flask delivery
+adapter now invokes it only after separate service and human OAuth
+authentication. It remains absent from Social, browsers, agent surfaces,
+deployment, and production activation. It performs no runtime mutation merely
+by constructing a directory.
 
 This contract consumes the existing authoritative
 `hodlxxi.full_entitlement_snapshot.v1` primitive. It does not reconstruct the
@@ -136,12 +138,13 @@ path, direct-peer disclosure, OAuth behavior change, access-token storage,
 confidential service credential, agent alias exposure, database migration,
 deployment, or production activation.
 
-## Why there is no live HTTP route
+## Why there is no live or public HTTP route
 
 The intended later consumer is the Social backend-for-frontend through a
-separately reviewed, protected service boundary. Publishing a temporary browser
-or session endpoint would bypass that design and create a durable enumeration
-surface. This PR therefore proves only the server-side privacy contract. Future
-service-to-service delivery, a Social Full Network list, viewer-filtered
-presence, and direct-relationship disclosure each require separate review and
-authorization.
+separately reviewed, protected service boundary. Source-level internal routes
+are now available only behind complete explicit configuration and two distinct
+credentials; they are not publicly advertised or activated. A deployment-level
+private-path rule remains mandatory before activation. Publishing a browser or
+session endpoint would create a durable enumeration surface. A Social Full
+Network list, viewer-filtered presence, and direct-relationship disclosure each
+require separate review and authorization.

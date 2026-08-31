@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
 import time
 import uuid
 
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
+from jwt.algorithms import RSAAlgorithm
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
@@ -16,6 +20,13 @@ from sqlalchemy.orm import sessionmaker
 
 from app.services.confidential_service_assertion_replay_storage import (
     PostgresConfidentialServiceAssertionReplayStore,
+)
+from app.services.confidential_service_credentials import (
+    ConfidentialServiceConfig,
+    CredentialUnavailable,
+)
+from app.services.privacy_full_directory_internal_delivery import (
+    PrivacyFullDirectoryInternalDeliveryRuntime,
 )
 
 ACKNOWLEDGEMENT = "DISPOSABLE-CONFIDENTIAL-REPLAY-POSTGRES-V1"
@@ -76,6 +87,12 @@ def marker_count(factory, digest):
             ),
             {"jti_sha256": digest},
         ).scalar_one()
+
+
+def _public_jwk(key, kid):
+    value = json.loads(RSAAlgorithm.to_jwk(key.public_key()))
+    value.update({"kid": kid, "use": "sig", "alg": "RS256"})
+    return value
 
 
 def test_fresh_repeat_different_and_raw_jti_privacy(postgres_factory):
@@ -183,3 +200,65 @@ def test_cleanup_cannot_weaken_concurrent_fresh_consume(postgres_factory):
     assert consumes.count(True) == 1
     assert all(value is False for value in consumes if value is not True)
     assert cleanups == [0] * len(cleanups)
+
+
+def test_internal_delivery_issuance_uses_durable_postgresql_replay_consumer(postgres_factory, monkeypatch):
+    now = database_now(postgres_factory)
+    monkeypatch.setattr("app.services.confidential_service_credentials.time.time", lambda: now)
+    client_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    service_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    client_id = "social-confidential-backend"
+    token_audience = "https://identity.example/internal/v1/social/service-token"
+    config = ConfidentialServiceConfig(
+        enabled=True,
+        client_id=client_id,
+        service_principal="service:social-full-directory",
+        issuer="https://identity.example",
+        token_endpoint_audience=token_audience,
+        service_resource_audience="https://identity.example/internal/v1/social/full-directory",
+        client_jwks=(_public_jwk(client_key, "client-key"),),
+        service_jwks=(_public_jwk(service_key, "service-key"),),
+    )
+    runtime = PrivacyFullDirectoryInternalDeliveryRuntime(
+        service_config=config,
+        replay_consumer=PostgresConfidentialServiceAssertionReplayStore(postgres_factory),
+        service_signing_key=service_key,
+        service_signing_kid="service-key",
+        viewer_oauth_client_id="social-browser-client",
+        viewer_token_validator=lambda _token: None,
+        current_entitlement_resolver=lambda _subject: None,
+        full_population_provider=lambda: None,
+        alias_secret=b"test-only-alias-secret-material!!",
+    )
+    jti = f"runtime-wiring-{uuid.uuid4().hex}"
+    assertion = jwt.encode(
+        {
+            "iss": client_id,
+            "sub": client_id,
+            "aud": token_audience,
+            "iat": now,
+            "exp": now + 60,
+            "jti": jti,
+            "token_use": "client_assertion",
+            "grant_type": "client_credentials",
+            "purpose": "service_client_authentication",
+        },
+        client_key,
+        algorithm="RS256",
+        headers={"kid": "client-key"},
+    )
+
+    def attempt(_index):
+        try:
+            return isinstance(runtime.issue_service_token(assertion), str)
+        except CredentialUnavailable:
+            return False
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(attempt, range(16)))
+
+    assert results.count(True) == 1
+    assert results.count(False) == 15
+    with pytest.raises(CredentialUnavailable):
+        runtime.issue_service_token(assertion)
+    assert marker_count(postgres_factory, hashlib.sha256(jti.encode("utf-8")).hexdigest()) == 1

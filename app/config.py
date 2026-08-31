@@ -61,6 +61,18 @@ class AppConfig(TypedDict):
     APP_VERSION: str
     APP_HOST: str
     APP_PORT: int
+    PRIVACY_FULL_DIRECTORY_INTERNAL_ENABLED: bool
+    CONFIDENTIAL_SERVICE_CLIENT_ID: str
+    CONFIDENTIAL_SERVICE_PRINCIPAL: str
+    CONFIDENTIAL_SERVICE_ISSUER: str
+    CONFIDENTIAL_SERVICE_TOKEN_ENDPOINT_AUDIENCE: str
+    CONFIDENTIAL_SERVICE_RESOURCE_AUDIENCE: str
+    PRIVACY_FULL_DIRECTORY_VIEWER_OAUTH_CLIENT_ID: str
+    CONFIDENTIAL_SERVICE_CLIENT_JWKS_DIR: str
+    CONFIDENTIAL_SERVICE_SIGNING_JWKS_DIR: str
+    CONFIDENTIAL_SERVICE_CLOCK_SKEW_SECONDS: int
+    PRIVACY_FULL_DIRECTORY_ALIAS_SECRET_FILE: str
+    PRIVACY_FULL_DIRECTORY_ALIAS_VERSION: int
 
 
 def _get_env_bool(name: str, default: bool) -> bool:
@@ -154,6 +166,40 @@ def get_config() -> AppConfig:
         "APP_VERSION": os.getenv("APP_VERSION", "1.0.0-alpha"),
         "APP_HOST": os.getenv("APP_HOST", "0.0.0.0"),
         "APP_PORT": _get_env_int("APP_PORT", 5000),
+        # Private Social Full-directory delivery (disabled unless explicitly complete)
+        "PRIVACY_FULL_DIRECTORY_INTERNAL_ENABLED": _get_env_bool(
+            "PRIVACY_FULL_DIRECTORY_INTERNAL_ENABLED",
+            False,
+        ),
+        "CONFIDENTIAL_SERVICE_CLIENT_ID": os.getenv("CONFIDENTIAL_SERVICE_CLIENT_ID", ""),
+        "CONFIDENTIAL_SERVICE_PRINCIPAL": os.getenv("CONFIDENTIAL_SERVICE_PRINCIPAL", ""),
+        "CONFIDENTIAL_SERVICE_ISSUER": os.getenv("CONFIDENTIAL_SERVICE_ISSUER", ""),
+        "CONFIDENTIAL_SERVICE_TOKEN_ENDPOINT_AUDIENCE": os.getenv(
+            "CONFIDENTIAL_SERVICE_TOKEN_ENDPOINT_AUDIENCE",
+            "",
+        ),
+        "CONFIDENTIAL_SERVICE_RESOURCE_AUDIENCE": os.getenv(
+            "CONFIDENTIAL_SERVICE_RESOURCE_AUDIENCE",
+            "",
+        ),
+        "PRIVACY_FULL_DIRECTORY_VIEWER_OAUTH_CLIENT_ID": os.getenv(
+            "PRIVACY_FULL_DIRECTORY_VIEWER_OAUTH_CLIENT_ID",
+            "",
+        ),
+        "CONFIDENTIAL_SERVICE_CLIENT_JWKS_DIR": os.getenv("CONFIDENTIAL_SERVICE_CLIENT_JWKS_DIR", ""),
+        "CONFIDENTIAL_SERVICE_SIGNING_JWKS_DIR": os.getenv("CONFIDENTIAL_SERVICE_SIGNING_JWKS_DIR", ""),
+        "CONFIDENTIAL_SERVICE_CLOCK_SKEW_SECONDS": _get_env_int(
+            "CONFIDENTIAL_SERVICE_CLOCK_SKEW_SECONDS",
+            5,
+        ),
+        "PRIVACY_FULL_DIRECTORY_ALIAS_SECRET_FILE": os.getenv(
+            "PRIVACY_FULL_DIRECTORY_ALIAS_SECRET_FILE",
+            "",
+        ),
+        "PRIVACY_FULL_DIRECTORY_ALIAS_VERSION": _get_env_int(
+            "PRIVACY_FULL_DIRECTORY_ALIAS_VERSION",
+            1,
+        ),
     }
 
 
