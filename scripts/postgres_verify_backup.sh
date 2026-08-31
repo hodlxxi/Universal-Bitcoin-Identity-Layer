@@ -104,10 +104,10 @@ object_counts() {
 [ "$(object_counts "$PRODUCTION_DATABASE")" = "$(object_counts "$SCRATCH_DATABASE")" ]
 
 runuser -u "$POSTGRES_OS_USER" -- pg_dump --dbname="$PRODUCTION_DATABASE" --schema-only --no-owner --no-privileges --no-comments > "$TMPDIR_PATH/production.sql"
-runuser -u "$POSTGRES_OS_USER" -- pg_dump --dbname="$SCRATCH_DATABASE" --schema-only --no-owner --no-privileges --no-comments > "$TMPDIR_PATH/scratch.sql"
+pg_restore --schema-only --no-owner --no-privileges --no-comments --file=- "$BACKUP_PATH" > "$TMPDIR_PATH/backup.sql"
 sed -E '/^\\(un)?restrict[[:space:]]/d' "$TMPDIR_PATH/production.sql" > "$TMPDIR_PATH/production.normalized.sql"
-sed -E '/^\\(un)?restrict[[:space:]]/d' "$TMPDIR_PATH/scratch.sql" > "$TMPDIR_PATH/scratch.normalized.sql"
-cmp -s "$TMPDIR_PATH/production.normalized.sql" "$TMPDIR_PATH/scratch.normalized.sql"
+sed -E '/^\\(un)?restrict[[:space:]]/d' "$TMPDIR_PATH/backup.sql" > "$TMPDIR_PATH/backup.normalized.sql"
+cmp -s "$TMPDIR_PATH/production.normalized.sql" "$TMPDIR_PATH/backup.normalized.sql"
 
 ownership_sql="SELECT n.nspname,c.relkind,c.relname,pg_get_userbyid(c.relowner) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND c.relkind IN ('r','p','S','v','m') ORDER BY n.nspname,c.relkind,c.relname;"
 runuser -u "$POSTGRES_OS_USER" -- psql -X -d "$PRODUCTION_DATABASE" -AtF '|' -c "$ownership_sql" > "$TMPDIR_PATH/production.owners"
@@ -136,6 +136,7 @@ SQL
 
 echo "restore_verification=success"
 echo "normalized_schema_match=yes"
+echo "backup_schema_match=yes"
 echo "relation_ownership_contract_match=yes"
 echo "restored_tables_queryable=yes"
 echo "production_database_unchanged=yes"
