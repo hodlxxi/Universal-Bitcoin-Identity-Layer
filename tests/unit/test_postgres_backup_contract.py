@@ -59,8 +59,43 @@ def test_restore_verifier_enforces_scratch_identity_contract():
         "restored_tables_queryable=yes",
         "production_database_unchanged=yes",
         "scratch_cleanup_required=yes",
+        "backup_schema_match=yes",
     ):
         assert marker in text
+
+
+def test_restore_verifier_compares_production_schema_to_backup_archive():
+    text = _read(VERIFY_SCRIPT)
+
+    production_dump = (
+        'pg_dump --dbname="$PRODUCTION_DATABASE" --schema-only ' "--no-owner --no-privileges --no-comments"
+    )
+    backup_schema = "pg_restore --schema-only --no-owner --no-privileges --no-comments " '--file=- "$BACKUP_PATH"'
+    strict_comparison = 'cmp -s "$TMPDIR_PATH/production.normalized.sql" ' '"$TMPDIR_PATH/backup.normalized.sql"'
+
+    assert production_dump in text
+    assert backup_schema in text
+    assert strict_comparison in text
+    assert 'pg_dump --dbname="$SCRATCH_DATABASE" --schema-only' not in text
+    assert '"$TMPDIR_PATH/scratch.normalized.sql"' not in text
+    assert "|| true" not in text
+
+
+def test_restore_verifier_keeps_independent_recovery_checks():
+    text = _read(VERIFY_SCRIPT)
+
+    restore = 'pg_restore --exit-on-error --dbname="$SCRATCH_DATABASE"'
+    object_count_comparison = (
+        '[ "$(object_counts "$PRODUCTION_DATABASE")" = ' '"$(object_counts "$SCRATCH_DATABASE")" ]'
+    )
+    ownership_comparison = 'cmp -s "$TMPDIR_PATH/production.owners" ' '"$TMPDIR_PATH/scratch.owners"'
+
+    assert restore in text
+    assert object_count_comparison in text
+    assert ownership_comparison in text
+    assert "ON_ERROR_STOP=1" in text
+    assert "SELECT 1 FROM %I.%I LIMIT 1" in text
+    assert "set -Eeuo pipefail" in text
 
 
 def test_runbook_documents_operator_and_recovery_boundaries():

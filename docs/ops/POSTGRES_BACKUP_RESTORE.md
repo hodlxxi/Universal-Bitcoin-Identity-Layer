@@ -64,17 +64,28 @@ The verifier:
 5. creates a database whose name matches `ubid_restore_verify_[A-Za-z0-9_]+`;
 6. restores with `pg_restore --exit-on-error`;
 7. compares table, sequence, and index counts;
-8. compares normalized schema and relation ownership;
-9. verifies every restored application table can be queried;
-10. leaves the scratch database in place for explicit operator cleanup.
+8. strictly compares the current production schema with the schema stored in the backup archive;
+9. compares relation ownership between production and the restored scratch database;
+10. verifies every restored application table can be queried;
+11. leaves the scratch database in place for explicit operator cleanup.
 
 PostgreSQL `pg_dump` emits random `\restrict` and `\unrestrict` markers. The verifier removes only those markers before comparing normalized schema output.
+The comparison uses a fresh schema-only production dump and schema-only SQL
+emitted directly from the backup archive, then applies strict byte comparison.
+This proves that the archive captured the current production schema. The
+verifier does not byte-compare production with a new dump of the restored
+scratch database: PostgreSQL can preserve a `CHECK` expression while deparsing
+equivalent `ANY`/`ALL` array-cast syntax differently after restore. This is not
+a general semantic-SQL comparison and no arbitrary expression normalization is
+performed. Scratch restore success, object counts, relation ownership, and
+table queryability remain separate required checks.
 
 Expected terminal contract:
 
 ```text
 restore_verification=success
 normalized_schema_match=yes
+backup_schema_match=yes
 relation_ownership_contract_match=yes
 restored_tables_queryable=yes
 production_database_unchanged=yes
