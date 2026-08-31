@@ -29,17 +29,20 @@ integer epoch second. The marker therefore remains present through the final
 accepted integer second and becomes eligible at the exclusive deadline. Cleanup
 is not required for consume-once correctness and no scheduler is added.
 
-## Still not implemented or active
+## Runtime use and inactive production state
 
-- HTTP service-token endpoint;
-- privacy-safe Full-directory internal HTTP route;
+The disabled-by-default internal-delivery source now injects this adapter into
+the confidential service-token endpoint. The endpoint and directory route are
+not active without complete explicit configuration. The following remain not
+implemented, provisioned, or active:
+
 - Social backend connection;
 - production confidential-client or signing-key provisioning;
 - production privacy-directory alias-secret provisioning;
-- production application of the migration;
+- any migration or database change by this source-delivery change;
 - nginx private-path enforcement;
-- runtime injection or activation; and
+- runtime activation; and
 - production deployment.
 
-This migration and adapter are a prerequisite only. They do not make the Social
+The migration, adapter, and disabled source wiring do not make the Social
 directory or confidential credential delivery live.

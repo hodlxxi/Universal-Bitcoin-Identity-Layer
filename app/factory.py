@@ -141,6 +141,14 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
         logger.error(f"❌ Infrastructure initialization failed: {e}")
         raise
 
+    # Private Social delivery is absent unless every explicit trust and secret
+    # dependency validates. No keys or secrets are generated here.
+    from app.services.privacy_full_directory_internal_delivery import (
+        configure_internal_delivery,
+    )
+
+    configure_internal_delivery(app, cfg)
+
     # Register blueprints
     # Rate limiter must be initialized BEFORE importing blueprints (blueprints use @limiter.limit at import time)
     try:
@@ -249,6 +257,17 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(nip17_messages_bp)
     app.register_blueprint(qr_operator_bp)
     app.register_blueprint(qr_pointer_bp)
+
+    from app.services.privacy_full_directory_internal_delivery import (
+        configured_internal_delivery_runtime,
+    )
+
+    if configured_internal_delivery_runtime(app) is not None:
+        from app.blueprints.internal_privacy_full_directory import (
+            internal_privacy_full_directory_bp,
+        )
+
+        app.register_blueprint(internal_privacy_full_directory_bp)
 
     # Public status route: factory-native and lightweight.
     # Must register before legacy_bridge so /api/public/status does not lazy-import app.app.
