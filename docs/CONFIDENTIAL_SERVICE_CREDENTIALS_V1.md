@@ -41,7 +41,7 @@ logged or returned.
 
 ## Replay and operational prerequisites
 
-Issuance requires a future durable, shared, atomic consume-once store for each
+Issuance requires a durable, shared, atomic consume-once store for each
 client-assertion `jti`. The replay consumer is called as
 `replay_consumer(jti, retention_deadline_exclusive)`. The second argument is not
 the assertion `exp`; it is the earliest exclusive deadline at which the consumed
@@ -57,16 +57,21 @@ signing key and `kid` are dependencies, not authority by themselves. An
 untrusted signer, unknown signing `kid`, or unusably oversized generated token
 therefore cannot burn a valid one-shot assertion.
 Absence, failure, or a non-success replay-consumer result makes issuance
-unavailable. This repository supplies only the dependency boundary, not that
-store. A service access token remains a bearer credential: this implementation
-does not consume
+unavailable. The repository now supplies a dedicated, source-only PostgreSQL
+adapter and forward migration for this dependency, documented in
+`CONFIDENTIAL_SERVICE_ASSERTION_REPLAY_STORE_V1.md`. It stores only SHA-256
+over the exact UTF-8 JTI and uses PostgreSQL uniqueness for shared atomic
+consume-once behavior. The adapter is not wired into runtime and the migration
+is not applied by this source change. A service access token remains a bearer
+credential: this implementation does not consume
 its `jti` and therefore does not claim bearer-token replay resistance. Its short
 lifetime limits, but does not eliminate, replay exposure.
 
-Future work must register the asymmetric confidential client and its public
-keys, provision protected signing keys outside source, provide the shared replay
-store, add private authenticated transport, and deliberately wire a token
-endpoint and protected route. None is implemented here.
+Future runtime work must deliberately apply the migration, register the
+asymmetric confidential client and its public keys, provision protected signing
+keys outside source, inject the replay adapter, add private authenticated
+transport, and wire a token endpoint and protected route. None of that runtime
+activation is implemented here.
 
 ## Authority limits
 
