@@ -46,8 +46,9 @@ promoted. A future change from 777 to 144 requires a separate review.
    Conflicting facts about one outpoint fail the whole plan closed.
 5. A UTXO is associated with a witness script only when its scriptPubKey is
    exactly `00 20 SHA256(witness_script)` (native P2WSH).
-6. Exact scripts are compared with validated current trusted registrations.
-   An exact active relation is `already_canonical`; it is never proposed again.
+6. Exact scripts are compared with current relationships selected through an
+   EFFECTIVE root binding or EFFECTIVE ordinary admission edge. An exact
+   current relation is `already_canonical`; registration activity alone is not.
 7. Genesis comes from the injected current canonical snapshot. Reachability and
    depth start only with effective canonical edges. An observed relationship
    can extend candidate reachability only after exact current-profile structure,
@@ -67,6 +68,25 @@ superseded, or revoked root bindings never contribute current canonical state.
 Root resolution and snapshot construction use one common evaluation timestamp;
 ambiguous, malformed, digest-mismatched, wrong-Genesis, or inactive-registration
 sources fail closed.
+
+Trusted registration != current admission. A trusted registration proves the
+registration layer only; it does not independently make an ordinary human
+relationship current in Canon. Current relationship authority has exactly two
+seams:
+
+- root: the active registration selected by the source-validated EFFECTIVE
+  canonical root binding;
+- ordinary child: the exact active registration referenced by a
+  source-validated EFFECTIVE canonical admission edge.
+
+Registrations referenced only by proposed, disputed, superseded, or revoked
+admission edges remain historical facts. They cannot produce
+`already_canonical`, cannot extend canonical reachability, and conservatively
+produce `canonical_conflict` with
+`historical_admission_edge_not_current_authority`. When the registration itself
+is still active, the additional reason is
+`active_registration_without_effective_admission`. The planner does not decide
+whether a future bootstrap should reuse, transition, revoke, or replace it.
 PostgreSQL connections set `default_transaction_read_only=on`. This keeps live
 access out of tests while providing an operator-only production rehearsal path.
 Any collection/configuration failure is reported generically so credentials are
@@ -87,7 +107,8 @@ not echoed.
 
 ## Decisions and reasons
 
-- `already_canonical`: exact active canonical scripts exist;
+- `already_canonical`: exact scripts have current authority through an
+  EFFECTIVE validated root binding or EFFECTIVE validated admission edge;
   `canonical_record_already_exists`.
 - `eligible_for_bootstrap`: and only this status means all current `legacy_777`
   structure, exact native-P2WSH funding, confirmations, cascade depth and
@@ -101,7 +122,11 @@ not echoed.
 - `ambiguous`: conflicting scripts, profiles, sponsor orientation, or multiple
   currently unspent outpoints for one required leg.
 - `unreachable_from_genesis`: `sponsor_not_canonical`.
-- `canonical_conflict`: a current record exists but does not exactly match.
+- `canonical_conflict`: current authority conflicts, or historical registration
+  state exists without current admission authority. Historical reasons include
+  `historical_admission_edge_not_current_authority`,
+  `active_registration_without_effective_admission`, and
+  `registration_without_current_admission_authority`.
 - `invalid`: for example `candidate_heights_do_not_match_depth`.
 
 Browser `users` existence is optional diagnostics only. It neither creates nor

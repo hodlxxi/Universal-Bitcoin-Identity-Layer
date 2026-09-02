@@ -129,6 +129,7 @@ def _load_canonical_snapshot(
         evaluated_at=evaluated_at,
         admission_edges=edges,
         registrations=registrations,
+        current_root_registration_id=effective_root_binding.trusted_registration_id,
     )
 
 

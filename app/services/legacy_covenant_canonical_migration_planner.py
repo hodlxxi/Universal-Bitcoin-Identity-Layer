@@ -188,11 +188,28 @@ class CanonicalKnownRelationship:
 
 
 @dataclass(frozen=True, slots=True)
+class CanonicalHistoricalRelationship:
+    relationship: CanonicalKnownRelationship
+    reasons: tuple[str, ...]
+
+    def __post_init__(self):
+        if (
+            type(self.relationship) is not CanonicalKnownRelationship
+            or type(self.reasons) is not tuple
+            or not self.reasons
+            or tuple(sorted(set(self.reasons))) != self.reasons
+            or any(type(value) is not str or not value for value in self.reasons)
+        ):
+            _fail()
+
+
+@dataclass(frozen=True, slots=True)
 class CanonicalReadSnapshot:
     genesis_active: bool
     reachable_depths: tuple[tuple[str, int], ...]
     known_relationships: tuple[CanonicalKnownRelationship, ...] = ()
     browser_user_xonly_keys: frozenset[str] = frozenset()
+    historical_relationships: tuple[CanonicalHistoricalRelationship, ...] = ()
 
     def __post_init__(self):
         if type(self.genesis_active) is not bool or type(self.reachable_depths) is not tuple:
@@ -213,6 +230,10 @@ class CanonicalReadSnapshot:
             _HEX64.fullmatch(value) is None for value in self.browser_user_xonly_keys
         ):
             _fail()
+        if type(self.historical_relationships) is not tuple or any(
+            type(value) is not CanonicalHistoricalRelationship for value in self.historical_relationships
+        ):
+            _fail()
 
     @classmethod
     def from_canonical_records(
@@ -222,6 +243,7 @@ class CanonicalReadSnapshot:
         evaluated_at: datetime,
         admission_edges: Iterable[CanonicalAdmissionEdge],
         registrations: Iterable[TrustedCovenantRegistration],
+        current_root_registration_id: str | None = None,
         browser_user_xonly_keys: Iterable[str] = (),
     ) -> "CanonicalReadSnapshot":
         """Build a read snapshot after validating exact existing Canon records."""
@@ -231,9 +253,19 @@ class CanonicalReadSnapshot:
         genesis_active = evaluation.state is CanonicalGenesisEvaluationState.GENESIS_ACTIVE
         depths = {GENESIS_XONLY_KEY: 0} if genesis_active else {}
         registrations = tuple(registrations)
+        for registration in registrations:
+            canonical_trusted_registration_bytes(registration)
         registrations_by_id = {value.registration_id: value for value in registrations}
         if len(registrations_by_id) != len(registrations):
             _fail()
+        if current_root_registration_id is not None:
+            root_registration = registrations_by_id.get(current_root_registration_id)
+            if (
+                not genesis_active
+                or root_registration is None
+                or root_registration.lifecycle_state is not TrustedCovenantRegistrationLifecycle.ACTIVE
+            ):
+                _fail()
         edges = []
         for edge in admission_edges:
             canonical_admission_edge_bytes(edge)
@@ -241,9 +273,16 @@ class CanonicalReadSnapshot:
         edges_by_id = {value.edge_id: value for value in edges}
         if len(edges_by_id) != len(edges):
             _fail()
+        effective_edges_by_child: dict[str, CanonicalAdmissionEdge] = {}
+        effective_edges_by_pair: dict[tuple[str, str], CanonicalAdmissionEdge] = {}
         for edge in edges:
             if edge.lifecycle_state is not AdmissionEdgeLifecycle.EFFECTIVE:
                 continue
+            pair = tuple(sorted((edge.sponsor_x_only_public_key, edge.child_x_only_public_key)))
+            if edge.child_x_only_public_key in effective_edges_by_child or pair in effective_edges_by_pair:
+                _fail()
+            effective_edges_by_child[edge.child_x_only_public_key] = edge
+            effective_edges_by_pair[pair] = edge
             registration = registrations_by_id.get(edge.trusted_registration_id)
             if registration is None:
                 _fail()
@@ -272,17 +311,55 @@ class CanonicalReadSnapshot:
                 if edge.child_x_only_public_key not in depths:
                     depths[edge.child_x_only_public_key] = edge.child_depth
                     changed = True
+        current_registration_ids = {edge.trusted_registration_id for edge in effective_edges_by_child.values()}
+        if current_root_registration_id is not None:
+            current_registration_ids.add(current_root_registration_id)
         known = tuple(
             sorted(
-                (CanonicalKnownRelationship.from_registration(value) for value in registrations),
+                (
+                    CanonicalKnownRelationship.from_registration(registrations_by_id[registration_id])
+                    for registration_id in current_registration_ids
+                ),
                 key=lambda value: (value.participants, value.script_sha256s, value.source_ref),
             )
         )
+        historical_edge_registration_ids = {
+            edge.trusted_registration_id
+            for edge in edges
+            if edge.lifecycle_state is not AdmissionEdgeLifecycle.EFFECTIVE
+        }
+        historical = []
+        for registration_id, registration in registrations_by_id.items():
+            if registration_id in current_registration_ids:
+                continue
+            reasons = []
+            if registration_id in historical_edge_registration_ids:
+                reasons.append("historical_admission_edge_not_current_authority")
+            if registration.lifecycle_state is TrustedCovenantRegistrationLifecycle.ACTIVE:
+                reasons.append("active_registration_without_effective_admission")
+            if not reasons:
+                reasons.append("registration_without_current_admission_authority")
+            historical.append(
+                CanonicalHistoricalRelationship(
+                    CanonicalKnownRelationship.from_registration(registration),
+                    tuple(sorted(reasons)),
+                )
+            )
         return cls(
             genesis_active,
             tuple(sorted(depths.items())),
             known,
             frozenset(browser_user_xonly_keys),
+            tuple(
+                sorted(
+                    historical,
+                    key=lambda value: (
+                        value.relationship.participants,
+                        value.relationship.script_sha256s,
+                        value.relationship.source_ref,
+                    ),
+                )
+            ),
         )
 
 
@@ -603,6 +680,9 @@ class LegacyCovenantCanonicalMigrationPlanner:
         known_by_pair: dict[tuple[str, str], list[CanonicalKnownRelationship]] = {}
         for value in canonical.known_relationships:
             known_by_pair.setdefault(value.participants, []).append(value)
+        historical_by_pair: dict[tuple[str, str], list[CanonicalHistoricalRelationship]] = {}
+        for value in canonical.historical_relationships:
+            historical_by_pair.setdefault(value.relationship.participants, []).append(value)
         reachable = dict(canonical.reachable_depths) if canonical.genesis_active else {}
         pending = set(grouped)
         result: dict[tuple[str, str], LegacyRelationshipCandidate] = {}
@@ -615,6 +695,7 @@ class LegacyCovenantCanonicalMigrationPlanner:
                     tuple(sorted(grouped[participants], key=lambda value: value.script_sha256)),
                     unique_outpoints,
                     known_by_pair.get(participants, []),
+                    historical_by_pair.get(participants, []),
                     reachable,
                     canonical.browser_user_xonly_keys,
                 )
@@ -636,6 +717,7 @@ class LegacyCovenantCanonicalMigrationPlanner:
                     tuple(sorted(grouped[participants], key=lambda value: value.script_sha256)),
                     unique_outpoints,
                     known_by_pair.get(participants, []),
+                    historical_by_pair.get(participants, []),
                     reachable,
                     canonical.browser_user_xonly_keys,
                 ).decision
@@ -648,6 +730,7 @@ class LegacyCovenantCanonicalMigrationPlanner:
                         tuple(sorted(grouped[participants], key=lambda value: value.script_sha256)),
                         unique_outpoints,
                         known_by_pair.get(participants, []),
+                        historical_by_pair.get(participants, []),
                         reachable,
                         canonical.browser_user_xonly_keys,
                     )
@@ -681,6 +764,7 @@ class LegacyCovenantCanonicalMigrationPlanner:
         scripts: tuple[_ObservedScript, ...],
         outpoints: tuple[_ObservedOutpoint, ...],
         known: list[CanonicalKnownRelationship],
+        historical: list[CanonicalHistoricalRelationship],
         reachable: dict[str, int],
         browser_users: frozenset[str],
     ) -> LegacyRelationshipCandidate:
@@ -693,6 +777,9 @@ class LegacyCovenantCanonicalMigrationPlanner:
             decision, reasons = MigrationDecision.ALREADY_CANONICAL, ("canonical_record_already_exists",)
         elif known:
             decision, reasons = MigrationDecision.CANONICAL_CONFLICT, ("conflicting_current_canonical_record",)
+        elif historical:
+            decision = MigrationDecision.CANONICAL_CONFLICT
+            reasons = tuple(sorted({reason for value in historical for reason in value.reasons}))
 
         matched = [
             value
