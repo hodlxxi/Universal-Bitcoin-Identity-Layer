@@ -61,7 +61,12 @@ export. Its explicit `--live` mode reads all loaded Bitcoin Core wallets using
 only `listwallets`, `listdescriptors`, and `listunspent`; it loads existing
 Genesis, root-registration bindings, admission-edge, and trusted-registration
 records through their read APIs. Root-bound registrations are included even
-when no ordinary admission edge refers to them.
+when no ordinary admission edge refers to them, but only through the
+authoritative `resolve_effective` seam. Historical proposed, disputed,
+superseded, or revoked root bindings never contribute current canonical state.
+Root resolution and snapshot construction use one common evaluation timestamp;
+ambiguous, malformed, digest-mismatched, wrong-Genesis, or inactive-registration
+sources fail closed.
 PostgreSQL connections set `default_transaction_read_only=on`. This keeps live
 access out of tests while providing an operator-only production rehearsal path.
 Any collection/configuration failure is reported generically so credentials are

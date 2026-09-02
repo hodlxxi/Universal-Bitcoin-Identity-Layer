@@ -102,6 +102,36 @@ def _btc_to_sats(value) -> int:
     return int(sats)
 
 
+def _load_canonical_snapshot(
+    *,
+    genesis_repository,
+    edge_repository,
+    registration_repository,
+    root_binding_repository,
+    evaluated_at: datetime,
+) -> CanonicalReadSnapshot:
+    """Resolve only current, source-validated Canon using one evaluation time."""
+    genesis_records = genesis_repository.list_for_graph(GRAPH_ID)
+    edges = edge_repository.list_for_graph(GRAPH_ID)
+    effective_root_binding = root_binding_repository.resolve_effective(
+        GRAPH_ID,
+        GENESIS_XONLY_KEY,
+        evaluated_at=evaluated_at,
+    )
+    registration_ids = sorted(
+        {value.trusted_registration_id for value in edges} | {effective_root_binding.trusted_registration_id}
+    )
+    registrations = tuple(registration_repository.get(value) for value in registration_ids)
+    if any(value is None for value in registrations):
+        raise ValueError("canonical registration source is incomplete")
+    return CanonicalReadSnapshot.from_canonical_records(
+        genesis_records=genesis_records,
+        evaluated_at=evaluated_at,
+        admission_edges=edges,
+        registrations=registrations,
+    )
+
+
 def _collect_live() -> tuple[tuple[LegacyWalletObservation, ...], CanonicalReadSnapshot]:
     """Read configured sources with DB-level read-only enforcement."""
     from bitcoinrpc.authproxy import AuthServiceProxy
@@ -127,21 +157,13 @@ def _collect_live() -> tuple[tuple[LegacyWalletObservation, ...], CanonicalReadS
             genesis_repository=genesis_repository,
             trusted_registration_repository=registration_repository,
         )
-        genesis_records = genesis_repository.list_for_graph(GRAPH_ID)
-        edges = edge_repository.list_for_graph(GRAPH_ID)
-        root_bindings = root_binding_repository.list_for_root(GRAPH_ID, GENESIS_XONLY_KEY)
-        registration_ids = sorted(
-            {value.trusted_registration_id for value in edges}
-            | {value.trusted_registration_id for value in root_bindings}
-        )
-        registrations = tuple(registration_repository.get(value) for value in registration_ids)
-        if any(value is None for value in registrations):
-            raise ValueError("canonical registration source is incomplete")
-        canonical = CanonicalReadSnapshot.from_canonical_records(
-            genesis_records=genesis_records,
-            evaluated_at=datetime.now(timezone.utc).replace(microsecond=0),
-            admission_edges=edges,
-            registrations=registrations,
+        evaluated_at = datetime.now(timezone.utc).replace(microsecond=0)
+        canonical = _load_canonical_snapshot(
+            genesis_repository=genesis_repository,
+            edge_repository=edge_repository,
+            registration_repository=registration_repository,
+            root_binding_repository=root_binding_repository,
+            evaluated_at=evaluated_at,
         )
     finally:
         engine.dispose()
