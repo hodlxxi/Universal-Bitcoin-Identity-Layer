@@ -127,10 +127,13 @@ def test_bound_partial_malformed_unknown_and_internal_failures_are_generic():
         unavailable(Repository([]), maximum=maximum)
 
 
-def test_current_full_subjects_require_active_persisted_user_proof():
+def test_current_full_population_is_independent_of_browser_user_state():
     record = evidence()
-    unavailable(Repository([record]))
-    unavailable(Repository([record], active_subjects=(SUBJECT_B,)))
+    snapshot = FullEntitlementSnapshotReader(
+        Repository([record]),
+        clock=lambda: NOW,
+    ).current_snapshot()
+    assert [item["subject"] for item in snapshot["entitlements"]] == [SUBJECT_A]
 
 
 def test_ambiguous_latest_failures_are_generic_and_non_leaking():

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 import hashlib
-from typing import Protocol
+from typing import Callable, Protocol
 
 from app.services.action_authorization import IdentityClass
 from app.services.canonical_controlling_registration import (
@@ -15,6 +15,14 @@ from app.services.canonical_controlling_registration import (
 )
 from app.services.canonical_root_entitlement_materializer import (
     CanonicalRootEntitlementMaterializer,
+)
+from app.services.canonical_root_reciprocal_entitlement_materializer import (
+    CanonicalRootReciprocalEntitlementMaterialization,
+    CanonicalRootReciprocalEntitlementMaterializer,
+)
+from app.services.canonical_root_reciprocal_entitlement_policy import (
+    CanonicalRootReciprocalEntitlementDecision,
+    evaluate_canonical_root_reciprocal_entitlement,
 )
 from app.services.canonical_root_entitlement_policy import (
     EVIDENCE_SOURCE,
@@ -194,6 +202,8 @@ def refresh_canonical_root_entitlement(
     observer: object | None = None,
     rpc_factory=None,
     execution_guard: ExclusiveSubjectExecutionGuard | None = None,
+    materialize_reciprocal_counterparty: bool = False,
+    materializer_clock: Callable[[], datetime] | None = None,
 ) -> CanonicalRootEntitlementRefreshResult:
     """Perform exactly one dry-run or guarded commit refresh."""
 
@@ -228,12 +238,36 @@ def refresh_canonical_root_entitlement(
         )
 
     try:
-        if type(mode) is not CanonicalRootEntitlementRefreshMode:
+        if (
+            type(mode) is not CanonicalRootEntitlementRefreshMode
+            or type(materialize_reciprocal_counterparty) is not bool
+            or (materializer_clock is not None and not callable(materializer_clock))
+        ):
             raise ValueError()
+
         _utc(evaluated_at)
+
         if mode is CanonicalRootEntitlementRefreshMode.DRY_RUN:
             relation, decision = observe_and_decide()
-            return result(CanonicalRootEntitlementRefreshOutcome.PREVIEW, relation, decision)
+
+            if materialize_reciprocal_counterparty:
+                reciprocal = evaluate_canonical_root_reciprocal_entitlement(
+                    graph_or_protocol_id,
+                    subject_xonly_pubkey,
+                    relation,
+                )
+                if (
+                    type(reciprocal) is not CanonicalRootReciprocalEntitlementDecision
+                    or reciprocal.root_subject_xonly_pubkey != subject_xonly_pubkey
+                    or reciprocal.subject_xonly_pubkey != decision.counterparty_xonly_pubkey
+                ):
+                    raise ValueError()
+
+            return result(
+                CanonicalRootEntitlementRefreshOutcome.PREVIEW,
+                relation,
+                decision,
+            )
 
         if (
             execution_guard is None
@@ -242,12 +276,86 @@ def refresh_canonical_root_entitlement(
             or evidence_repository is None
             or not callable(getattr(evidence_repository, "get_latest", None))
             or not callable(getattr(evidence_repository, "append", None))
+            or (materialize_reciprocal_counterparty and not callable(getattr(evidence_repository, "append_pair", None)))
         ):
             raise ValueError()
         held = execution_guard.hold(subject_xonly_pubkey)
         if not callable(getattr(held, "__enter__", None)) or not callable(getattr(held, "__exit__", None)):
             raise ValueError()
         with held:
+            if materialize_reciprocal_counterparty:
+                relation, decision = observe_and_decide()
+
+                reciprocal_decision = evaluate_canonical_root_reciprocal_entitlement(
+                    graph_or_protocol_id,
+                    subject_xonly_pubkey,
+                    relation,
+                )
+
+                if (
+                    type(reciprocal_decision) is not CanonicalRootReciprocalEntitlementDecision
+                    or reciprocal_decision.root_subject_xonly_pubkey != subject_xonly_pubkey
+                    or reciprocal_decision.subject_xonly_pubkey != decision.counterparty_xonly_pubkey
+                ):
+                    raise ValueError()
+
+                raw_root_latest = evidence_repository.get_latest(subject_xonly_pubkey)
+                raw_reciprocal_latest = evidence_repository.get_latest(reciprocal_decision.subject_xonly_pubkey)
+
+                root_latest = None if raw_root_latest is None else _reconstruct_evidence(raw_root_latest)
+                reciprocal_latest = (
+                    None if raw_reciprocal_latest is None else _reconstruct_evidence(raw_reciprocal_latest)
+                )
+
+                if (
+                    root_latest is not None
+                    and reciprocal_latest is not None
+                    and _is_exact_replay(
+                        root_latest,
+                        decision,
+                    )
+                    and _is_exact_replay(
+                        reciprocal_latest,
+                        reciprocal_decision,
+                    )
+                ):
+                    return result(
+                        CanonicalRootEntitlementRefreshOutcome.UNCHANGED,
+                        relation,
+                        decision,
+                        root_latest,
+                    )
+
+                materialized_pair = CanonicalRootReciprocalEntitlementMaterializer(
+                    evidence_repository,
+                    clock=materializer_clock,
+                ).materialize(
+                    graph_or_protocol_id,
+                    subject_xonly_pubkey,
+                    relation,
+                )
+
+                if type(materialized_pair) is not CanonicalRootReciprocalEntitlementMaterialization:
+                    raise ValueError()
+
+                verified_root = _reconstruct_evidence(evidence_repository.get_latest(subject_xonly_pubkey))
+                verified_reciprocal = _reconstruct_evidence(
+                    evidence_repository.get_latest(reciprocal_decision.subject_xonly_pubkey)
+                )
+
+                if (
+                    verified_root != materialized_pair.root_evidence
+                    or verified_reciprocal != materialized_pair.reciprocal_evidence
+                ):
+                    raise ValueError()
+
+                return result(
+                    CanonicalRootEntitlementRefreshOutcome.APPENDED,
+                    relation,
+                    decision,
+                    materialized_pair.root_evidence,
+                )
+
             raw_latest = evidence_repository.get_latest(subject_xonly_pubkey)
             latest = None if raw_latest is None else _reconstruct_evidence(raw_latest)
             relation, decision = observe_and_decide()
