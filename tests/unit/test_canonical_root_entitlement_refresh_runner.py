@@ -520,3 +520,65 @@ def test_coordinated_invalid_numeric_result_fails_closed(field, value):
         object.__setattr__(result.decision, field, value)
     with pytest.raises(runner.CanonicalRootEntitlementRefreshRunnerUnavailable):
         runner.normalized_result(result, runner.parse_runner_argv(argv("--dry-run")))
+
+
+def test_runner_explicitly_enables_reciprocal_counterparty_mode(
+    monkeypatch,
+):
+    captured = {}
+
+    def fake_refresh(_graph, _subject, **kwargs):
+        captured.update(kwargs)
+        return refresh_result()
+
+    monkeypatch.setattr(
+        "app.services.canonical_root_entitlement_refresh." "refresh_canonical_root_entitlement",
+        fake_refresh,
+    )
+
+    runner.execute_request(
+        runner.parse_runner_argv(argv("--dry-run")),
+        dependency_factory=lambda _mode: {
+            "genesis_repository": object(),
+            "admission_edge_repository": object(),
+            "root_registration_binding_repository": object(),
+            "trusted_registration_repository": object(),
+            "funding_set_repository": object(),
+            "rpc_factory": object(),
+        },
+        clock=lambda: NOW,
+    )
+
+    assert captured["materialize_reciprocal_counterparty"] is True
+
+
+def test_runner_keeps_pair_materializer_freshness_clock_internal(
+    monkeypatch,
+):
+    captured = {}
+
+    def fake_refresh(_graph, _subject, **kwargs):
+        captured.update(kwargs)
+        return refresh_result()
+
+    monkeypatch.setattr(
+        "app.services.canonical_root_entitlement_refresh." "refresh_canonical_root_entitlement",
+        fake_refresh,
+    )
+
+    runner.execute_request(
+        runner.parse_runner_argv(argv("--dry-run")),
+        dependency_factory=lambda _mode: {
+            "genesis_repository": object(),
+            "admission_edge_repository": object(),
+            "root_registration_binding_repository": object(),
+            "trusted_registration_repository": object(),
+            "funding_set_repository": object(),
+            "rpc_factory": object(),
+        },
+        clock=lambda: NOW,
+    )
+
+    assert captured["evaluated_at"] == NOW
+    assert captured["materialize_reciprocal_counterparty"] is True
+    assert "materializer_clock" not in captured
