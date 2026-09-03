@@ -10,7 +10,9 @@ from app.services.canonical_admission_edge_storage import SqlAlchemyCanonicalAdm
 from app.services.canonical_controlling_registration import ControllingRegistrationSelectionSource
 from app.services.canonical_covenant_funding_set_storage import SqlAlchemyCanonicalCovenantFundingSetRepository
 from app.services.canonical_genesis_record_storage import SqlAlchemyCanonicalGenesisRecordRepository
-from app.services.canonical_root_entitlement_materializer import CanonicalRootEntitlementMaterializer
+from app.services.canonical_root_reciprocal_entitlement_materializer import (
+    CanonicalRootReciprocalEntitlementMaterializer,
+)
 from app.services.canonical_root_registration_binding_storage import (
     SqlAlchemyCanonicalRootRegistrationBindingRepository,
 )
@@ -85,12 +87,18 @@ def test_one_shot_runner_composes_real_adapters_append_then_unchanged(tmp_path, 
         "app.services.canonical_root_entitlement_refresh.observe_edge_local_covenant_relation",
         lambda *_args, **_kwargs: relation,
     )
+    generated_ids = iter(
+        (
+            uuid.UUID("00000000-0000-4000-8000-000000000010"),
+            uuid.UUID("00000000-0000-4000-8000-000000000011"),
+        )
+    )
     monkeypatch.setattr(
-        "app.services.canonical_root_entitlement_refresh.CanonicalRootEntitlementMaterializer",
-        lambda repo: CanonicalRootEntitlementMaterializer(
+        "app.services.canonical_root_entitlement_refresh." "CanonicalRootReciprocalEntitlementMaterializer",
+        lambda repo, clock=None: CanonicalRootReciprocalEntitlementMaterializer(
             repo,
             clock=lambda: now,
-            uuid_factory=lambda: uuid.UUID("00000000-0000-4000-8000-000000000010"),
+            uuid_factory=lambda: next(generated_ids),
         ),
     )
 
@@ -121,4 +129,9 @@ def test_one_shot_runner_composes_real_adapters_append_then_unchanged(tmp_path, 
     assert appended["outcome"] == "appended" and unchanged["outcome"] == "unchanged"
     assert appended["evidence_id"] == unchanged["evidence_id"]
     with factory() as session:
-        assert session.query(CurrentEntitlementEvidence).count() == 1
+        rows = session.query(CurrentEntitlementEvidence).all()
+        assert len(rows) == 2
+        assert {row.subject_pubkey for row in rows} == {
+            subject,
+            relation.counterparty_xonly_pubkey,
+        }
