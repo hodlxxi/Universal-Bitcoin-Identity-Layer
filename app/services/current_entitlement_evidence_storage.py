@@ -7,9 +7,8 @@ from datetime import timezone
 
 from sqlalchemy import func, select
 
-from app.models import CurrentEntitlementEvidence, User
+from app.models import CurrentEntitlementEvidence
 from app.services.action_authorization import IdentityClass
-from app.services.current_entitlement import EntitlementDenied, require_active_persisted_user
 from app.services.current_entitlement_evidence import CurrentEntitlementEvidenceRecord
 
 
@@ -42,10 +41,6 @@ class CompleteLatestEntitlementPopulation:
         for subject in self.active_subjects:
             if type(subject) is not str or (previous is not None and subject <= previous):
                 raise ValueError("invalid complete population")
-            try:
-                require_active_persisted_user(subject, {"pubkey": subject, "is_active": True})
-            except EntitlementDenied as exc:
-                raise ValueError("invalid complete population") from exc
             previous = subject
 
 
@@ -89,6 +84,61 @@ class SqlAlchemyCurrentEntitlementEvidenceRepository:
                 session.commit()
         except Exception:
             raise CurrentEntitlementEvidenceStorageError() from None
+
+    def append_pair(
+        self,
+        evidence_pair: tuple[
+            CurrentEntitlementEvidenceRecord,
+            CurrentEntitlementEvidenceRecord,
+        ],
+    ) -> None:
+        """Append exactly two synchronized subject records atomically."""
+
+        session = None
+        try:
+            if type(evidence_pair) is not tuple or len(evidence_pair) != 2:
+                raise ValueError()
+
+            first, second = tuple(CurrentEntitlementEvidenceRecord(**vars(item)) for item in evidence_pair)
+
+            if (
+                first.evidence_id == second.evidence_id
+                or first.subject_pubkey == second.subject_pubkey
+                or first.observed_at != second.observed_at
+                or first.valid_until != second.valid_until
+                or first.created_at != second.created_at
+            ):
+                raise ValueError()
+
+            rows = []
+            for evidence in (first, second):
+                values = vars(evidence).copy()
+                values["identity_class"] = evidence.identity_class.value
+                rows.append(CurrentEntitlementEvidence(**values))
+
+            session = self._session_factory()
+            session.add_all(rows)
+            session.commit()
+
+        except (KeyboardInterrupt, SystemExit):
+            if session is not None:
+                try:
+                    session.rollback()
+                except BaseException:
+                    pass
+            raise
+
+        except Exception:
+            if session is not None:
+                try:
+                    session.rollback()
+                except Exception:
+                    pass
+            raise CurrentEntitlementEvidenceStorageError() from None
+
+        finally:
+            if session is not None:
+                session.close()
 
     def get_latest(self, subject_pubkey: str) -> CurrentEntitlementEvidenceRecord | None:
         try:
@@ -141,12 +191,9 @@ class SqlAlchemyCurrentEntitlementEvidenceRepository:
                     rows = session.execute(
                         select(
                             CurrentEntitlementEvidence,
-                            User.pubkey.label("user_pubkey"),
-                            User.is_active.label("user_is_active"),
                             ranked.c.logical_tie_count,
                         )
                         .join(ranked, ranked.c.evidence_id == CurrentEntitlementEvidence.evidence_id)
-                        .outerjoin(User, User.pubkey == CurrentEntitlementEvidence.subject_pubkey)
                         .where(ranked.c.rank == 1)
                         .order_by(CurrentEntitlementEvidence.subject_pubkey)
                         .limit(maximum + 1)
@@ -154,28 +201,21 @@ class SqlAlchemyCurrentEntitlementEvidenceRepository:
                     if len(rows) > maximum:
                         raise CurrentEntitlementEvidenceStorageError()
                     result = []
-                    active_subjects = []
-                    for row, user_pubkey, user_is_active, logical_tie_count in rows:
+                    for row, logical_tie_count in rows:
                         if logical_tie_count != 1:
                             raise CurrentEntitlementEvidenceStorageError()
-                        record = _record(row)
-                        try:
-                            active_subject = require_active_persisted_user(
-                                record.subject_pubkey,
-                                {"pubkey": user_pubkey, "is_active": user_is_active},
-                            )
-                        except EntitlementDenied:
-                            active_subject = None
-                        if active_subject is not None:
-                            active_subjects.append(active_subject)
-                        result.append(record)
+                        result.append(_record(row))
                 except Exception:
                     if transaction.is_active:
                         transaction.rollback()
                     raise
                 if transaction.is_active:
                     transaction.rollback()
-                return CompleteLatestEntitlementPopulation(tuple(result), maximum, tuple(active_subjects))
+                return CompleteLatestEntitlementPopulation(
+                    tuple(result),
+                    maximum,
+                    tuple(record.subject_pubkey for record in result),
+                )
         except CurrentEntitlementEvidenceStorageError:
             raise
         except Exception:

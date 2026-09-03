@@ -195,27 +195,40 @@ def test_latest_population_empty_and_invalid_bound(storage):
             repository.get_latest_population(maximum)
 
 
-@pytest.mark.parametrize("user_state", ["inactive", "deleted", "nonexistent", "malformed", "mismatched"])
-def test_full_snapshot_rejects_current_full_without_active_persisted_user(storage, user_state):
+@pytest.mark.parametrize("user_state", ["inactive", "deleted", "nonexistent"])
+def test_full_snapshot_accepts_canonical_full_without_browser_user_authority(storage, user_state):
     _, factory, repository = storage
     subject = "a" * 64
+
     if user_state == "inactive":
         add_user(factory, subject, active=False)
     elif user_state == "deleted":
         add_user(factory, subject)
         delete_user(factory, subject)
-    elif user_state == "malformed":
-        add_user(factory, subject)
-        set_user_active(factory, subject, active=None)
-    elif user_state == "mismatched":
-        add_user(factory, "c" * 64)
 
     repository.append(item(subject=subject, identity=IdentityClass.FULL))
 
-    with pytest.raises(FullEntitlementSnapshotUnavailable) as caught:
-        FullEntitlementSnapshotReader(repository, clock=lambda: NOW).current_snapshot(maximum=1)
-    assert str(caught.value) == "full entitlement snapshot unavailable"
-    assert subject not in str(caught.value)
+    snapshot = FullEntitlementSnapshotReader(
+        repository,
+        clock=lambda: NOW,
+    ).current_snapshot(maximum=1)
+
+    assert [entry["subject"] for entry in snapshot["entitlements"]] == [subject]
+
+
+def test_latest_population_read_does_not_require_users_table(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'evidence-only.db'}")
+    CurrentEntitlementEvidence.__table__.create(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    repository = SqlAlchemyCurrentEntitlementEvidenceRepository(factory)
+
+    expected = item(subject="a" * 64, identity=IdentityClass.FULL)
+    repository.append(expected)
+
+    population = repository.get_latest_population(1)
+
+    assert population.records == (expected,)
+    assert population.active_subjects == ("a" * 64,)
 
 
 @pytest.mark.parametrize(
@@ -420,3 +433,77 @@ def test_latest_population_is_one_view_when_separate_transaction_commits_during_
         2,
         ("a" * 64, "c" * 64),
     )
+
+
+def test_atomic_pair_persists_two_full_subjects_without_users_rows(storage):
+    _, _, repository = storage
+
+    first = item(
+        subject="a" * 64,
+        identity=IdentityClass.FULL,
+        eid="00000000-0000-4000-8000-000000000101",
+    )
+    second = item(
+        subject="c" * 64,
+        identity=IdentityClass.FULL,
+        eid="00000000-0000-4000-8000-000000000102",
+    )
+
+    repository.append_pair((first, second))
+
+    assert repository.get_latest("a" * 64) == first
+    assert repository.get_latest("c" * 64) == second
+
+    population = repository.get_latest_population(2)
+
+    assert population.records == (first, second)
+    assert population.active_subjects == (
+        "a" * 64,
+        "c" * 64,
+    )
+
+    snapshot = FullEntitlementSnapshotReader(
+        repository,
+        clock=lambda: NOW,
+    ).current_snapshot(maximum=2)
+
+    assert [entry["subject"] for entry in snapshot["entitlements"]] == [
+        "a" * 64,
+        "c" * 64,
+    ]
+
+
+def test_atomic_pair_rolls_back_first_row_when_second_row_conflicts(storage):
+    _, _, repository = storage
+
+    existing = item(
+        subject="d" * 64,
+        identity=IdentityClass.FULL,
+        eid="00000000-0000-4000-8000-000000000110",
+    )
+
+    repository.append(existing)
+
+    first = item(
+        subject="a" * 64,
+        identity=IdentityClass.FULL,
+        eid="00000000-0000-4000-8000-000000000111",
+    )
+
+    conflicting_second = item(
+        subject="c" * 64,
+        identity=IdentityClass.FULL,
+        eid=existing.evidence_id,
+    )
+
+    with pytest.raises(CurrentEntitlementEvidenceStorageError):
+        repository.append_pair(
+            (
+                first,
+                conflicting_second,
+            )
+        )
+
+    assert repository.get_latest("a" * 64) is None
+    assert repository.get_latest("c" * 64) is None
+    assert repository.get_latest("d" * 64) == existing

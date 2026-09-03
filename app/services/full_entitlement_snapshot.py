@@ -47,10 +47,6 @@ class FullEntitlementSnapshotReader:
             ):
                 raise ValueError
             records = population.records
-            active_subjects = population.active_subjects
-            active_subject_set = set(active_subjects)
-            if len(active_subject_set) != len(active_subjects):
-                raise ValueError
 
             entitlements = []
             deadlines = []
@@ -73,8 +69,6 @@ class FullEntitlementSnapshotReader:
                 evidence_ids.add(evidence.evidence_id)
                 record_subjects.add(subject)
                 if current_full:
-                    if subject not in active_subject_set:
-                        raise ValueError
                     deadlines.append(evidence.valid_until)
                     entitlements.append(
                         {
@@ -85,9 +79,6 @@ class FullEntitlementSnapshotReader:
                             "revoked": False,
                         }
                     )
-            if not active_subject_set.issubset(record_subjects):
-                raise ValueError
-
             expires = min(now + SNAPSHOT_LIFETIME, *deadlines) if deadlines else now + SNAPSHOT_LIFETIME
             if expires <= now:
                 raise ValueError
