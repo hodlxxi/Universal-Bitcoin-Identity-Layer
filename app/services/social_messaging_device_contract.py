@@ -315,10 +315,7 @@ class SocialMessagingDeviceAuthority:
                 or binding.operation != command.operation
                 or binding.request_id != command.request_id
                 or binding.prior_binding_id != command.expected_binding_id
-                or (
-                    command.public_key is not None
-                    and binding.public_key != command.public_key
-                )
+                or (command.public_key is not None and binding.public_key != command.public_key)
                 or (command.operation == "register" and binding.binding_version != 1)
                 or (command.operation != "register" and binding.binding_version <= 1)
             ):
@@ -414,10 +411,7 @@ class SocialMessagingDeviceAuthority:
                 "complete": True,
                 "issuedAt": issued_at,
                 "expiresAt": expires_at,
-                "activeDevices": [
-                    {"snapshotId": snapshot_id, **device}
-                    for device in public_devices
-                ],
+                "activeDevices": [{"snapshotId": snapshot_id, **device} for device in public_devices],
             }
         except MessagingDeviceAuthorityUnavailable:
             raise

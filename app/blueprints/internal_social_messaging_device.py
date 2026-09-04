@@ -61,9 +61,7 @@ def _json_error(error: str, status: int):
 
 def _service_authority(runtime: MessagingDeviceInternalDeliveryRuntime):
     try:
-        token = parse_bearer_authorization_header(
-            request.headers.get("Authorization", "")
-        )
+        token = parse_bearer_authorization_header(request.headers.get("Authorization", ""))
         return runtime.verify_service_authority(token)
     except (BearerHeaderError, CredentialDenied):
         return None
@@ -73,9 +71,7 @@ def _service_authority(runtime: MessagingDeviceInternalDeliveryRuntime):
 
 def _viewer_token() -> str | None:
     try:
-        return parse_bearer_authorization_header(
-            request.headers.get(VIEWER_AUTHORIZATION_HEADER, "")
-        )
+        return parse_bearer_authorization_header(request.headers.get(VIEWER_AUTHORIZATION_HEADER, ""))
     except BearerHeaderError:
         return None
 
@@ -103,9 +99,7 @@ def issue_internal_social_messaging_service_token():
         "client_assertion",
         "scope",
     }
-    if set(request.form) != required or any(
-        len(request.form.getlist(name)) != 1 for name in required
-    ):
+    if set(request.form) != required or any(len(request.form.getlist(name)) != 1 for name in required):
         return _json_error("invalid_request", 400)
     if (
         request.form["grant_type"] != GRANT_TYPE
@@ -178,10 +172,7 @@ def mutate_internal_social_messaging_device_bindings():
         return _json_error("invalid_request", 400)
 
     content_length = request.content_length
-    if (
-        type(content_length) is not int
-        or not 1 <= content_length <= MAX_COMMAND_BYTES
-    ):
+    if type(content_length) is not int or not 1 <= content_length <= MAX_COMMAND_BYTES:
         return _json_error("invalid_request", 400)
 
     service = _service_authority(runtime)
@@ -194,11 +185,7 @@ def mutate_internal_social_messaging_device_bindings():
 
     try:
         body = request.get_data(cache=False, as_text=False)
-        if (
-            type(body) is not bytes
-            or len(body) != content_length
-            or any(byte < 0x20 or byte > 0x7E for byte in body)
-        ):
+        if type(body) is not bytes or len(body) != content_length or any(byte < 0x20 or byte > 0x7E for byte in body):
             raise ValueError
         statement = body.decode("ascii")
     except Exception:

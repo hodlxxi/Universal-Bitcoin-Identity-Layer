@@ -139,10 +139,7 @@ class MessagingDeviceInternalDeliveryRuntime:
 
         if type(decision) is not EntitlementDecision or decision.subject != viewer.subject:
             raise MessagingViewerEntitlementUnavailable()
-        if (
-            decision.identity_class is not IdentityClass.FULL
-            or decision.current_full_relation_satisfied is not True
-        ):
+        if decision.identity_class is not IdentityClass.FULL or decision.current_full_relation_satisfied is not True:
             raise MessagingViewerEntitlementDenied()
         return viewer
 
@@ -215,11 +212,7 @@ def _absolute_directory(config: Mapping[str, object], name: str) -> str:
     value = _required_string(config, name)
     try:
         info = os.lstat(value)
-        if (
-            not os.path.isabs(value)
-            or not stat.S_ISDIR(info.st_mode)
-            or os.path.islink(value)
-        ):
+        if not os.path.isabs(value) or not stat.S_ISDIR(info.st_mode) or os.path.islink(value):
             raise ValueError
     except Exception:
         raise MessagingDeviceInternalConfigurationError() from None
@@ -252,9 +245,7 @@ def build_messaging_device_internal_runtime(
         from app.jwks import load_jwks_document, load_signing_material
 
         client_document = load_jwks_document(client_jwks_dir)
-        service_document, signing_kid, signing_key = load_signing_material(
-            service_jwks_dir
-        )
+        service_document, signing_kid, signing_key = load_signing_material(service_jwks_dir)
         service_config = ConfidentialServiceConfig(
             enabled=True,
             client_id=_required_string(
@@ -302,9 +293,7 @@ def build_messaging_device_internal_runtime(
 
             session_factory = get_session
 
-        replay_consumer = PostgresConfidentialServiceAssertionReplayStore(
-            session_factory
-        )
+        replay_consumer = PostgresConfidentialServiceAssertionReplayStore(session_factory)
 
         from app.services.current_entitlement import (
             resolve_runtime_current_entitlement,
@@ -319,9 +308,7 @@ def build_messaging_device_internal_runtime(
             SqlAlchemySocialMessagingDeviceRepository,
         )
 
-        entitlement_repository = SqlAlchemyCurrentEntitlementEvidenceRepository(
-            session_factory
-        )
+        entitlement_repository = SqlAlchemyCurrentEntitlementEvidenceRepository(session_factory)
 
         def current_entitlement_resolver(subject):
             return resolve_runtime_current_entitlement(

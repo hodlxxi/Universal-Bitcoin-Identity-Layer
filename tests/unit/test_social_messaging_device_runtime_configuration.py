@@ -97,19 +97,12 @@ def _config(tmp_path: Path, material, *, shared_keys=False):
 
 def test_builder_is_disabled_by_default_and_partial_enablement_fails_closed():
     assert build_messaging_device_internal_runtime({}) is None
-    assert (
-        build_messaging_device_internal_runtime(
-            {"SOCIAL_MESSAGING_DEVICE_INTERNAL_ENABLED": False}
-        )
-        is None
-    )
+    assert build_messaging_device_internal_runtime({"SOCIAL_MESSAGING_DEVICE_INTERNAL_ENABLED": False}) is None
     with pytest.raises(
         MessagingDeviceInternalConfigurationError,
         match="^messaging device internal delivery configuration invalid$",
     ):
-        build_messaging_device_internal_runtime(
-            {"SOCIAL_MESSAGING_DEVICE_INTERNAL_ENABLED": True}
-        )
+        build_messaging_device_internal_runtime({"SOCIAL_MESSAGING_DEVICE_INTERNAL_ENABLED": True})
 
 
 def test_complete_config_loads_existing_material_without_generating_files(
@@ -179,10 +172,7 @@ def test_default_viewer_validator_binds_exact_social_oauth_client(
     expected = object()
     monkeypatch.setattr(
         "app.services.oauth_bearer_validation.validate_canonical_access_token",
-        lambda token, *, expected_client_id=None: calls.append(
-            (token, expected_client_id)
-        )
-        or expected,
+        lambda token, *, expected_client_id=None: calls.append((token, expected_client_id)) or expected,
     )
     runtime = build_messaging_device_internal_runtime(
         _config(tmp_path, material),

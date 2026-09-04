@@ -233,18 +233,14 @@ def test_current_snapshot_is_complete_bounded_and_subject_private():
     assert snapshot["source"] == SOURCE
     assert snapshot["complete"] is True
     assert snapshot["issuedAt"] == int(NOW.timestamp() * 1000)
-    assert snapshot["expiresAt"] == int(
-        (NOW + timedelta(seconds=300)).timestamp() * 1000
-    )
+    assert snapshot["expiresAt"] == int((NOW + timedelta(seconds=300)).timestamp() * 1000)
     assert len(snapshot["activeDevices"]) == 2
     assert [item["deviceId"] for item in snapshot["activeDevices"]] == [
         DEVICE,
         "55" * 32,
     ]
     assert all(
-        item["snapshotId"] == snapshot["snapshotId"]
-        and item["revoked"] is False
-        for item in snapshot["activeDevices"]
+        item["snapshotId"] == snapshot["snapshotId"] and item["revoked"] is False for item in snapshot["activeDevices"]
     )
     assert SUBJECT not in json.dumps(snapshot)
     assert repository.calls[-1][-1] == MAX_ACTIVE_DEVICES

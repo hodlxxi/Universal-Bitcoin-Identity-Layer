@@ -196,11 +196,7 @@ def _trusted_utc_second(value: object) -> datetime:
 def _db_utc_second(value: object) -> datetime:
     if not isinstance(value, datetime):
         raise MessagingDeviceAuthorityUnavailable()
-    normalized = (
-        value.replace(tzinfo=timezone.utc)
-        if value.tzinfo is None
-        else value.astimezone(timezone.utc)
-    )
+    normalized = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
     if normalized.microsecond:
         raise MessagingDeviceAuthorityUnavailable()
     return normalized
@@ -353,9 +349,7 @@ def _from_row(row: SocialMessagingDeviceBindingRow) -> MessagingDeviceBinding:
 
 
 def _lock_subject_user(session, subject: str) -> None:
-    user_id = session.execute(
-        select(User.id).where(User.pubkey == subject).with_for_update()
-    ).scalar_one_or_none()
+    user_id = session.execute(select(User.id).where(User.pubkey == subject).with_for_update()).scalar_one_or_none()
     if user_id is None:
         raise MessagingDeviceAuthorityUnavailable()
 
@@ -477,14 +471,8 @@ def _replay_matches(
         and binding.operation == command.operation
         and binding.prior_binding_id == command.expected_binding_id
         and binding.request_id == command.request_id
-        and (
-            command.operation == "revoke"
-            or binding.public_key == command.public_key
-        )
-        and (
-            command.operation == "revoke"
-            or binding.active is True
-        )
+        and (command.operation == "revoke" or binding.public_key == command.public_key)
+        and (command.operation == "revoke" or binding.active is True)
     )
 
 
@@ -500,9 +488,7 @@ class SqlAlchemySocialMessagingDeviceRepository:
         if (
             not callable(session_factory)
             or type(binding_lifetime_seconds) is not int
-            or not MIN_BINDING_LIFETIME_SECONDS
-            <= binding_lifetime_seconds
-            <= MAX_BINDING_LIFETIME_SECONDS
+            or not MIN_BINDING_LIFETIME_SECONDS <= binding_lifetime_seconds <= MAX_BINDING_LIFETIME_SECONDS
         ):
             raise ValueError("invalid messaging device storage configuration")
         self._session_factory = session_factory
@@ -651,8 +637,7 @@ class SqlAlchemySocialMessagingDeviceRepository:
                     session.execute(
                         select(SocialMessagingDeviceBindingRow)
                         .where(
-                            SocialMessagingDeviceBindingRow.subject_pubkey
-                            == canonical_subject,
+                            SocialMessagingDeviceBindingRow.subject_pubkey == canonical_subject,
                             SocialMessagingDeviceBindingRow.active.is_(True),
                             SocialMessagingDeviceBindingRow.valid_from <= timestamp,
                             SocialMessagingDeviceBindingRow.expires_at > timestamp,

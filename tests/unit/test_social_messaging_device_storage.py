@@ -129,9 +129,7 @@ def test_rotate_requires_exact_current_binding_and_retires_predecessor(storage):
     with Session() as session:
         rows = list(
             session.execute(
-                select(SocialMessagingDeviceBindingRow).order_by(
-                    SocialMessagingDeviceBindingRow.binding_version
-                )
+                select(SocialMessagingDeviceBindingRow).order_by(SocialMessagingDeviceBindingRow.binding_version)
             ).scalars()
         )
     assert len(rows) == 2
@@ -153,11 +151,14 @@ def test_revoke_is_terminal_for_current_projection_and_replay_is_idempotent(stor
     assert revoked.prior_binding_id == first.binding_id
     assert revoked.public_key == first.public_key
     assert revoked.active is False
-    assert repository.current_for_subject(
-        SUBJECT,
-        now=NOW,
-        maximum=MAX_ACTIVE_DEVICES,
-    ) == []
+    assert (
+        repository.current_for_subject(
+            SUBJECT,
+            now=NOW,
+            maximum=MAX_ACTIVE_DEVICES,
+        )
+        == []
+    )
 
 
 def test_register_replay_is_idempotent_but_request_id_cannot_change_meaning(storage):
@@ -202,13 +203,16 @@ def test_active_device_cap_is_exactly_sixteen(storage):
             now=NOW,
         )
 
-    assert len(
-        repository.current_for_subject(
-            SUBJECT,
-            now=NOW,
-            maximum=MAX_ACTIVE_DEVICES,
+    assert (
+        len(
+            repository.current_for_subject(
+                SUBJECT,
+                now=NOW,
+                maximum=MAX_ACTIVE_DEVICES,
+            )
         )
-    ) == MAX_ACTIVE_DEVICES
+        == MAX_ACTIVE_DEVICES
+    )
 
     with pytest.raises(MessagingDeviceAuthorityUnavailable):
         repository.apply(
@@ -223,11 +227,14 @@ def test_expired_rows_drop_out_and_are_retired_before_new_registration(storage):
     first = repository.apply(register(1, 0x11, 101), subject=SUBJECT, now=NOW)
     later = NOW + timedelta(days=31)
 
-    assert repository.current_for_subject(
-        SUBJECT,
-        now=later,
-        maximum=MAX_ACTIVE_DEVICES,
-    ) == []
+    assert (
+        repository.current_for_subject(
+            SUBJECT,
+            now=later,
+            maximum=MAX_ACTIVE_DEVICES,
+        )
+        == []
+    )
 
     repository.apply(register(2, 0x12, 102), subject=SUBJECT, now=later)
 
