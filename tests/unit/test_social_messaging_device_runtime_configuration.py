@@ -9,6 +9,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from flask import Flask
 from jwt.algorithms import RSAAlgorithm
 
+from app.config import get_config
 from app.services.social_messaging_device_internal_delivery import (
     DEFAULT_BINDING_LIFETIME_SECONDS,
     MESSAGING_DEVICE_INTERNAL_EXTENSION,
@@ -210,3 +211,43 @@ def test_configure_installs_exact_runtime_once_and_disabled_installs_nothing(
 
     with pytest.raises(MessagingDeviceInternalConfigurationError):
         configure_messaging_device_internal_delivery(app, config)
+
+
+def test_application_config_exposes_messaging_device_runtime_disabled_by_default(monkeypatch):
+    names = (
+        "SOCIAL_MESSAGING_DEVICE_INTERNAL_ENABLED",
+        "SOCIAL_MESSAGING_DEVICE_SERVICE_CLIENT_ID",
+        "SOCIAL_MESSAGING_DEVICE_SERVICE_PRINCIPAL",
+        "SOCIAL_MESSAGING_DEVICE_SERVICE_ISSUER",
+        "SOCIAL_MESSAGING_DEVICE_SERVICE_TOKEN_ENDPOINT_AUDIENCE",
+        "SOCIAL_MESSAGING_DEVICE_SERVICE_RESOURCE_AUDIENCE",
+        "SOCIAL_MESSAGING_DEVICE_VIEWER_OAUTH_CLIENT_ID",
+        "SOCIAL_MESSAGING_DEVICE_CLIENT_JWKS_DIR",
+        "SOCIAL_MESSAGING_DEVICE_SIGNING_JWKS_DIR",
+        "SOCIAL_MESSAGING_DEVICE_CLOCK_SKEW_SECONDS",
+        "SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS",
+    )
+    for name in names:
+        monkeypatch.delenv(name, raising=False)
+
+    config = get_config()
+
+    assert config["SOCIAL_MESSAGING_DEVICE_INTERNAL_ENABLED"] is False
+    assert config["SOCIAL_MESSAGING_DEVICE_SERVICE_CLIENT_ID"] == ""
+    assert config["SOCIAL_MESSAGING_DEVICE_SERVICE_PRINCIPAL"] == ""
+    assert config["SOCIAL_MESSAGING_DEVICE_SERVICE_ISSUER"] == ""
+    assert config["SOCIAL_MESSAGING_DEVICE_SERVICE_TOKEN_ENDPOINT_AUDIENCE"] == ""
+    assert config["SOCIAL_MESSAGING_DEVICE_SERVICE_RESOURCE_AUDIENCE"] == ""
+    assert config["SOCIAL_MESSAGING_DEVICE_VIEWER_OAUTH_CLIENT_ID"] == ""
+    assert config["SOCIAL_MESSAGING_DEVICE_CLIENT_JWKS_DIR"] == ""
+    assert config["SOCIAL_MESSAGING_DEVICE_SIGNING_JWKS_DIR"] == ""
+    assert config["SOCIAL_MESSAGING_DEVICE_CLOCK_SKEW_SECONDS"] == 5
+    assert config["SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS"] == DEFAULT_BINDING_LIFETIME_SECONDS
+
+
+def test_factory_wires_messaging_runtime_only_through_conditional_runtime():
+    source = Path("app/factory.py").read_text(encoding="utf-8")
+
+    assert source.count("configure_messaging_device_internal_delivery(app, cfg)") == 1
+    assert source.count("configured_messaging_device_internal_runtime(app) is not None") == 1
+    assert source.count("app.register_blueprint(internal_social_messaging_device_bp)") == 1
