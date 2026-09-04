@@ -1455,6 +1455,171 @@ class ActionOperation(Base):
     )
 
 
+
+class SocialMessagingDeviceBinding(Base):
+    """Append-only public Social messaging device-key lifecycle evidence."""
+
+    __tablename__ = "social_messaging_device_bindings"
+
+    binding_id = Column(String(64), primary_key=True)
+    contract_version = Column(String(80), nullable=False)
+
+    subject_pubkey = Column(String(64), nullable=False)
+    device_id = Column(String(64), nullable=False)
+
+    algorithm = Column(String(16), nullable=False)
+    public_key = Column(String(64), nullable=False)
+
+    binding_version = Column(BigInteger, nullable=False)
+
+    valid_from = Column(DateTime(timezone=True), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+
+    operation = Column(String(8), nullable=False)
+
+    prior_binding_id = Column(
+        String(64),
+        ForeignKey(
+            "social_messaging_device_bindings.binding_id",
+            name="fk_social_messaging_device_binding_prior",
+        ),
+    )
+
+    nonce = Column(String(64), nullable=False)
+    statement_sha256 = Column(String(64), nullable=False)
+
+    signature_format = Column(String(32), nullable=False)
+    identity_signature = Column(String(128), nullable=False)
+
+    active = Column(Boolean, nullable=False)
+    retired_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "subject_pubkey",
+            "device_id",
+            "binding_version",
+            name="uq_social_messaging_device_binding_subject_device_version",
+        ),
+        UniqueConstraint(
+            "nonce",
+            name="uq_social_messaging_device_binding_nonce",
+        ),
+        UniqueConstraint(
+            "statement_sha256",
+            name="uq_social_messaging_device_binding_statement_sha256",
+        ),
+
+        CheckConstraint(
+            _CanonicalLowerHex("binding_id", 64),
+            name="ck_social_messaging_device_binding_id",
+        ),
+        CheckConstraint(
+            "contract_version = "
+            "'hodlxxi.social_messaging_device_binding_statement.v1'",
+            name="ck_social_messaging_device_binding_contract",
+        ),
+        CheckConstraint(
+            _CanonicalLowerHex("subject_pubkey", 64),
+            name="ck_social_messaging_device_binding_subject",
+        ),
+        CheckConstraint(
+            _CanonicalLowerHex("device_id", 64),
+            name="ck_social_messaging_device_binding_device",
+        ),
+        CheckConstraint(
+            "algorithm = 'x25519-v1'",
+            name="ck_social_messaging_device_binding_algorithm",
+        ),
+        CheckConstraint(
+            _CanonicalLowerHex("public_key", 64),
+            name="ck_social_messaging_device_binding_public_key",
+        ),
+        CheckConstraint(
+            "binding_version BETWEEN 1 AND 1024",
+            name="ck_social_messaging_device_binding_version",
+        ),
+        CheckConstraint(
+            "valid_from < expires_at",
+            name="ck_social_messaging_device_binding_validity",
+        ),
+        CheckConstraint(
+            "operation IN ('register','rotate','revoke')",
+            name="ck_social_messaging_device_binding_operation",
+        ),
+        CheckConstraint(
+            "("
+            "operation = 'register' "
+            "AND prior_binding_id IS NULL "
+            "AND binding_version = 1"
+            ") OR ("
+            "operation IN ('rotate','revoke') "
+            "AND prior_binding_id IS NOT NULL "
+            "AND binding_version >= 2"
+            ")",
+            name="ck_social_messaging_device_binding_prior",
+        ),
+        CheckConstraint(
+            _CanonicalLowerHex("nonce", 64),
+            name="ck_social_messaging_device_binding_nonce",
+        ),
+        CheckConstraint(
+            _CanonicalLowerHex("statement_sha256", 64),
+            name="ck_social_messaging_device_binding_digest",
+        ),
+        CheckConstraint(
+            "binding_id = statement_sha256",
+            name="ck_social_messaging_device_binding_digest_id",
+        ),
+        CheckConstraint(
+            "signature_format = 'bip340_schnorr_sha256'",
+            name="ck_social_messaging_device_binding_signature_format",
+        ),
+        CheckConstraint(
+            _CanonicalLowerHex("identity_signature", 128),
+            name="ck_social_messaging_device_binding_signature",
+        ),
+        CheckConstraint(
+            "("
+            "active = true "
+            "AND operation IN ('register','rotate') "
+            "AND retired_at IS NULL"
+            ") OR ("
+            "active = false "
+            "AND retired_at IS NOT NULL"
+            ")",
+            name="ck_social_messaging_device_binding_active",
+        ),
+
+        Index(
+            "uq_social_messaging_device_binding_active_device",
+            "subject_pubkey",
+            "device_id",
+            unique=True,
+            postgresql_where=text("active = true"),
+            sqlite_where=text("active = 1"),
+        ),
+        Index(
+            "uq_social_messaging_device_binding_active_public_key",
+            "public_key",
+            unique=True,
+            postgresql_where=text("active = true"),
+            sqlite_where=text("active = 1"),
+        ),
+        Index(
+            "idx_social_messaging_device_binding_subject",
+            "subject_pubkey",
+            "active",
+            "device_id",
+        ),
+        Index(
+            "idx_social_messaging_device_binding_expires",
+            "expires_at",
+        ),
+    )
+
+
 class X25519IdentityBinding(Base):
     """Append-only identity-authorized X25519 lifecycle evidence."""
 
