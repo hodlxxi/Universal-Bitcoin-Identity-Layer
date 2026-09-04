@@ -52,6 +52,8 @@ class ConfidentialServiceConfig:
     service_jwks: tuple[Mapping[str, object], ...] = ()
     clock_skew_seconds: int = MAX_CLOCK_SKEW_SECONDS
     max_credential_length: int = DEFAULT_MAX_BEARER_LENGTH
+    service_scope: str = SERVICE_SCOPE
+    service_purpose: str = SERVICE_PURPOSE
 
     def __post_init__(self) -> None:
         # Copy the public key records so later caller mutation cannot change the
@@ -91,6 +93,8 @@ def _configuration(config: ConfidentialServiceConfig) -> None:
         config.issuer,
         config.token_endpoint_audience,
         config.service_resource_audience,
+        config.service_scope,
+        config.service_purpose,
     )
     if any(not isinstance(value, str) or not value or value.strip() != value for value in values):
         _deny()
@@ -250,10 +254,10 @@ def issue_service_access_token(
         "aud": config.service_resource_audience,
         "sub": config.service_principal,
         "azp": config.client_id,
-        "scope": SERVICE_SCOPE,
+        "scope": config.service_scope,
         "grant_type": GRANT_TYPE,
         "token_use": SERVICE_TOKEN_USE,
-        "purpose": SERVICE_PURPOSE,
+        "purpose": config.service_purpose,
         "iat": current,
         "exp": current + MAX_LIFETIME_SECONDS,
         "jti": jti,
@@ -299,17 +303,17 @@ def verify_service_access_token(
             ("aud", config.service_resource_audience),
             ("sub", config.service_principal),
             ("azp", config.client_id),
-            ("scope", SERVICE_SCOPE),
+            ("scope", config.service_scope),
             ("grant_type", GRANT_TYPE),
             ("token_use", SERVICE_TOKEN_USE),
-            ("purpose", SERVICE_PURPOSE),
+            ("purpose", config.service_purpose),
         )
         if any(not isinstance(claims.get(name), str) or claims.get(name) != value for name, value in exact):
             _deny()
         return VerifiedServiceCredential(
             config.service_principal,
             config.client_id,
-            SERVICE_SCOPE,
+            config.service_scope,
             iat,
             exp,
             _identifier(claims.get("jti"), MAX_JTI_LENGTH),

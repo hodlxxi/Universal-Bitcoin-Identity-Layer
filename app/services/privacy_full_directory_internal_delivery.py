@@ -12,7 +12,6 @@ from app.services.confidential_service_assertion_replay_storage import (
     PostgresConfidentialServiceAssertionReplayStore,
 )
 from app.services.confidential_service_credentials import (
-    SERVICE_SCOPE,
     ConfidentialServiceConfig,
     CredentialDenied,
     VerifiedServiceCredential,
@@ -99,7 +98,7 @@ class PrivacyFullDirectoryInternalDeliveryRuntime:
             type(service) is not VerifiedServiceCredential
             or service.service_principal != self.service_config.service_principal
             or service.client_id != self.service_config.client_id
-            or service.scope != SERVICE_SCOPE
+            or service.scope != self.service_config.service_scope
         ):
             raise CredentialDenied("credential denied")
         return service
@@ -113,7 +112,7 @@ class PrivacyFullDirectoryInternalDeliveryRuntime:
             type(service) is not VerifiedServiceCredential
             or service.service_principal != self.service_config.service_principal
             or service.client_id != self.service_config.client_id
-            or service.scope != SERVICE_SCOPE
+            or service.scope != self.service_config.service_scope
         ):
             raise CredentialDenied("credential denied")
 

@@ -73,6 +73,16 @@ class AppConfig(TypedDict):
     CONFIDENTIAL_SERVICE_CLOCK_SKEW_SECONDS: int
     PRIVACY_FULL_DIRECTORY_ALIAS_SECRET_FILE: str
     PRIVACY_FULL_DIRECTORY_ALIAS_VERSION: int
+    SOCIAL_MESSAGING_INTERNAL_ENABLED: bool
+    SOCIAL_MESSAGING_SERVICE_CLIENT_ID: str
+    SOCIAL_MESSAGING_SERVICE_PRINCIPAL: str
+    SOCIAL_MESSAGING_SERVICE_ISSUER: str
+    SOCIAL_MESSAGING_SERVICE_TOKEN_ENDPOINT_AUDIENCE: str
+    SOCIAL_MESSAGING_SERVICE_RESOURCE_AUDIENCE: str
+    SOCIAL_MESSAGING_VIEWER_OAUTH_CLIENT_ID: str
+    SOCIAL_MESSAGING_SERVICE_CLIENT_JWKS_DIR: str
+    SOCIAL_MESSAGING_SERVICE_SIGNING_JWKS_DIR: str
+    SOCIAL_MESSAGING_SERVICE_CLOCK_SKEW_SECONDS: int
 
 
 def _get_env_bool(name: str, default: bool) -> bool:
@@ -199,6 +209,48 @@ def get_config() -> AppConfig:
         "PRIVACY_FULL_DIRECTORY_ALIAS_VERSION": _get_env_int(
             "PRIVACY_FULL_DIRECTORY_ALIAS_VERSION",
             1,
+        ),
+        # Private Social messaging device-key boundary.
+        # Disabled unless every explicit trust dependency is configured.
+        "SOCIAL_MESSAGING_INTERNAL_ENABLED": _get_env_bool(
+            "SOCIAL_MESSAGING_INTERNAL_ENABLED",
+            False,
+        ),
+        "SOCIAL_MESSAGING_SERVICE_CLIENT_ID": os.getenv(
+            "SOCIAL_MESSAGING_SERVICE_CLIENT_ID",
+            "",
+        ),
+        "SOCIAL_MESSAGING_SERVICE_PRINCIPAL": os.getenv(
+            "SOCIAL_MESSAGING_SERVICE_PRINCIPAL",
+            "",
+        ),
+        "SOCIAL_MESSAGING_SERVICE_ISSUER": os.getenv(
+            "SOCIAL_MESSAGING_SERVICE_ISSUER",
+            "",
+        ),
+        "SOCIAL_MESSAGING_SERVICE_TOKEN_ENDPOINT_AUDIENCE": os.getenv(
+            "SOCIAL_MESSAGING_SERVICE_TOKEN_ENDPOINT_AUDIENCE",
+            "",
+        ),
+        "SOCIAL_MESSAGING_SERVICE_RESOURCE_AUDIENCE": os.getenv(
+            "SOCIAL_MESSAGING_SERVICE_RESOURCE_AUDIENCE",
+            "",
+        ),
+        "SOCIAL_MESSAGING_VIEWER_OAUTH_CLIENT_ID": os.getenv(
+            "SOCIAL_MESSAGING_VIEWER_OAUTH_CLIENT_ID",
+            "",
+        ),
+        "SOCIAL_MESSAGING_SERVICE_CLIENT_JWKS_DIR": os.getenv(
+            "SOCIAL_MESSAGING_SERVICE_CLIENT_JWKS_DIR",
+            "",
+        ),
+        "SOCIAL_MESSAGING_SERVICE_SIGNING_JWKS_DIR": os.getenv(
+            "SOCIAL_MESSAGING_SERVICE_SIGNING_JWKS_DIR",
+            "",
+        ),
+        "SOCIAL_MESSAGING_SERVICE_CLOCK_SKEW_SECONDS": _get_env_int(
+            "SOCIAL_MESSAGING_SERVICE_CLOCK_SKEW_SECONDS",
+            5,
         ),
     }
 
