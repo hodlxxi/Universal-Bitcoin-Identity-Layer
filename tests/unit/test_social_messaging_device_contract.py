@@ -57,6 +57,7 @@ def binding(
     public_key=PUBLIC_KEY,
     version=1,
     operation="register",
+    prior_binding_id=None,
     request_id=REQUEST,
     active=True,
     valid_from=NOW,
@@ -71,6 +72,7 @@ def binding(
         valid_from=valid_from,
         expires_at=expires_at,
         operation=operation,
+        prior_binding_id=prior_binding_id,
         request_id=request_id,
         active=active,
     )
@@ -218,6 +220,7 @@ def test_current_snapshot_is_complete_bounded_and_subject_private():
         public_key="66" * 32,
         version=2,
         operation="rotate",
+        prior_binding_id=BINDING,
         request_id="88" * 32,
     )
     repository = Repository(current=[second, binding()])
@@ -278,7 +281,12 @@ def test_current_rejects_duplicate_keys_and_oversized_population():
 
 
 def test_current_rejects_revoked_or_expired_repository_rows():
-    revoked = binding(operation="revoke", version=2, active=False)
+    revoked = binding(
+        operation="revoke",
+        version=2,
+        prior_binding_id=BINDING,
+        active=False,
+    )
     expired = binding(expires_at=NOW)
 
     for row in (revoked, expired):
@@ -288,3 +296,37 @@ def test_current_rejects_revoked_or_expired_repository_rows():
         )
         with pytest.raises(MessagingDeviceAuthorityUnavailable):
             authority.current(authenticated_subject=SUBJECT)
+
+
+def test_apply_rejects_repository_prior_mismatch():
+    returned = binding(
+        binding_id="77" * 32,
+        public_key="66" * 32,
+        version=2,
+        operation="rotate",
+        prior_binding_id="99" * 32,
+    )
+    authority = SocialMessagingDeviceAuthority(
+        Repository(applied=returned),
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(MessagingDeviceAuthorityUnavailable):
+        authority.apply(
+            command(
+                "rotate",
+                expected_binding_id=BINDING,
+                public_key="66" * 32,
+            ),
+            authenticated_subject=SUBJECT,
+        )
+
+
+def test_apply_rejects_version_above_social_v128c_limit():
+    authority = SocialMessagingDeviceAuthority(
+        Repository(applied=binding(version=1025)),
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(MessagingDeviceAuthorityUnavailable):
+        authority.apply(command(), authenticated_subject=SUBJECT)

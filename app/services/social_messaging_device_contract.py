@@ -25,7 +25,7 @@ ALGORITHM = "x25519-v1"
 
 MAX_COMMAND_BYTES = 8192
 MAX_ACTIVE_DEVICES = 16
-MAX_SAFE_INTEGER = 9_007_199_254_740_991
+MAX_BINDING_VERSION = 1024
 SNAPSHOT_LIFETIME_SECONDS = 300
 UNAVAILABLE_MESSAGE = "social messaging device authority unavailable"
 
@@ -67,6 +67,7 @@ class MessagingDeviceBinding:
     valid_from: datetime
     expires_at: datetime
     operation: str
+    prior_binding_id: str | None
     request_id: str
     active: bool
 
@@ -220,16 +221,27 @@ def _validated_binding(
         if public_key == subject:
             raise ValueError
         version = value.binding_version
-        if type(version) is not int or not 1 <= version <= MAX_SAFE_INTEGER:
+        if type(version) is not int or not 1 <= version <= MAX_BINDING_VERSION:
             raise ValueError
         valid_from = _utc_second(value.valid_from)
         expires_at = _utc_second(value.expires_at)
         timestamp = _utc_second(now)
         if valid_from > timestamp or expires_at <= timestamp or valid_from >= expires_at:
             raise ValueError
-        if value.operation not in _OPERATIONS or type(value.active) is not bool:
+        operation = value.operation
+        if operation not in _OPERATIONS or type(value.active) is not bool:
             raise ValueError
-        if value.operation == "revoke":
+
+        prior_binding_id = value.prior_binding_id
+        if operation == "register":
+            if prior_binding_id is not None or version != 1:
+                raise ValueError
+        else:
+            prior_binding_id = _hex64(prior_binding_id)
+            if version <= 1 or prior_binding_id == binding_id:
+                raise ValueError
+
+        if operation == "revoke":
             if value.active is not False:
                 raise ValueError
         elif value.active is not True:
@@ -245,7 +257,8 @@ def _validated_binding(
             version,
             valid_from,
             expires_at,
-            value.operation,
+            operation,
+            prior_binding_id,
             request_id,
             value.active,
         )
@@ -301,6 +314,7 @@ class SocialMessagingDeviceAuthority:
                 binding.device_id != command.device_id
                 or binding.operation != command.operation
                 or binding.request_id != command.request_id
+                or binding.prior_binding_id != command.expected_binding_id
                 or (
                     command.public_key is not None
                     and binding.public_key != command.public_key
@@ -378,6 +392,7 @@ class SocialMessagingDeviceAuthority:
                 for item in bindings
             ]
             evidence = {
+                "subject": subject,
                 "complete": True,
                 "issuedAt": issued_at,
                 "expiresAt": expires_at,
