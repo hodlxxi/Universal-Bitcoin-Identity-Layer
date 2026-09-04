@@ -8,10 +8,16 @@ or enable any production configuration.
 
 from __future__ import annotations
 
+import glob
+import os
+import stat
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Mapping
 
 from app.services.action_authorization import IdentityClass
+from app.services.confidential_service_assertion_replay_storage import (
+    PostgresConfidentialServiceAssertionReplayStore,
+)
 from app.services.confidential_service_credentials import (
     ConfidentialServiceConfig,
     CredentialDenied,
@@ -28,7 +34,9 @@ from app.services.oauth_bearer_validation import BearerPrincipal
 
 MESSAGING_DEVICE_SCOPE = "social:messaging-device:manage"
 MESSAGING_DEVICE_PURPOSE = "social_messaging_device_manage"
+MESSAGING_DEVICE_INTERNAL_EXTENSION = "social_messaging_device_internal_delivery_v1"
 VIEWER_REQUIRED_SCOPE = "openid"
+DEFAULT_BINDING_LIFETIME_SECONDS = 30 * 24 * 60 * 60
 
 
 class MessagingDeviceInternalConfigurationError(RuntimeError):
@@ -139,7 +147,10 @@ class MessagingDeviceInternalDeliveryRuntime:
         return viewer
 
     @staticmethod
-    def _require_service(service: VerifiedServiceCredential, config: ConfidentialServiceConfig) -> None:
+    def _require_service(
+        service: VerifiedServiceCredential,
+        config: ConfidentialServiceConfig,
+    ) -> None:
         if (
             type(service) is not VerifiedServiceCredential
             or service.service_principal != config.service_principal
@@ -193,7 +204,187 @@ class MessagingDeviceInternalDeliveryRuntime:
         return self.apply_for_service(service, viewer_token, payload)
 
 
+def _required_string(config: Mapping[str, object], name: str) -> str:
+    value = config.get(name)
+    if type(value) is not str or not value or value.strip() != value:
+        raise MessagingDeviceInternalConfigurationError()
+    return value
+
+
+def _absolute_directory(config: Mapping[str, object], name: str) -> str:
+    value = _required_string(config, name)
+    try:
+        info = os.lstat(value)
+        if (
+            not os.path.isabs(value)
+            or not stat.S_ISDIR(info.st_mode)
+            or os.path.islink(value)
+        ):
+            raise ValueError
+    except Exception:
+        raise MessagingDeviceInternalConfigurationError() from None
+    return value
+
+
+def build_messaging_device_internal_runtime(
+    config: Mapping[str, object],
+    *,
+    session_factory=None,
+    viewer_token_validator=None,
+) -> MessagingDeviceInternalDeliveryRuntime | None:
+    """Build the private messaging runtime only from complete explicit config."""
+
+    if config.get("SOCIAL_MESSAGING_DEVICE_INTERNAL_ENABLED") is not True:
+        return None
+
+    try:
+        client_jwks_dir = _absolute_directory(
+            config,
+            "SOCIAL_MESSAGING_DEVICE_CLIENT_JWKS_DIR",
+        )
+        service_jwks_dir = _absolute_directory(
+            config,
+            "SOCIAL_MESSAGING_DEVICE_SIGNING_JWKS_DIR",
+        )
+        if glob.glob(os.path.join(client_jwks_dir, "private_key*.pem")):
+            raise ValueError
+
+        from app.jwks import load_jwks_document, load_signing_material
+
+        client_document = load_jwks_document(client_jwks_dir)
+        service_document, signing_kid, signing_key = load_signing_material(
+            service_jwks_dir
+        )
+        service_config = ConfidentialServiceConfig(
+            enabled=True,
+            client_id=_required_string(
+                config,
+                "SOCIAL_MESSAGING_DEVICE_SERVICE_CLIENT_ID",
+            ),
+            service_principal=_required_string(
+                config,
+                "SOCIAL_MESSAGING_DEVICE_SERVICE_PRINCIPAL",
+            ),
+            issuer=_required_string(
+                config,
+                "SOCIAL_MESSAGING_DEVICE_SERVICE_ISSUER",
+            ),
+            token_endpoint_audience=_required_string(
+                config,
+                "SOCIAL_MESSAGING_DEVICE_SERVICE_TOKEN_ENDPOINT_AUDIENCE",
+            ),
+            service_resource_audience=_required_string(
+                config,
+                "SOCIAL_MESSAGING_DEVICE_SERVICE_RESOURCE_AUDIENCE",
+            ),
+            client_jwks=tuple(client_document["keys"]),
+            service_jwks=tuple(service_document["keys"]),
+            service_scope=MESSAGING_DEVICE_SCOPE,
+            service_purpose=MESSAGING_DEVICE_PURPOSE,
+            clock_skew_seconds=config.get(
+                "SOCIAL_MESSAGING_DEVICE_CLOCK_SKEW_SECONDS",
+                5,
+            ),
+        )
+        validate_confidential_service_config(service_config)
+
+        viewer_oauth_client_id = _required_string(
+            config,
+            "SOCIAL_MESSAGING_DEVICE_VIEWER_OAUTH_CLIENT_ID",
+        )
+        binding_lifetime_seconds = config.get(
+            "SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS",
+            DEFAULT_BINDING_LIFETIME_SECONDS,
+        )
+
+        if session_factory is None:
+            from app.database import get_session
+
+            session_factory = get_session
+
+        replay_consumer = PostgresConfidentialServiceAssertionReplayStore(
+            session_factory
+        )
+
+        from app.services.current_entitlement import (
+            resolve_runtime_current_entitlement,
+        )
+        from app.services.current_entitlement_evidence_storage import (
+            SqlAlchemyCurrentEntitlementEvidenceRepository,
+        )
+        from app.services.social_messaging_device_contract import (
+            SocialMessagingDeviceAuthority,
+        )
+        from app.services.social_messaging_device_storage import (
+            SqlAlchemySocialMessagingDeviceRepository,
+        )
+
+        entitlement_repository = SqlAlchemyCurrentEntitlementEvidenceRepository(
+            session_factory
+        )
+
+        def current_entitlement_resolver(subject):
+            return resolve_runtime_current_entitlement(
+                subject,
+                repository=entitlement_repository,
+            )
+
+        device_repository = SqlAlchemySocialMessagingDeviceRepository(
+            session_factory,
+            binding_lifetime_seconds=binding_lifetime_seconds,
+        )
+        device_authority = SocialMessagingDeviceAuthority(device_repository)
+
+        if viewer_token_validator is None:
+            from app.services.oauth_bearer_validation import (
+                validate_canonical_access_token,
+            )
+
+            def viewer_token_validator(token):
+                return validate_canonical_access_token(
+                    token,
+                    expected_client_id=viewer_oauth_client_id,
+                )
+
+        return MessagingDeviceInternalDeliveryRuntime(
+            service_config=service_config,
+            replay_consumer=replay_consumer,
+            service_signing_key=signing_key,
+            service_signing_kid=signing_kid,
+            viewer_oauth_client_id=viewer_oauth_client_id,
+            viewer_token_validator=viewer_token_validator,
+            current_entitlement_resolver=current_entitlement_resolver,
+            device_authority=device_authority,
+        )
+    except MessagingDeviceInternalConfigurationError:
+        raise
+    except Exception:
+        raise MessagingDeviceInternalConfigurationError() from None
+
+
+def configure_messaging_device_internal_delivery(
+    app,
+    config: Mapping[str, object],
+) -> bool:
+    runtime = build_messaging_device_internal_runtime(config)
+    if runtime is None:
+        return False
+    if MESSAGING_DEVICE_INTERNAL_EXTENSION in app.extensions:
+        raise MessagingDeviceInternalConfigurationError()
+    app.extensions[MESSAGING_DEVICE_INTERNAL_EXTENSION] = runtime
+    return True
+
+
+def configured_messaging_device_internal_runtime(
+    app,
+) -> MessagingDeviceInternalDeliveryRuntime | None:
+    runtime = app.extensions.get(MESSAGING_DEVICE_INTERNAL_EXTENSION)
+    return runtime if type(runtime) is MessagingDeviceInternalDeliveryRuntime else None
+
+
 __all__ = [
+    "DEFAULT_BINDING_LIFETIME_SECONDS",
+    "MESSAGING_DEVICE_INTERNAL_EXTENSION",
     "MESSAGING_DEVICE_PURPOSE",
     "MESSAGING_DEVICE_SCOPE",
     "MessagingDeviceInternalConfigurationError",
@@ -202,4 +393,7 @@ __all__ = [
     "MessagingViewerEntitlementDenied",
     "MessagingViewerEntitlementUnavailable",
     "VIEWER_REQUIRED_SCOPE",
+    "build_messaging_device_internal_runtime",
+    "configure_messaging_device_internal_delivery",
+    "configured_messaging_device_internal_runtime",
 ]
