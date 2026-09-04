@@ -121,7 +121,13 @@ def test_distinct_client_and_service_keys_remain_valid_and_issue_once_with_defau
     evidence = verify_service_access_token(encoded, config=configured, now=NOW + 1)
     assert calls == [("assertion-1", NOW + 66)]
     assert evidence == VerifiedServiceCredential(
-        PRINCIPAL, CLIENT, "social:full-directory:read", NOW, NOW + 60, "service-token-1"
+        PRINCIPAL,
+        CLIENT,
+        "social:full-directory:read",
+        "social_full_directory_read",
+        NOW,
+        NOW + 60,
+        "service-token-1",
     )
     with pytest.raises(FrozenInstanceError):
         evidence.scope = "other"
@@ -502,3 +508,75 @@ def test_human_access_token_cannot_validate_as_service(material, configured):
     )
     with pytest.raises(CredentialDenied):
         verify_service_access_token(human, config=configured, now=NOW)
+
+
+def test_explicit_service_policy_is_issued_verified_and_cross_domain_rejected(material, configured):
+    messaging = replace(
+        configured,
+        service_scope="social:messaging-device:manage",
+        service_purpose="social_messaging_device_manage",
+    )
+
+    encoded = issue_service_access_token(
+        assertion(material, claims={"jti": "assertion-messaging"}),
+        config=messaging,
+        replay_consumer=lambda _jti, _deadline: True,
+        signing_key=material[1],
+        signing_kid="service-key",
+        now=NOW,
+        token_jti="messaging-service-token-1",
+    )
+
+    claims = jwt.decode(
+        encoded,
+        options={"verify_signature": False},
+    )
+
+    assert claims["scope"] == "social:messaging-device:manage"
+    assert claims["purpose"] == "social_messaging_device_manage"
+
+    evidence = verify_service_access_token(
+        encoded,
+        config=messaging,
+        now=NOW,
+    )
+
+    assert evidence == VerifiedServiceCredential(
+        PRINCIPAL,
+        CLIENT,
+        "social:messaging-device:manage",
+        "social_messaging_device_manage",
+        NOW,
+        NOW + 60,
+        "messaging-service-token-1",
+    )
+
+    with pytest.raises(CredentialDenied, match="^credential denied$"):
+        verify_service_access_token(
+            encoded,
+            config=configured,
+            now=NOW,
+        )
+
+    full_directory_token = service_token(material)
+
+    scope_only_foreign = replace(
+        configured,
+        service_scope="social:messaging-device:manage",
+    )
+    purpose_only_foreign = replace(
+        configured,
+        service_purpose="social_messaging_device_manage",
+    )
+
+    for foreign_policy in (
+        scope_only_foreign,
+        purpose_only_foreign,
+        messaging,
+    ):
+        with pytest.raises(CredentialDenied, match="^credential denied$"):
+            verify_service_access_token(
+                full_directory_token,
+                config=foreign_policy,
+                now=NOW,
+            )
