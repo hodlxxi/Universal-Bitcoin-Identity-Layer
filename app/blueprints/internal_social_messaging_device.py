@@ -21,6 +21,7 @@ from app.services.confidential_service_credentials import (
 from app.services.social_messaging_device_contract import (
     MAX_COMMAND_BYTES,
     MessagingDeviceAuthorityUnavailable,
+    MessagingDeviceRequestInvalid,
 )
 from app.services.social_messaging_device_internal_delivery import (
     MESSAGING_DEVICE_SCOPE,
@@ -205,6 +206,8 @@ def mutate_internal_social_messaging_device_bindings():
         MessagingViewerEntitlementUnavailable,
     ) as exc:
         return _map_viewer_error(exc)
+    except MessagingDeviceRequestInvalid:
+        return _json_error("invalid_request", 400)
     except MessagingDeviceAuthorityUnavailable:
         return _json_error("device_authority_unavailable", 503)
     except Exception:

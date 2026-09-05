@@ -8,7 +8,10 @@ from flask import Flask
 
 from app.blueprints import internal_social_messaging_device as routes
 from app.services.confidential_service_credentials import CredentialDenied
-from app.services.social_messaging_device_contract import MessagingDeviceAuthorityUnavailable
+from app.services.social_messaging_device_contract import (
+    MessagingDeviceAuthorityUnavailable,
+    MessagingDeviceRequestInvalid,
+)
 from app.services.social_messaging_device_internal_delivery import (
     MESSAGING_DEVICE_SCOPE,
     MessagingViewerCredentialDenied,
@@ -216,6 +219,44 @@ def test_post_forwards_exact_ascii_statement_after_both_credentials(monkeypatch)
         ("verify-service", SERVICE_TOKEN),
         ("apply", runtime.service, VIEWER_TOKEN, STATEMENT),
     ]
+    assert_no_store(response)
+
+
+@pytest.mark.parametrize(
+    ("error", "status", "body"),
+    [
+        (
+            MessagingDeviceRequestInvalid(),
+            400,
+            {"error": "invalid_request"},
+        ),
+        (
+            MessagingDeviceAuthorityUnavailable(),
+            503,
+            {"error": "device_authority_unavailable"},
+        ),
+    ],
+)
+def test_post_distinguishes_invalid_request_from_authority_unavailable(
+    monkeypatch,
+    error,
+    status,
+    body,
+):
+    runtime = Runtime()
+    runtime.viewer_error = error
+    monkeypatch.setattr(routes, "_runtime", lambda: runtime)
+    http = client()
+
+    response = http.post(
+        routes.DEVICE_BINDINGS_ROUTE,
+        data=STATEMENT,
+        content_type="application/json",
+        headers=headers(),
+    )
+
+    assert response.status_code == status
+    assert response.get_json() == body
     assert_no_store(response)
 
 

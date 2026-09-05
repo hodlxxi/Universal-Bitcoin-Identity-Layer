@@ -140,6 +140,33 @@ def test_apply_passes_payload_but_not_browser_chosen_subject(monkeypatch):
     assert authority.calls == [("apply", SUBJECT, payload)]
 
 
+def test_malformed_authority_result_is_authority_unavailable(monkeypatch):
+    class MalformedAuthority(Authority):
+        def current(self, *, authenticated_subject):
+            self.calls.append(("current", authenticated_subject))
+            return object()
+
+        def apply(self, payload, *, authenticated_subject):
+            self.calls.append(("apply", authenticated_subject, payload))
+            return object()
+
+    authority = MalformedAuthority()
+    instance = runtime(monkeypatch, authority=authority)
+
+    with pytest.raises(delivery.MessagingDeviceAuthorityUnavailable):
+        instance.current_for_service(
+            verified_service(),
+            "viewer-token",
+        )
+
+    with pytest.raises(delivery.MessagingDeviceAuthorityUnavailable):
+        instance.apply_for_service(
+            verified_service(),
+            "viewer-token",
+            "{}",
+        )
+
+
 def test_wrong_service_domain_is_rejected_before_viewer_or_authority(monkeypatch):
     authority = Authority()
     viewer_calls = []
