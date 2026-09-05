@@ -149,6 +149,12 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
 
     configure_internal_delivery(app, cfg)
 
+    from app.services.social_messaging_device_internal_delivery import (
+        configure_messaging_device_internal_delivery,
+    )
+
+    configure_messaging_device_internal_delivery(app, cfg)
+
     # Register blueprints
     # Rate limiter must be initialized BEFORE importing blueprints (blueprints use @limiter.limit at import time)
     try:
@@ -268,6 +274,17 @@ def register_blueprints(app: Flask) -> None:
         )
 
         app.register_blueprint(internal_privacy_full_directory_bp)
+
+    from app.services.social_messaging_device_internal_delivery import (
+        configured_messaging_device_internal_runtime,
+    )
+
+    if configured_messaging_device_internal_runtime(app) is not None:
+        from app.blueprints.internal_social_messaging_device import (
+            internal_social_messaging_device_bp,
+        )
+
+        app.register_blueprint(internal_social_messaging_device_bp)
 
     # Public status route: factory-native and lightweight.
     # Must register before legacy_bridge so /api/public/status does not lazy-import app.app.
