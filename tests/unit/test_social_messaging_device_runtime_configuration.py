@@ -11,7 +11,6 @@ from jwt.algorithms import RSAAlgorithm
 
 from app.config import get_config
 from app.services.social_messaging_device_internal_delivery import (
-    DEFAULT_BINDING_LIFETIME_SECONDS,
     MESSAGING_DEVICE_INTERNAL_EXTENSION,
     MESSAGING_DEVICE_PURPOSE,
     MESSAGING_DEVICE_SCOPE,
@@ -28,6 +27,7 @@ ISSUER = "https://identity.example"
 TOKEN_AUDIENCE = "https://identity.example/internal/v1/social/messaging/service-token"
 RESOURCE_AUDIENCE = "https://identity.example/internal/v1/social/messaging/device-bindings"
 VIEWER_CLIENT = "social-browser-client"
+TEST_BINDING_LIFETIME_SECONDS = 3600
 
 
 def _public_jwk(key, kid):
@@ -91,7 +91,7 @@ def _config(tmp_path: Path, material, *, shared_keys=False):
         "SOCIAL_MESSAGING_DEVICE_CLIENT_JWKS_DIR": str(client_dir),
         "SOCIAL_MESSAGING_DEVICE_SIGNING_JWKS_DIR": str(service_dir),
         "SOCIAL_MESSAGING_DEVICE_CLOCK_SKEW_SECONDS": 5,
-        "SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS": DEFAULT_BINDING_LIFETIME_SECONDS,
+        "SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS": TEST_BINDING_LIFETIME_SECONDS,
     }
 
 
@@ -155,6 +155,18 @@ def test_builder_rejects_client_private_key_material(tmp_path, material):
 def test_invalid_binding_lifetime_fails_closed(tmp_path, material):
     config = _config(tmp_path, material)
     config["SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS"] = 1
+    with pytest.raises(MessagingDeviceInternalConfigurationError):
+        build_messaging_device_internal_runtime(
+            config,
+            session_factory=lambda: None,
+            viewer_token_validator=lambda _token: None,
+        )
+
+
+def test_missing_binding_lifetime_fails_closed(tmp_path, material):
+    config = _config(tmp_path, material)
+    config.pop("SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS")
+
     with pytest.raises(MessagingDeviceInternalConfigurationError):
         build_messaging_device_internal_runtime(
             config,
@@ -232,7 +244,7 @@ def test_application_config_exposes_messaging_device_runtime_disabled_by_default
     assert config["SOCIAL_MESSAGING_DEVICE_CLIENT_JWKS_DIR"] == ""
     assert config["SOCIAL_MESSAGING_DEVICE_SIGNING_JWKS_DIR"] == ""
     assert config["SOCIAL_MESSAGING_DEVICE_CLOCK_SKEW_SECONDS"] == 5
-    assert config["SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS"] == DEFAULT_BINDING_LIFETIME_SECONDS
+    assert config["SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS"] is None
 
 
 def test_factory_wires_messaging_runtime_only_through_conditional_runtime():

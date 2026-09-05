@@ -39,7 +39,6 @@ MESSAGING_DEVICE_SCOPE = "social:messaging-device:manage"
 MESSAGING_DEVICE_PURPOSE = "social_messaging_device_manage"
 MESSAGING_DEVICE_INTERNAL_EXTENSION = "social_messaging_device_internal_delivery_v1"
 VIEWER_REQUIRED_SCOPE = "openid"
-DEFAULT_BINDING_LIFETIME_SECONDS = 30 * 24 * 60 * 60
 
 
 class MessagingDeviceInternalConfigurationError(RuntimeError):
@@ -222,6 +221,18 @@ def _absolute_directory(config: Mapping[str, object], name: str) -> str:
     return value
 
 
+def _required_binding_lifetime_seconds(config: Mapping[str, object]) -> int:
+    from app.services.social_messaging_device_storage import (
+        MAX_BINDING_LIFETIME_SECONDS,
+        MIN_BINDING_LIFETIME_SECONDS,
+    )
+
+    value = config.get("SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS")
+    if type(value) is not int or not MIN_BINDING_LIFETIME_SECONDS <= value <= MAX_BINDING_LIFETIME_SECONDS:
+        raise MessagingDeviceInternalConfigurationError()
+    return value
+
+
 def build_messaging_device_internal_runtime(
     config: Mapping[str, object],
     *,
@@ -232,6 +243,8 @@ def build_messaging_device_internal_runtime(
 
     if config.get("SOCIAL_MESSAGING_DEVICE_INTERNAL_ENABLED") is not True:
         return None
+
+    binding_lifetime_seconds = _required_binding_lifetime_seconds(config)
 
     try:
         client_jwks_dir = _absolute_directory(
@@ -286,11 +299,6 @@ def build_messaging_device_internal_runtime(
             config,
             "SOCIAL_MESSAGING_DEVICE_VIEWER_OAUTH_CLIENT_ID",
         )
-        binding_lifetime_seconds = config.get(
-            "SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS",
-            DEFAULT_BINDING_LIFETIME_SECONDS,
-        )
-
         if session_factory is None:
             from app.database import get_session
 
@@ -373,7 +381,6 @@ def configured_messaging_device_internal_runtime(
 
 
 __all__ = [
-    "DEFAULT_BINDING_LIFETIME_SECONDS",
     "MESSAGING_DEVICE_INTERNAL_EXTENSION",
     "MESSAGING_DEVICE_PURPOSE",
     "MESSAGING_DEVICE_SCOPE",
