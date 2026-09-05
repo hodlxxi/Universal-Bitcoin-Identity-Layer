@@ -120,6 +120,14 @@ def test_parser_rejects_non_printable_json_whitespace_as_request_invalid(whitesp
         )
 
 
+def test_invalid_authenticated_subject_remains_authority_unavailable():
+    with pytest.raises(MessagingDeviceAuthorityUnavailable):
+        parse_messaging_device_command(
+            command(),
+            authenticated_subject="not-a-canonical-subject",
+        )
+
+
 def test_parser_rejects_browser_subject_and_duplicate_members():
     with_subject = json.loads(command())
     with_subject["subject"] = SUBJECT
