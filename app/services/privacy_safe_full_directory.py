@@ -164,6 +164,41 @@ def _snapshot_subjects(value: object, *, now: int, viewer: str) -> tuple[str, ..
     return tuple(subjects)
 
 
+def derive_privacy_directory_alias(
+    *,
+    viewer: object,
+    target: object,
+    alias_secret: object,
+    alias_version: object = DEFAULT_ALIAS_VERSION,
+) -> str:
+    """Derive one canonical viewer-private alias with the directory V1 domain."""
+
+    try:
+        normalized_viewer = _subject(viewer)
+        normalized_target = _subject(target)
+        if (
+            type(alias_secret) is not bytes
+            or not MIN_ALIAS_SECRET_BYTES <= len(alias_secret) <= MAX_ALIAS_SECRET_BYTES
+            or type(alias_version) is not int
+            or not 1 <= alias_version <= MAX_ALIAS_VERSION
+        ):
+            raise ValueError
+        message = b"\x00".join(
+            (
+                ALIAS_DOMAIN,
+                str(VERSION).encode("ascii"),
+                str(alias_version).encode("ascii"),
+                normalized_viewer.encode("ascii"),
+                normalized_target.encode("ascii"),
+            )
+        )
+        digest = hmac.new(alias_secret, message, hashlib.sha256).digest()[:ALIAS_BYTES]
+        encoded = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+        return "p_" + encoded
+    except Exception:
+        raise ValueError("invalid pairwise alias input") from None
+
+
 class PrivacySafeFullDirectoryV1:
     """Authorize one viewer and build a viewer-bound alias directory."""
 
@@ -242,18 +277,12 @@ class PrivacySafeFullDirectoryV1:
         return viewer
 
     def _alias(self, viewer: str, target: str) -> str:
-        message = b"\x00".join(
-            (
-                ALIAS_DOMAIN,
-                str(VERSION).encode("ascii"),
-                str(self._alias_version).encode("ascii"),
-                viewer.encode("ascii"),
-                target.encode("ascii"),
-            )
+        return derive_privacy_directory_alias(
+            viewer=viewer,
+            target=target,
+            alias_secret=self._alias_secret,
+            alias_version=self._alias_version,
         )
-        digest = hmac.new(self._alias_secret, message, hashlib.sha256).digest()[:ALIAS_BYTES]
-        encoded = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-        return "p_" + encoded
 
     def current_directory(self) -> dict[str, object]:
         """Return only opaque entries, or fail without returning partial data."""
