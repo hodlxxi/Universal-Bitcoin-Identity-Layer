@@ -10,6 +10,7 @@ from app.services.social_messaging_device_contract import (
     COMMAND_SCHEMA,
     MAX_ACTIVE_DEVICES,
     MessagingDeviceAuthorityUnavailable,
+    MessagingDeviceRequestInvalid,
     MessagingDeviceBinding,
     RESULT_SCHEMA,
     SNAPSHOT_SCHEMA,
@@ -108,18 +109,29 @@ def test_register_parser_derives_subject_and_has_no_subject_field():
     assert not hasattr(parsed, "subject")
 
 
+@pytest.mark.parametrize("whitespace", ["\n", "\t", "\r"])
+def test_parser_rejects_non_printable_json_whitespace_as_request_invalid(whitespace):
+    payload = command().replace(",", "," + whitespace, 1)
+
+    with pytest.raises(MessagingDeviceRequestInvalid):
+        parse_messaging_device_command(
+            payload,
+            authenticated_subject=SUBJECT,
+        )
+
+
 def test_parser_rejects_browser_subject_and_duplicate_members():
     with_subject = json.loads(command())
     with_subject["subject"] = SUBJECT
 
-    with pytest.raises(MessagingDeviceAuthorityUnavailable):
+    with pytest.raises(MessagingDeviceRequestInvalid):
         parse_messaging_device_command(
             json.dumps(with_subject, separators=(",", ":")),
             authenticated_subject=SUBJECT,
         )
 
     duplicate = command()[:-1] + ',"deviceId":"' + DEVICE + '"}'
-    with pytest.raises(MessagingDeviceAuthorityUnavailable):
+    with pytest.raises(MessagingDeviceRequestInvalid):
         parse_messaging_device_command(
             duplicate,
             authenticated_subject=SUBJECT,
@@ -155,7 +167,7 @@ def test_rotate_and_revoke_require_explicit_current_binding(payload, operation):
     assert parsed.operation == operation
     assert parsed.expected_binding_id == BINDING
 
-    with pytest.raises(MessagingDeviceAuthorityUnavailable):
+    with pytest.raises(MessagingDeviceRequestInvalid):
         parse_messaging_device_command(
             command(operation, public_key=None if operation == "revoke" else "66" * 32),
             authenticated_subject=SUBJECT,
@@ -163,13 +175,13 @@ def test_rotate_and_revoke_require_explicit_current_binding(payload, operation):
 
 
 def test_parser_rejects_low_order_x25519_and_identity_key_reuse():
-    with pytest.raises(MessagingDeviceAuthorityUnavailable):
+    with pytest.raises(MessagingDeviceRequestInvalid):
         parse_messaging_device_command(
             command(public_key="00" * 32),
             authenticated_subject=SUBJECT,
         )
 
-    with pytest.raises(MessagingDeviceAuthorityUnavailable):
+    with pytest.raises(MessagingDeviceRequestInvalid):
         parse_messaging_device_command(
             command(public_key=SUBJECT),
             authenticated_subject=SUBJECT,

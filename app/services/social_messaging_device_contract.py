@@ -28,6 +28,7 @@ MAX_ACTIVE_DEVICES = 16
 MAX_BINDING_VERSION = 1024
 SNAPSHOT_LIFETIME_SECONDS = 300
 UNAVAILABLE_MESSAGE = "social messaging device authority unavailable"
+REQUEST_INVALID_MESSAGE = "social messaging device request invalid"
 
 _HEX_64 = re.compile(r"[0-9a-f]{64}\Z").fullmatch
 _OPERATIONS = frozenset({"register", "rotate", "revoke"})
@@ -46,6 +47,11 @@ _COMMAND_FIELDS = {
 class MessagingDeviceAuthorityUnavailable(RuntimeError):
     def __init__(self) -> None:
         super().__init__(UNAVAILABLE_MESSAGE)
+
+
+class MessagingDeviceRequestInvalid(ValueError):
+    def __init__(self) -> None:
+        super().__init__(REQUEST_INVALID_MESSAGE)
 
 
 @dataclass(frozen=True)
@@ -123,9 +129,9 @@ def _timestamp(value: datetime) -> str:
 
 def _closed_json_object(source: object) -> dict[str, object]:
     try:
-        if type(source) is not str:
+        if type(source) is not str or not 1 <= len(source) <= MAX_COMMAND_BYTES:
             raise ValueError
-        if not 1 <= len(source.encode("utf-8")) <= MAX_COMMAND_BYTES:
+        if any(ord(char) < 0x20 or ord(char) > 0x7E for char in source):
             raise ValueError
 
         def pairs(values):
@@ -141,7 +147,7 @@ def _closed_json_object(source: object) -> dict[str, object]:
             raise ValueError
         return decoded
     except Exception:
-        raise MessagingDeviceAuthorityUnavailable() from None
+        raise MessagingDeviceRequestInvalid() from None
 
 
 def parse_messaging_device_command(
@@ -151,8 +157,8 @@ def parse_messaging_device_command(
 ) -> tuple[str, MessagingDeviceCommand]:
     """Parse one browser command while deriving authority from server auth."""
 
+    subject = _canonical_subject(authenticated_subject)
     try:
-        subject = _canonical_subject(authenticated_subject)
         data = _closed_json_object(payload)
         if set(data) != _COMMAND_FIELDS:
             raise ValueError
@@ -195,10 +201,10 @@ def parse_messaging_device_command(
             expected_binding_id=expected,
             request_id=request_id,
         )
-    except MessagingDeviceAuthorityUnavailable:
+    except MessagingDeviceRequestInvalid:
         raise
     except Exception:
-        raise MessagingDeviceAuthorityUnavailable() from None
+        raise MessagingDeviceRequestInvalid() from None
 
 
 def _validated_binding(
@@ -326,6 +332,8 @@ class SocialMessagingDeviceAuthority:
                 "operation": command.operation,
                 "device": _device_result(binding),
             }
+        except MessagingDeviceRequestInvalid:
+            raise
         except MessagingDeviceAuthorityUnavailable:
             raise
         except Exception:
@@ -424,6 +432,7 @@ __all__ = [
     "COMMAND_SCHEMA",
     "MAX_ACTIVE_DEVICES",
     "MessagingDeviceAuthorityUnavailable",
+    "MessagingDeviceRequestInvalid",
     "MessagingDeviceBinding",
     "MessagingDeviceCommand",
     "MessagingDeviceRepository",

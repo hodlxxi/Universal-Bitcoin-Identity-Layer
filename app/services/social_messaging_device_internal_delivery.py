@@ -31,6 +31,9 @@ from app.services.current_entitlement import (
     EntitlementDenied,
 )
 from app.services.oauth_bearer_validation import BearerPrincipal
+from app.services.social_messaging_device_contract import (
+    MessagingDeviceAuthorityUnavailable,
+)
 
 MESSAGING_DEVICE_SCOPE = "social:messaging-device:manage"
 MESSAGING_DEVICE_PURPOSE = "social_messaging_device_manage"
@@ -168,7 +171,7 @@ class MessagingDeviceInternalDeliveryRuntime:
             authenticated_subject=viewer.subject,
         )
         if type(result) is not dict:
-            raise MessagingViewerEntitlementUnavailable()
+            raise MessagingDeviceAuthorityUnavailable()
         return result
 
     def apply_for_service(
@@ -184,7 +187,7 @@ class MessagingDeviceInternalDeliveryRuntime:
             authenticated_subject=viewer.subject,
         )
         if type(result) is not dict:
-            raise MessagingViewerEntitlementUnavailable()
+            raise MessagingDeviceAuthorityUnavailable()
         return result
 
     def current(self, service_token: str, viewer_token: str) -> dict[str, object]:
