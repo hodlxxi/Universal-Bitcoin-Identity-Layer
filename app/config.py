@@ -83,7 +83,7 @@ class AppConfig(TypedDict):
     SOCIAL_MESSAGING_DEVICE_CLIENT_JWKS_DIR: str
     SOCIAL_MESSAGING_DEVICE_SIGNING_JWKS_DIR: str
     SOCIAL_MESSAGING_DEVICE_CLOCK_SKEW_SECONDS: int
-    SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS: int
+    SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS: Optional[int]
 
 
 def _get_env_bool(name: str, default: bool) -> bool:
@@ -101,6 +101,19 @@ def _get_env_int(name: str, default: int) -> int:
     raw_value = os.getenv(name)
     if raw_value is None or raw_value == "":
         return default
+
+    try:
+        return int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"Environment variable {name} must be an integer (got {raw_value!r})") from exc
+
+
+def _get_optional_env_int(name: str) -> Optional[int]:
+    """Return an optional environment variable as an integer."""
+
+    raw_value = os.getenv(name)
+    if raw_value is None or raw_value == "":
+        return None
 
     try:
         return int(raw_value)
@@ -252,9 +265,8 @@ def get_config() -> AppConfig:
             "SOCIAL_MESSAGING_DEVICE_CLOCK_SKEW_SECONDS",
             5,
         ),
-        "SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS": _get_env_int(
+        "SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS": _get_optional_env_int(
             "SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS",
-            2592000,
         ),
     }
 
