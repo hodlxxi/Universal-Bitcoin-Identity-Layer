@@ -145,6 +145,7 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     # dependency validates. No keys or secrets are generated here.
     from app.services.privacy_full_directory_internal_delivery import (
         configure_internal_delivery,
+        configured_internal_delivery_runtime,
     )
 
     configure_internal_delivery(app, cfg)
@@ -154,6 +155,16 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     )
 
     configure_messaging_device_internal_delivery(app, cfg)
+
+    from app.services.social_messaging_recipient_runtime_configuration import (
+        configure_messaging_recipient_internal_delivery,
+    )
+
+    configure_messaging_recipient_internal_delivery(
+        app,
+        cfg,
+        privacy_directory_runtime=configured_internal_delivery_runtime(app),
+    )
 
     # Register blueprints
     # Rate limiter must be initialized BEFORE importing blueprints (blueprints use @limiter.limit at import time)
@@ -285,6 +296,17 @@ def register_blueprints(app: Flask) -> None:
         )
 
         app.register_blueprint(internal_social_messaging_device_bp)
+
+    from app.services.social_messaging_recipient_runtime_configuration import (
+        configured_messaging_recipient_internal_runtime,
+    )
+
+    if configured_messaging_recipient_internal_runtime(app) is not None:
+        from app.blueprints.internal_social_messaging_recipient import (
+            internal_social_messaging_recipient_bp,
+        )
+
+        app.register_blueprint(internal_social_messaging_recipient_bp)
 
     # Public status route: factory-native and lightweight.
     # Must register before legacy_bridge so /api/public/status does not lazy-import app.app.
