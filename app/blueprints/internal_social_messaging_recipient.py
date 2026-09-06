@@ -348,7 +348,7 @@ def read_internal_social_messaging_recipient_devices():
     except MessagingRecipientViewerEntitlementUnavailable:
         return _json_error("recipient_authority_unavailable", 503)
     except RecipientAliasInvalid:
-        return _json_error("invalid_request", 400)
+        return _json_error("recipient_authority_unavailable", 503)
     except (RecipientDeviceResolverDenied, RecipientDeviceResolverUnavailable):
         return _json_error("recipient_authority_unavailable", 503)
     except Exception:

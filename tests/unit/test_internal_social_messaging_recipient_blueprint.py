@@ -29,6 +29,7 @@ from app.services.recipient_device_resolver import (
     PACKAGE_SCHEMA,
     SOURCE,
     VERSION,
+    RecipientAliasInvalid,
     RecipientDeviceResolverDenied,
     RecipientDeviceResolverUnavailable,
 )
@@ -362,6 +363,7 @@ def test_non_full_viewer_is_403_before_resolver(monkeypatch):
 @pytest.mark.parametrize(
     "exception",
     [
+        RecipientAliasInvalid(),
         RecipientDeviceResolverDenied(),
         RecipientDeviceResolverUnavailable(),
     ],
