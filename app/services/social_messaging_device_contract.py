@@ -376,13 +376,13 @@ class SocialMessagingDeviceAuthority:
                 raise ValueError
 
             issued_at = int(now.timestamp() * 1000)
-            expires_at = int(
-                min(
-                    now + timedelta(seconds=SNAPSHOT_LIFETIME_SECONDS),
+            snapshot_expires_at = now + timedelta(seconds=SNAPSHOT_LIFETIME_SECONDS)
+            if bindings:
+                snapshot_expires_at = min(
+                    snapshot_expires_at,
                     *(item.expires_at for item in bindings),
-                ).timestamp()
-                * 1000
-            )
+                )
+            expires_at = int(snapshot_expires_at.timestamp() * 1000)
             public_devices = [
                 {
                     "deviceId": item.device_id,
