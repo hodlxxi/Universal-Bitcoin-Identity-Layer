@@ -300,7 +300,7 @@ class SocialMessagingDeviceAuthority:
         ):
             raise ValueError("invalid messaging device repository")
         self._repository = repository
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._clock = clock or (lambda: datetime.now(timezone.utc).replace(microsecond=0))
 
     def apply(
         self,
