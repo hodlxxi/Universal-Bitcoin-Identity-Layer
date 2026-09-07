@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -9,12 +10,13 @@ from app.services.social_messaging_device_contract import (
     ALGORITHM,
     COMMAND_SCHEMA,
     MAX_ACTIVE_DEVICES,
-    MessagingDeviceAuthorityUnavailable,
-    MessagingDeviceRequestInvalid,
-    MessagingDeviceBinding,
     RESULT_SCHEMA,
+    SNAPSHOT_LIFETIME_SECONDS,
     SNAPSHOT_SCHEMA,
     SOURCE,
+    MessagingDeviceAuthorityUnavailable,
+    MessagingDeviceBinding,
+    MessagingDeviceRequestInvalid,
     SocialMessagingDeviceAuthority,
     parse_messaging_device_command,
 )
@@ -264,6 +266,37 @@ def test_current_snapshot_is_complete_bounded_and_subject_private():
     )
     assert SUBJECT not in json.dumps(snapshot)
     assert repository.calls[-1][-1] == MAX_ACTIVE_DEVICES
+
+
+def test_current_empty_snapshot_is_complete_and_uses_snapshot_lifetime():
+    repository = Repository(current=[])
+    authority = SocialMessagingDeviceAuthority(repository, clock=lambda: NOW)
+
+    snapshot = authority.current(authenticated_subject=SUBJECT)
+
+    issued_at = int(NOW.timestamp() * 1000)
+    assert snapshot["schema"] == SNAPSHOT_SCHEMA
+    assert snapshot["version"] == 1
+    assert snapshot["source"] == SOURCE
+    assert snapshot["complete"] is True
+    assert snapshot["activeDevices"] == []
+    assert snapshot["issuedAt"] == issued_at
+    assert snapshot["expiresAt"] == issued_at + SNAPSHOT_LIFETIME_SECONDS * 1000
+    assert snapshot["expiresAt"] > snapshot["issuedAt"]
+    assert re.fullmatch(r"sha256:[0-9a-f]{64}", snapshot["snapshotId"])
+
+
+def test_current_snapshot_expiry_is_capped_by_earlier_device_expiry():
+    device_expires_at = NOW + timedelta(seconds=120)
+    authority = SocialMessagingDeviceAuthority(
+        Repository(current=[binding(expires_at=device_expires_at)]),
+        clock=lambda: NOW,
+    )
+
+    snapshot = authority.current(authenticated_subject=SUBJECT)
+
+    assert snapshot["expiresAt"] == int(device_expires_at.timestamp() * 1000)
+    assert snapshot["expiresAt"] < snapshot["issuedAt"] + SNAPSHOT_LIFETIME_SECONDS * 1000
 
 
 def test_current_rejects_duplicate_keys_and_oversized_population():
