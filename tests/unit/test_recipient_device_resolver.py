@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+import app.services.recipient_device_resolver as recipient_device_resolver
 from app.services.action_authorization import IdentityClass
 from app.services.current_entitlement import EntitlementDecision
 from app.services.privacy_safe_full_directory import derive_privacy_directory_alias
@@ -200,6 +201,52 @@ def test_exact_privacy_minimized_multi_device_package():
     serialized = json.dumps(result, sort_keys=True)
     for forbidden in (VIEWER_A, TARGET, DEVICE_A, DEVICE_B, BINDING_A, BINDING_B, REQUEST_A, REQUEST_B):
         assert forbidden not in serialized
+
+
+def test_default_clock_normalizes_system_microseconds_to_utc_second(monkeypatch):
+    provider = PopulationProvider(full_snapshot())
+    repo = Repository()
+
+    class MicrosecondDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = NOW + timedelta(microseconds=123456)
+            return cls(
+                value.year,
+                value.month,
+                value.day,
+                value.hour,
+                value.minute,
+                value.second,
+                value.microsecond,
+                tzinfo=tz,
+            )
+
+    monkeypatch.setattr(
+        recipient_device_resolver,
+        "datetime",
+        MicrosecondDatetime,
+    )
+
+    instance = RecipientDeviceResolverV1(
+        current_entitlement_resolver=lambda subject: decision(subject),
+        full_population_provider=provider,
+        device_repository=repo,
+        alias_secret=ALIAS_SECRET,
+    )
+
+    result = instance.resolve(
+        viewer_subject=VIEWER_A,
+        recipient_alias=recipient_alias(),
+    )
+
+    repository_now = repo.calls[-1][1]
+
+    assert repository_now == NOW
+    assert repository_now.microsecond == 0
+    assert result["complete"] is True
+    assert len(result["devices"]) == 1
+    assert result["devices"][0]["publicKey"] == KEY_A
 
 
 def test_device_handles_are_stable_per_viewer_and_pairwise_across_viewers():
