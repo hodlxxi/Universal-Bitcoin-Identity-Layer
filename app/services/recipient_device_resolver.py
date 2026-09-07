@@ -120,7 +120,7 @@ class RecipientDeviceResolverV1:
         self._device_repository = device_repository
         self._alias_secret = alias_secret
         self._alias_version = alias_version
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._clock = clock or (lambda: datetime.now(timezone.utc).replace(microsecond=0))
 
     def resolve(self, *, viewer_subject: object, recipient_alias: object) -> dict[str, object]:
         if type(recipient_alias) is not str or _ALIAS(recipient_alias) is None:
