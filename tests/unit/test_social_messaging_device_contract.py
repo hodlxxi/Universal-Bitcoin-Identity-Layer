@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+import app.services.social_messaging_device_contract as messaging_device_contract
 from app.services.social_messaging_device_contract import (
     ALGORITHM,
     COMMAND_SCHEMA,
@@ -266,6 +267,53 @@ def test_current_snapshot_is_complete_bounded_and_subject_private():
     )
     assert SUBJECT not in json.dumps(snapshot)
     assert repository.calls[-1][-1] == MAX_ACTIVE_DEVICES
+
+
+def test_default_clock_normalizes_system_microseconds_to_utc_second(monkeypatch):
+    repository = Repository(current=[])
+
+    class MicrosecondDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(
+                2026,
+                9,
+                7,
+                7,
+                20,
+                31,
+                123456,
+                tzinfo=tz,
+            )
+
+    monkeypatch.setattr(
+        messaging_device_contract,
+        "datetime",
+        MicrosecondDatetime,
+    )
+
+    authority = SocialMessagingDeviceAuthority(repository)
+
+    snapshot = authority.current(
+        authenticated_subject=SUBJECT,
+    )
+
+    repository_now = repository.calls[-1][2]
+
+    assert repository_now == datetime(
+        2026,
+        9,
+        7,
+        7,
+        20,
+        31,
+        tzinfo=timezone.utc,
+    )
+    assert repository_now.microsecond == 0
+    assert snapshot["complete"] is True
+    assert snapshot["activeDevices"] == []
+    assert snapshot["issuedAt"] == int(repository_now.timestamp() * 1000)
+    assert snapshot["expiresAt"] - snapshot["issuedAt"] == SNAPSHOT_LIFETIME_SECONDS * 1000
 
 
 def test_current_empty_snapshot_is_complete_and_uses_snapshot_lifetime():
