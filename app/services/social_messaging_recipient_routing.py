@@ -53,15 +53,9 @@ _DEVICE_HANDLE = re.compile(r"d_[A-Za-z0-9_-]{22}\Z").fullmatch
 _ALIAS = re.compile(r"p_[A-Za-z0-9_-]{22}\Z").fullmatch
 _SNAPSHOT_ID = re.compile(r"sha256:[0-9a-f]{64}\Z").fullmatch
 _MESSAGE_ID = re.compile(r"m_[A-Za-z0-9_-]{43}\Z").fullmatch
-_ENVELOPE_DIGEST = re.compile(
-    r"hodlxxi-social-message-envelope-v1-sha256:[0-9a-f]{64}\Z"
-).fullmatch
-_BINDING_PROOF_ID = re.compile(
-    r"hodlxxi-binding-authorization-v1-sha256:[0-9a-f]{64}\Z"
-).fullmatch
-_FULL_PROOF_ID = re.compile(
-    r"hodlxxi-full-entitlement-v1-sha256:[0-9a-f]{64}\Z"
-).fullmatch
+_ENVELOPE_DIGEST = re.compile(r"hodlxxi-social-message-envelope-v1-sha256:[0-9a-f]{64}\Z").fullmatch
+_BINDING_PROOF_ID = re.compile(r"hodlxxi-binding-authorization-v1-sha256:[0-9a-f]{64}\Z").fullmatch
+_FULL_PROOF_ID = re.compile(r"hodlxxi-full-entitlement-v1-sha256:[0-9a-f]{64}\Z").fullmatch
 _REQUEST_FIELDS = {
     "envelopeDigest",
     "messageId",
@@ -327,13 +321,40 @@ def _request_dict(value: RecipientRoutingRequest) -> dict[str, object]:
     }
 
 
+def _validate_request_semantics(value: object) -> RecipientRoutingRequest:
+    if type(value) is not RecipientRoutingRequest:
+        raise ValueError
+    if (
+        type(value.schema) is not str
+        or value.schema != REQUEST_SCHEMA
+        or type(value.version) is not int
+        or value.version != VERSION
+        or type(value.recipient_device_handles) is not tuple
+        or not 1 <= len(value.recipient_device_handles) <= MAX_ACTIVE_DEVICES
+    ):
+        raise ValueError
+    _canonical_token(value.message_id, prefix="m_", characters=43, decoded=32)
+    if (
+        type(value.envelope_digest) is not str
+        or _ENVELOPE_DIGEST(value.envelope_digest) is None
+        or type(value.recipient_package_snapshot_id) is not str
+        or _SNAPSHOT_ID(value.recipient_package_snapshot_id) is None
+    ):
+        raise ValueError
+    handles = tuple(
+        _canonical_token(item, prefix="d_", characters=22, decoded=16) for item in value.recipient_device_handles
+    )
+    if tuple(sorted(set(handles))) != handles:
+        raise ValueError
+    return value
+
+
 def canonical_routing_request_bytes(value: RecipientRoutingRequest) -> bytes:
     try:
-        if type(value) is not RecipientRoutingRequest:
-            raise ValueError
-        encoded = json.dumps(
-            _request_dict(value), ensure_ascii=True, separators=(",", ":"), sort_keys=True
-        ).encode("ascii")
+        value = _validate_request_semantics(value)
+        encoded = json.dumps(_request_dict(value), ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode(
+            "ascii"
+        )
         if len(encoded) > MAX_REQUEST_BYTES:
             raise ValueError
         return encoded
@@ -371,15 +392,10 @@ def parse_recipient_routing_request(payload: object) -> RecipientRoutingRequest:
             or not 1 <= len(handles) <= MAX_ACTIVE_DEVICES
         ):
             raise ValueError
-        normalized_handles = tuple(
-            _canonical_token(item, prefix="d_", characters=22, decoded=16)
-            for item in handles
-        )
+        normalized_handles = tuple(_canonical_token(item, prefix="d_", characters=22, decoded=16) for item in handles)
         if tuple(sorted(set(normalized_handles))) != normalized_handles:
             raise ValueError
-        message_id = _canonical_token(
-            data["messageId"], prefix="m_", characters=43, decoded=32
-        )
+        message_id = _canonical_token(data["messageId"], prefix="m_", characters=43, decoded=32)
         digest = data["envelopeDigest"]
         snapshot_id = data["recipientPackageSnapshotId"]
         if (
@@ -397,6 +413,7 @@ def parse_recipient_routing_request(payload: object) -> RecipientRoutingRequest:
             recipient_package_snapshot_id=snapshot_id,
             recipient_device_handles=normalized_handles,
         )
+        _validate_request_semantics(result)
         if payload.encode("ascii") != canonical_routing_request_bytes(result):
             raise ValueError
         return result
@@ -420,8 +437,7 @@ def _snapshot_route_dict(value: RecipientRoutingSnapshotRoute) -> dict[str, obje
 
 def canonical_routing_snapshot_bytes(value: RecipientRoutingSnapshot) -> bytes:
     try:
-        if type(value) is not RecipientRoutingSnapshot:
-            raise ValueError
+        value = _validate_snapshot_semantics(value)
         data = {
             "schema": value.schema,
             "version": value.version,
@@ -435,9 +451,7 @@ def canonical_routing_snapshot_bytes(value: RecipientRoutingSnapshot) -> bytes:
             "complete": value.complete,
             "routes": [_snapshot_route_dict(item) for item in value.routes],
         }
-        encoded = json.dumps(data, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode(
-            "ascii"
-        )
+        encoded = json.dumps(data, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("ascii")
         if len(encoded) > MAX_INTERNAL_SNAPSHOT_BYTES:
             raise ValueError
         return encoded
@@ -447,8 +461,7 @@ def canonical_routing_snapshot_bytes(value: RecipientRoutingSnapshot) -> bytes:
 
 def canonical_routing_decision_bytes(value: RecipientRoutingDecision) -> bytes:
     try:
-        if type(value) is not RecipientRoutingDecision:
-            raise ValueError
+        value = _validate_decision_semantics(value)
         data = {
             "schema": value.schema,
             "version": value.version,
@@ -470,9 +483,7 @@ def canonical_routing_decision_bytes(value: RecipientRoutingDecision) -> bytes:
                 for item in value.routes
             ],
         }
-        encoded = json.dumps(data, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode(
-            "ascii"
-        )
+        encoded = json.dumps(data, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("ascii")
         if len(encoded) > MAX_INTERNAL_DECISION_BYTES:
             raise ValueError
         return encoded
@@ -525,17 +536,20 @@ def _verified_binding_route(
     subject = _canonical_subject(binding.subject)
     device_id = _hex64(binding.device_id)
     binding_id = _hex64(binding.binding_id)
+    _hex64(binding.request_id)
     public_key = validate_x25519_public_key(binding.public_key)
     binding_version = binding.binding_version
     valid_from = _utc_second(binding.valid_from)
     binding_expires_at = _utc_second(binding.expires_at)
     now = _utc_second(now)
+    operation = binding.operation
     if (
         subject != recipient_subject
         or public_key == subject
         or type(binding_version) is not int
         or not 1 <= binding_version <= MAX_BINDING_VERSION
-        or binding.operation not in {"register", "rotate"}
+        or type(operation) is not str
+        or operation not in {"register", "rotate"}
         or binding.active is not True
         or valid_from > now
         or now >= binding_expires_at
@@ -543,7 +557,13 @@ def _verified_binding_route(
         or expires_at > _milliseconds(binding_expires_at)
     ):
         raise ValueError
-
+    if operation == "register":
+        if binding_version != 1 or binding.prior_binding_id is not None:
+            raise ValueError
+    else:
+        prior_binding_id = _hex64(binding.prior_binding_id)
+        if binding_version < 2 or prior_binding_id == binding_id:
+            raise ValueError
     evidence = verifier.verify(binding, now=now)
     if type(evidence) is not VerifiedBindingAuthorization:
         raise ValueError
@@ -641,6 +661,7 @@ def _validated_package(
         raise ValueError
 
     normalized_devices = []
+    public_keys = set()
     previous = None
     for item in devices:
         if type(item) is not dict or set(item) != _PACKAGE_DEVICE_FIELDS:
@@ -660,8 +681,9 @@ def _validated_package(
         ):
             raise ValueError
         public_key = validate_x25519_public_key(item["publicKey"])
-        if public_key != item["publicKey"]:
+        if public_key != item["publicKey"] or public_key in public_keys:
             raise ValueError
+        public_keys.add(public_key)
         previous = handle
         normalized_devices.append(
             {
@@ -684,9 +706,7 @@ def _validated_package(
         "expiresAt": expires_at,
         "devices": normalized_devices,
     }
-    canonical = json.dumps(evidence, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode(
-        "ascii"
-    )
+    canonical = json.dumps(evidence, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("ascii")
     expected_snapshot_id = "sha256:" + hashlib.sha256(canonical).hexdigest()
     if not hmac.compare_digest(value["snapshotId"], expected_snapshot_id):
         raise ValueError
@@ -696,13 +716,15 @@ def _validated_package(
     }
 
 
-def _validated_snapshot(value: object) -> RecipientRoutingSnapshot:
+def _validate_snapshot_semantics(value: object) -> RecipientRoutingSnapshot:
     if type(value) is not RecipientRoutingSnapshot:
         raise ValueError
     if (
-        value.schema != SNAPSHOT_SCHEMA
-        or value.version != VERSION
+        type(value.schema) is not str
+        or value.schema != SNAPSHOT_SCHEMA
         or type(value.version) is not int
+        or value.version != VERSION
+        or type(value.source) is not str
         or value.source != SOURCE
         or value.complete is not True
         or _canonical_subject(value.viewer_subject) != value.viewer_subject
@@ -748,7 +770,64 @@ def _validated_snapshot(value: object) -> RecipientRoutingSnapshot:
         proof_ids.add(route.authorization_proof_id)
     if tuple(sorted(set(handles))) != tuple(handles):
         raise ValueError
-    canonical_routing_snapshot_bytes(value)
+    return value
+
+
+def _validated_snapshot(value: object) -> RecipientRoutingSnapshot:
+    snapshot = _validate_snapshot_semantics(value)
+    canonical_routing_snapshot_bytes(snapshot)
+    return snapshot
+
+
+def _validate_decision_semantics(value: object) -> RecipientRoutingDecision:
+    if type(value) is not RecipientRoutingDecision:
+        raise ValueError
+    if (
+        type(value.schema) is not str
+        or value.schema != DECISION_SCHEMA
+        or type(value.version) is not int
+        or value.version != VERSION
+        or type(value.source) is not str
+        or value.source != SOURCE
+        or _canonical_subject(value.viewer_subject) != value.viewer_subject
+        or _canonical_subject(value.recipient_subject) != value.recipient_subject
+        or value.viewer_subject == value.recipient_subject
+        or value.complete is not True
+        or type(value.recipient_package_snapshot_id) is not str
+        or _SNAPSHOT_ID(value.recipient_package_snapshot_id) is None
+        or type(value.envelope_digest) is not str
+        or _ENVELOPE_DIGEST(value.envelope_digest) is None
+        or type(value.routes) is not tuple
+        or not 1 <= len(value.routes) <= MAX_ACTIVE_DEVICES
+    ):
+        raise ValueError
+    _canonical_token(value.message_id, prefix="m_", characters=43, decoded=32)
+    # Decisions carry no issued-at field; only a canonical, positive expiry can
+    # be established from this contract without inventing unverifiable state.
+    if _integer(value.expires_at) == 0:
+        raise ValueError
+
+    handles = []
+    device_ids = set()
+    binding_ids = set()
+    for route in value.routes:
+        if type(route) is not RecipientRoutingDecisionRoute:
+            raise ValueError
+        handle = _canonical_token(route.device_handle, prefix="d_", characters=22, decoded=16)
+        device_id = _hex64(route.device_id)
+        binding_id = _hex64(route.binding_id)
+        if (
+            type(route.binding_version) is not int
+            or not 1 <= route.binding_version <= MAX_BINDING_VERSION
+            or device_id in device_ids
+            or binding_id in binding_ids
+        ):
+            raise ValueError
+        handles.append(handle)
+        device_ids.add(device_id)
+        binding_ids.add(binding_id)
+    if tuple(sorted(set(handles))) != tuple(handles):
+        raise ValueError
     return value
 
 
@@ -830,11 +909,13 @@ class SocialMessagingRecipientRoutingGateV1:
         pairs.sort(key=lambda item: item[0].device_handle)
         routes = tuple(item[0] for item in pairs)
         devices = tuple(item[1] for item in pairs)
+        public_keys = tuple(item["publicKey"] for item in devices)
         if (
             len({item.device_handle for item in routes}) != len(routes)
             or len({item.device_id for item in routes}) != len(routes)
             or len({item.binding_id for item in routes}) != len(routes)
             or len({item.authorization_proof_id for item in routes}) != len(routes)
+            or len(set(public_keys)) != len(public_keys)
         ):
             raise ValueError
         return routes, devices
@@ -924,17 +1005,13 @@ class SocialMessagingRecipientRoutingGateV1:
         try:
             request = parse_recipient_routing_request(payload)
             viewer = _canonical_subject(authenticated_viewer_subject)
-            snapshot = _validated_snapshot(
-                self._repository.read_snapshot(request.recipient_package_snapshot_id)
-            )
+            snapshot = _validated_snapshot(self._repository.read_snapshot(request.recipient_package_snapshot_id))
             now = self._now()
             now_ms = _milliseconds(now)
             if (
                 viewer != snapshot.viewer_subject
-                or request.recipient_package_snapshot_id
-                != snapshot.recipient_package_snapshot_id
-                or request.recipient_device_handles
-                != tuple(item.device_handle for item in snapshot.routes)
+                or request.recipient_package_snapshot_id != snapshot.recipient_package_snapshot_id
+                or request.recipient_device_handles != tuple(item.device_handle for item in snapshot.routes)
                 or now_ms < snapshot.issued_at
                 or now_ms >= snapshot.expires_at
             ):

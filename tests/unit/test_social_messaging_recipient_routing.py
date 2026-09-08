@@ -1,6 +1,6 @@
 import hashlib
 import json
-from dataclasses import replace
+from dataclasses import fields, replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -11,9 +11,14 @@ from app.services.social_messaging_device_contract import MessagingDeviceBinding
 from app.services.social_messaging_recipient_routing import (
     DECISION_SCHEMA,
     REQUEST_SCHEMA,
+    SNAPSHOT_SCHEMA,
+    SOURCE,
     RecipientMessagingRoutingUnavailable,
     RecipientRoutingDecision,
+    RecipientRoutingDecisionRoute,
     RecipientRoutingRequest,
+    RecipientRoutingSnapshot,
+    RecipientRoutingSnapshotRoute,
     SocialMessagingRecipientRoutingGateV1,
     VerifiedBindingAuthorization,
     VerifiedCurrentFullEntitlement,
@@ -197,6 +202,12 @@ def make_package(bindings, *, viewer=VIEWER_A, recipient=RECIPIENT, alias_versio
     }
 
 
+def refresh_package_snapshot_id(package):
+    evidence = {key: value for key, value in package.items() if key != "snapshotId"}
+    canonical = json.dumps(evidence, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+    package["snapshotId"] = "sha256:" + hashlib.sha256(canonical.encode("ascii")).hexdigest()
+
+
 def make_gate(
     bindings,
     *,
@@ -227,9 +238,7 @@ def request_for(package, *, handles=None, message_id=MESSAGE_ID, digest=ENVELOPE
         envelope_digest=digest,
         recipient_package_snapshot_id=package["snapshotId"],
         recipient_device_handles=tuple(
-            handles
-            if handles is not None
-            else [item["deviceHandle"] for item in package["devices"]]
+            handles if handles is not None else [item["deviceHandle"] for item in package["devices"]]
         ),
     )
     return canonical_routing_request_bytes(value).decode("ascii")
@@ -253,6 +262,103 @@ def assert_generic(call):
     assert str(caught.value) == ERROR
 
 
+def valid_request():
+    binding = make_binding()
+    return RecipientRoutingRequest(
+        schema=REQUEST_SCHEMA,
+        version=1,
+        message_id=MESSAGE_ID,
+        envelope_digest=ENVELOPE_DIGEST,
+        recipient_package_snapshot_id="sha256:" + "11" * 32,
+        recipient_device_handles=(
+            derive_recipient_device_handle(
+                viewer=VIEWER_A,
+                target=RECIPIENT,
+                binding_id=binding.binding_id,
+                alias_secret=ALIAS_SECRET,
+                alias_version=1,
+            ),
+        ),
+    )
+
+
+def snapshot_route(index=1):
+    binding = make_binding(index)
+    return RecipientRoutingSnapshotRoute(
+        device_handle=derive_recipient_device_handle(
+            viewer=VIEWER_A,
+            target=RECIPIENT,
+            binding_id=binding.binding_id,
+            alias_secret=ALIAS_SECRET,
+            alias_version=1,
+        ),
+        device_id=binding.device_id,
+        binding_id=binding.binding_id,
+        binding_version=binding.binding_version,
+        authorization_proof_id=proof_id(binding),
+        authorization_valid_from=NOW_MS - 2_000,
+        authorization_expires_at=NOW_MS + 400_000,
+    )
+
+
+def valid_snapshot(*routes):
+    selected = tuple(sorted(routes or (snapshot_route(),), key=lambda item: item.device_handle))
+    return RecipientRoutingSnapshot(
+        schema=SNAPSHOT_SCHEMA,
+        version=1,
+        source=SOURCE,
+        viewer_subject=VIEWER_A,
+        recipient_subject=RECIPIENT,
+        alias_version=1,
+        recipient_package_snapshot_id="sha256:" + "11" * 32,
+        issued_at=NOW_MS,
+        expires_at=NOW_MS + 300_000,
+        complete=True,
+        routes=selected,
+    )
+
+
+def decision_route(index=1):
+    route = snapshot_route(index)
+    return RecipientRoutingDecisionRoute(
+        device_handle=route.device_handle,
+        device_id=route.device_id,
+        binding_id=route.binding_id,
+        binding_version=route.binding_version,
+    )
+
+
+def valid_decision(*routes):
+    selected = tuple(sorted(routes or (decision_route(),), key=lambda item: item.device_handle))
+    return RecipientRoutingDecision(
+        schema=DECISION_SCHEMA,
+        version=1,
+        source=SOURCE,
+        message_id=MESSAGE_ID,
+        envelope_digest=ENVELOPE_DIGEST,
+        recipient_package_snapshot_id="sha256:" + "11" * 32,
+        viewer_subject=VIEWER_A,
+        recipient_subject=RECIPIENT,
+        complete=True,
+        expires_at=NOW_MS + 300_000,
+        routes=selected,
+    )
+
+
+def snapshot_with_duplicate(field):
+    value = valid_snapshot(snapshot_route(1), snapshot_route(2))
+    routes = list(value.routes)
+    routes[1] = replace(routes[1], **{field: getattr(routes[0], field)})
+    return replace(value, routes=tuple(routes))
+
+
+def decision_with_duplicate(field):
+    value = valid_decision(decision_route(1), decision_route(2))
+    routes = list(value.routes)
+    routes[1] = replace(routes[1], **{field: getattr(routes[0], field)})
+    return replace(value, routes=tuple(routes))
+
+
 def test_exact_current_device_handle_compatibility_vectors_and_separation():
     values = (
         (VIEWER_A, 1, "d_BuBy9pJy3oI4xa_nKYetNg"),
@@ -260,13 +366,16 @@ def test_exact_current_device_handle_compatibility_vectors_and_separation():
         (VIEWER_A, 2, "d_vZ19udOpQREnO1v2hzNDGw"),
     )
     for viewer, alias_version, expected in values:
-        assert derive_recipient_device_handle(
-            viewer=viewer,
-            target=RECIPIENT,
-            binding_id="21" * 32,
-            alias_secret=ALIAS_SECRET,
-            alias_version=alias_version,
-        ) == expected
+        assert (
+            derive_recipient_device_handle(
+                viewer=viewer,
+                target=RECIPIENT,
+                binding_id="21" * 32,
+                alias_secret=ALIAS_SECRET,
+                alias_version=alias_version,
+            )
+            == expected
+        )
     assert len({item[2] for item in values}) == 3
 
 
@@ -283,7 +392,7 @@ def test_complete_one_and_sixteen_device_routing_is_sorted_and_private(count):
     assert handles == tuple(sorted(handles))
     snapshot_bytes = canonical_routing_snapshot_bytes(snapshot)
     decision_bytes = canonical_routing_decision_bytes(decision)
-    for forbidden in (b"publicKey", b"alias\"", b"private", b"credential", b"ciphertext"):
+    for forbidden in (b"publicKey", b'alias"', b"private", b"credential", b"ciphertext"):
         assert forbidden not in snapshot_bytes
         assert forbidden not in decision_bytes
 
@@ -299,12 +408,140 @@ def test_canonical_request_and_decision_bytes_are_deterministic():
 
 
 @pytest.mark.parametrize(
+    "value",
+    (
+        replace(valid_request(), schema="invalid"),
+        replace(valid_request(), version=True),
+        replace(valid_request(), message_id="m_" + "A" * 42 + "B"),
+        replace(valid_request(), envelope_digest="invalid"),
+        replace(valid_request(), recipient_package_snapshot_id="sha256:" + "AA" * 32),
+        replace(valid_request(), recipient_device_handles=list(valid_request().recipient_device_handles)),
+        replace(valid_request(), recipient_device_handles=()),
+        replace(
+            valid_request(),
+            recipient_device_handles=valid_request().recipient_device_handles * 2,
+        ),
+        replace(
+            valid_request(),
+            recipient_device_handles=tuple(
+                reversed(
+                    tuple(item.device_handle for item in valid_snapshot(snapshot_route(1), snapshot_route(2)).routes)
+                )
+            ),
+        ),
+    ),
+)
+def test_request_serializer_rejects_manually_constructed_invalid_dataclass(value):
+    assert_generic(lambda: canonical_routing_request_bytes(value))
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        replace(valid_snapshot(), schema="invalid"),
+        replace(valid_snapshot(), version=True),
+        replace(valid_snapshot(), source="invalid"),
+        replace(valid_snapshot(), viewer_subject="invalid"),
+        replace(valid_snapshot(), recipient_subject=VIEWER_A),
+        replace(valid_snapshot(), alias_version=True),
+        replace(valid_snapshot(), recipient_package_snapshot_id="sha256:" + "AA" * 32),
+        replace(valid_snapshot(), issued_at=True),
+        replace(valid_snapshot(), issued_at=NOW_MS + 300_000),
+        replace(valid_snapshot(), expires_at=NOW_MS + 300_001),
+        replace(valid_snapshot(), complete=1),
+        replace(valid_snapshot(), routes=list(valid_snapshot().routes)),
+        replace(valid_snapshot(), routes=()),
+        replace(valid_snapshot(), routes=(object(),)),
+        replace(
+            valid_snapshot(),
+            routes=(replace(snapshot_route(), device_handle="d_" + "A" * 21),),
+        ),
+        replace(valid_snapshot(), routes=(replace(snapshot_route(), device_id="AB" * 32),)),
+        replace(valid_snapshot(), routes=(replace(snapshot_route(), binding_id="AB" * 32),)),
+        replace(valid_snapshot(), routes=(replace(snapshot_route(), binding_version=True),)),
+        replace(
+            valid_snapshot(),
+            routes=(replace(snapshot_route(), authorization_proof_id="invalid"),),
+        ),
+        replace(
+            valid_snapshot(),
+            routes=(replace(snapshot_route(), authorization_valid_from=NOW_MS + 1),),
+        ),
+        replace(
+            valid_snapshot(),
+            routes=(replace(snapshot_route(), authorization_expires_at=NOW_MS + 299_999),),
+        ),
+        replace(
+            valid_snapshot(snapshot_route(1), snapshot_route(2)),
+            routes=tuple(reversed(valid_snapshot(snapshot_route(1), snapshot_route(2)).routes)),
+        ),
+        snapshot_with_duplicate("device_handle"),
+        snapshot_with_duplicate("device_id"),
+        snapshot_with_duplicate("binding_id"),
+        snapshot_with_duplicate("authorization_proof_id"),
+    ),
+)
+def test_snapshot_serializer_rejects_manually_constructed_invalid_dataclass(value):
+    assert_generic(lambda: canonical_routing_snapshot_bytes(value))
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        replace(valid_decision(), schema="invalid"),
+        replace(valid_decision(), version=True),
+        replace(valid_decision(), source="invalid"),
+        replace(valid_decision(), message_id="invalid"),
+        replace(valid_decision(), envelope_digest="invalid"),
+        replace(valid_decision(), recipient_package_snapshot_id="sha256:" + "AA" * 32),
+        replace(valid_decision(), viewer_subject="invalid"),
+        replace(valid_decision(), recipient_subject=VIEWER_A),
+        replace(valid_decision(), complete=1),
+        replace(valid_decision(), expires_at=0),
+        replace(valid_decision(), routes=list(valid_decision().routes)),
+        replace(valid_decision(), routes=()),
+        replace(valid_decision(), routes=(object(),)),
+        replace(
+            valid_decision(),
+            routes=(replace(decision_route(), device_handle="d_" + "A" * 21),),
+        ),
+        replace(valid_decision(), routes=(replace(decision_route(), device_id="AB" * 32),)),
+        replace(valid_decision(), routes=(replace(decision_route(), binding_id="AB" * 32),)),
+        replace(valid_decision(), routes=(replace(decision_route(), binding_version=True),)),
+        replace(
+            valid_decision(decision_route(1), decision_route(2)),
+            routes=tuple(reversed(valid_decision(decision_route(1), decision_route(2)).routes)),
+        ),
+        decision_with_duplicate("device_handle"),
+        decision_with_duplicate("device_id"),
+        decision_with_duplicate("binding_id"),
+    ),
+)
+def test_decision_serializer_rejects_manually_constructed_invalid_dataclass(value):
+    assert_generic(lambda: canonical_routing_decision_bytes(value))
+
+
+@pytest.mark.parametrize(
+    "serializer,value,limit_name",
+    (
+        (canonical_routing_request_bytes, valid_request(), "MAX_REQUEST_BYTES"),
+        (canonical_routing_snapshot_bytes, valid_snapshot(), "MAX_INTERNAL_SNAPSHOT_BYTES"),
+        (canonical_routing_decision_bytes, valid_decision(), "MAX_INTERNAL_DECISION_BYTES"),
+    ),
+)
+def test_canonical_serializers_reject_oversized_encoding(monkeypatch, serializer, value, limit_name):
+    encoded = serializer(value)
+    monkeypatch.setattr(routing, limit_name, len(encoded) - 1)
+    assert_generic(lambda: serializer(value))
+
+
+@pytest.mark.parametrize(
     "payload",
     (
         "{}",
         "not-json",
-        "{\"schema\":\"x\",\"schema\":\"y\"}",
-        "{\"é\":1}",
+        '{"schema":"x","schema":"y"}',
+        '{"é":1}',
         "[]",
     ),
 )
@@ -355,11 +592,7 @@ def test_request_must_equal_complete_registered_handle_set(mode):
         values = handles[:1]
     else:
         values = [handles[0], handles[0]]
-    assert_generic(
-        lambda: gate.resolve(
-            request_for(package, handles=values), authenticated_viewer_subject=VIEWER_A
-        )
-    )
+    assert_generic(lambda: gate.resolve(request_for(package, handles=values), authenticated_viewer_subject=VIEWER_A))
 
 
 def test_conflicting_handle_ownership_and_derived_handle_collision_fail(monkeypatch):
@@ -410,6 +643,43 @@ def test_duplicate_device_or_binding_id_fails(duplicate):
     )
 
 
+def test_duplicate_public_key_from_current_binding_provider_fails_before_retention():
+    package_bindings = [make_binding(1), make_binding(2)]
+    current_bindings = [package_bindings[0], replace(package_bindings[1], public_key=package_bindings[0].public_key)]
+    gate, repository = make_gate(current_bindings)
+    package = make_package(package_bindings)
+
+    assert_generic(
+        lambda: gate.retain_recipient_package(
+            viewer_subject=VIEWER_A,
+            recipient_subject=RECIPIENT,
+            recipient_package=package,
+        )
+    )
+    assert repository.snapshots == {}
+    assert repository.decisions == {}
+
+
+def test_duplicate_public_key_from_outward_package_fails_before_authority_or_retention():
+    bindings = [make_binding(1), make_binding(2)]
+    verifier = BindingVerifier()
+    gate, repository = make_gate(bindings, binding_verifier=verifier)
+    package = make_package(bindings)
+    package["devices"][1]["publicKey"] = package["devices"][0]["publicKey"]
+    refresh_package_snapshot_id(package)
+
+    assert_generic(
+        lambda: gate.retain_recipient_package(
+            viewer_subject=VIEWER_A,
+            recipient_subject=RECIPIENT,
+            recipient_package=package,
+        )
+    )
+    assert verifier.calls == []
+    assert repository.snapshots == {}
+    assert repository.decisions == {}
+
+
 def test_snapshot_digest_mismatch_and_expiry_fail():
     bindings = [make_binding()]
     gate, _ = make_gate(bindings)
@@ -449,9 +719,7 @@ def test_full_and_binding_evidence_bound_snapshot_deadline():
     binding = make_binding()
     package = make_package([binding])
     short_binding = BindingVerifier(
-        mutate=lambda value: replace(
-            value, evidence_expires_at=NOW + timedelta(seconds=299)
-        )
+        mutate=lambda value: replace(value, evidence_expires_at=NOW + timedelta(seconds=299))
     )
     gate, _ = make_gate([binding], binding_verifier=short_binding)
     assert_generic(
@@ -461,9 +729,7 @@ def test_full_and_binding_evidence_bound_snapshot_deadline():
             recipient_package=package,
         )
     )
-    short_full = FullVerifier(
-        mutate=lambda value: replace(value, expires_at=NOW + timedelta(seconds=299))
-    )
+    short_full = FullVerifier(mutate=lambda value: replace(value, expires_at=NOW + timedelta(seconds=299)))
     gate, _ = make_gate([binding], full_verifier=short_full)
     assert_generic(
         lambda: gate.retain_recipient_package(
@@ -476,9 +742,7 @@ def test_full_and_binding_evidence_bound_snapshot_deadline():
 
 def test_viewer_and_recipient_mismatch_fail():
     gate, _, package, _ = retain()
-    assert_generic(
-        lambda: gate.resolve(request_for(package), authenticated_viewer_subject=VIEWER_B)
-    )
+    assert_generic(lambda: gate.resolve(request_for(package), authenticated_viewer_subject=VIEWER_B))
     wrong = make_binding(subject=OTHER_RECIPIENT)
     package = make_package([wrong], recipient=RECIPIENT)
     gate, _ = make_gate([wrong])
@@ -489,6 +753,64 @@ def test_viewer_and_recipient_mismatch_fail():
             recipient_package=package,
         )
     )
+
+
+@pytest.mark.parametrize(
+    "binding",
+    (
+        pytest.param(
+            replace(make_binding(version=2), operation="register", prior_binding_id=None),
+            id="register-version-greater-than-one",
+        ),
+        pytest.param(
+            replace(make_binding(), prior_binding_id=_hex(900)),
+            id="register-with-prior-binding-id",
+        ),
+        pytest.param(
+            replace(make_binding(), operation="rotate", prior_binding_id=_hex(900)),
+            id="rotate-version-one",
+        ),
+        pytest.param(
+            replace(make_binding(version=2), prior_binding_id=None),
+            id="rotate-without-prior-binding-id",
+        ),
+        pytest.param(
+            replace(make_binding(version=2), prior_binding_id="AB" * 32),
+            id="rotate-malformed-prior-binding-id",
+        ),
+        pytest.param(
+            replace(make_binding(version=2), prior_binding_id=make_binding(version=2).binding_id),
+            id="rotate-prior-equals-current-binding-id",
+        ),
+        pytest.param(
+            replace(make_binding(), request_id="AB" * 32),
+            id="malformed-request-id",
+        ),
+        pytest.param(
+            replace(make_binding(version=2), operation="revoke", active=False),
+            id="revoke-current-record",
+        ),
+        pytest.param(
+            replace(make_binding(), active=False),
+            id="inactive-current-record",
+        ),
+    ),
+)
+def test_structurally_inconsistent_current_binding_fails_before_authorization_or_retention(binding):
+    verifier = BindingVerifier()
+    gate, repository = make_gate([binding], binding_verifier=verifier)
+    package = make_package([binding])
+
+    assert_generic(
+        lambda: gate.retain_recipient_package(
+            viewer_subject=VIEWER_A,
+            recipient_subject=RECIPIENT,
+            recipient_package=package,
+        )
+    )
+    assert verifier.calls == []
+    assert repository.snapshots == {}
+    assert repository.decisions == {}
 
 
 @pytest.mark.parametrize(
@@ -541,7 +863,9 @@ def test_duplicate_authorization_evidence_fails():
 
     class DuplicateProof(BindingVerifier):
         def verify(self, binding, *, now):
-            return replace(super().verify(binding, now=now), proof_id="hodlxxi-binding-authorization-v1-sha256:" + "11" * 32)
+            return replace(
+                super().verify(binding, now=now), proof_id="hodlxxi-binding-authorization-v1-sha256:" + "11" * 32
+            )
 
     gate, _ = make_gate(bindings, binding_verifier=DuplicateProof())
     package = make_package(bindings)
@@ -566,17 +890,11 @@ def test_rotation_revocation_and_stale_exact_binding_fail_before_decision():
         prior_binding_id=old.binding_id,
     )
     gate._binding_provider.values = [rotated]
-    assert_generic(
-        lambda: gate.resolve(request_for(package), authenticated_viewer_subject=VIEWER_A)
-    )
+    assert_generic(lambda: gate.resolve(request_for(package), authenticated_viewer_subject=VIEWER_A))
     gate._binding_provider.values = []
-    assert_generic(
-        lambda: gate.resolve(request_for(package), authenticated_viewer_subject=VIEWER_A)
-    )
+    assert_generic(lambda: gate.resolve(request_for(package), authenticated_viewer_subject=VIEWER_A))
     gate._binding_provider.values = [replace(old, active=False, operation="revoke")]
-    assert_generic(
-        lambda: gate.resolve(request_for(package), authenticated_viewer_subject=VIEWER_A)
-    )
+    assert_generic(lambda: gate.resolve(request_for(package), authenticated_viewer_subject=VIEWER_A))
     assert snapshot.routes[0].binding_id == old.binding_id
 
 
@@ -640,18 +958,18 @@ def test_dependency_failures_have_exactly_the_same_generic_error(dependency):
 def test_missing_or_ambiguous_repository_snapshot_fails_without_oracle():
     gate, repository, package, _ = retain()
     repository.snapshots.clear()
-    assert_generic(
-        lambda: gate.resolve(request_for(package), authenticated_viewer_subject=VIEWER_A)
-    )
+    assert_generic(lambda: gate.resolve(request_for(package), authenticated_viewer_subject=VIEWER_A))
     repository.read_snapshot = lambda _snapshot_id: ["ambiguous", "records"]
-    assert_generic(
-        lambda: gate.resolve(request_for(package), authenticated_viewer_subject=VIEWER_A)
-    )
+    assert_generic(lambda: gate.resolve(request_for(package), authenticated_viewer_subject=VIEWER_A))
 
 
 def test_snapshot_and_decision_are_frozen_and_exclude_outward_secrets():
     gate, _, package, snapshot = retain()
     decision = gate.resolve(request_for(package), authenticated_viewer_subject=VIEWER_A)
+    assert "public_key" not in {item.name for item in fields(RecipientRoutingSnapshot)}
+    assert "public_key" not in {item.name for item in fields(RecipientRoutingSnapshotRoute)}
+    assert "public_key" not in {item.name for item in fields(RecipientRoutingDecision)}
+    assert "public_key" not in {item.name for item in fields(RecipientRoutingDecisionRoute)}
     with pytest.raises(Exception):
         snapshot.viewer_subject = VIEWER_B
     with pytest.raises(Exception):
