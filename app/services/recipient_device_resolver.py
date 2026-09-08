@@ -7,7 +7,6 @@ raw device IDs, or raw binding IDs.
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import json
@@ -29,12 +28,15 @@ from app.services.social_messaging_device_contract import (
     MessagingDeviceAuthorityUnavailable,
     SocialMessagingDeviceAuthority,
 )
+from app.services.social_messaging_recipient_routing import (
+    DEVICE_HANDLE_BYTES,
+    DEVICE_HANDLE_DOMAIN,
+    derive_recipient_device_handle,
+)
 
 PACKAGE_SCHEMA = "hodlxxi.social_messaging_recipient_package.v1"
 SOURCE = "hodlxxi-ubid"
 VERSION = 1
-DEVICE_HANDLE_DOMAIN = b"HODLXXI_RECIPIENT_DEVICE_HANDLE_V1"
-DEVICE_HANDLE_BYTES = 16
 _ALIAS = re.compile(r"p_[A-Za-z0-9_-]{22}\Z").fullmatch
 _UNAVAILABLE_MESSAGE = "recipient messaging devices unavailable"
 _DENIED_MESSAGE = "recipient messaging device resolution denied"
@@ -66,28 +68,6 @@ def _utc_second(value: object) -> datetime:
         return normalized
     except Exception:
         raise RecipientDeviceResolverUnavailable() from None
-
-
-def _device_handle(
-    *,
-    viewer: str,
-    target: str,
-    binding_id: str,
-    alias_secret: bytes,
-    alias_version: int,
-) -> str:
-    message = b"\x00".join(
-        (
-            DEVICE_HANDLE_DOMAIN,
-            str(VERSION).encode("ascii"),
-            str(alias_version).encode("ascii"),
-            viewer.encode("ascii"),
-            target.encode("ascii"),
-            binding_id.encode("ascii"),
-        )
-    )
-    digest = hmac.new(alias_secret, message, hashlib.sha256).digest()[:DEVICE_HANDLE_BYTES]
-    return "d_" + base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
 class RecipientDeviceResolverV1:
@@ -197,7 +177,7 @@ class RecipientDeviceResolverV1:
             for raw in raw_devices:
                 if type(raw) is not dict:
                     raise ValueError
-                handle = _device_handle(
+                handle = derive_recipient_device_handle(
                     viewer=viewer,
                     target=target,
                     binding_id=raw["bindingId"],

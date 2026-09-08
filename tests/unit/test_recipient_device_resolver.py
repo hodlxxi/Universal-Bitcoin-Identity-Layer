@@ -203,6 +203,36 @@ def test_exact_privacy_minimized_multi_device_package():
         assert forbidden not in serialized
 
 
+def test_shared_handle_refactor_preserves_exact_one_device_package_vector():
+    instance, _, _ = resolver()
+
+    result = instance.resolve(
+        viewer_subject=VIEWER_A,
+        recipient_alias=recipient_alias(),
+    )
+
+    assert result == {
+        "schema": "hodlxxi.social_messaging_recipient_package.v1",
+        "version": 1,
+        "source": "hodlxxi-ubid",
+        "snapshotId": "sha256:61db9779624dda3fdb118e453aa4dbe9fa26c8c6c38eb03c12057efcda4a788f",
+        "complete": True,
+        "alias": "p_YVFvd3p34NRs6vFOSF384w",
+        "issuedAt": 1788638400000,
+        "expiresAt": 1788638700000,
+        "devices": [
+            {
+                "deviceHandle": "d_BuBy9pJy3oI4xa_nKYetNg",
+                "algorithm": "x25519-v1",
+                "version": 1,
+                "publicKey": "09" + "00" * 31,
+                "validFrom": 1788638399000,
+                "expiresAt": 1788639000000,
+            }
+        ],
+    }
+
+
 def test_default_clock_normalizes_system_microseconds_to_utc_second(monkeypatch):
     provider = PopulationProvider(full_snapshot())
     repo = Repository()
