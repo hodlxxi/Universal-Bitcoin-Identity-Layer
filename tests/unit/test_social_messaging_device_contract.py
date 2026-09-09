@@ -9,6 +9,8 @@ import pytest
 import app.services.social_messaging_device_contract as messaging_device_contract
 from app.services.social_messaging_device_contract import (
     ALGORITHM,
+    BINDING_RECORD_SCHEMA,
+    BINDING_RECORD_VERSION,
     COMMAND_SCHEMA,
     MAX_ACTIVE_DEVICES,
     RESULT_SCHEMA,
@@ -19,6 +21,8 @@ from app.services.social_messaging_device_contract import (
     MessagingDeviceBinding,
     MessagingDeviceRequestInvalid,
     SocialMessagingDeviceAuthority,
+    canonical_messaging_device_binding_record_bytes,
+    messaging_device_binding_id,
     parse_messaging_device_command,
 )
 
@@ -95,6 +99,73 @@ class Repository:
     def current_for_subject(self, subject, *, now, maximum):
         self.calls.append(("current", subject, now, maximum))
         return self.current
+
+
+def binding_record_values(**changes):
+    valid_from = datetime(2026, 9, 8, 22, 29, 59, tzinfo=timezone.utc)
+    values = {
+        "subject": SUBJECT,
+        "device_id": DEVICE,
+        "public_key": "09" + "00" * 31,
+        "binding_version": 1,
+        "valid_from": valid_from,
+        "expires_at": valid_from + timedelta(days=30),
+        "operation": "register",
+        "prior_binding_id": None,
+        "request_id": REQUEST,
+    }
+    values.update(changes)
+    return values
+
+
+def test_canonical_binding_record_preimage_and_storage_digest_are_frozen():
+    expected = (
+        b'{"algorithm":"x25519-v1","bindingVersion":1,"deviceId":"'
+        + DEVICE.encode("ascii")
+        + b'","expiresAt":"2026-10-08T22:29:59Z","operation":"register",'
+        b'"priorBindingId":null,"publicKey":"'
+        + ("09" + "00" * 31).encode("ascii")
+        + b'","requestId":"'
+        + REQUEST.encode("ascii")
+        + b'","schema":"hodlxxi.social_messaging_device_binding_record.v1","subject":"'
+        + SUBJECT.encode("ascii")
+        + b'","validFrom":"2026-09-08T22:29:59Z","version":1}'
+    )
+
+    assert BINDING_RECORD_SCHEMA == "hodlxxi.social_messaging_device_binding_record.v1"
+    assert BINDING_RECORD_VERSION == 1
+    assert canonical_messaging_device_binding_record_bytes(**binding_record_values()) == expected
+    assert messaging_device_binding_id(**binding_record_values()) == (
+        "6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d"
+    )
+    naive = binding_record_values(
+        valid_from=datetime(2026, 9, 8, 22, 29, 59),
+        expires_at=datetime(2026, 10, 8, 22, 29, 59),
+    )
+    assert canonical_messaging_device_binding_record_bytes(**naive) == expected
+
+
+@pytest.mark.parametrize(
+    "changes",
+    (
+        {"subject": SUBJECT.upper()},
+        {"device_id": "22" * 31},
+        {"public_key": "00" * 32},
+        {"binding_version": True},
+        {"valid_from": datetime(2026, 9, 8, 22, 29, 59, 1, tzinfo=timezone.utc)},
+        {"operation": "adopt"},
+        {"prior_binding_id": BINDING},
+    ),
+)
+def test_canonical_binding_record_rejects_malformed_or_alternative_values(changes):
+    with pytest.raises((TypeError, ValueError)):
+        canonical_messaging_device_binding_record_bytes(**binding_record_values(**changes))
+
+    with pytest.raises(TypeError):
+        canonical_messaging_device_binding_record_bytes(
+            **binding_record_values(),
+            schema="alternative",
+        )
 
 
 def test_register_parser_derives_subject_and_has_no_subject_field():

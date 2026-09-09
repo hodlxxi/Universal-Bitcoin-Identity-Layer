@@ -21,15 +21,21 @@ from app.services.action_step_up import _canonical_actor
 from app.services.full_recipient_directory_provider import validate_x25519_public_key
 from app.services.social_messaging_device_contract import (
     ALGORITHM,
+    BINDING_RECORD_SCHEMA,
+    BINDING_RECORD_VERSION,
     MAX_ACTIVE_DEVICES,
     MAX_BINDING_VERSION,
     MessagingDeviceBinding,
+    canonical_messaging_device_binding_record_bytes,
+    messaging_device_binding_id,
 )
-from app.services.social_messaging_recipient_routing import VerifiedBindingAuthorization
+from app.services.social_messaging_recipient_routing import VerifiedBindingAuthorization, VerifiedCurrentFullEntitlement
 
 AUTHORIZATION_SCHEMA = "hodlxxi.social_messaging_device_binding_authorization.v1"
+ADOPTION_SCHEMA = "hodlxxi.social_messaging_device_binding_adoption.v1"
 STATE_SCHEMA = "hodlxxi.social_messaging_device_binding_authorization_state.v1"
 SIGNATURE_DOMAIN = "HODLXXI_SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_V1"
+ADOPTION_SIGNATURE_DOMAIN = "HODLXXI_SOCIAL_MESSAGING_DEVICE_BINDING_ADOPTION_V1"
 SIGNATURE_FORMAT = "bip340_schnorr_sha256"
 PROOF_ID_PREFIX = "hodlxxi-binding-authorization-v1-sha256:"
 VERSION = 1
@@ -41,10 +47,13 @@ UNAVAILABLE_MESSAGE = "social messaging device binding authorization unavailable
 
 _HEX_64 = re.compile(r"[0-9a-f]{64}\Z").fullmatch
 _HEX_128 = re.compile(r"[0-9a-f]{128}\Z").fullmatch
+_FULL_PROOF_ID = re.compile(r"hodlxxi-full-entitlement-v1-sha256:[0-9a-f]{64}\Z").fullmatch
 _OPERATIONS = frozenset({"register", "rotate", "revoke"})
 _CLAIM_FIELDS = {
     "algorithm",
     "bindingExpiresAt",
+    "bindingRecordSchema",
+    "bindingRecordVersion",
     "bindingValidFrom",
     "bindingVersion",
     "deviceId",
@@ -59,6 +68,31 @@ _CLAIM_FIELDS = {
     "version",
 }
 _AUTHORIZATION_FIELDS = _CLAIM_FIELDS | {"digest", "signature", "signatureFormat"}
+_BINDING_RECORD_FIELDS = {
+    "algorithm",
+    "bindingVersion",
+    "deviceId",
+    "expiresAt",
+    "operation",
+    "priorBindingId",
+    "publicKey",
+    "requestId",
+    "schema",
+    "subject",
+    "validFrom",
+    "version",
+}
+_ADOPTION_CLAIM_FIELDS = {
+    "action",
+    "bindingId",
+    "bindingRecord",
+    "expiresAt",
+    "issuedAt",
+    "requestId",
+    "schema",
+    "version",
+}
+_ADOPTION_FIELDS = _ADOPTION_CLAIM_FIELDS | {"digest", "signature", "signatureFormat"}
 
 
 class DeviceBindingAuthorizationUnavailable(RuntimeError):
@@ -72,6 +106,8 @@ class DeviceBindingAuthorizationUnavailable(RuntimeError):
 class DeviceBindingAuthorizationClaim:
     schema: str
     version: int
+    binding_record_schema: str
+    binding_record_version: int
     operation: str
     subject: str
     device_id: str
@@ -95,9 +131,9 @@ class IdentitySignedDeviceBindingAuthorization:
 
     @property
     def binding_id(self) -> str:
-        """The server-derived identifier for this exact signed lifecycle edge."""
+        """The authoritative identifier of the exact canonical binding record."""
 
-        return self.digest
+        return _binding_id_from_claim(self.claim)
 
 
 @dataclass(frozen=True)
@@ -108,6 +144,39 @@ class AuthorizedDeviceBinding:
 
 
 @dataclass(frozen=True)
+class DeviceBindingAdoptionClaim:
+    schema: str
+    version: int
+    action: str
+    request_id: str
+    binding: MessagingDeviceBinding
+    issued_at: datetime
+    expires_at: datetime
+
+
+@dataclass(frozen=True)
+class IdentitySignedDeviceBindingAdoption:
+    claim: DeviceBindingAdoptionClaim
+    digest: str
+    signature_format: str
+    signature: str
+
+    @property
+    def binding_id(self) -> str:
+        return self.claim.binding.binding_id
+
+
+@dataclass(frozen=True)
+class AdoptedDeviceBindingAuthorization:
+    adoption: IdentitySignedDeviceBindingAdoption
+    binding: MessagingDeviceBinding
+    verification: VerifiedBindingAuthorization
+
+
+BindingAuthorizationEvidence = AuthorizedDeviceBinding | AdoptedDeviceBindingAuthorization
+
+
+@dataclass(frozen=True)
 class CurrentDeviceBindingState:
     schema: str
     version: int
@@ -115,7 +184,7 @@ class CurrentDeviceBindingState:
     device_id: str
     complete: bool
     truncated: bool
-    records: tuple[AuthorizedDeviceBinding, ...]
+    records: tuple[BindingAuthorizationEvidence, ...]
 
 
 @dataclass(frozen=True)
@@ -125,7 +194,7 @@ class CurrentSubjectBindingState:
     subject: str
     complete: bool
     truncated: bool
-    records: tuple[AuthorizedDeviceBinding, ...]
+    records: tuple[BindingAuthorizationEvidence, ...]
 
 
 @dataclass(frozen=True)
@@ -135,7 +204,7 @@ class CurrentPublicKeyBindingState:
     public_key: str
     complete: bool
     truncated: bool
-    records: tuple[AuthorizedDeviceBinding, ...]
+    records: tuple[BindingAuthorizationEvidence, ...]
 
 
 @dataclass(frozen=True)
@@ -145,7 +214,18 @@ class BindingAuthorizationEvidenceState:
     binding_id: str
     complete: bool
     truncated: bool
-    records: tuple[AuthorizedDeviceBinding, ...]
+    records: tuple[BindingAuthorizationEvidence, ...]
+
+
+@dataclass(frozen=True)
+class CurrentLegacyDeviceBindingState:
+    schema: str
+    version: int
+    subject: str
+    binding_id: str
+    complete: bool
+    truncated: bool
+    records: tuple[MessagingDeviceBinding, ...]
 
 
 @dataclass(frozen=True)
@@ -153,6 +233,13 @@ class AuthorizationReplayRecord:
     request_id: str
     authorization_digest: str
     authorized_binding: AuthorizedDeviceBinding
+
+
+@dataclass(frozen=True)
+class AdoptionReplayRecord:
+    request_id: str
+    adoption_digest: str
+    adopted_binding: AdoptedDeviceBindingAuthorization
 
 
 class IdentitySignatureVerifier(Protocol):
@@ -204,17 +291,49 @@ class BindingAuthorizationEvidenceProvider(Protocol):
     ) -> BindingAuthorizationEvidenceState: ...
 
 
+class LegacyDeviceBindingAdoptionStateProvider(Protocol):
+    def current_legacy_binding(
+        self,
+        subject: str,
+        binding_id: str,
+        *,
+        now: datetime,
+        maximum: int,
+    ) -> CurrentLegacyDeviceBindingState: ...
+
+    def authorization_for_binding(
+        self,
+        binding_id: str,
+        *,
+        now: datetime,
+        maximum: int,
+    ) -> BindingAuthorizationEvidenceState: ...
+
+
+class CurrentFullEntitlementPrerequisite(Protocol):
+    def verify(
+        self,
+        subject: str,
+        *,
+        now: datetime,
+    ) -> VerifiedCurrentFullEntitlement: ...
+
+
 class AuthorizationReplayLedger(Protocol):
-    """Future atomic request-ID ledger.
+    """Future atomic, logically global lifecycle-and-adoption request ledger.
 
     ``get`` must fail instead of choosing among duplicate records. ``record``
     must atomically retain an absent request ID, return the exact existing
-    record for an equal retry, and reject a different digest or result.
+    record for an equal retry, and reject a different record type, digest, or
+    result.
     """
 
-    def get(self, request_id: str) -> AuthorizationReplayRecord | None: ...
+    def get(self, request_id: str) -> AuthorizationReplayRecord | AdoptionReplayRecord | None: ...
 
-    def record(self, record: AuthorizationReplayRecord) -> AuthorizationReplayRecord: ...
+    def record(
+        self,
+        record: AuthorizationReplayRecord | AdoptionReplayRecord,
+    ) -> AuthorizationReplayRecord | AdoptionReplayRecord: ...
 
 
 class Bip340IdentitySignatureVerifier:
@@ -261,10 +380,31 @@ def _hex64(value: object) -> str:
     return value
 
 
+def _binding_record_values(claim: DeviceBindingAuthorizationClaim) -> dict[str, object]:
+    return {
+        "subject": claim.subject,
+        "device_id": claim.device_id,
+        "public_key": claim.public_key,
+        "binding_version": claim.binding_version,
+        "valid_from": claim.binding_valid_from,
+        "expires_at": claim.binding_expires_at,
+        "operation": claim.operation,
+        "prior_binding_id": claim.prior_binding_id,
+        "request_id": claim.request_id,
+    }
+
+
+def _binding_id_from_claim(claim: DeviceBindingAuthorizationClaim) -> str:
+    validated = _validated_claim(claim)
+    return messaging_device_binding_id(**_binding_record_values(validated))
+
+
 def _claim_dict(value: DeviceBindingAuthorizationClaim) -> dict[str, object]:
     return {
         "schema": value.schema,
         "version": value.version,
+        "bindingRecordSchema": value.binding_record_schema,
+        "bindingRecordVersion": value.binding_record_version,
         "operation": value.operation,
         "subject": value.subject,
         "deviceId": value.device_id,
@@ -288,6 +428,10 @@ def _validated_claim(value: object) -> DeviceBindingAuthorizationClaim:
         or value.schema != AUTHORIZATION_SCHEMA
         or type(value.version) is not int
         or value.version != VERSION
+        or type(value.binding_record_schema) is not str
+        or value.binding_record_schema != BINDING_RECORD_SCHEMA
+        or type(value.binding_record_version) is not int
+        or value.binding_record_version != BINDING_RECORD_VERSION
         or type(value.operation) is not str
         or value.operation not in _OPERATIONS
         or type(value.algorithm) is not str
@@ -321,13 +465,14 @@ def _validated_claim(value: object) -> DeviceBindingAuthorizationClaim:
         or issued_at < binding_valid_from
         or expires_at > binding_expires_at
         or expires_at - issued_at > timedelta(seconds=MAX_AUTHORIZATION_WINDOW_SECONDS)
-        or value.operation in {"register", "rotate"}
-        and binding_valid_from != issued_at
+        or binding_valid_from != issued_at
     ):
         raise ValueError
-    return DeviceBindingAuthorizationClaim(
+    claim = DeviceBindingAuthorizationClaim(
         AUTHORIZATION_SCHEMA,
         VERSION,
+        BINDING_RECORD_SCHEMA,
+        BINDING_RECORD_VERSION,
         value.operation,
         subject,
         device_id,
@@ -341,6 +486,8 @@ def _validated_claim(value: object) -> DeviceBindingAuthorizationClaim:
         issued_at,
         expires_at,
     )
+    canonical_messaging_device_binding_record_bytes(**_binding_record_values(claim))
+    return claim
 
 
 def canonical_authorization_signed_bytes(value: DeviceBindingAuthorizationClaim) -> bytes:
@@ -411,7 +558,10 @@ def _validated_signed_authorization(
     return IdentitySignedDeviceBindingAuthorization(claim, digest, SIGNATURE_FORMAT, value.signature)
 
 
-def _closed_authorization_object(payload: object) -> dict[str, object]:
+def _closed_signed_object(
+    payload: object,
+    expected_fields: set[str],
+) -> dict[str, object]:
     if type(payload) is not str or not payload or len(payload.encode("utf-8")) > MAX_AUTHORIZATION_BYTES:
         raise ValueError
     if any(ord(character) > 0x7F for character in payload):
@@ -426,12 +576,16 @@ def _closed_authorization_object(payload: object) -> dict[str, object]:
         return result
 
     decoded = json.loads(payload, object_pairs_hook=pairs)
-    if type(decoded) is not dict or set(decoded) != _AUTHORIZATION_FIELDS:
+    if type(decoded) is not dict or set(decoded) != expected_fields:
         raise ValueError
     canonical = json.dumps(decoded, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     if payload != canonical:
         raise ValueError
     return decoded
+
+
+def _closed_authorization_object(payload: object) -> dict[str, object]:
+    return _closed_signed_object(payload, _AUTHORIZATION_FIELDS)
 
 
 def parse_and_verify_device_binding_authorization(
@@ -451,6 +605,8 @@ def parse_and_verify_device_binding_authorization(
         claim = DeviceBindingAuthorizationClaim(
             schema=data["schema"],
             version=data["version"],
+            binding_record_schema=data["bindingRecordSchema"],
+            binding_record_version=data["bindingRecordVersion"],
             operation=data["operation"],
             subject=subject,
             device_id=data["deviceId"],
@@ -472,6 +628,241 @@ def parse_and_verify_device_binding_authorization(
         )
         return _validated_signed_authorization(
             result,
+            signature_verifier or Bip340IdentitySignatureVerifier(),
+        )
+    except Exception:
+        raise DeviceBindingAuthorizationUnavailable() from None
+
+
+def _validated_legacy_binding(value: object) -> MessagingDeviceBinding:
+    if type(value) is not MessagingDeviceBinding:
+        raise ValueError
+    if value.active is not True or value.operation not in {"register", "rotate"}:
+        raise ValueError
+    subject = _canonical_actor(value.subject)
+    if value.public_key == subject:
+        raise ValueError
+    binding_id = _hex64(value.binding_id)
+    expected = messaging_device_binding_id(
+        subject=subject,
+        device_id=value.device_id,
+        public_key=value.public_key,
+        binding_version=value.binding_version,
+        valid_from=value.valid_from,
+        expires_at=value.expires_at,
+        operation=value.operation,
+        prior_binding_id=value.prior_binding_id,
+        request_id=value.request_id,
+    )
+    if binding_id != expected:
+        raise ValueError
+    return MessagingDeviceBinding(
+        subject=subject,
+        device_id=value.device_id,
+        binding_id=binding_id,
+        public_key=value.public_key,
+        binding_version=value.binding_version,
+        valid_from=_utc_second(value.valid_from),
+        expires_at=_utc_second(value.expires_at),
+        operation=value.operation,
+        prior_binding_id=value.prior_binding_id,
+        request_id=value.request_id,
+        active=True,
+    )
+
+
+def _binding_record_dict(binding: MessagingDeviceBinding) -> dict[str, object]:
+    return json.loads(
+        canonical_messaging_device_binding_record_bytes(
+            subject=binding.subject,
+            device_id=binding.device_id,
+            public_key=binding.public_key,
+            binding_version=binding.binding_version,
+            valid_from=binding.valid_from,
+            expires_at=binding.expires_at,
+            operation=binding.operation,
+            prior_binding_id=binding.prior_binding_id,
+            request_id=binding.request_id,
+        )
+    )
+
+
+def _validated_adoption_claim(value: object) -> DeviceBindingAdoptionClaim:
+    if (
+        type(value) is not DeviceBindingAdoptionClaim
+        or type(value.schema) is not str
+        or value.schema != ADOPTION_SCHEMA
+        or type(value.version) is not int
+        or value.version != VERSION
+        or type(value.action) is not str
+        or value.action != "adopt"
+    ):
+        raise ValueError
+    request_id = _hex64(value.request_id)
+    binding = _validated_legacy_binding(value.binding)
+    if request_id == binding.request_id:
+        raise ValueError
+    issued_at = _utc_second(value.issued_at)
+    expires_at = _utc_second(value.expires_at)
+    if (
+        issued_at >= expires_at
+        or expires_at - issued_at > timedelta(seconds=MAX_AUTHORIZATION_WINDOW_SECONDS)
+        or issued_at < binding.valid_from
+        or issued_at >= binding.expires_at
+        or expires_at > binding.expires_at
+    ):
+        raise ValueError
+    return DeviceBindingAdoptionClaim(
+        ADOPTION_SCHEMA,
+        VERSION,
+        "adopt",
+        request_id,
+        binding,
+        issued_at,
+        expires_at,
+    )
+
+
+def _adoption_claim_dict(value: DeviceBindingAdoptionClaim) -> dict[str, object]:
+    return {
+        "schema": value.schema,
+        "version": value.version,
+        "action": value.action,
+        "bindingId": value.binding.binding_id,
+        "bindingRecord": _binding_record_dict(value.binding),
+        "requestId": value.request_id,
+        "issuedAt": _timestamp(value.issued_at),
+        "expiresAt": _timestamp(value.expires_at),
+    }
+
+
+def canonical_adoption_signed_bytes(value: DeviceBindingAdoptionClaim) -> bytes:
+    """Return the exact domain-separated bytes signed for legacy adoption."""
+
+    try:
+        claim = _validated_adoption_claim(value)
+        envelope = {"adoption": _adoption_claim_dict(claim), "domain": ADOPTION_SIGNATURE_DOMAIN}
+        return json.dumps(
+            envelope,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("ascii")
+    except Exception:
+        raise DeviceBindingAuthorizationUnavailable() from None
+
+
+def adoption_digest(value: DeviceBindingAdoptionClaim) -> str:
+    return hashlib.sha256(canonical_adoption_signed_bytes(value)).hexdigest()
+
+
+def _validated_signed_adoption(
+    value: object,
+    signature_verifier: IdentitySignatureVerifier,
+) -> IdentitySignedDeviceBindingAdoption:
+    if type(value) is not IdentitySignedDeviceBindingAdoption:
+        raise ValueError
+    claim = _validated_adoption_claim(value.claim)
+    digest = _hex64(value.digest)
+    if (
+        type(value.signature_format) is not str
+        or value.signature_format != SIGNATURE_FORMAT
+        or type(value.signature) is not str
+        or _HEX_128(value.signature) is None
+        or digest != adoption_digest(claim)
+        or signature_verifier.verify(
+            subject=claim.binding.subject,
+            signature=bytes.fromhex(value.signature),
+            digest=bytes.fromhex(digest),
+        )
+        is not True
+    ):
+        raise ValueError
+    return IdentitySignedDeviceBindingAdoption(claim, digest, SIGNATURE_FORMAT, value.signature)
+
+
+def canonical_adoption_json(value: IdentitySignedDeviceBindingAdoption) -> str:
+    """Serialize an exact identity-signed legacy-binding adoption."""
+
+    try:
+        adoption = _validated_signed_adoption(value, Bip340IdentitySignatureVerifier())
+        encoded = json.dumps(
+            {
+                **_adoption_claim_dict(adoption.claim),
+                "digest": adoption.digest,
+                "signatureFormat": adoption.signature_format,
+                "signature": adoption.signature,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+        if len(encoded.encode("ascii")) > MAX_AUTHORIZATION_BYTES:
+            raise ValueError
+        return encoded
+    except Exception:
+        raise DeviceBindingAuthorizationUnavailable() from None
+
+
+def _binding_from_record(value: object, binding_id: object) -> MessagingDeviceBinding:
+    if type(value) is not dict or set(value) != _BINDING_RECORD_FIELDS:
+        raise ValueError
+    if (
+        value["schema"] != BINDING_RECORD_SCHEMA
+        or type(value["version"]) is not int
+        or value["version"] != BINDING_RECORD_VERSION
+        or value["algorithm"] != ALGORITHM
+    ):
+        raise ValueError
+    binding = MessagingDeviceBinding(
+        subject=value["subject"],
+        device_id=value["deviceId"],
+        binding_id=_hex64(binding_id),
+        public_key=value["publicKey"],
+        binding_version=value["bindingVersion"],
+        valid_from=_parse_timestamp(value["validFrom"]),
+        expires_at=_parse_timestamp(value["expiresAt"]),
+        operation=value["operation"],
+        prior_binding_id=value["priorBindingId"],
+        request_id=value["requestId"],
+        active=True,
+    )
+    validated = _validated_legacy_binding(binding)
+    if _binding_record_dict(validated) != value:
+        raise ValueError
+    return validated
+
+
+def parse_and_verify_device_binding_adoption(
+    payload: object,
+    *,
+    authenticated_subject: object,
+    signature_verifier: IdentitySignatureVerifier | None = None,
+) -> IdentitySignedDeviceBindingAdoption:
+    """Parse and verify one exact current legacy-binding attestation."""
+
+    try:
+        data = _closed_signed_object(payload, _ADOPTION_FIELDS)
+        binding = _binding_from_record(data["bindingRecord"], data["bindingId"])
+        if binding.subject != _canonical_actor(authenticated_subject):
+            raise ValueError
+        claim = DeviceBindingAdoptionClaim(
+            schema=data["schema"],
+            version=data["version"],
+            action=data["action"],
+            request_id=data["requestId"],
+            binding=binding,
+            issued_at=_parse_timestamp(data["issuedAt"]),
+            expires_at=_parse_timestamp(data["expiresAt"]),
+        )
+        adoption = IdentitySignedDeviceBindingAdoption(
+            claim,
+            data["digest"],
+            data["signatureFormat"],
+            data["signature"],
+        )
+        return _validated_signed_adoption(
+            adoption,
             signature_verifier or Bip340IdentitySignatureVerifier(),
         )
     except Exception:
@@ -511,6 +902,25 @@ def _authorized_from(
     return AuthorizedDeviceBinding(authorization, binding, verification)
 
 
+def _adopted_from(
+    adoption: IdentitySignedDeviceBindingAdoption,
+) -> AdoptedDeviceBindingAuthorization:
+    binding = adoption.claim.binding
+    verification = VerifiedBindingAuthorization(
+        proof_id=PROOF_ID_PREFIX + adoption.digest,
+        subject=binding.subject,
+        device_id=binding.device_id,
+        binding_id=binding.binding_id,
+        binding_version=binding.binding_version,
+        public_key=binding.public_key,
+        valid_from=binding.valid_from,
+        expires_at=binding.expires_at,
+        evidence_valid_from=adoption.claim.issued_at,
+        evidence_expires_at=binding.expires_at,
+    )
+    return AdoptedDeviceBindingAuthorization(adoption, binding, verification)
+
+
 def _validated_authorized(
     value: object,
     signature_verifier: IdentitySignatureVerifier,
@@ -524,6 +934,30 @@ def _validated_authorized(
     return expected
 
 
+def _validated_adopted(
+    value: object,
+    signature_verifier: IdentitySignatureVerifier,
+) -> AdoptedDeviceBindingAuthorization:
+    if type(value) is not AdoptedDeviceBindingAuthorization:
+        raise ValueError
+    adoption = _validated_signed_adoption(value.adoption, signature_verifier)
+    expected = _adopted_from(adoption)
+    if value != expected:
+        raise ValueError
+    return expected
+
+
+def _validated_evidence(
+    value: object,
+    signature_verifier: IdentitySignatureVerifier,
+) -> BindingAuthorizationEvidence:
+    if type(value) is AuthorizedDeviceBinding:
+        return _validated_authorized(value, signature_verifier)
+    if type(value) is AdoptedDeviceBindingAuthorization:
+        return _validated_adopted(value, signature_verifier)
+    raise ValueError
+
+
 def _validated_device_state(
     value: object,
     *,
@@ -531,7 +965,7 @@ def _validated_device_state(
     device_id: str,
     now: datetime,
     signature_verifier: IdentitySignatureVerifier,
-) -> tuple[AuthorizedDeviceBinding, ...]:
+) -> tuple[BindingAuthorizationEvidence, ...]:
     if (
         type(value) is not CurrentDeviceBindingState
         or value.schema != STATE_SCHEMA
@@ -546,7 +980,7 @@ def _validated_device_state(
         or len(value.records) >= MAX_STATE_RECORDS
     ):
         raise ValueError
-    records = tuple(_validated_authorized(item, signature_verifier) for item in value.records)
+    records = tuple(_validated_evidence(item, signature_verifier) for item in value.records)
     if any(
         item.binding.subject != subject
         or item.binding.device_id != device_id
@@ -554,6 +988,8 @@ def _validated_device_state(
         or item.binding.operation not in {"register", "rotate"}
         or item.binding.valid_from > now
         or now >= item.binding.expires_at
+        or item.verification.evidence_valid_from > now
+        or now >= item.verification.evidence_expires_at
         for item in records
     ):
         raise ValueError
@@ -568,7 +1004,7 @@ def _validated_subject_state(
     subject: str,
     now: datetime,
     signature_verifier: IdentitySignatureVerifier,
-) -> tuple[AuthorizedDeviceBinding, ...]:
+) -> tuple[BindingAuthorizationEvidence, ...]:
     if (
         type(value) is not CurrentSubjectBindingState
         or value.schema != STATE_SCHEMA
@@ -583,13 +1019,15 @@ def _validated_subject_state(
         or len(value.records) > MAX_ACTIVE_DEVICES
     ):
         raise ValueError
-    records = tuple(_validated_authorized(item, signature_verifier) for item in value.records)
+    records = tuple(_validated_evidence(item, signature_verifier) for item in value.records)
     if any(
         item.binding.subject != subject
         or item.binding.active is not True
         or item.binding.operation not in {"register", "rotate"}
         or item.binding.valid_from > now
         or now >= item.binding.expires_at
+        or item.verification.evidence_valid_from > now
+        or now >= item.verification.evidence_expires_at
         for item in records
     ):
         raise ValueError
@@ -605,7 +1043,7 @@ def _validated_public_key_state(
     public_key: str,
     now: datetime,
     signature_verifier: IdentitySignatureVerifier,
-) -> tuple[AuthorizedDeviceBinding, ...]:
+) -> tuple[BindingAuthorizationEvidence, ...]:
     if (
         type(value) is not CurrentPublicKeyBindingState
         or value.schema != STATE_SCHEMA
@@ -619,13 +1057,15 @@ def _validated_public_key_state(
         or len(value.records) >= MAX_STATE_RECORDS
     ):
         raise ValueError
-    records = tuple(_validated_authorized(item, signature_verifier) for item in value.records)
+    records = tuple(_validated_evidence(item, signature_verifier) for item in value.records)
     if any(
         item.binding.public_key != public_key
         or item.binding.active is not True
         or item.binding.operation not in {"register", "rotate"}
         or item.binding.valid_from > now
         or now >= item.binding.expires_at
+        or item.verification.evidence_valid_from > now
+        or now >= item.verification.evidence_expires_at
         for item in records
     ):
         raise ValueError
@@ -639,7 +1079,7 @@ def _validated_binding_id_state(
     *,
     binding_id: str,
     signature_verifier: IdentitySignatureVerifier,
-) -> tuple[AuthorizedDeviceBinding, ...]:
+) -> tuple[BindingAuthorizationEvidence, ...]:
     if (
         type(value) is not BindingAuthorizationEvidenceState
         or value.schema != STATE_SCHEMA
@@ -653,10 +1093,10 @@ def _validated_binding_id_state(
         or len(value.records) >= MAX_STATE_RECORDS
     ):
         raise ValueError
-    records = tuple(_validated_authorized(item, signature_verifier) for item in value.records)
+    records = tuple(_validated_evidence(item, signature_verifier) for item in value.records)
     if any(item.binding.binding_id != binding_id for item in records):
         raise ValueError
-    if len({item.authorization.digest for item in records}) != len(records):
+    if len({item.verification.proof_id for item in records}) != len(records):
         raise ValueError
     return records
 
@@ -679,6 +1119,22 @@ def _validated_replay(
     ):
         raise ValueError
     return AuthorizationReplayRecord(request_id, digest, authorized)
+
+
+def _validated_adoption_replay(
+    value: object,
+    *,
+    candidate: AdoptedDeviceBindingAuthorization,
+    signature_verifier: IdentitySignatureVerifier,
+) -> AdoptionReplayRecord:
+    if type(value) is not AdoptionReplayRecord:
+        raise ValueError
+    request_id = _hex64(value.request_id)
+    digest = _hex64(value.adoption_digest)
+    adopted = _validated_adopted(value.adopted_binding, signature_verifier)
+    if request_id != candidate.adoption.claim.request_id or digest != candidate.adoption.digest or adopted != candidate:
+        raise ValueError
+    return AdoptionReplayRecord(request_id, digest, adopted)
 
 
 class SocialMessagingDeviceBindingAuthorizationV1:
@@ -836,11 +1292,7 @@ class SocialMessagingDeviceBindingAuthorizationV1:
                     )
                     if claim.public_key == binding.public_key or proposed_key_records:
                         raise ValueError
-                elif (
-                    claim.public_key != binding.public_key
-                    or claim.binding_valid_from != binding.valid_from
-                    or claim.binding_expires_at != binding.expires_at
-                ):
+                elif claim.public_key != binding.public_key or claim.binding_expires_at != binding.expires_at:
                     raise ValueError
 
             record = AuthorizationReplayRecord(
@@ -854,6 +1306,170 @@ class SocialMessagingDeviceBindingAuthorizationV1:
                 candidate=candidate,
                 signature_verifier=self._signature_verifier,
             ).authorized_binding
+        except DeviceBindingAuthorizationUnavailable:
+            raise
+        except Exception:
+            raise DeviceBindingAuthorizationUnavailable() from None
+
+
+def _validated_current_full(
+    value: object,
+    *,
+    subject: str,
+    now: datetime,
+) -> VerifiedCurrentFullEntitlement:
+    if type(value) is not VerifiedCurrentFullEntitlement:
+        raise ValueError
+    valid_from = _utc_second(value.valid_from)
+    expires_at = _utc_second(value.expires_at)
+    if (
+        type(value.proof_id) is not str
+        or _FULL_PROOF_ID(value.proof_id) is None
+        or _canonical_actor(value.subject) != subject
+        or valid_from > now
+        or now >= expires_at
+    ):
+        raise ValueError
+    return VerifiedCurrentFullEntitlement(
+        value.proof_id,
+        subject,
+        valid_from,
+        expires_at,
+    )
+
+
+def _validated_legacy_state(
+    value: object,
+    *,
+    subject: str,
+    binding_id: str,
+    now: datetime,
+) -> tuple[MessagingDeviceBinding, ...]:
+    if (
+        type(value) is not CurrentLegacyDeviceBindingState
+        or type(value.schema) is not str
+        or value.schema != STATE_SCHEMA
+        or type(value.version) is not int
+        or value.version != VERSION
+        or value.subject != subject
+        or value.binding_id != binding_id
+        or value.complete is not True
+        or value.truncated is not False
+        or type(value.records) is not tuple
+        or len(value.records) > MAX_STATE_RECORDS
+    ):
+        raise ValueError
+    records = tuple(_validated_legacy_binding(item) for item in value.records)
+    if any(
+        item.subject != subject or item.binding_id != binding_id or item.valid_from > now or now >= item.expires_at
+        for item in records
+    ):
+        raise ValueError
+    return records
+
+
+class SocialMessagingLegacyBindingAdoptionV1:
+    """Attest to one exact existing binding without mutating its key or row."""
+
+    def __init__(
+        self,
+        *,
+        state_provider: LegacyDeviceBindingAdoptionStateProvider,
+        current_full_prerequisite: CurrentFullEntitlementPrerequisite,
+        replay_ledger: AuthorizationReplayLedger,
+        signature_verifier: IdentitySignatureVerifier | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        signature_verifier = signature_verifier or Bip340IdentitySignatureVerifier()
+        if (
+            not callable(getattr(state_provider, "current_legacy_binding", None))
+            or not callable(getattr(state_provider, "authorization_for_binding", None))
+            or not callable(getattr(current_full_prerequisite, "verify", None))
+            or not callable(getattr(replay_ledger, "get", None))
+            or not callable(getattr(replay_ledger, "record", None))
+            or not callable(getattr(signature_verifier, "verify", None))
+            or clock is not None
+            and not callable(clock)
+        ):
+            raise ValueError("invalid legacy binding adoption dependency")
+        self._state_provider = state_provider
+        self._current_full_prerequisite = current_full_prerequisite
+        self._replay_ledger = replay_ledger
+        self._signature_verifier = signature_verifier
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
+
+    def adopt(
+        self,
+        payload: object,
+        *,
+        authenticated_subject: object,
+    ) -> AdoptedDeviceBindingAuthorization:
+        try:
+            adoption = parse_and_verify_device_binding_adoption(
+                payload,
+                authenticated_subject=authenticated_subject,
+                signature_verifier=self._signature_verifier,
+            )
+            claim = adoption.claim
+            binding = claim.binding
+            now = _trusted_utc_second(self._clock())
+            if (
+                claim.issued_at > now
+                or now >= claim.expires_at
+                or binding.valid_from > now
+                or now >= binding.expires_at
+            ):
+                raise ValueError
+            candidate = _adopted_from(adoption)
+
+            replay = self._replay_ledger.get(claim.request_id)
+            if replay is not None:
+                return _validated_adoption_replay(
+                    replay,
+                    candidate=candidate,
+                    signature_verifier=self._signature_verifier,
+                ).adopted_binding
+
+            _validated_current_full(
+                self._current_full_prerequisite.verify(binding.subject, now=now),
+                subject=binding.subject,
+                now=now,
+            )
+            current = _validated_legacy_state(
+                self._state_provider.current_legacy_binding(
+                    binding.subject,
+                    binding.binding_id,
+                    now=now,
+                    maximum=MAX_STATE_RECORDS,
+                ),
+                subject=binding.subject,
+                binding_id=binding.binding_id,
+                now=now,
+            )
+            if current != (binding,):
+                raise ValueError
+            existing = _validated_binding_id_state(
+                self._state_provider.authorization_for_binding(
+                    binding.binding_id,
+                    now=now,
+                    maximum=MAX_STATE_RECORDS,
+                ),
+                binding_id=binding.binding_id,
+                signature_verifier=self._signature_verifier,
+            )
+            if existing:
+                raise ValueError
+            record = AdoptionReplayRecord(
+                request_id=claim.request_id,
+                adoption_digest=adoption.digest,
+                adopted_binding=candidate,
+            )
+            retained = self._replay_ledger.record(record)
+            return _validated_adoption_replay(
+                retained,
+                candidate=candidate,
+                signature_verifier=self._signature_verifier,
+            ).adopted_binding
         except DeviceBindingAuthorizationUnavailable:
             raise
         except Exception:
@@ -906,13 +1522,17 @@ class IdentitySignedBindingAuthorizationVerifier:
                 or len(state.records) != 1
             ):
                 raise ValueError
-            authorized = _validated_authorized(state.records[0], self._signature_verifier)
+            authorized = _validated_evidence(state.records[0], self._signature_verifier)
+            evidence_valid_from = _utc_second(authorized.verification.evidence_valid_from)
+            evidence_expires_at = _utc_second(authorized.verification.evidence_expires_at)
             if (
                 authorized.binding != binding
                 or binding.active is not True
                 or binding.operation not in {"register", "rotate"}
                 or binding.valid_from > normalized_now
                 or normalized_now >= binding.expires_at
+                or evidence_valid_from > normalized_now
+                or normalized_now >= evidence_expires_at
             ):
                 raise ValueError
             return authorized.verification
@@ -921,22 +1541,32 @@ class IdentitySignedBindingAuthorizationVerifier:
 
 
 __all__ = [
+    "ADOPTION_SCHEMA",
+    "ADOPTION_SIGNATURE_DOMAIN",
     "AUTHORIZATION_SCHEMA",
+    "AdoptedDeviceBindingAuthorization",
+    "AdoptionReplayRecord",
     "AuthorizationReplayLedger",
     "AuthorizationReplayRecord",
     "AuthorizedDeviceBinding",
+    "BindingAuthorizationEvidence",
     "BindingAuthorizationEvidenceProvider",
     "BindingAuthorizationEvidenceState",
     "Bip340IdentitySignatureVerifier",
     "CurrentDeviceBindingState",
+    "CurrentFullEntitlementPrerequisite",
+    "CurrentLegacyDeviceBindingState",
     "CurrentPublicKeyBindingState",
     "CurrentSubjectBindingState",
+    "DeviceBindingAdoptionClaim",
     "DeviceBindingAuthorizationClaim",
     "DeviceBindingAuthorizationStateProvider",
     "DeviceBindingAuthorizationUnavailable",
     "IdentitySignatureVerifier",
+    "IdentitySignedDeviceBindingAdoption",
     "IdentitySignedBindingAuthorizationVerifier",
     "IdentitySignedDeviceBindingAuthorization",
+    "LegacyDeviceBindingAdoptionStateProvider",
     "MAX_AUTHORIZATION_BYTES",
     "MAX_AUTHORIZATION_WINDOW_SECONDS",
     "MAX_STATE_RECORDS",
@@ -944,11 +1574,16 @@ __all__ = [
     "SIGNATURE_DOMAIN",
     "SIGNATURE_FORMAT",
     "STATE_SCHEMA",
+    "SocialMessagingLegacyBindingAdoptionV1",
     "SocialMessagingDeviceBindingAuthorizationV1",
     "UNAVAILABLE_MESSAGE",
     "VERSION",
+    "adoption_digest",
     "authorization_digest",
+    "canonical_adoption_json",
+    "canonical_adoption_signed_bytes",
     "canonical_authorization_json",
     "canonical_authorization_signed_bytes",
+    "parse_and_verify_device_binding_adoption",
     "parse_and_verify_device_binding_authorization",
 ]
