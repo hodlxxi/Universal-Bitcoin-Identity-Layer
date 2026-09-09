@@ -1,325 +1,207 @@
-# Contributing to HODLXXI
+# Contributing to the Universal Bitcoin Identity Layer
 
-Thank you for your interest in contributing to HODLXXI! We welcome contributions from the community.
+Thank you for contributing to HODLXXI. This repository contains a security-sensitive Bitcoin-native identity and trust runtime. Changes should be small, reviewable, tested, and explicit about whether they affect source code only or a running environment.
 
-## Code of Conduct
+Automated coding agents must also follow the repository-root [`AGENTS.md`](AGENTS.md). Human contributors should use it as the operational safety checklist for agent-assisted work.
 
-Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
+## Code of Conduct and Security Reports
 
-## How Can I Contribute?
+Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-### Reporting Bugs
+Do not disclose suspected vulnerabilities in a public issue or pull request. Follow the private reporting instructions in [SECURITY.md](SECURITY.md). Never include credentials, private keys, bearer tokens, cookies, database contents, or unsanitized production logs in an issue, commit, test fixture, or agent transcript.
 
-Before creating bug reports, please check existing issues to avoid duplicates. When creating a bug report, include:
+## Repository and Branch Model
 
-- **Clear title and description**
-- **Steps to reproduce** the issue
-- **Expected behavior** vs actual behavior
-- **Environment details** (OS, Python version, Bitcoin Core version)
-- **Logs and error messages** (sanitize any sensitive information)
-- **Screenshots** if applicable
+The authoritative repository is:
 
-### Suggesting Enhancements
+```text
+https://github.com/hodlxxi/Universal-Bitcoin-Identity-Layer
+```
 
-Enhancement suggestions are tracked as GitHub issues. When creating an enhancement suggestion:
+The long-lived branches have different roles:
 
-- **Use a clear and descriptive title**
-- **Provide detailed description** of the suggested enhancement
-- **Explain why this enhancement would be useful**
-- **List any alternatives** you've considered
+- `staging` is the integration branch for current UBID development.
+- `main` is the production/release source branch.
+- Feature and corrective branches normally start from the exact remote branch named by the task and target that same integration branch in their pull request.
+- Promotion from `staging` to `main` is a separate, explicitly authorized release operation.
 
-### Security Vulnerabilities
+Never assume a base branch from an old example. Before creating a branch, fetch the intended remote ref and record its exact commit ID.
 
-**DO NOT** open public issues for security vulnerabilities. Instead, please email security@hodlxxi.com or see [SECURITY.md](SECURITY.md).
+Use short, descriptive branch names such as:
 
-## Development Process
+```text
+feat/ubid-<capability>-v1
+fix/ubid-<contract>-v1
+docs/ubid-<topic>-v1
+```
 
-### 1. Fork and Clone
+## Isolated Development
+
+Use a dedicated Git worktree for each task. Do not develop in a production or live-staging checkout.
+
+Example for a task explicitly based on `staging`:
 
 ```bash
-# Fork the repository on GitHub
-# Then clone your fork
-git clone https://github.com/YOUR_USERNAME/hodlxxi.com.git
-cd hodlxxi.com
+git fetch origin staging
+git worktree add ../ubid-feature-v1 \
+  -b feat/ubid-feature-v1 \
+  origin/staging
+cd ../ubid-feature-v1
+```
 
-### 2. Set Up Development Environment
+Before editing, verify:
 
 ```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-pip install -r requirements-dev.txt  # Development dependencies
-
-# Copy environment template
-cp .env.example .env
-# Edit .env with your local configuration
+git rev-parse HEAD
+git branch --show-current
+git rev-parse --abbrev-ref '@{upstream}'
+git status --short --branch
 ```
 
-### 3. Create a Branch
+If the worktree is not on the expected commit and branch, or contains unexplained changes, stop and resolve the discrepancy before editing.
+
+## Development Environment
+
+Use Python 3.12 when matching the current GitHub Actions environment.
 
 ```bash
-# Update your fork
-git fetch upstream
-git checkout main
-git merge upstream/main
-
-# Create feature branch
-git checkout -b feature/your-feature-name
-# or
-git checkout -b fix/your-bug-fix
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip wheel setuptools
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
+python -m pip install -e "packages/hodlxxi_mcp[test]"
 ```
 
-### 4. Make Your Changes
+Use only synthetic development credentials and isolated test infrastructure. Never point a development shell, test, or migration rehearsal at a live service or database.
 
-#### Code Style
+Do not install or upgrade dependencies merely to work around a failing test unless the task explicitly authorizes a dependency change. Record missing-environment failures separately from code failures.
 
-- Follow [PEP 8](https://www.python.org/dev/peps/pep-0008/) style guide
-- Use descriptive variable and function names
-- Add docstrings for functions and classes
-- Keep functions focused and concise
-- Add comments for complex logic
+## Change Boundaries
 
-#### Testing
+Every pull request should declare its boundary:
 
-```bash
-# Run tests
-pytest tests/
+- **Source-only:** code, contracts, tests, or documentation are added, but no route, factory composition, migration, configuration, service restart, or deployment is performed.
+- **Runtime wiring:** a previously dormant component is composed into an application or exposed through an internal or public route.
+- **Database:** a schema, migration, repository, or durable-storage behavior changes.
+- **Deployment:** a checkout, environment, proxy, service, or production resource changes.
 
-# Run with coverage
-pytest --cov=app tests/
+Do not combine these boundaries by implication. Source availability is not runtime activation. A migration file in source is not authorization to apply it. A merged pull request is not authorization to deploy it.
 
-# Run specific test
-pytest tests/test_auth.py::test_lnurl_auth
-```
+Keep changes within an explicitly reviewed file scope. Unrelated cleanup, formatting, dependency updates, and documentation rewrites should use separate pull requests.
 
-#### Commit Messages
+## Compatibility and Security-Critical Contracts
 
-Write clear, descriptive commit messages:
+For cryptographic, identity, authorization, storage, routing, and serialization changes:
 
-```
-<type>: <subject>
+1. Identify the existing authoritative canonical representation and identifier.
+2. Freeze known preimages, digests, signatures, handles, and package vectors before editing.
+3. Test compatibility across adjacent components, not only within the changed module.
+4. Reject alternative encodings, ambiguous state, partial state, duplicate state, stale state, and mismatched identifiers.
+5. Keep public errors non-sensitive and fail closed.
+6. Keep private keys, plaintext, message keys, raw subjects, credentials, and unneeded public-key material out of logs and outward storage contracts.
+7. Document intentional vector changes and prove that no deployed or persisted data relies on the superseded vector.
 
-<body>
-
-<footer>
-```
-
-Types:
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `style`: Code style changes (formatting, no logic change)
-- `refactor`: Code refactoring
-- `test`: Adding or updating tests
-- `chore`: Maintenance tasks
-
-Example:
-```
-feat: Add support for multi-signature wallets
-
-Implement P2SH multi-sig address generation and transaction signing.
-Includes support for 2-of-3 and 3-of-5 configurations.
-
-Closes #123
-```
-
-### 5. Test Your Changes
-
-Before submitting:
-
-```bash
-# Run all tests
-pytest tests/
-
-# Run linter
-flake8 app/
-
-# Check types (if using type hints)
-mypy app/
-
-# Test locally
-python app/app.py
-```
-
-### 6. Push and Create Pull Request
-
-```bash
-# Push to your fork
-git push origin feature/your-feature-name
-
-# Create pull request on GitHub
-```
-
-## Pull Request Guidelines
-
-### PR Title
-
-Use descriptive titles following the commit message format:
-- `feat: Add OAuth2 token refresh endpoint`
-- `fix: Resolve LNURL-auth session timeout issue`
-- `docs: Update production deployment guide`
-
-### PR Description
-
-Include:
-
-1. **What** - What does this PR do?
-2. **Why** - Why is this change needed?
-3. **How** - How does it work?
-4. **Testing** - How was it tested?
-5. **Screenshots** - If UI changes
-6. **Breaking Changes** - Any breaking changes?
-
-Template:
-```markdown
-## Description
-Brief description of changes
-
-## Motivation
-Why this change is needed
-
-## Changes Made
-- Change 1
-- Change 2
-- Change 3
+A new contract is not complete until its output is accepted byte-for-byte by the next real consumer or an exact synthetic compatibility test proves that boundary.
 
 ## Testing
-- [ ] Unit tests added/updated
-- [ ] Integration tests pass
-- [ ] Manually tested locally
-- [ ] Documentation updated
 
-## Checklist
-- [ ] Code follows project style guidelines
-- [ ] Self-review completed
-- [ ] Comments added for complex code
-- [ ] Documentation updated
-- [ ] No new warnings generated
-- [ ] Tests added for changes
-- [ ] All tests pass locally
-- [ ] Breaking changes documented
+Start with focused tests for the files and contracts changed. Use deterministic, offline execution where possible:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 \
+pytest -p no:cacheprovider -q tests/unit/test_<module>.py
 ```
 
-### Review Process
+Expand to adjacent compatibility tests, then to the broader suite appropriate to the change. The complete GitHub Actions pytest job may take up to 45 minutes and installs the MCP test extras.
 
-1. **Automated checks** - CI/CD must pass
-2. **Code review** - At least one maintainer review required
-3. **Testing** - Verify tests are comprehensive
-4. **Documentation** - Ensure docs are updated
-5. **Security** - Review for security implications
+Current blocking lint commands are:
 
-## Development Guidelines
+```bash
+black --check app/ scripts/ tests/
+flake8 app/ scripts/ tests/
+```
 
-### API Changes
+The repository currently pins these development-tool versions:
 
-When modifying API endpoints:
+```text
+black 26.1.0
+flake8 6.1.0
+isort 5.13.2
+mypy 1.7.1
+```
 
-1. Update [API_RESPONSE_EXAMPLES.md](app/API_RESPONSE_EXAMPLES.md)
-2. Update error codes in [ERROR_CODE_DOCUMENTATION.md](app/ERROR_CODE_DOCUMENTATION.md)
-3. Maintain backward compatibility when possible
-4. Document breaking changes prominently
+Check import ordering and types where relevant:
 
-### Security Considerations
+```bash
+isort --check-only --profile black app/ scripts/ tests/
+mypy app/ --ignore-missing-imports --no-strict-optional
+```
 
-- Never commit secrets or credentials
-- Follow security guidelines in [SECURITY_REQUIREMENTS.md](app/SECURITY_REQUIREMENTS.md)
-- Validate all user inputs
-- Use parameterized queries for database
-- Implement rate limiting for new endpoints
-- Review OAuth/auth changes carefully
+At present, full-tree `isort` and `mypy` are non-blocking in CI. Do not conceal their output, but distinguish an existing repository baseline failure from a regression introduced by the pull request. Changed files should still pass applicable focused checks.
 
-### Database Changes
+Before commit:
 
-- Use migrations for schema changes
-- Test with both SQLite and PostgreSQL
-- Document migration steps
-- Provide rollback procedures
+```bash
+git diff --check
+git status --short
+git diff --stat
+git diff
+```
 
-### Documentation
+Database or integration tests that need PostgreSQL must use a disposable cluster on an explicitly isolated socket or non-live port. They must prove teardown and must never reuse production or staging connection settings.
 
-Update documentation for:
+## Commits and Pull Requests
 
-- New features
-- API changes
-- Configuration changes
-- Deployment changes
+Use a concise imperative commit subject, for example:
+
+```text
+Harden Social recipient routing validation
+Add identity-signed device binding authorization
+Document UBID agent development safeguards
+```
+
+A pull request should state:
+
+- exact base branch and base commit;
+- purpose and security boundary;
+- exact files changed;
+- behavior added, changed, and deliberately not activated;
+- compatibility vectors preserved or intentionally changed;
+- focused and broader test results;
+- known baseline failures, with evidence that they are unrelated;
+- database, service, staging, and production impact;
+- rollback or recovery plan for any runtime-affecting change.
+
+Open complex or security-sensitive work as a draft. Do not mark it ready until the worktree is clean, the intended review is complete, and CI is green. The operator decides when review is sufficient and when a pull request may merge.
+
+Merging source does not authorize branch deletion, deployment, service restart, migration application, or production change.
+
+## Documentation
+
+Update the canonical document for a changed contract and link rather than duplicating normative rules across multiple files. Use [`docs/DOCUMENTATION_MAP.md`](docs/DOCUMENTATION_MAP.md) to distinguish current, historical, experimental, and archival material.
+
+Do not place transient commit IDs, pull-request numbers, process IDs, temporary paths, or phase-specific status in permanent contributor guidance.
 
 ## Project Structure
 
-```
-hodlxxi.com/
-├── app/
-│   ├── app.py              # Main application
-│   ├── static/             # Static files
-│   └── [docs]              # Documentation
-├── tests/                  # Test files
-├── .github/
-│   └── workflows/          # CI/CD workflows
-├── requirements.txt        # Dependencies
-└── [config files]
-```
-
-## Testing Guidelines
-
-### Writing Tests
-
-```python
-import pytest
-from app import app
-
-@pytest.fixture
-def client():
-    app.config['TESTING'] = True
-    with app.test_client() as client:
-        yield client
-
-def test_lnurl_auth_create(client):
-    """Test LNURL-auth session creation"""
-    response = client.post('/api/lnurl-auth/create')
-    assert response.status_code == 200
-    data = response.get_json()
-    assert 'lnurl' in data
-    assert 'session_id' in data
+```text
+app/                         Flask runtime, services, contracts, and adapters
+deployment/                  deployment documentation and templates
+docs/                        architecture, protocol, operations, and phase documents
+hodlxxi_sdk/                 Python SDK
+migrations/                  reviewed database migrations
+packages/hodlxxi_mcp/        MCP package and its tests
+scripts/                     maintenance and verification scripts
+skills/                      public agent skill definitions
+tests/unit/                  isolated unit and contract tests
+tests/integration/           multi-component integration tests
+tools/                       repository tooling
+.github/workflows/           authoritative CI workflows
 ```
 
-### Test Coverage
-
-- Aim for >80% coverage
-- Test edge cases and error conditions
-- Test authentication and authorization
-- Test rate limiting
-- Test input validation
-
-## Release Process
-
-1. Version bump in appropriate files
-2. Update CHANGELOG.md
-3. Tag release: `git tag v1.2.3`
-4. Push tags: `git push --tags`
-5. Create GitHub release
-6. Deploy to production
-
-## Getting Help
-
-- **Documentation**: Check [app/README.md](app/README.md)
-- **Issues**: Search existing issues
-- **Discussions**: Use GitHub Discussions
-- **Email**: support@hodlxxi.com
-
-## Recognition
-
-Contributors will be:
-- Listed in CONTRIBUTORS.md
-- Mentioned in release notes
-- Credited in documentation (for significant contributions)
+When this guide and an executable workflow disagree, treat the workflow as the current command source and update this guide in a separate documentation correction.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
-
----
-
-Thank you for contributing to HODLXXI!
+Contributions are licensed under the repository's [MIT License](LICENSE).
