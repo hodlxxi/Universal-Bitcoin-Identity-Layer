@@ -18,6 +18,10 @@ from datetime import datetime, timezone
 from typing import Callable, Protocol
 
 from app.auth_api_core import canonical_xonly_pubkey
+from app.services.current_full_entitlement_proof import (
+    VerifiedCurrentFullEntitlement,
+    validate_verified_current_full_entitlement,
+)
 from app.services.full_recipient_directory_provider import validate_x25519_public_key
 from app.services.privacy_safe_full_directory import (
     MAX_ALIAS_SECRET_BYTES,
@@ -106,16 +110,6 @@ class VerifiedBindingAuthorization:
     expires_at: datetime
     evidence_valid_from: datetime
     evidence_expires_at: datetime
-
-
-@dataclass(frozen=True)
-class VerifiedCurrentFullEntitlement:
-    """Strict output of a future current-Full authority verifier."""
-
-    proof_id: str
-    subject: str
-    valid_from: datetime
-    expires_at: datetime
 
 
 @dataclass(frozen=True)
@@ -499,9 +493,11 @@ def _verified_full(
     issued_at: int,
     expires_at: int,
 ) -> VerifiedCurrentFullEntitlement:
-    evidence = verifier.verify(subject, now=now)
-    if type(evidence) is not VerifiedCurrentFullEntitlement:
-        raise ValueError
+    evidence = validate_verified_current_full_entitlement(
+        verifier.verify(subject, now=now),
+        subject=subject,
+        now=now,
+    )
     evidence_subject = _canonical_subject(evidence.subject)
     valid_from = _milliseconds(evidence.valid_from)
     evidence_expires_at = _milliseconds(evidence.expires_at)

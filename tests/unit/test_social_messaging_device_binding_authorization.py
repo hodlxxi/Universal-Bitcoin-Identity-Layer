@@ -10,6 +10,12 @@ import pytest
 from coincurve import PrivateKey, PublicKeyXOnly
 
 from app.services import social_messaging_device_binding_authorization
+from app.services.action_authorization import IdentityClass
+from app.services.current_entitlement_evidence import CONTRACT_VERSION, CurrentEntitlementEvidenceRecord
+from app.services.current_full_entitlement_proof import (
+    CurrentFullEntitlementProofState,
+    produce_verified_current_full_entitlement,
+)
 from app.services.social_messaging_device_binding_authorization import (
     ADOPTION_SCHEMA,
     ADOPTION_SIGNATURE_DOMAIN,
@@ -274,17 +280,38 @@ class ReplayLedger:
         return record
 
 
+def current_full_entitlement(subject=SUBJECT):
+    evidence = CurrentEntitlementEvidenceRecord(
+        evidence_id="00000000-0000-4000-8000-000000000101",
+        contract_version=CONTRACT_VERSION,
+        subject_pubkey=subject,
+        identity_class=IdentityClass.FULL,
+        current_full_relation_satisfied=True,
+        evidence_source="offline_verifier",
+        evidence_version="v1",
+        source_evidence_sha256="ab" * 32,
+        observed_at=NOW - timedelta(seconds=1),
+        valid_until=NOW + timedelta(minutes=5),
+        revoked_at=None,
+        created_at=NOW,
+    )
+    return produce_verified_current_full_entitlement(
+        CurrentFullEntitlementProofState(
+            user_id="00000000-0000-4000-8000-000000000102",
+            user_subject=subject,
+            user_is_active=True,
+            evidence=evidence,
+        ),
+        now=NOW,
+    )
+
+
 class FullPrerequisite:
     def __init__(self, result=None):
-        self.result = result or VerifiedCurrentFullEntitlement(
-            "hodlxxi-full-entitlement-v1-sha256:" + "aa" * 32,
-            SUBJECT,
-            NOW - timedelta(days=1),
-            NOW + timedelta(days=1),
-        )
+        self.result = current_full_entitlement() if result is None else result
         self.calls = []
 
-    def verify(self, subject, *, now):
+    def verify_in_transaction(self, subject, *, now):
         self.calls.append((subject, now))
         if isinstance(self.result, BaseException):
             raise self.result
@@ -1234,6 +1261,15 @@ def test_valid_legacy_adoption_requires_full_and_exact_current_unattested_bindin
     assert state.binding == before
     with pytest.raises(FrozenInstanceError):
         result.adoption.claim.action = "rotate"
+
+
+def test_detached_current_full_verifier_cannot_satisfy_atomic_adoption_path():
+    class DetachedVerifier:
+        def verify(self, subject, *, now):
+            return current_full_entitlement(subject)
+
+    with pytest.raises(ValueError, match="invalid legacy binding adoption dependency"):
+        adoption_service(full=DetachedVerifier())
 
 
 def test_exact_adoption_retry_returns_retained_result_without_reconsulting_changed_state():

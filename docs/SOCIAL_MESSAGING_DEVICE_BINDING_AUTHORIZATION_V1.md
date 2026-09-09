@@ -163,7 +163,10 @@ digest against them, reproduces the zero-aux signature, and verifies it with
 the corresponding x-only public key.
 
 The adoption coordinator consumes only injected immutable ports. A strict
-current-Full prerequisite must return valid current evidence. A complete,
+transaction-bound current-Full prerequisite must expose
+`verify_in_transaction(subject, now=...)` and return the canonical typed
+producer result. A detached prerequisite exposing only `verify(...)` is rejected
+at construction and cannot satisfy the future atomic storage path. A complete,
 untruncated exact-binding lookup with a maximum of two must contain exactly
 one structurally valid, active, unexpired matching record. A separate
 complete evidence lookup must contain no existing authorization. Missing,
@@ -198,6 +201,16 @@ exceptions, or any malformed response fails closed. For a new adoption,
 retention occurs only after current Full, the exact current legacy binding,
 and absence of existing authorization evidence have all been established.
 
+The future authorization-storage unit of work must construct the Current-Full
+verifier, replay ledger, legacy-binding reader, authorization-evidence reader,
+and mutation writer over the same caller-owned PostgreSQL session and
+transaction. That transaction owns replay lookup and retention, subject/device/
+public-key reads and locks, binding mutation or adoption, immutable evidence
+insertion, and final commit or rollback. The Current-Full adapter never commits,
+rolls back, closes, or silently replaces that session. Its proof ID is the
+canonical content identity defined in `CURRENT_ENTITLEMENT_EVIDENCE_V1.md`, not
+a caller assertion or independently authoritative credential.
+
 The future ledger's `record` operation must atomically insert-or-compare in
 that global namespace and reject duplicate rows or a conflicting type,
 digest, or result. This module implements no persistence and makes no
@@ -225,7 +238,9 @@ routing gate's existing verifier port. It obtains one complete evidence record
 by exact binding ID, re-verifies its identity signature, reconstructs either
 lifecycle or adoption evidence, and requires exact equality with the current
 active binding. It does not alter the routing gate's separate, repeated
-current-Full checks for viewer and recipient.
+current-Full checks for viewer and recipient. Routing accepts the real canonical
+producer output byte-for-byte while retaining its independent subject and
+validity bounds.
 
 Raw X25519 public keys exist only in the signed authorization, lifecycle
 binding, strict verification comparison, and already-defined outward
