@@ -59,10 +59,13 @@ for exact equality of:
 
 A boolean, mapping, OAuth bearer, session, service token, key equality, version,
 ordering, or timing is never accepted as evidence. Missing, malformed,
-expired, duplicate, or mismatched evidence fails closed. No production
-verifier or producer is implemented or wired here, and this contract does not
-claim to implement the future participant cryptographic identity-signature
-flow.
+expired, duplicate, or mismatched evidence fails closed. The dormant
+identity-signature producer and verifier contract is now defined in
+`SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_V1.md`; no provider,
+persistence, application composition, or runtime path is implemented or wired.
+That identity authorization does not itself prove browser possession of the
+X25519 private key. A future runtime adapter must source the public key from an
+already proven browser-device setup or add an explicit possession challenge.
 
 Current exact bindings and current Full entitlement for both viewer and
 recipient are separately injected authority ports. They are checked when a
