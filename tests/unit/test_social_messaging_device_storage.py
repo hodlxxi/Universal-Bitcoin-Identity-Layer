@@ -106,6 +106,24 @@ def test_two_devices_for_one_subject_are_independently_active(storage):
     assert [item.device_id for item in current] == [hex_id(1), hex_id(2)]
 
 
+def test_register_storage_binding_id_vector_remains_byte_identical(storage):
+    _engine, _Session, repository = storage
+    timestamp = datetime(2026, 9, 8, 22, 29, 59, tzinfo=timezone.utc)
+    command = MessagingDeviceCommand(
+        "register",
+        "22" * 32,
+        "09" + "00" * 31,
+        None,
+        "33" * 32,
+    )
+
+    result = repository.apply(command, subject=SUBJECT, now=timestamp)
+
+    assert result.binding_id == ("6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d")
+    assert result.valid_from == timestamp
+    assert result.expires_at == timestamp + timedelta(seconds=LIFETIME)
+
+
 def test_rotate_requires_exact_current_binding_and_retires_predecessor(storage):
     _engine, Session, repository = storage
     first = repository.apply(register(1, 0x11, 101), subject=SUBJECT, now=NOW)

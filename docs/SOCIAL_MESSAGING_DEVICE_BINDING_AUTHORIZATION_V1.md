@@ -23,6 +23,9 @@ The closed claim contains exactly:
 
 - `schema`: `hodlxxi.social_messaging_device_binding_authorization.v1`;
 - integer `version`: `1`;
+- `bindingRecordSchema`:
+  `hodlxxi.social_messaging_device_binding_record.v1`;
+- integer `bindingRecordVersion`: `1`;
 - `operation`: `register`, `rotate`, or `revoke`;
 - canonical `subject`, `deviceId`, `algorithm`, and X25519 `publicKey`;
 - integer `bindingVersion`;
@@ -32,12 +35,37 @@ The closed claim contains exactly:
 - whole-second UTC request `issuedAt` and `expiresAt`.
 
 The signed object adds its lowercase SHA-256 `digest`, exact
-`signatureFormat`, and lowercase 64-byte Schnorr `signature`. The digest is
-also the server-derived binding identifier for the exact lifecycle edge. It
-therefore commits the identity, logical device, canonical encryption key,
-operation, lifecycle version, predecessor, request identifier, binding
-interval, and request interval. A client cannot select or substitute the
-binding identifier.
+`signatureFormat`, and lowercase 64-byte Schnorr `signature`. This
+authorization digest is signature and evidence identity only. It is never a
+binding ID, predecessor ID, expected binding ID, device-handle input, package
+identity, routing identity, or replacement for any of those values.
+
+The sole authoritative `bindingId` is SHA-256 of the existing canonical
+binding-record bytes. Those bytes are compact, key-sorted ASCII JSON with
+schema `hodlxxi.social_messaging_device_binding_record.v1`, integer version
+`1`, and exactly `subject`, `deviceId`, `algorithm`, `publicKey`,
+`bindingVersion`, `validFrom`, `expiresAt`, `operation`, `priorBindingId`, and
+`requestId`. The shared pure canonicalizer preserves the legacy storage
+timestamp normalization and preimage byte for byte. Register, rotate, and
+revoke authorization results compute only this identity. A client cannot
+select or substitute it.
+
+The corrected fixed register binding vector is
+`6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d`.
+The corrected authorization fixture was deliberately aligned with that frozen
+storage vector by using its matching canonical subject and exact
+storage-derived interval. Those fixture corrections, together with the
+explicit binding-record schema/version commitments and separation of binding
+and authorization digests, determine the new signed bytes; adding only the
+schema/version fields did not cause every changed byte. The authorization
+digest is now
+`70aa19a24077c3365a836f0476660f0132ab7959615d2c8c67ba75afd9071d9c`.
+Its deterministic offline Schnorr signature vector is now
+`afedbfdd98495e098195a1716c3241fe490fad95f127cbda9a292cccabb644dae5b91c3fe13c3e11df70445071afb92b53b486a984b74f6c7f8c3893f3e12bf7`.
+The authorization contract remains dormant. No external authorization payload
+or persisted authorization evidence exists, so there is no external payload
+or evidence migration. Storage, handle, package, routing, and resolver vectors
+are unchanged.
 
 Input is canonical JSON text, not a decoded mapping. Duplicate names, unknown
 or missing members, whitespace variants, non-ASCII text, alternate key or
@@ -49,14 +77,15 @@ an input or output.
 
 The request authorization window is at most 300 seconds and must contain the
 trusted whole-second server time. The separately signed binding interval must
-also contain server time. Active register and rotate claims require
-`bindingValidFrom` to equal `issuedAt`, so neither a binding nor its routing
-evidence can appear valid before the identity signature existed. Revoke is an
-inactive audit edge and instead repeats the predecessor's exact key and
-binding interval. The request deadline limits lifecycle-command use; it does
-not erase accepted signature evidence. Routing evidence starts at the signed
-`issuedAt` and may remain useful after the short command window, but its expiry
-is bounded by the signed binding expiry.
+also contain server time. Every lifecycle claim requires exact whole-second
+`bindingValidFrom` equal to `issuedAt`. Register and rotate sign their exact
+new interval. Revoke signs the predecessor's exact key and expiry while using
+the new revoke record's exact whole-second `validFrom`, matching the storage
+record rather than copying the predecessor's creation time. The request
+deadline limits lifecycle-command use; it does not erase accepted signature
+evidence. Routing evidence starts at the signed `issuedAt` and may remain
+useful after the short command window, but its expiry is bounded by the signed
+binding expiry.
 
 ## Lifecycle state
 
@@ -67,10 +96,15 @@ subject-wide active-binding view is requested with `MAX_ACTIVE_DEVICES + 1`
 (17), so overflow is exposed rather than silently truncated. Every view must
 have the exact schema, version, lookup identity, immutable tuple type,
 `complete=True`, and `truncated=False`. Every returned active record must be
-an exact identity-signed current register or rotate result. Mappings, lists,
+an exact identity-signed current lifecycle or adopted result. Mappings, lists,
 untyped OAuth records, expired or inactive records, malformed records, and
 provider-selected partial output fail. Subject-wide device IDs, binding IDs,
-and public keys must each be unique; ordering conveys no authority.
+and public keys must each be unique; ordering conveys no authority. The
+device, subject, and public-key current-state views accept evidence only while
+its normalized interval contains trusted server time:
+`evidenceValidFrom <= now < evidenceExpiresAt`. The binding-ID view is a
+historical uniqueness lookup and deliberately does not apply this current
+evidence-window restriction.
 
 - Register requires version 1, no predecessor, subject capacity below the
   authoritative 16-active-device cap, no current active subject/device, and no
@@ -83,28 +117,94 @@ and public keys must each be unique; ordering conveys no authority.
   expiry beyond its predecessor.
 - Revoke requires the same exact device, subject-set, and predecessor-key
   agreement, names the exact predecessor binding ID and next version, repeats
-  its exact key and original binding interval as audit evidence, and produces
-  an inactive result. Missing, incomplete, truncated, overflowed, inactive,
-  expired, different, superseded, duplicate, or ambiguous state fails closed.
+  its exact key and expiry with the new record timestamp as audit evidence,
+  and produces an inactive result. Missing, incomplete, truncated, overflowed,
+  inactive, expired, different, superseded, duplicate, or ambiguous state
+  fails closed.
 
 The returned value is immutable and contains the exact signed authorization,
 the exact `MessagingDeviceBinding` lifecycle result, and the strict
 `VerifiedBindingAuthorization` required by the already-merged recipient
 routing gate. Revoke results are inactive and cannot pass that routing gate.
 
+## Legacy binding adoption
+
+Adoption is a separate, source-only identity-signed authorization action. It
+is not a fourth persisted binding operation and cannot insert, update, retire,
+replace, rotate, reuse, or revoke a key or binding row. There is no repository
+or runtime adapter in this phase.
+
+The closed adoption claim uses schema
+`hodlxxi.social_messaging_device_binding_adoption.v1`, integer version `1`,
+action `adopt`, a canonical lowercase 64-hex adoption `requestId`, the exact
+existing `bindingId`, the complete canonical binding record as
+`bindingRecord`, and whole-second `issuedAt` and `expiresAt`. The adoption
+request ID is a new authorization-action identity. It must differ from the
+embedded binding record's historical OAuth-only register/rotate `requestId`
+and cannot reuse that value. Its separate signature domain is
+`HODLXXI_SOCIAL_MESSAGING_DEVICE_BINDING_ADOPTION_V1`. The binding record is
+re-canonicalized and its SHA-256 must equal the claimed and stored binding ID.
+The authenticated canonical subject and BIP340 signer must both equal the
+record subject. The X25519 encryption public key must differ from that
+secp256k1 identity subject, matching lifecycle authorization and recipient
+routing.
+
+The independent frozen adoption fixture embeds the corrected register binding
+vector above, uses the participant x-only public key derived from BIP340 test
+secret scalar `3`, and uses 32 zero auxiliary bytes for deterministic signing.
+Its expected canonical signed bytes are hard-coded independently of the
+production serializer in the unit test. The canonical byte length is `958`,
+the SHA-256 adoption digest is
+`c96902ddb67f6d63c1579e81100f267be27f5f0cd12727b521c76c66d8f25c36`,
+and the deterministic BIP340 signature is
+`06b5a3e0ae6fb0b14047b3a0ec34640e4993730660540deedbaae73b6c9fba65fbf7ddbba40e555c2148654a18a841faf403f4285acb00e0abfb3cb8fa313421`.
+The test hashes those independent bytes, checks the production serializer and
+digest against them, reproduces the zero-aux signature, and verifies it with
+the corresponding x-only public key.
+
+The adoption coordinator consumes only injected immutable ports. A strict
+current-Full prerequisite must return valid current evidence. A complete,
+untruncated exact-binding lookup with a maximum of two must contain exactly
+one structurally valid, active, unexpired matching record. A separate
+complete evidence lookup must contain no existing authorization. Missing,
+inactive, expired, revoked, ambiguous, malformed, already-attested,
+subject-mismatched, key-mismatched, or binding-ID-mismatched state fails
+closed. OAuth possession without the identity signature cannot create
+evidence.
+
+Successful adoption returns authorization evidence for the unchanged binding.
+Evidence validity starts at the signed attestation `issuedAt`, never at the
+older binding `validFrom`, and ends at the binding expiry. The verifier rejects
+use before attestation, and the routing contract also requires evidence
+validity to cover the package or snapshot issue time. Consequently packages
+and snapshots predating adoption remain unroutable.
+
 ## Replay and atomicity port
 
-An injected request-ID ledger is consulted after signature and time
-validation. An exact request ID, digest, and immutable result retry returns the
-same result without reinterpreting already-changed lifecycle state. Reuse of a
-request ID with any changed signed content fails. The future ledger's
-`record` operation must atomically insert-or-compare and must reject duplicate
-rows or a conflicting digest/result. This module does not implement that
-persistence.
+Lifecycle authorization and adoption consume one injected, logically global
+request-ID namespace. The ledger may return either exact frozen replay-record
+type: a lifecycle record contains its request ID, authorization digest, and
+exact `AuthorizedDeviceBinding`; an adoption record contains its distinct
+adoption request ID, adoption digest, and exact
+`AdoptedDeviceBindingAuthorization`. Each coordinator rejects the other
+record type, so reuse between lifecycle and adoption fails closed.
 
-Actual application of a lifecycle result and durable replay retention will
-require one future atomic repository transaction. This source-only verifier
-does not claim that separate non-atomic adapters are safe for runtime use.
+The ledger is consulted only after canonical parsing, identity-signature
+verification, and request-window validation. An exact request ID, digest, and
+immutable result retry returns the same result without reinterpreting
+already-changed state. Reuse with changed signed content, a changed result,
+the wrong record type, duplicate or ambiguous lookup results, provider
+exceptions, or any malformed response fails closed. For a new adoption,
+retention occurs only after current Full, the exact current legacy binding,
+and absence of existing authorization evidence have all been established.
+
+The future ledger's `record` operation must atomically insert-or-compare in
+that global namespace and reject duplicate rows or a conflicting type,
+digest, or result. This module implements no persistence and makes no
+cross-process atomicity claim. A future repository must atomically combine
+global replay retention, authorization-evidence uniqueness, and the relevant
+adoption/storage or lifecycle/storage checks and writes. Separate non-atomic
+runtime adapters are not safe.
 
 ## Recipient-handle and routing boundary
 
@@ -114,16 +214,18 @@ version, and server alias secret, as specified by
 `SOCIAL_MESSAGING_RECIPIENT_ROUTING_V1.md`. It cannot be supplied or computed
 authoritatively by a participant because the viewer context and server secret
 are intentionally absent at binding authorization time. Since the binding ID
-is the signed-claim digest and commits the canonical X25519 key, key
-substitution changes both the binding ID and every later derived handle. The
-routing gate recomputes the handle and requires exact package agreement.
+is the canonical binding-record digest and commits the canonical X25519 key,
+key substitution changes both the binding ID and every later derived handle.
+Authorization or adoption proof identity remains separate. The routing gate
+recomputes the handle from the binding ID and requires exact package
+agreement.
 
 The provided `IdentitySignedBindingAuthorizationVerifier` implements the
 routing gate's existing verifier port. It obtains one complete evidence record
-by exact binding ID, re-verifies its identity signature, reconstructs the
-binding and routing proof, and requires exact equality with the current active
-binding. It does not alter the routing gate's separate, repeated current-Full
-checks for viewer and recipient.
+by exact binding ID, re-verifies its identity signature, reconstructs either
+lifecycle or adoption evidence, and requires exact equality with the current
+active binding. It does not alter the routing gate's separate, repeated
+current-Full checks for viewer and recipient.
 
 Raw X25519 public keys exist only in the signed authorization, lifecycle
 binding, strict verification comparison, and already-defined outward

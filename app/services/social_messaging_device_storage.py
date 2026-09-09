@@ -7,8 +7,6 @@ currently Full. The caller must provide a canonical server-derived subject.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import (
@@ -32,14 +30,16 @@ from app.models import Base, User, _CanonicalLowerHex
 from app.services.full_recipient_directory_provider import validate_x25519_public_key
 from app.services.social_messaging_device_contract import (
     ALGORITHM,
+    BINDING_RECORD_SCHEMA,
     MAX_ACTIVE_DEVICES,
     MAX_BINDING_VERSION,
     MessagingDeviceAuthorityUnavailable,
     MessagingDeviceBinding,
     MessagingDeviceCommand,
+    messaging_device_binding_id,
 )
 
-RECORD_SCHEMA = "hodlxxi.social_messaging_device_binding_record.v1"
+RECORD_SCHEMA = BINDING_RECORD_SCHEMA
 MIN_BINDING_LIFETIME_SECONDS = 300
 MAX_BINDING_LIFETIME_SECONDS = 31_536_000
 
@@ -202,48 +202,6 @@ def _db_utc_second(value: object) -> datetime:
     return normalized
 
 
-def _timestamp(value: datetime) -> str:
-    return _db_utc_second(value).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-def _record_core(
-    *,
-    subject: str,
-    device_id: str,
-    public_key: str,
-    version: int,
-    valid_from: datetime,
-    expires_at: datetime,
-    operation: str,
-    prior_binding_id: str | None,
-    request_id: str,
-) -> dict[str, object]:
-    return {
-        "schema": RECORD_SCHEMA,
-        "version": 1,
-        "subject": subject,
-        "deviceId": device_id,
-        "algorithm": ALGORITHM,
-        "publicKey": public_key,
-        "bindingVersion": version,
-        "validFrom": _timestamp(valid_from),
-        "expiresAt": _timestamp(expires_at),
-        "operation": operation,
-        "priorBindingId": prior_binding_id,
-        "requestId": request_id,
-    }
-
-
-def _binding_id(**values) -> str:
-    canonical = json.dumps(
-        _record_core(**values),
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=True,
-    ).encode("ascii")
-    return hashlib.sha256(canonical).hexdigest()
-
-
 def _validated_command(command: object) -> MessagingDeviceCommand:
     try:
         if type(command) is not MessagingDeviceCommand:
@@ -316,11 +274,11 @@ def _from_row(row: SocialMessagingDeviceBindingRow) -> MessagingDeviceBinding:
         else:
             if retired_at is None or retired_at < valid_from or retired_at > expires_at:
                 raise ValueError
-        expected = _binding_id(
+        expected = messaging_device_binding_id(
             subject=subject,
             device_id=device_id,
             public_key=public_key,
-            version=version,
+            binding_version=version,
             valid_from=valid_from,
             expires_at=expires_at,
             operation=operation,
@@ -579,11 +537,11 @@ class SqlAlchemySocialMessagingDeviceRepository:
                     if retired.rowcount != 1:
                         raise MessagingDeviceAuthorityUnavailable()
 
-                binding_id = _binding_id(
+                binding_id = messaging_device_binding_id(
                     subject=canonical_subject,
                     device_id=normalized_command.device_id,
                     public_key=public_key,
-                    version=version,
+                    binding_version=version,
                     valid_from=timestamp,
                     expires_at=expires_at,
                     operation=normalized_command.operation,

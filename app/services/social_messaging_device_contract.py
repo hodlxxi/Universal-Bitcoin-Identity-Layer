@@ -20,6 +20,8 @@ from app.services.full_recipient_directory_provider import validate_x25519_publi
 COMMAND_SCHEMA = "hodlxxi.social_messaging_device_binding_command.v1"
 RESULT_SCHEMA = "hodlxxi.social_messaging_device_binding_result.v1"
 SNAPSHOT_SCHEMA = "hodlxxi.social_messaging_device_binding_snapshot.v1"
+BINDING_RECORD_SCHEMA = "hodlxxi.social_messaging_device_binding_record.v1"
+BINDING_RECORD_VERSION = 1
 SOURCE = "hodlxxi-ubid"
 ALGORITHM = "x25519-v1"
 
@@ -125,6 +127,81 @@ def _utc_second(value: object) -> datetime:
 
 def _timestamp(value: datetime) -> str:
     return _utc_second(value).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _binding_record_timestamp(value: object) -> str:
+    if not isinstance(value, datetime):
+        raise ValueError
+    normalized = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+    if normalized.microsecond:
+        raise ValueError
+    return normalized.isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def canonical_messaging_device_binding_record_bytes(
+    *,
+    subject: str,
+    device_id: str,
+    public_key: str,
+    binding_version: int,
+    valid_from: datetime,
+    expires_at: datetime,
+    operation: str,
+    prior_binding_id: str | None,
+    request_id: str,
+) -> bytes:
+    """Return the sole canonical byte identity for one binding record."""
+
+    if type(subject) is not str or canonical_xonly_pubkey(subject) != subject:
+        raise ValueError("invalid binding record")
+    if type(device_id) is not str or _HEX_64(device_id) is None:
+        raise ValueError("invalid binding record")
+    normalized_key = validate_x25519_public_key(public_key)
+    if normalized_key != public_key:
+        raise ValueError("invalid binding record")
+    if type(binding_version) is not int or not 1 <= binding_version <= MAX_BINDING_VERSION:
+        raise ValueError("invalid binding record")
+    if type(operation) is not str or operation not in _OPERATIONS:
+        raise ValueError("invalid binding record")
+    if type(request_id) is not str or _HEX_64(request_id) is None:
+        raise ValueError("invalid binding record")
+    if operation == "register":
+        if prior_binding_id is not None or binding_version != 1:
+            raise ValueError("invalid binding record")
+    elif type(prior_binding_id) is not str or _HEX_64(prior_binding_id) is None or binding_version <= 1:
+        raise ValueError("invalid binding record")
+
+    normalized_valid_from = _binding_record_timestamp(valid_from)
+    normalized_expires_at = _binding_record_timestamp(expires_at)
+    if normalized_valid_from >= normalized_expires_at:
+        raise ValueError("invalid binding record")
+
+    record = {
+        "schema": BINDING_RECORD_SCHEMA,
+        "version": BINDING_RECORD_VERSION,
+        "subject": subject,
+        "deviceId": device_id,
+        "algorithm": ALGORITHM,
+        "publicKey": normalized_key,
+        "bindingVersion": binding_version,
+        "validFrom": normalized_valid_from,
+        "expiresAt": normalized_expires_at,
+        "operation": operation,
+        "priorBindingId": prior_binding_id,
+        "requestId": request_id,
+    }
+    return json.dumps(
+        record,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("ascii")
+
+
+def messaging_device_binding_id(**binding_record: object) -> str:
+    """Digest the exact canonical binding record used by every consumer."""
+
+    return hashlib.sha256(canonical_messaging_device_binding_record_bytes(**binding_record)).hexdigest()
 
 
 def _closed_json_object(source: object) -> dict[str, object]:
@@ -429,6 +506,8 @@ class SocialMessagingDeviceAuthority:
 
 __all__ = [
     "ALGORITHM",
+    "BINDING_RECORD_SCHEMA",
+    "BINDING_RECORD_VERSION",
     "COMMAND_SCHEMA",
     "MAX_ACTIVE_DEVICES",
     "MessagingDeviceAuthorityUnavailable",
@@ -440,5 +519,7 @@ __all__ = [
     "SNAPSHOT_SCHEMA",
     "SOURCE",
     "SocialMessagingDeviceAuthority",
+    "canonical_messaging_device_binding_record_bytes",
+    "messaging_device_binding_id",
     "parse_messaging_device_command",
 ]
