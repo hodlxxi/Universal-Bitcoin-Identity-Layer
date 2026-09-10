@@ -80,6 +80,14 @@ binding. There is no historical-wrap delivery. Revocation prevents future
 acceptance but cannot promise retroactive erasure of ciphertext already copied
 or delivered.
 
+The Current-Full result uses the canonical
+`hodlxxi-full-entitlement-v1-sha256:<64 lowercase hex>` producer defined in
+`CURRENT_ENTITLEMENT_EVIDENCE_V1.md`. The routing consumer accepts that exact
+typed output and still independently requires an exact subject match, current
+validity, and coverage of the complete package or snapshot interval. Regex
+validity alone never grants authority: the digest is a content identity, not a
+signature, credential, or caller-supplied proof.
+
 ## Closed request
 
 The only accepted request is canonical ASCII JSON: duplicate-member rejecting,

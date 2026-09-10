@@ -6,6 +6,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 import app.services.social_messaging_recipient_routing as routing
+from app.services.action_authorization import IdentityClass
+from app.services.current_entitlement_evidence import CONTRACT_VERSION, CurrentEntitlementEvidenceRecord
+from app.services.current_full_entitlement_proof import (
+    CurrentFullEntitlementProofState,
+    produce_verified_current_full_entitlement,
+)
 from app.services.privacy_safe_full_directory import derive_privacy_directory_alias
 from app.services.social_messaging_device_contract import MessagingDeviceBinding
 from app.services.social_messaging_recipient_routing import (
@@ -99,12 +105,28 @@ class FullVerifier:
     def verify(self, subject, *, now):
         if self.error:
             raise self.error
-        digest = hashlib.sha256(subject.encode("ascii")).hexdigest()
-        evidence = VerifiedCurrentFullEntitlement(
-            proof_id="hodlxxi-full-entitlement-v1-sha256:" + digest,
-            subject=subject,
-            valid_from=NOW - timedelta(seconds=2),
-            expires_at=NOW + timedelta(seconds=400),
+        record = CurrentEntitlementEvidenceRecord(
+            evidence_id="00000000-0000-4000-8000-000000000201",
+            contract_version=CONTRACT_VERSION,
+            subject_pubkey=subject,
+            identity_class=IdentityClass.FULL,
+            current_full_relation_satisfied=True,
+            evidence_source="offline_verifier",
+            evidence_version="v1",
+            source_evidence_sha256=hashlib.sha256(subject.encode("ascii")).hexdigest(),
+            observed_at=NOW - timedelta(seconds=2),
+            valid_until=NOW + timedelta(seconds=400),
+            revoked_at=None,
+            created_at=NOW,
+        )
+        evidence = produce_verified_current_full_entitlement(
+            CurrentFullEntitlementProofState(
+                user_id="00000000-0000-4000-8000-000000000202",
+                user_subject=subject,
+                user_is_active=True,
+                evidence=record,
+            ),
+            now=now,
         )
         return self.mutate(evidence) if self.mutate else evidence
 

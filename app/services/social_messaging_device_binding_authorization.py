@@ -18,6 +18,11 @@ from typing import Callable, Protocol
 from coincurve import PublicKeyXOnly
 
 from app.services.action_step_up import _canonical_actor
+from app.services.current_full_entitlement_proof import (
+    TransactionBoundCurrentFullEntitlementVerifier,
+    VerifiedCurrentFullEntitlement,
+    validate_verified_current_full_entitlement,
+)
 from app.services.full_recipient_directory_provider import validate_x25519_public_key
 from app.services.social_messaging_device_contract import (
     ALGORITHM,
@@ -29,7 +34,7 @@ from app.services.social_messaging_device_contract import (
     canonical_messaging_device_binding_record_bytes,
     messaging_device_binding_id,
 )
-from app.services.social_messaging_recipient_routing import VerifiedBindingAuthorization, VerifiedCurrentFullEntitlement
+from app.services.social_messaging_recipient_routing import VerifiedBindingAuthorization
 
 AUTHORIZATION_SCHEMA = "hodlxxi.social_messaging_device_binding_authorization.v1"
 ADOPTION_SCHEMA = "hodlxxi.social_messaging_device_binding_adoption.v1"
@@ -47,7 +52,6 @@ UNAVAILABLE_MESSAGE = "social messaging device binding authorization unavailable
 
 _HEX_64 = re.compile(r"[0-9a-f]{64}\Z").fullmatch
 _HEX_128 = re.compile(r"[0-9a-f]{128}\Z").fullmatch
-_FULL_PROOF_ID = re.compile(r"hodlxxi-full-entitlement-v1-sha256:[0-9a-f]{64}\Z").fullmatch
 _OPERATIONS = frozenset({"register", "rotate", "revoke"})
 _CLAIM_FIELDS = {
     "algorithm",
@@ -308,15 +312,6 @@ class LegacyDeviceBindingAdoptionStateProvider(Protocol):
         now: datetime,
         maximum: int,
     ) -> BindingAuthorizationEvidenceState: ...
-
-
-class CurrentFullEntitlementPrerequisite(Protocol):
-    def verify(
-        self,
-        subject: str,
-        *,
-        now: datetime,
-    ) -> VerifiedCurrentFullEntitlement: ...
 
 
 class AuthorizationReplayLedger(Protocol):
@@ -1318,23 +1313,10 @@ def _validated_current_full(
     subject: str,
     now: datetime,
 ) -> VerifiedCurrentFullEntitlement:
-    if type(value) is not VerifiedCurrentFullEntitlement:
-        raise ValueError
-    valid_from = _utc_second(value.valid_from)
-    expires_at = _utc_second(value.expires_at)
-    if (
-        type(value.proof_id) is not str
-        or _FULL_PROOF_ID(value.proof_id) is None
-        or _canonical_actor(value.subject) != subject
-        or valid_from > now
-        or now >= expires_at
-    ):
-        raise ValueError
-    return VerifiedCurrentFullEntitlement(
-        value.proof_id,
-        subject,
-        valid_from,
-        expires_at,
+    return validate_verified_current_full_entitlement(
+        value,
+        subject=subject,
+        now=now,
     )
 
 
@@ -1375,7 +1357,7 @@ class SocialMessagingLegacyBindingAdoptionV1:
         self,
         *,
         state_provider: LegacyDeviceBindingAdoptionStateProvider,
-        current_full_prerequisite: CurrentFullEntitlementPrerequisite,
+        current_full_prerequisite: TransactionBoundCurrentFullEntitlementVerifier,
         replay_ledger: AuthorizationReplayLedger,
         signature_verifier: IdentitySignatureVerifier | None = None,
         clock: Callable[[], datetime] | None = None,
@@ -1384,7 +1366,7 @@ class SocialMessagingLegacyBindingAdoptionV1:
         if (
             not callable(getattr(state_provider, "current_legacy_binding", None))
             or not callable(getattr(state_provider, "authorization_for_binding", None))
-            or not callable(getattr(current_full_prerequisite, "verify", None))
+            or not callable(getattr(current_full_prerequisite, "verify_in_transaction", None))
             or not callable(getattr(replay_ledger, "get", None))
             or not callable(getattr(replay_ledger, "record", None))
             or not callable(getattr(signature_verifier, "verify", None))
@@ -1431,7 +1413,7 @@ class SocialMessagingLegacyBindingAdoptionV1:
                 ).adopted_binding
 
             _validated_current_full(
-                self._current_full_prerequisite.verify(binding.subject, now=now),
+                self._current_full_prerequisite.verify_in_transaction(binding.subject, now=now),
                 subject=binding.subject,
                 now=now,
             )
@@ -1554,7 +1536,7 @@ __all__ = [
     "BindingAuthorizationEvidenceState",
     "Bip340IdentitySignatureVerifier",
     "CurrentDeviceBindingState",
-    "CurrentFullEntitlementPrerequisite",
+    "TransactionBoundCurrentFullEntitlementVerifier",
     "CurrentLegacyDeviceBindingState",
     "CurrentPublicKeyBindingState",
     "CurrentSubjectBindingState",
