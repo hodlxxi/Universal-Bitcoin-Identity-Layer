@@ -86,6 +86,9 @@ Many historical checkpoint documents now include a standard status note at the t
 These are useful for future development, staging, compatibility, and design intent, but should not be presented as current production readiness evidence unless a current smoke/runbook says so:
 
 - `docs/NIP17_RUNTIME_PLAN.md`
+- `docs/SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_V1.md` —
+  disabled-by-default runtime/factory/internal-HTTP wiring for identity-authorized
+  device-binding operations; source presence is not runtime activation or deployment
 - `docs/milestones/NIP17_SITE_LOCAL_MESSAGING_V0.md`
 - `docs/ops/NIP17_*.md`
 - `docs/ops/NIP59_*.md`
