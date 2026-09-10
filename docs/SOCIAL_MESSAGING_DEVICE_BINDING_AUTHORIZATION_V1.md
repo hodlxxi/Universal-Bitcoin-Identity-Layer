@@ -1,8 +1,9 @@
 # Social messaging device binding authorization V1
 
-Status: dormant, source-only security contract. This phase adds no HTTP route,
-model, migration, database adapter, configuration, factory wiring, background
-task, deployment change, or runtime activation.
+Status: dormant, source-only security and PostgreSQL storage contract. This
+phase adds ORM storage models, one additive migration, and a transaction-bound
+adapter. It adds no HTTP route, configuration, factory wiring, background task,
+applied migration, deployment change, or runtime activation.
 
 ## Identity-signature convention
 
@@ -63,9 +64,9 @@ digest is now
 Its deterministic offline Schnorr signature vector is now
 `afedbfdd98495e098195a1716c3241fe490fad95f127cbda9a292cccabb644dae5b91c3fe13c3e11df70445071afb92b53b486a984b74f6c7f8c3893f3e12bf7`.
 The authorization contract remains dormant. No external authorization payload
-or persisted authorization evidence exists, so there is no external payload
-or evidence migration. Storage, handle, package, routing, and resolver vectors
-are unchanged.
+or deployed persisted authorization evidence exists. The additive storage
+migration does not change the external payload. Binding storage, handle,
+package, routing, and resolver vectors are unchanged.
 
 Input is canonical JSON text, not a decoded mapping. Duplicate names, unknown
 or missing members, whitespace variants, non-ASCII text, alternate key or
@@ -131,8 +132,9 @@ routing gate. Revoke results are inactive and cannot pass that routing gate.
 
 Adoption is a separate, source-only identity-signed authorization action. It
 is not a fourth persisted binding operation and cannot insert, update, retire,
-replace, rotate, reuse, or revoke a key or binding row. There is no repository
-or runtime adapter in this phase.
+replace, rotate, reuse, or revoke a key or binding row. The dormant PostgreSQL
+adapter inserts only authorization evidence and replay retention for adoption;
+there is no runtime composition in this phase.
 
 The closed adoption claim uses schema
 `hodlxxi.social_messaging_device_binding_adoption.v1`, integer version `1`,
@@ -201,23 +203,58 @@ exceptions, or any malformed response fails closed. For a new adoption,
 retention occurs only after current Full, the exact current legacy binding,
 and absence of existing authorization evidence have all been established.
 
-The future authorization-storage unit of work must construct the Current-Full
-verifier, replay ledger, legacy-binding reader, authorization-evidence reader,
-and mutation writer over the same caller-owned PostgreSQL session and
-transaction. That transaction owns replay lookup and retention, subject/device/
-public-key reads and locks, binding mutation or adoption, immutable evidence
-insertion, and final commit or rollback. The Current-Full adapter never commits,
-rolls back, closes, or silently replaces that session. Its proof ID is the
-canonical content identity defined in `CURRENT_ENTITLEMENT_EVIDENCE_V1.md`, not
-a caller assertion or independently authoritative credential.
+The authorization-storage unit of work constructs the Current-Full verifier,
+replay ledger, legacy-binding reader, authorization-evidence reader, and
+mutation writer over the same caller-owned active PostgreSQL session and
+transaction. It requires PostgreSQL `READ COMMITTED` and refuses other
+dialects, inactive transactions, or other isolation levels. None of its
+adapters begins, commits, rolls back, closes, or replaces the session. The
+caller completes the transaction with one commit or one complete rollback.
 
-The future ledger's `record` operation must atomically insert-or-compare in
-that global namespace and reject duplicate rows or a conflicting type,
-digest, or result. This module implements no persistence and makes no
-cross-process atomicity claim. A future repository must atomically combine
-global replay retention, authorization-evidence uniqueness, and the relevant
-adoption/storage or lifecycle/storage checks and writes. Separate non-atomic
-runtime adapters are not safe.
+Before any replay or state snapshot, the unit of work takes the following
+operation locks in global order. Each advisory lock is transaction-level:
+
+1. global authorization/adoption request ID;
+2. canonical subject in the exact Current-Full subject-lock domain;
+3. exact canonical subject `User` row with `FOR UPDATE`;
+4. subject-qualified device ID;
+5. the global public-key namespace guard;
+6. all public keys named by the signed request, sorted canonically.
+
+Only canonical parsing and identity-signature verification needed to obtain
+those trusted lock identifiers occurs before this sequence. The exact `User`
+row lock reuses the device-storage primitive in the same caller-owned session
+and transaction. The trusted clock is sampled exactly once, only after every
+lock in this operation-lock sequence has returned. That single whole-second
+UTC value is used for replay validation, Current-Full verification,
+coordinator validation, binding mutation, evidence creation, and replay
+persistence. Request, binding, adoption, and Current-Full expiry are therefore
+re-evaluated after waits at this operation-lock boundary; PostgreSQL
+transaction time is not used because it may precede those waits.
+
+The public-key namespace guard covers rotate's predecessor key before that key
+can be learned from durable state. The earlier exact `User` row lock conflicts
+with a legacy binding writer even though that writer does not participate in
+the Current-Full subject advisory-lock domain. The existing transaction-bound
+Current-Full verifier then re-enters the same subject and `User` locks before
+locking its evidence rows. Binding/evidence reads and lifecycle mutation
+follow. Database primary, unique, foreign-key, historical-key, and
+partial-active indexes remain the final collision authority.
+
+The additive migration creates one immutable evidence row per binding and one
+immutable globally unique replay row per request ID. A deferred composite
+foreign key binds replay type, action, digest, request, and result identity to
+the authoritative evidence row; another deferred composite foreign key binds
+the evidence's complete binding identity to the binding row. Lifecycle and
+adoption reconstruct and revalidate the exact signed payload on every read.
+An exact retry returns only the same typed digest, binding/result identity, and
+public result. A conflicting type, content, digest, result, malformed row, or
+constraint failure fails closed. Evidence, replay, and binding mutation are
+flushed in the caller transaction and therefore commit or roll back together.
+
+The Current-Full proof ID remains the canonical content identity defined in
+`CURRENT_ENTITLEMENT_EVIDENCE_V1.md`, not a caller assertion or independently
+authoritative credential. Separate non-atomic runtime adapters are not safe.
 
 ## Recipient-handle and routing boundary
 
