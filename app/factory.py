@@ -156,6 +156,12 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
 
     configure_messaging_device_internal_delivery(app, cfg)
 
+    from app.services.social_messaging_device_binding_authorization_runtime import (
+        configure_messaging_device_binding_authorization,
+    )
+
+    configure_messaging_device_binding_authorization(app, cfg)
+
     from app.services.social_messaging_recipient_runtime_configuration import (
         configure_messaging_recipient_internal_delivery,
     )
@@ -191,6 +197,24 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     logger.info("🚀 Application factory completed successfully")
 
     return app
+
+
+def register_messaging_device_binding_authorization_blueprint(app: Flask) -> bool:
+    """Register only the explicitly configured private authorization surface."""
+
+    from app.services.social_messaging_device_binding_authorization_runtime import (
+        configured_messaging_device_binding_authorization_runtime,
+    )
+
+    if configured_messaging_device_binding_authorization_runtime(app) is None:
+        return False
+
+    from app.blueprints.internal_social_messaging_device_binding_authorization import (
+        internal_social_messaging_device_binding_authorization_bp,
+    )
+
+    app.register_blueprint(internal_social_messaging_device_binding_authorization_bp)
+    return True
 
 
 def register_blueprints(app: Flask) -> None:
@@ -296,6 +320,8 @@ def register_blueprints(app: Flask) -> None:
         )
 
         app.register_blueprint(internal_social_messaging_device_bp)
+
+    register_messaging_device_binding_authorization_blueprint(app)
 
     from app.services.social_messaging_recipient_runtime_configuration import (
         configured_messaging_recipient_internal_runtime,

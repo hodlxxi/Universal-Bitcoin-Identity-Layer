@@ -1,9 +1,12 @@
 # Social messaging device binding authorization V1
 
-Status: dormant, source-only security and PostgreSQL storage contract. This
-phase adds ORM storage models, one additive migration, and a transaction-bound
-adapter. It adds no HTTP route, configuration, factory wiring, background task,
-applied migration, deployment change, or runtime activation.
+Status: disabled-by-default runtime/factory/internal-HTTP wiring in source,
+together with the security and PostgreSQL storage contracts. The application
+factory composes the runtime and registers the internal Social routes only
+behind a dedicated default-off flag. Source presence, runtime activation,
+migration application, and deployment are separate phases. This change does
+not itself activate the flag or perform a deployment, and this document does
+not infer environment migration, restart, or deployment history from source.
 
 ## Identity-signature convention
 
@@ -63,10 +66,9 @@ digest is now
 `70aa19a24077c3365a836f0476660f0132ab7959615d2c8c67ba75afd9071d9c`.
 Its deterministic offline Schnorr signature vector is now
 `afedbfdd98495e098195a1716c3241fe490fad95f127cbda9a292cccabb644dae5b91c3fe13c3e11df70445071afb92b53b486a984b74f6c7f8c3893f3e12bf7`.
-The authorization contract remains dormant. No external authorization payload
-or deployed persisted authorization evidence exists. The additive storage
-migration does not change the external payload. Binding storage, handle,
-package, routing, and resolver vectors are unchanged.
+The authorization contract remains behind the default-off runtime flag. The
+additive storage migration does not change the external payload. Binding
+storage, handle, package, routing, and resolver vectors are unchanged.
 
 Input is canonical JSON text, not a decoded mapping. Duplicate names, unknown
 or missing members, whitespace variants, non-ASCII text, alternate key or
@@ -130,11 +132,12 @@ routing gate. Revoke results are inactive and cannot pass that routing gate.
 
 ## Legacy binding adoption
 
-Adoption is a separate, source-only identity-signed authorization action. It
-is not a fourth persisted binding operation and cannot insert, update, retire,
-replace, rotate, reuse, or revoke a key or binding row. The dormant PostgreSQL
-adapter inserts only authorization evidence and replay retention for adoption;
-there is no runtime composition in this phase.
+Adoption is a separate identity-signed authorization action. It is not a
+fourth persisted binding operation and cannot insert, update, retire, replace,
+rotate, reuse, or revoke a key or binding row. The PostgreSQL adapter inserts
+only authorization evidence and replay retention for adoption; when the
+default-off runtime is activated, adoption uses the same transaction-bound
+internal composition as lifecycle authorization.
 
 The closed adoption claim uses schema
 `hodlxxi.social_messaging_device_binding_adoption.v1`, integer version `1`,
@@ -284,8 +287,8 @@ binding, strict verification comparison, and already-defined outward
 recipient package. They are not added to routing snapshots or decisions.
 Identity authorization proves that the participant approved the named public
 key; it does not prove that the browser controls the corresponding X25519
-private key. A future runtime adapter must obtain that key from an already
-proven browser-device setup or add an explicit possession challenge.
+private key. Any activating browser-device flow must obtain that key from an
+already proven setup or add an explicit possession challenge.
 
 All public failures from this contract use only:
 
@@ -295,3 +298,68 @@ social messaging device binding authorization unavailable
 
 No signature, raw key, dependency detail, exception detail, or secret is
 logged or reflected.
+
+## Disabled internal runtime composition
+
+The disabled-by-default runtime/factory/internal-HTTP boundary is registered
+only when
+`SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_INTERNAL_ENABLED` is exactly
+enabled. It does not inherit or reuse the legacy
+`SOCIAL_MESSAGING_DEVICE_INTERNAL_ENABLED` gate. When disabled, neither the
+runtime extension nor either route exists. Explicit enablement requires the
+complete dedicated confidential-client, issuer, token/resource audience,
+viewer OAuth client, client JWKS directory, signing JWKS directory, and clock
+skew configuration. Missing, malformed, symlinked, overlapping, or incomplete
+trust material fails application construction. The builder reads existing key
+material only; it creates no key, row, transaction, background task, or
+migration.
+
+The private routes are:
+
+- `POST /internal/v1/social/messaging/device-binding-authorization-service-token`
+  for the existing strict `private_key_jwt` client-credentials exchange and
+  durable assertion replay consumption;
+- `POST /internal/v1/social/messaging/device-binding-authorizations` for one
+  exact register, rotate, revoke, or adoption authorization.
+
+The service-token route rejects query parameters and requires a declared,
+positive `Content-Length` no greater than 24 KiB before form parsing. That
+finite envelope accommodates the credential layer's unchanged 16-KiB maximum
+client assertion plus the four other URL-encoded fields. The parsed form must
+then contain exactly one value for each of the five named fields; missing,
+unknown, or duplicate fields fail with the same non-sensitive request error.
+
+The resource token has the dedicated scope
+`social:messaging-device-binding-authorization:manage` and purpose
+`social_messaging_device_binding_authorization_manage`; a token from the
+legacy messaging-device or recipient domains cannot cross this boundary. The
+operation route also validates the established
+`X-HODLXXI-Viewer-Authorization` canonical OAuth bearer and derives the
+participant subject from that exact typed result. The viewer bearer supplies
+only independently authenticated subject context. It is never accepted as
+binding authorization or as Current-Full evidence.
+
+The route accepts only a bounded printable-ASCII canonical JSON body. It
+passes that exact text to the existing signed lifecycle or adoption parser;
+decoded mappings, duplicate fields, alternate serialization, and caller Full
+proofs are not accepted. After service and viewer authentication, the runtime
+creates one session, begins one transaction, and supplies that same active
+session to
+`SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage`. The storage unit
+of work constructs `SqlAlchemyTransactionBoundCurrentFullVerifier` from that
+same session. The runtime caller alone commits, rolls back, and closes. It
+constructs and validates the response bytes before commit, so replay reads,
+locked Current-Full verification, binding/adoption and evidence mutation,
+replay retention, and the returned result are one coherent transaction.
+
+Success uses canonical compact sorted-key ASCII JSON with schema
+`hodlxxi.social_messaging_device_binding_authorization_result.v1` and version
+`1`. It returns only the action, authorization request ID, canonical binding
+ID, device ID, binding operation/version and active state, binding interval,
+and authorization proof/interval. It does not return the participant subject,
+raw X25519 key, identity signature, signed request, Current-Full proof, or
+storage detail. Exact retries reconstruct the same verified typed result and
+therefore the same response bytes. Every signed-authorization, replay,
+Current-Full, state, storage, transaction, or serialization failure maps to
+the single non-sensitive internal API error
+`device_binding_authorization_unavailable`.
