@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, select
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.schema import CreateIndex
 
 from app.models import User
 from app.services.social_messaging_device_contract import (
@@ -277,3 +280,40 @@ def test_storage_rejects_invalid_lifetime_configuration(storage):
             Session,
             binding_lifetime_seconds=1,
         )
+
+
+def test_binding_model_exposes_exact_authorization_identity_key():
+    assert "uq_social_messaging_device_authorization_identity" in {
+        constraint.name
+        for constraint in SocialMessagingDeviceBindingRow.__table__.constraints
+        if constraint.name is not None
+    }
+
+
+def test_binding_model_historical_public_key_index_matches_migration():
+    index = next(
+        item
+        for item in SocialMessagingDeviceBindingRow.__table__.indexes
+        if item.name == "uq_social_messaging_device_historical_public_key"
+    )
+
+    assert index.unique is True
+    assert [column.name for column in index.columns] == ["public_key"]
+    expected_predicate = "operation IN ('register','rotate')"
+    assert str(index.dialect_options["postgresql"]["where"]) == expected_predicate
+    assert str(index.dialect_options["sqlite"]["where"]) == expected_predicate
+    for dialect in (postgresql.dialect(), sqlite.dialect()):
+        compiled = str(CreateIndex(index).compile(dialect=dialect))
+        assert "CREATE UNIQUE INDEX uq_social_messaging_device_historical_public_key" in compiled
+        assert "(public_key)" in compiled
+        assert f"WHERE {expected_predicate}" in compiled
+
+    migration = (
+        Path(__file__).resolve().parents[2]
+        / "migrations/2026-09-10_social_messaging_device_binding_authorization_v1.sql"
+    ).read_text(encoding="ascii")
+    assert (
+        "CREATE UNIQUE INDEX uq_social_messaging_device_historical_public_key\n"
+        "  ON social_messaging_device_bindings (public_key)\n"
+        "  WHERE operation IN ('register','rotate');"
+    ) in migration

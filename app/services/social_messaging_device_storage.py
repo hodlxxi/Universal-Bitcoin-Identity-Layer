@@ -83,6 +83,17 @@ class SocialMessagingDeviceBindingRow(Base):
             "request_id",
             name="uq_social_messaging_device_subject_request",
         ),
+        UniqueConstraint(
+            "binding_id",
+            "subject_pubkey",
+            "device_id",
+            "public_key",
+            "binding_version",
+            "operation",
+            "valid_from",
+            "expires_at",
+            name="uq_social_messaging_device_authorization_identity",
+        ),
         CheckConstraint(
             "record_schema = 'hodlxxi.social_messaging_device_binding_record.v1'",
             name="ck_social_messaging_device_schema",
@@ -147,6 +158,13 @@ class SocialMessagingDeviceBindingRow(Base):
             unique=True,
             postgresql_where=text("active = true"),
             sqlite_where=text("active = true"),
+        ),
+        Index(
+            "uq_social_messaging_device_historical_public_key",
+            "public_key",
+            unique=True,
+            postgresql_where=text("operation IN ('register','rotate')"),
+            sqlite_where=text("operation IN ('register','rotate')"),
         ),
         Index(
             "idx_social_messaging_device_current_subject",
@@ -625,10 +643,193 @@ class SqlAlchemySocialMessagingDeviceRepository:
             raise MessagingDeviceAuthorityUnavailable() from None
 
 
+class SqlAlchemyTransactionBoundSocialMessagingDeviceStorage:
+    """Binding reads and writes on one caller-owned PostgreSQL transaction.
+
+    This adapter deliberately has no transaction lifecycle methods.  It neither
+    begins nor commits, rolls back, closes, or replaces the supplied session.
+    """
+
+    def __init__(self, session) -> None:
+        bind = session.get_bind() if callable(getattr(session, "get_bind", None)) else None
+        if (
+            not callable(getattr(session, "execute", None))
+            or not callable(getattr(session, "add", None))
+            or not callable(getattr(session, "in_transaction", None))
+            or getattr(getattr(bind, "dialect", None), "name", None) != "postgresql"
+            or session.in_transaction() is not True
+        ):
+            raise ValueError("invalid transaction-bound messaging device session")
+        self._session = session
+
+    def binding_for_id(
+        self,
+        binding_id: str,
+        *,
+        lock: bool = True,
+    ) -> MessagingDeviceBinding | None:
+        identifier = _hex64(binding_id)
+        statement = select(SocialMessagingDeviceBindingRow).where(
+            SocialMessagingDeviceBindingRow.binding_id == identifier
+        )
+        if lock:
+            statement = statement.with_for_update()
+        row = self._session.execute(statement.limit(2)).scalars().all()
+        if len(row) > 1:
+            raise MessagingDeviceAuthorityUnavailable()
+        return None if not row else _from_row(row[0])
+
+    def current_for_subject(
+        self,
+        subject: str,
+        *,
+        now: datetime,
+        maximum: int,
+    ) -> tuple[MessagingDeviceBinding, ...]:
+        canonical_subject = _canonical_subject(subject)
+        timestamp = _trusted_utc_second(now)
+        if type(maximum) is not int or maximum < 0:
+            raise MessagingDeviceAuthorityUnavailable()
+        rows = (
+            self._session.execute(
+                select(SocialMessagingDeviceBindingRow)
+                .where(
+                    SocialMessagingDeviceBindingRow.subject_pubkey == canonical_subject,
+                    SocialMessagingDeviceBindingRow.active.is_(True),
+                    SocialMessagingDeviceBindingRow.valid_from <= timestamp,
+                    SocialMessagingDeviceBindingRow.expires_at > timestamp,
+                )
+                .order_by(
+                    SocialMessagingDeviceBindingRow.device_id,
+                    SocialMessagingDeviceBindingRow.binding_id,
+                )
+                .limit(maximum + 1)
+                .with_for_update()
+            )
+            .scalars()
+            .all()
+        )
+        if len(rows) > maximum:
+            raise MessagingDeviceAuthorityUnavailable()
+        return tuple(_from_row(row) for row in rows)
+
+    def has_device_history(self, subject: str, device_id: str) -> bool:
+        return _device_has_history(
+            self._session,
+            _canonical_subject(subject),
+            _hex64(device_id),
+        )
+
+    def public_key_was_used(self, public_key: str) -> bool:
+        return _public_key_was_used(
+            self._session,
+            validate_x25519_public_key(public_key),
+        )
+
+    def apply_authorized(
+        self,
+        binding: MessagingDeviceBinding,
+        *,
+        now: datetime,
+    ) -> MessagingDeviceBinding:
+        """Revalidate and stage one exact identity-authorized lifecycle edge."""
+
+        try:
+            if type(binding) is not MessagingDeviceBinding:
+                raise ValueError
+            timestamp = _trusted_utc_second(now)
+            if binding.valid_from > timestamp or timestamp >= binding.expires_at:
+                raise ValueError
+
+            probe = SocialMessagingDeviceBindingRow(
+                binding_id=binding.binding_id,
+                record_schema=RECORD_SCHEMA,
+                subject_pubkey=binding.subject,
+                device_id=binding.device_id,
+                algorithm=ALGORITHM,
+                public_key=binding.public_key,
+                binding_version=binding.binding_version,
+                valid_from=binding.valid_from,
+                expires_at=binding.expires_at,
+                operation=binding.operation,
+                prior_binding_id=binding.prior_binding_id,
+                request_id=binding.request_id,
+                active=binding.active,
+                retired_at=None if binding.active else binding.valid_from,
+                created_at=binding.valid_from,
+            )
+            if _from_row(probe) != binding:
+                raise ValueError
+            if self.binding_for_id(binding.binding_id) is not None:
+                raise ValueError
+
+            if binding.operation == "register":
+                if (
+                    binding.active is not True
+                    or self.has_device_history(binding.subject, binding.device_id)
+                    or self.public_key_was_used(binding.public_key)
+                    or len(
+                        self.current_for_subject(
+                            binding.subject,
+                            now=timestamp,
+                            maximum=MAX_ACTIVE_DEVICES,
+                        )
+                    )
+                    >= MAX_ACTIVE_DEVICES
+                ):
+                    raise ValueError
+            else:
+                predecessor = self.binding_for_id(binding.prior_binding_id)
+                if (
+                    predecessor is None
+                    or predecessor.subject != binding.subject
+                    or predecessor.device_id != binding.device_id
+                    or predecessor.active is not True
+                    or predecessor.binding_version + 1 != binding.binding_version
+                    or predecessor.valid_from > timestamp
+                    or timestamp >= predecessor.expires_at
+                    or binding.expires_at > predecessor.expires_at
+                ):
+                    raise ValueError
+                if binding.operation == "rotate":
+                    if (
+                        binding.active is not True
+                        or binding.public_key == predecessor.public_key
+                        or self.public_key_was_used(binding.public_key)
+                    ):
+                        raise ValueError
+                elif binding.operation == "revoke":
+                    if (
+                        binding.active is not False
+                        or binding.public_key != predecessor.public_key
+                        or binding.expires_at != predecessor.expires_at
+                    ):
+                        raise ValueError
+                else:
+                    raise ValueError
+                predecessor_row = self._session.get(
+                    SocialMessagingDeviceBindingRow,
+                    predecessor.binding_id,
+                )
+                if predecessor_row is None:
+                    raise ValueError
+                retired = self._session.execute(_retire(predecessor_row, binding.valid_from))
+                if retired.rowcount != 1:
+                    raise ValueError
+
+            self._session.add(probe)
+            return binding
+        except MessagingDeviceAuthorityUnavailable:
+            raise
+        except Exception:
+            raise MessagingDeviceAuthorityUnavailable() from None
+
+
 __all__ = [
     "MAX_BINDING_LIFETIME_SECONDS",
     "MIN_BINDING_LIFETIME_SECONDS",
     "RECORD_SCHEMA",
     "SocialMessagingDeviceBindingRow",
     "SqlAlchemySocialMessagingDeviceRepository",
+    "SqlAlchemyTransactionBoundSocialMessagingDeviceStorage",
 ]
