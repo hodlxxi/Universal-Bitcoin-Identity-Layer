@@ -40,6 +40,7 @@ from app.services.social_messaging_device_binding_authorization_intent import (
 )
 from app.services.social_messaging_device_binding_authorization_storage import (
     SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage,
+    _ExpiredUnacceptedAuthorization,
 )
 from app.services.social_messaging_device_storage import MAX_BINDING_LIFETIME_SECONDS, MIN_BINDING_LIFETIME_SECONDS
 
@@ -58,6 +59,13 @@ class MessagingDeviceBindingAuthorizationConfigurationError(RuntimeError):
 class MessagingDeviceBindingAuthorizationViewerDenied(ValueError):
     def __init__(self) -> None:
         super().__init__("messaging device binding authorization viewer denied")
+
+
+class MessagingDeviceBindingAuthorizationExpiredUnaccepted(RuntimeError):
+    """Internal signal emitted only after definitive transaction cleanup."""
+
+    def __init__(self) -> None:
+        super().__init__("messaging device binding authorization unavailable")
 
 
 class _AuthorizationSession(Protocol):
@@ -201,6 +209,9 @@ class MessagingDeviceBindingAuthorizationRuntime:
             signature_verifier=signature_verifier,
         )
         session: _AuthorizationSession | None = None
+        response: bytes | None = None
+        definitive_expiry = False
+        failure: DeviceBindingAuthorizationUnavailable | None = None
         try:
             session = self.session_factory()
             if (
@@ -244,27 +255,37 @@ class MessagingDeviceBindingAuthorizationRuntime:
                 )
             response = storage.accepted_result_bytes(result)
             session.commit()
-            return response
-        except DeviceBindingAuthorizationUnavailable:
+        except _ExpiredUnacceptedAuthorization:
             if session is not None:
                 try:
                     session.rollback()
                 except Exception:
-                    pass
-            raise
+                    failure = DeviceBindingAuthorizationUnavailable()
+                else:
+                    definitive_expiry = True
+            else:
+                failure = DeviceBindingAuthorizationUnavailable()
         except Exception:
             if session is not None:
                 try:
                     session.rollback()
                 except Exception:
                     pass
-            raise DeviceBindingAuthorizationUnavailable() from None
+            failure = DeviceBindingAuthorizationUnavailable()
         finally:
             if session is not None:
                 try:
                     session.close()
                 except Exception:
-                    pass
+                    definitive_expiry = False
+                    failure = DeviceBindingAuthorizationUnavailable()
+        if failure is not None:
+            raise failure from None
+        if definitive_expiry:
+            raise MessagingDeviceBindingAuthorizationExpiredUnaccepted() from None
+        if type(response) is not bytes:
+            raise DeviceBindingAuthorizationUnavailable() from None
+        return response
 
     def create_intent_for_service(
         self,
@@ -480,6 +501,7 @@ __all__ = [
     "RESULT_SCHEMA",
     "RESULT_VERSION",
     "MessagingDeviceBindingAuthorizationConfigurationError",
+    "MessagingDeviceBindingAuthorizationExpiredUnaccepted",
     "MessagingDeviceBindingAuthorizationRuntime",
     "MessagingDeviceBindingAuthorizationViewerDenied",
     "build_messaging_device_binding_authorization_runtime",

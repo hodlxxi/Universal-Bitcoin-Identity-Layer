@@ -319,6 +319,136 @@ def test_runtime_rolls_back_and_closes_on_storage_or_serialization_failure(monke
         assert events == ["begin", "rollback", "close"]
 
 
+@pytest.mark.parametrize("action", ["register", "rotate", "revoke", "adopt"])
+def test_expired_unaccepted_requires_successful_rollback_and_close(monkeypatch, action):
+    events = []
+    session = Session(events)
+
+    class Storage:
+        def __init__(self, supplied_session, **_kwargs):
+            assert supplied_session is session
+
+        def authorize_lifecycle(self, *_args, **_kwargs):
+            events.append("expired-unaccepted")
+            raise runtime_module._ExpiredUnacceptedAuthorization
+
+        def adopt_legacy(self, *_args, **_kwargs):
+            events.append("expired-unaccepted")
+            raise runtime_module._ExpiredUnacceptedAuthorization
+
+    monkeypatch.setattr(
+        runtime_module,
+        "SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage",
+        Storage,
+    )
+    value = instance(monkeypatch, lambda: session)
+
+    with pytest.raises(runtime_module.MessagingDeviceBindingAuthorizationExpiredUnaccepted):
+        value.authorize_for_service(
+            service_credential(),
+            "viewer-token",
+            dispatch_payload(action),
+            "intent-token",
+        )
+
+    assert events == ["begin", "expired-unaccepted", "rollback", "close"]
+
+
+@pytest.mark.parametrize("cleanup_failure", ["rollback", "close"])
+def test_expired_unaccepted_cleanup_failure_stays_ambiguous(monkeypatch, cleanup_failure):
+    events = []
+
+    class FailingSession(Session):
+        def rollback(self):
+            super().rollback()
+            if cleanup_failure == "rollback":
+                raise RuntimeError("sensitive rollback detail")
+
+        def close(self):
+            super().close()
+            if cleanup_failure == "close":
+                raise RuntimeError("sensitive close detail")
+
+    session = FailingSession(events)
+
+    class Storage:
+        def __init__(self, supplied_session, **_kwargs):
+            assert supplied_session is session
+
+        def authorize_lifecycle(self, *_args, **_kwargs):
+            raise runtime_module._ExpiredUnacceptedAuthorization
+
+    monkeypatch.setattr(
+        runtime_module,
+        "SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage",
+        Storage,
+    )
+    value = instance(monkeypatch, lambda: session)
+
+    with pytest.raises(DeviceBindingAuthorizationUnavailable) as caught:
+        value.authorize_for_service(
+            service_credential(),
+            "viewer-token",
+            dispatch_payload("register"),
+            "intent-token",
+        )
+
+    assert not isinstance(
+        caught.value,
+        runtime_module.MessagingDeviceBindingAuthorizationExpiredUnaccepted,
+    )
+    assert events == ["begin", "rollback", "close"]
+
+
+@pytest.mark.parametrize("failure_point", ["commit", "close"])
+def test_commit_or_post_commit_close_failure_stays_ambiguous(monkeypatch, failure_point):
+    events = []
+
+    class FailingSession(Session):
+        def commit(self):
+            super().commit()
+            if failure_point == "commit":
+                raise RuntimeError("sensitive commit detail")
+
+        def close(self):
+            super().close()
+            if failure_point == "close":
+                raise RuntimeError("sensitive close detail")
+
+    session = FailingSession(events)
+
+    class Storage:
+        def __init__(self, supplied_session, **_kwargs):
+            assert supplied_session is session
+
+        def authorize_lifecycle(self, *_args, **_kwargs):
+            return object()
+
+        def accepted_result_bytes(self, _result):
+            return b'{"ok":true}'
+
+    monkeypatch.setattr(
+        runtime_module,
+        "SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage",
+        Storage,
+    )
+    value = instance(monkeypatch, lambda: session)
+
+    with pytest.raises(DeviceBindingAuthorizationUnavailable):
+        value.authorize_for_service(
+            service_credential(),
+            "viewer-token",
+            dispatch_payload("register"),
+            "intent-token",
+        )
+
+    expected = ["begin", "commit"]
+    if failure_point == "commit":
+        expected.append("rollback")
+    expected.append("close")
+    assert events == expected
+
+
 def test_unauthenticated_intent_is_rejected_before_transaction(monkeypatch):
     opened = []
     value = instance(monkeypatch, lambda: opened.append(True))

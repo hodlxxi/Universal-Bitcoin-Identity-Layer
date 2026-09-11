@@ -313,11 +313,16 @@ def test_adoption_clock_is_sampled_once_only_after_all_operation_locks(monkeypat
     )
 
 
-def test_exact_expired_lifecycle_replay_skips_admission_full_state_and_mutation(monkeypatch):
+@pytest.mark.parametrize("operation", ("register", "rotate", "revoke"))
+def test_exact_expired_lifecycle_replay_skips_admission_full_state_and_mutation(
+    monkeypatch,
+    operation,
+):
     events = []
     issued_at = storage.datetime(2026, 9, 10, tzinfo=storage.timezone.utc)
     authorization = SimpleNamespace(
         claim=SimpleNamespace(
+            operation=operation,
             request_id=REQUEST,
             subject=SUBJECT,
             device_id=DEVICE,
@@ -441,6 +446,188 @@ def test_exact_expired_adoption_replay_skips_admission_full_and_binding_reads(mo
         is accepted
     )
     assert events == ["request-lock", "ports", ("replay", REQUEST), "exact-replay"]
+
+
+@pytest.mark.parametrize("action", ("register", "rotate", "revoke", "adopt"))
+def test_expired_unaccepted_is_typed_only_after_request_lock_and_empty_replay(
+    monkeypatch,
+    action,
+):
+    events = []
+    issued_at = storage.datetime(2026, 9, 10, tzinfo=storage.timezone.utc)
+    binding = SimpleNamespace(
+        subject=SUBJECT,
+        device_id=DEVICE,
+        public_key=KEY_A,
+        valid_from=issued_at,
+        expires_at=issued_at + timedelta(days=30),
+    )
+    signed = SimpleNamespace(
+        claim=SimpleNamespace(
+            operation=action,
+            request_id=REQUEST,
+            subject=SUBJECT,
+            device_id=DEVICE,
+            public_key=KEY_A,
+            issued_at=issued_at,
+            expires_at=issued_at + timedelta(seconds=300),
+            binding_valid_from=issued_at,
+            binding_expires_at=issued_at + timedelta(days=30),
+            binding=binding,
+        )
+    )
+
+    class Ports:
+        def __init__(self, *_args, **_kwargs):
+            events.append("ports")
+
+        def get(self, request_id):
+            events.append(("replay", request_id))
+            return None
+
+        def persist(self, *_args, **_kwargs):
+            raise AssertionError("replay or evidence write")
+
+        class _BindingStorage:
+            def apply_authorized(self, *_args, **_kwargs):
+                raise AssertionError("binding mutation")
+
+        _binding_storage = _BindingStorage()
+
+    value = storage.SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage(
+        _Session(),
+        clock=lambda: events.append("clock") or issued_at + timedelta(seconds=300),
+    )
+    monkeypatch.setattr(value, "_lock_request", lambda _request_id: events.append("request-lock"))
+    monkeypatch.setattr(value, "_lock_mutation", lambda **_kwargs: events.append("mutation-lock"))
+    monkeypatch.setattr(storage, "_TransactionPorts", Ports)
+    if action == "adopt":
+        monkeypatch.setattr(storage, "parse_and_verify_device_binding_adoption", lambda *_args, **_kwargs: signed)
+        operation = value.adopt_legacy
+    else:
+        monkeypatch.setattr(
+            storage,
+            "parse_and_verify_device_binding_authorization",
+            lambda *_args, **_kwargs: signed,
+        )
+        operation = value.authorize_lifecycle
+
+    with pytest.raises(storage._ExpiredUnacceptedAuthorization):
+        operation(
+            "payload",
+            authenticated_subject=SUBJECT,
+            admission_validator=lambda _now: (_ for _ in ()).throw(AssertionError("fresh admission")),
+        )
+
+    assert events == [
+        "request-lock",
+        "ports",
+        ("replay", REQUEST),
+        "mutation-lock",
+        "clock",
+    ]
+
+
+def test_future_issued_and_conflicting_replay_fail_ambiguously(monkeypatch):
+    now = storage.datetime(2026, 9, 10, tzinfo=storage.timezone.utc)
+    authorization = SimpleNamespace(
+        claim=SimpleNamespace(
+            request_id=REQUEST,
+            subject=SUBJECT,
+            device_id=DEVICE,
+            public_key=KEY_A,
+            issued_at=now + timedelta(seconds=1),
+            expires_at=now + timedelta(seconds=301),
+            binding_valid_from=now + timedelta(seconds=1),
+            binding_expires_at=now + timedelta(days=30),
+        )
+    )
+
+    class Ports:
+        replay_error = None
+
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def get(self, _request_id):
+            if self.replay_error is not None:
+                raise self.replay_error
+            return None
+
+    monkeypatch.setattr(
+        storage,
+        "parse_and_verify_device_binding_authorization",
+        lambda *_args, **_kwargs: authorization,
+    )
+    monkeypatch.setattr(storage, "_TransactionPorts", Ports)
+    value = storage.SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage(
+        _Session(),
+        clock=lambda: now,
+    )
+    monkeypatch.setattr(value, "_lock_request", lambda _request_id: None)
+    monkeypatch.setattr(value, "_lock_mutation", lambda **_kwargs: None)
+
+    with pytest.raises(storage.DeviceBindingAuthorizationUnavailable):
+        value.authorize_lifecycle("payload", authenticated_subject=SUBJECT)
+
+    Ports.replay_error = RuntimeError("conflicting replay rows")
+    with pytest.raises(storage.DeviceBindingAuthorizationUnavailable):
+        value.authorize_lifecycle("payload", authenticated_subject=SUBJECT)
+
+
+@pytest.mark.parametrize("failure_point", ("request-lock", "replay", "mutation-lock", "clock"))
+def test_lock_storage_and_clock_failures_never_become_definitive(monkeypatch, failure_point):
+    now = storage.datetime(2026, 9, 10, tzinfo=storage.timezone.utc)
+    authorization = SimpleNamespace(
+        claim=SimpleNamespace(
+            request_id=REQUEST,
+            subject=SUBJECT,
+            device_id=DEVICE,
+            public_key=KEY_A,
+            issued_at=now,
+            expires_at=now + timedelta(seconds=300),
+            binding_valid_from=now,
+            binding_expires_at=now + timedelta(days=30),
+        )
+    )
+
+    class Ports:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def get(self, _request_id):
+            if failure_point == "replay":
+                raise RuntimeError("sensitive replay storage detail")
+            return None
+
+    monkeypatch.setattr(
+        storage,
+        "parse_and_verify_device_binding_authorization",
+        lambda *_args, **_kwargs: authorization,
+    )
+    monkeypatch.setattr(storage, "_TransactionPorts", Ports)
+    value = storage.SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage(
+        _Session(),
+        clock=lambda: (
+            (_ for _ in ()).throw(RuntimeError("sensitive clock detail")) if failure_point == "clock" else now
+        ),
+    )
+
+    def request_lock(_request_id):
+        if failure_point == "request-lock":
+            raise RuntimeError("sensitive request lock detail")
+
+    def mutation_lock(**_kwargs):
+        if failure_point == "mutation-lock":
+            raise RuntimeError("sensitive mutation lock detail")
+
+    monkeypatch.setattr(value, "_lock_request", request_lock)
+    monkeypatch.setattr(value, "_lock_mutation", mutation_lock)
+
+    with pytest.raises(storage.DeviceBindingAuthorizationUnavailable) as caught:
+        value.authorize_lifecycle("payload", authenticated_subject=SUBJECT)
+
+    assert not isinstance(caught.value, storage._ExpiredUnacceptedAuthorization)
 
 
 def test_authorization_models_compile_bounded_postgresql_contracts():
