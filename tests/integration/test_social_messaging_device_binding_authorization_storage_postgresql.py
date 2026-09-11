@@ -31,7 +31,9 @@ from app.services.social_messaging_device_binding_authorization import (
     IdentitySignedDeviceBindingAdoption,
     IdentitySignedDeviceBindingAuthorization,
     adoption_digest,
+    adoption_event_id,
     authorization_digest,
+    authorization_event_id,
     canonical_adoption_json,
     canonical_authorization_json,
 )
@@ -103,7 +105,7 @@ def lifecycle_payload(
         expires_at=valid_from + timedelta(seconds=MAX_AUTHORIZATION_WINDOW_SECONDS),
     )
     digest = authorization_digest(claim)
-    signature = key.sign_schnorr(bytes.fromhex(digest), b"\x00" * 32).hex()
+    signature = key.sign_schnorr(bytes.fromhex(authorization_event_id(claim)), b"\x00" * 32).hex()
     return canonical_authorization_json(
         IdentitySignedDeviceBindingAuthorization(
             claim,
@@ -125,7 +127,7 @@ def adoption_payload(key: PrivateKey, binding, *, request: int, issued_at: datet
         expires_at=issued_at + timedelta(seconds=MAX_AUTHORIZATION_WINDOW_SECONDS),
     )
     digest = adoption_digest(claim)
-    signature = key.sign_schnorr(bytes.fromhex(digest), b"\x00" * 32).hex()
+    signature = key.sign_schnorr(bytes.fromhex(adoption_event_id(claim)), b"\x00" * 32).hex()
     return canonical_adoption_json(
         IdentitySignedDeviceBindingAdoption(
             claim,

@@ -222,6 +222,36 @@ def test_post_forwards_exact_ascii_statement_after_both_credentials(monkeypatch)
     assert_no_store(response)
 
 
+def test_enabled_successor_blocks_legacy_mutation_but_preserves_snapshot_read(monkeypatch):
+    runtime = Runtime()
+    monkeypatch.setattr(routes, "_runtime", lambda: runtime)
+    monkeypatch.setattr(
+        routes,
+        "configured_messaging_device_binding_authorization_runtime",
+        lambda _app: object(),
+    )
+    http = client()
+
+    blocked = http.post(
+        routes.DEVICE_BINDINGS_ROUTE,
+        data=STATEMENT,
+        content_type="application/json",
+        headers=headers(),
+    )
+    assert blocked.status_code == 503
+    assert blocked.get_json() == {"error": "device_authority_unavailable"}
+    assert runtime.calls == []
+    assert_no_store(blocked)
+
+    snapshot = http.get(routes.DEVICE_BINDINGS_ROUTE, headers=headers())
+    assert snapshot.status_code == 200
+    assert snapshot.get_json() == SNAPSHOT
+    assert runtime.calls == [
+        ("verify-service", SERVICE_TOKEN),
+        ("current", runtime.service, VIEWER_TOKEN),
+    ]
+
+
 @pytest.mark.parametrize(
     ("error", "status", "body"),
     [

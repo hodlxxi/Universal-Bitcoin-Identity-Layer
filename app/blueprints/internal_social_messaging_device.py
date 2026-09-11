@@ -8,15 +8,15 @@ from __future__ import annotations
 
 from flask import Blueprint, current_app, jsonify, request
 
-from app.services.bearer_credentials import (
-    BearerHeaderError,
-    parse_bearer_authorization_header,
-)
+from app.services.bearer_credentials import BearerHeaderError, parse_bearer_authorization_header
 from app.services.confidential_service_credentials import (
     GRANT_TYPE,
     MAX_LIFETIME_SECONDS,
     CredentialDenied,
     CredentialUnavailable,
+)
+from app.services.social_messaging_device_binding_authorization_runtime import (
+    configured_messaging_device_binding_authorization_runtime,
 )
 from app.services.social_messaging_device_contract import (
     MAX_COMMAND_BYTES,
@@ -169,6 +169,8 @@ def mutate_internal_social_messaging_device_bindings():
     runtime = _runtime()
     if runtime is None:
         return _json_error("not_found", 404)
+    if configured_messaging_device_binding_authorization_runtime(current_app) is not None:
+        return _json_error("device_authority_unavailable", 503)
     if request.args or request.mimetype != "application/json":
         return _json_error("invalid_request", 400)
 

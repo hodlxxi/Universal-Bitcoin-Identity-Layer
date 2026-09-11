@@ -136,7 +136,7 @@ def test_lifecycle_clock_is_sampled_once_only_after_all_operation_locks(monkeypa
 
     class Ports:
         def __init__(self, *_args, **_kwargs):
-            assert events == ["locks-returned", "clock"]
+            assert events == ["locks-returned", "clock", "admission"]
 
         def get(self, _request_id):
             return object()
@@ -166,8 +166,15 @@ def test_lifecycle_clock_is_sampled_once_only_after_all_operation_locks(monkeypa
     monkeypatch.setattr(storage, "_TransactionPorts", Ports)
     monkeypatch.setattr(storage, "SocialMessagingDeviceBindingAuthorizationV1", Coordinator)
 
-    assert value.authorize_lifecycle("payload", authenticated_subject=SUBJECT) is result
-    assert events == ["locks-returned", "clock"]
+    assert (
+        value.authorize_lifecycle(
+            "payload",
+            authenticated_subject=SUBJECT,
+            admission_validator=lambda now: events.append("admission"),
+        )
+        is result
+    )
+    assert events == ["locks-returned", "clock", "admission"]
 
 
 def test_adoption_clock_is_sampled_once_only_after_all_operation_locks(monkeypatch):
@@ -187,7 +194,7 @@ def test_adoption_clock_is_sampled_once_only_after_all_operation_locks(monkeypat
 
     class Ports:
         def __init__(self, *_args, **_kwargs):
-            assert events == ["locks-returned", "clock"]
+            assert events == ["locks-returned", "clock", "admission"]
 
         def get(self, _request_id):
             return object()
@@ -222,8 +229,15 @@ def test_adoption_clock_is_sampled_once_only_after_all_operation_locks(monkeypat
     )
     monkeypatch.setattr(storage, "SocialMessagingLegacyBindingAdoptionV1", Coordinator)
 
-    assert value.adopt_legacy("payload", authenticated_subject=SUBJECT) is result
-    assert events == ["locks-returned", "clock"]
+    assert (
+        value.adopt_legacy(
+            "payload",
+            authenticated_subject=SUBJECT,
+            admission_validator=lambda now: events.append("admission"),
+        )
+        is result
+    )
+    assert events == ["locks-returned", "clock", "admission"]
 
 
 def test_authorization_models_compile_bounded_postgresql_contracts():

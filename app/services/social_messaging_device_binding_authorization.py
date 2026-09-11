@@ -1,9 +1,10 @@
 """Dormant identity-signed Social messaging device authorization contract.
 
-The module is deliberately infrastructure-free.  It verifies exact BIP-340
-identity signatures, coordinates injected complete-state and replay ports, and
-provides a verifier compatible with the dormant recipient-routing gate.  It
-does not expose a route or implement persistence.
+The module is deliberately infrastructure-free.  It reconstructs exact
+purpose-specific Nostr carriers, verifies their BIP-340 event-ID signatures,
+coordinates injected complete-state and replay ports, and provides a verifier
+compatible with the dormant recipient-routing gate.  It does not expose a
+route or implement persistence.
 """
 
 from __future__ import annotations
@@ -41,7 +42,9 @@ ADOPTION_SCHEMA = "hodlxxi.social_messaging_device_binding_adoption.v1"
 STATE_SCHEMA = "hodlxxi.social_messaging_device_binding_authorization_state.v1"
 SIGNATURE_DOMAIN = "HODLXXI_SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_V1"
 ADOPTION_SIGNATURE_DOMAIN = "HODLXXI_SOCIAL_MESSAGING_DEVICE_BINDING_ADOPTION_V1"
-SIGNATURE_FORMAT = "bip340_schnorr_sha256"
+SIGNATURE_FORMAT = "nostr_event_id_bip340_v1"
+NOSTR_EVENT_KIND = 27236
+NOSTR_EVENT_PURPOSE = "hodlxxi-social-messaging-device-binding-authorization-v1"
 PROOF_ID_PREFIX = "hodlxxi-binding-authorization-v1-sha256:"
 VERSION = 1
 
@@ -500,6 +503,106 @@ def authorization_digest(value: DeviceBindingAuthorizationClaim) -> str:
     return hashlib.sha256(canonical_authorization_signed_bytes(value)).hexdigest()
 
 
+def _carrier_unsigned_event(
+    *,
+    pubkey: str,
+    issued_at: datetime,
+    action: str,
+    digest: str,
+    request_id: str,
+    content: bytes,
+) -> dict[str, object]:
+    subject = _canonical_actor(pubkey)
+    semantic_digest = _hex64(digest)
+    timestamp = _utc_second(issued_at)
+    request = _hex64(request_id)
+    if type(action) is not str or action not in _OPERATIONS | {"adopt"}:
+        raise ValueError
+    if type(content) is not bytes or hashlib.sha256(content).hexdigest() != semantic_digest:
+        raise ValueError
+    content_text = content.decode("ascii")
+    return {
+        "created_at": int(timestamp.timestamp()),
+        "kind": NOSTR_EVENT_KIND,
+        "tags": [
+            ["purpose", NOSTR_EVENT_PURPOSE],
+            ["semantic-digest", semantic_digest],
+            ["request-id", request],
+            ["action", action],
+        ],
+        "content": content_text,
+        "pubkey": subject,
+    }
+
+
+def _carrier_serialization(event: object) -> bytes:
+    if type(event) is not dict or set(event) != {"pubkey", "created_at", "kind", "tags", "content"}:
+        raise ValueError
+    pubkey = _canonical_actor(event["pubkey"])
+    created_at = event["created_at"]
+    kind = event["kind"]
+    tags = event["tags"]
+    content = event["content"]
+    if (
+        type(created_at) is not int
+        or created_at < 0
+        or type(kind) is not int
+        or kind != NOSTR_EVENT_KIND
+        or type(tags) is not list
+        or len(tags) != 4
+        or any(type(tag) is not list or len(tag) != 2 or any(type(item) is not str for item in tag) for tag in tags)
+        or type(content) is not str
+    ):
+        raise ValueError
+    encoded = json.dumps(
+        [0, pubkey, created_at, kind, tags, content],
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+    if any(byte > 0x7F for byte in encoded):
+        raise ValueError
+    return encoded
+
+
+def canonical_authorization_unsigned_event(
+    value: DeviceBindingAuthorizationClaim,
+) -> dict[str, object]:
+    """Return the closed NIP-07/NIP-46 input without signer-owned fields."""
+
+    try:
+        claim = _validated_claim(value)
+        digest = authorization_digest(claim)
+        carrier = _carrier_unsigned_event(
+            pubkey=claim.subject,
+            issued_at=claim.issued_at,
+            action=claim.operation,
+            digest=digest,
+            request_id=claim.request_id,
+            content=canonical_authorization_signed_bytes(claim),
+        )
+        carrier.pop("pubkey")
+        return carrier
+    except Exception:
+        raise DeviceBindingAuthorizationUnavailable() from None
+
+
+def canonical_authorization_event_serialization(
+    value: DeviceBindingAuthorizationClaim,
+) -> bytes:
+    """Return exact NIP-01 serialization bytes for one lifecycle carrier."""
+
+    try:
+        claim = _validated_claim(value)
+        event = {"pubkey": claim.subject, **canonical_authorization_unsigned_event(claim)}
+        return _carrier_serialization(event)
+    except Exception:
+        raise DeviceBindingAuthorizationUnavailable() from None
+
+
+def authorization_event_id(value: DeviceBindingAuthorizationClaim) -> str:
+    return hashlib.sha256(canonical_authorization_event_serialization(value)).hexdigest()
+
+
 def _authorization_dict(value: IdentitySignedDeviceBindingAuthorization) -> dict[str, object]:
     return {
         **_claim_dict(value.claim),
@@ -546,7 +649,7 @@ def _validated_signed_authorization(
     verified = signature_verifier.verify(
         subject=claim.subject,
         signature=bytes.fromhex(value.signature),
-        digest=bytes.fromhex(digest),
+        digest=bytes.fromhex(authorization_event_id(claim)),
     )
     if verified is not True:
         raise ValueError
@@ -751,6 +854,41 @@ def adoption_digest(value: DeviceBindingAdoptionClaim) -> str:
     return hashlib.sha256(canonical_adoption_signed_bytes(value)).hexdigest()
 
 
+def canonical_adoption_unsigned_event(value: DeviceBindingAdoptionClaim) -> dict[str, object]:
+    """Return the closed NIP-07/NIP-46 input for one adoption carrier."""
+
+    try:
+        claim = _validated_adoption_claim(value)
+        digest = adoption_digest(claim)
+        carrier = _carrier_unsigned_event(
+            pubkey=claim.binding.subject,
+            issued_at=claim.issued_at,
+            action=claim.action,
+            digest=digest,
+            request_id=claim.request_id,
+            content=canonical_adoption_signed_bytes(claim),
+        )
+        carrier.pop("pubkey")
+        return carrier
+    except Exception:
+        raise DeviceBindingAuthorizationUnavailable() from None
+
+
+def canonical_adoption_event_serialization(value: DeviceBindingAdoptionClaim) -> bytes:
+    """Return exact NIP-01 serialization bytes for one adoption carrier."""
+
+    try:
+        claim = _validated_adoption_claim(value)
+        event = {"pubkey": claim.binding.subject, **canonical_adoption_unsigned_event(claim)}
+        return _carrier_serialization(event)
+    except Exception:
+        raise DeviceBindingAuthorizationUnavailable() from None
+
+
+def adoption_event_id(value: DeviceBindingAdoptionClaim) -> str:
+    return hashlib.sha256(canonical_adoption_event_serialization(value)).hexdigest()
+
+
 def _validated_signed_adoption(
     value: object,
     signature_verifier: IdentitySignatureVerifier,
@@ -768,7 +906,7 @@ def _validated_signed_adoption(
         or signature_verifier.verify(
             subject=claim.binding.subject,
             signature=bytes.fromhex(value.signature),
-            digest=bytes.fromhex(digest),
+            digest=bytes.fromhex(adoption_event_id(claim)),
         )
         is not True
     ):
@@ -1552,6 +1690,8 @@ __all__ = [
     "MAX_AUTHORIZATION_BYTES",
     "MAX_AUTHORIZATION_WINDOW_SECONDS",
     "MAX_STATE_RECORDS",
+    "NOSTR_EVENT_KIND",
+    "NOSTR_EVENT_PURPOSE",
     "PROOF_ID_PREFIX",
     "SIGNATURE_DOMAIN",
     "SIGNATURE_FORMAT",
@@ -1561,11 +1701,17 @@ __all__ = [
     "UNAVAILABLE_MESSAGE",
     "VERSION",
     "adoption_digest",
+    "adoption_event_id",
     "authorization_digest",
+    "authorization_event_id",
+    "canonical_adoption_event_serialization",
     "canonical_adoption_json",
     "canonical_adoption_signed_bytes",
+    "canonical_adoption_unsigned_event",
+    "canonical_authorization_event_serialization",
     "canonical_authorization_json",
     "canonical_authorization_signed_bytes",
+    "canonical_authorization_unsigned_event",
     "parse_and_verify_device_binding_adoption",
     "parse_and_verify_device_binding_authorization",
 ]

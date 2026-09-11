@@ -59,6 +59,11 @@ from app.services.social_messaging_device_binding_authorization import (
     parse_and_verify_device_binding_adoption,
     parse_and_verify_device_binding_authorization,
 )
+from app.services.social_messaging_device_binding_authorization_intent import (
+    TrustedAuthorizationIntent,
+    derive_trusted_authorization_intent,
+    parse_authorization_intent_proposal,
+)
 from app.services.social_messaging_device_contract import MAX_ACTIVE_DEVICES, MessagingDeviceBinding
 from app.services.social_messaging_device_storage import (
     SocialMessagingDeviceBindingRow,
@@ -809,6 +814,7 @@ class SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage:
         payload: object,
         *,
         authenticated_subject: object,
+        admission_validator: Callable[[datetime], None] | None = None,
     ) -> AuthorizedDeviceBinding:
         try:
             authorization = parse_and_verify_device_binding_authorization(
@@ -824,6 +830,10 @@ class SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage:
                 public_keys=(claim.public_key,),
             )
             now = self._now()
+            if admission_validator is not None:
+                if not callable(admission_validator):
+                    raise ValueError
+                admission_validator(now)
             ports = _TransactionPorts(
                 self._session,
                 signature_verifier=self._signature_verifier,
@@ -859,6 +869,7 @@ class SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage:
         payload: object,
         *,
         authenticated_subject: object,
+        admission_validator: Callable[[datetime], None] | None = None,
     ) -> AdoptedDeviceBindingAuthorization:
         try:
             adoption = parse_and_verify_device_binding_adoption(
@@ -875,6 +886,10 @@ class SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage:
                 public_keys=(binding.public_key,),
             )
             now = self._now()
+            if admission_validator is not None:
+                if not callable(admission_validator):
+                    raise ValueError
+                admission_validator(now)
             ports = _TransactionPorts(
                 self._session,
                 signature_verifier=self._signature_verifier,
@@ -896,6 +911,40 @@ class SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage:
                 return result
             ports.persist(result, now=now)
             return result
+        except DeviceBindingAuthorizationUnavailable:
+            raise
+        except (SQLAlchemyError, TypeError, ValueError):
+            raise DeviceBindingAuthorizationUnavailable() from None
+        except Exception:
+            raise DeviceBindingAuthorizationUnavailable() from None
+
+    def create_intent(
+        self,
+        payload: object,
+        *,
+        authenticated_subject: object,
+        binding_lifetime_seconds: int,
+    ) -> TrustedAuthorizationIntent:
+        """Derive an intent from authoritative reads without staging writes."""
+
+        try:
+            proposal = parse_authorization_intent_proposal(payload)
+            now = self._now()
+            ports = _TransactionPorts(
+                self._session,
+                signature_verifier=self._signature_verifier,
+            )
+            current_full = SqlAlchemyTransactionBoundCurrentFullVerifier(self._session)
+            return derive_trusted_authorization_intent(
+                proposal,
+                authenticated_subject=authenticated_subject,
+                state_provider=ports,
+                binding_state=ports._binding_storage,
+                current_full=current_full,
+                now=now,
+                binding_lifetime_seconds=binding_lifetime_seconds,
+                signature_verifier=self._signature_verifier,
+            )
         except DeviceBindingAuthorizationUnavailable:
             raise
         except (SQLAlchemyError, TypeError, ValueError):
