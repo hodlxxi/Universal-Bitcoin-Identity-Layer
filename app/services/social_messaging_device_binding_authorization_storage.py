@@ -54,8 +54,11 @@ from app.services.social_messaging_device_binding_authorization import (
     IdentitySignedDeviceBindingAuthorization,
     SocialMessagingDeviceBindingAuthorizationV1,
     SocialMessagingLegacyBindingAdoptionV1,
+    _validated_adoption_replay,
+    _validated_replay,
     canonical_adoption_json,
     canonical_authorization_json,
+    canonical_authorization_result_bytes,
     parse_and_verify_device_binding_adoption,
     parse_and_verify_device_binding_authorization,
 )
@@ -428,11 +431,12 @@ class _TransactionPorts:
             raise ValueError
         binding = evidence.binding
         verification = evidence.verification
-        expected_payload = (
-            canonical_authorization_json(evidence.authorization)
-            if type(evidence) is AuthorizedDeviceBinding
-            else canonical_adoption_json(evidence.adoption)
-        )
+        if type(evidence) is AuthorizedDeviceBinding:
+            expected_payload = canonical_authorization_json(evidence.authorization)
+        elif type(evidence) is AdoptedDeviceBindingAuthorization:
+            expected_payload = canonical_adoption_json(evidence.adoption)
+        else:
+            raise ValueError
         if (
             row.binding_id != binding.binding_id
             or row.request_id != request_id
@@ -653,11 +657,7 @@ class _TransactionPorts:
         if evidence_row is None:
             raise ValueError
         evidence = self._evidence_from_row(evidence_row)
-        expected_payload = (
-            canonical_authorization_json(evidence.authorization)
-            if type(evidence) is AuthorizedDeviceBinding
-            else canonical_adoption_json(evidence.adoption)
-        )
+        expected_result = canonical_authorization_result_bytes(evidence).decode("ascii")
         if (
             row.request_id != evidence_row.request_id
             or row.record_type != evidence_row.evidence_type
@@ -665,13 +665,25 @@ class _TransactionPorts:
             or row.digest != evidence_row.digest
             or row.result_binding_id != evidence.binding.binding_id
             or row.result_proof_id != evidence.verification.proof_id
-            or row.result_payload != expected_payload
+            or row.result_payload != expected_result
         ):
             raise ValueError
         _db_utc_second(row.created_at)
         if type(evidence) is AuthorizedDeviceBinding:
-            return AuthorizationReplayRecord(row.request_id, row.digest, evidence)
-        return AdoptionReplayRecord(row.request_id, row.digest, evidence)
+            return AuthorizationReplayRecord(
+                row.request_id,
+                row.digest,
+                evidence,
+                expected_result.encode("ascii"),
+            )
+        if type(evidence) is AdoptedDeviceBindingAuthorization:
+            return AdoptionReplayRecord(
+                row.request_id,
+                row.digest,
+                evidence,
+                expected_result.encode("ascii"),
+            )
+        raise ValueError
 
     def record(
         self,
@@ -680,19 +692,21 @@ class _TransactionPorts:
         if self._pending_replay is not None:
             raise ValueError
         if type(record) is AuthorizationReplayRecord:
-            evidence = record.authorized_binding
+            authorized_evidence = record.authorized_binding
             if (
-                type(evidence) is not AuthorizedDeviceBinding
-                or record.request_id != evidence.authorization.claim.request_id
-                or record.authorization_digest != evidence.authorization.digest
+                type(authorized_evidence) is not AuthorizedDeviceBinding
+                or record.request_id != authorized_evidence.authorization.claim.request_id
+                or record.authorization_digest != authorized_evidence.authorization.digest
+                or record.canonical_result != canonical_authorization_result_bytes(authorized_evidence)
             ):
                 raise ValueError
         elif type(record) is AdoptionReplayRecord:
-            evidence = record.adopted_binding
+            adopted_evidence = record.adopted_binding
             if (
-                type(evidence) is not AdoptedDeviceBindingAuthorization
-                or record.request_id != evidence.adoption.claim.request_id
-                or record.adoption_digest != evidence.adoption.digest
+                type(adopted_evidence) is not AdoptedDeviceBindingAuthorization
+                or record.request_id != adopted_evidence.adoption.claim.request_id
+                or record.adoption_digest != adopted_evidence.adoption.digest
+                or record.canonical_result != canonical_authorization_result_bytes(adopted_evidence)
             ):
                 raise ValueError
         else:
@@ -700,24 +714,40 @@ class _TransactionPorts:
         self._pending_replay = record
         return record
 
-    def persist(self, evidence: BindingAuthorizationEvidence, *, now: datetime) -> None:
+    def persist(
+        self,
+        evidence: BindingAuthorizationEvidence,
+        *,
+        now: datetime,
+    ) -> AuthorizationReplayRecord | AdoptionReplayRecord:
         if self._pending_replay is None:
             raise ValueError
         created_at = _utc_second(now)
+        expected_replay: AuthorizationReplayRecord | AdoptionReplayRecord
         if type(evidence) is AuthorizedDeviceBinding:
             evidence_type = "lifecycle"
             action = evidence.authorization.claim.operation
             request_id = evidence.authorization.claim.request_id
             digest = evidence.authorization.digest
             payload = canonical_authorization_json(evidence.authorization)
-            expected_replay = AuthorizationReplayRecord(request_id, digest, evidence)
+            expected_replay = AuthorizationReplayRecord(
+                request_id,
+                digest,
+                evidence,
+                canonical_authorization_result_bytes(evidence),
+            )
         elif type(evidence) is AdoptedDeviceBindingAuthorization:
             evidence_type = "adoption"
             action = "adopt"
             request_id = evidence.adoption.claim.request_id
             digest = evidence.adoption.digest
             payload = canonical_adoption_json(evidence.adoption)
-            expected_replay = AdoptionReplayRecord(request_id, digest, evidence)
+            expected_replay = AdoptionReplayRecord(
+                request_id,
+                digest,
+                evidence,
+                canonical_authorization_result_bytes(evidence),
+            )
         else:
             raise ValueError
         if self._pending_replay != expected_replay:
@@ -749,12 +779,13 @@ class _TransactionPorts:
             digest=digest,
             result_binding_id=binding.binding_id,
             result_proof_id=verification.proof_id,
-            result_payload=payload,
+            result_payload=expected_replay.canonical_result.decode("ascii"),
             created_at=created_at,
         )
         self._session.add(evidence_row)
         self._session.add(replay_row)
         self._session.flush()
+        return expected_replay
 
 
 class SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage:
@@ -786,6 +817,7 @@ class SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage:
         if not callable(getattr(self._signature_verifier, "verify", None)):
             raise ValueError("invalid authorization signature verifier")
         self._clock = clock or (lambda: datetime.now(timezone.utc).replace(microsecond=0))
+        self._accepted_replay: AuthorizationReplayRecord | AdoptionReplayRecord | None = None
 
     def _now(self) -> datetime:
         value = self._clock()
@@ -793,15 +825,37 @@ class SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage:
             raise ValueError
         return value.astimezone(timezone.utc).replace(microsecond=0)
 
-    def _lock_operation(
+    def accepted_result_bytes(self, evidence: BindingAuthorizationEvidence) -> bytes:
+        """Return only the exact canonical result retained by this operation."""
+
+        try:
+            replay = self._accepted_replay
+            if type(evidence) is AuthorizedDeviceBinding:
+                return _validated_replay(
+                    replay,
+                    candidate=evidence,
+                    signature_verifier=self._signature_verifier,
+                ).canonical_result
+            if type(evidence) is AdoptedDeviceBindingAuthorization:
+                return _validated_adoption_replay(
+                    replay,
+                    candidate=evidence,
+                    signature_verifier=self._signature_verifier,
+                ).canonical_result
+            raise ValueError
+        except Exception:
+            raise DeviceBindingAuthorizationUnavailable() from None
+
+    def _lock_request(self, request_id: str) -> None:
+        _advisory_lock(self._session, _REQUEST_LOCK_DOMAIN, request_id)
+
+    def _lock_mutation(
         self,
         *,
-        request_id: str,
         subject: str,
         device_id: str,
         public_keys: tuple[str, ...],
     ) -> None:
-        _advisory_lock(self._session, _REQUEST_LOCK_DOMAIN, request_id)
         _lock_subject_for_evidence_change(self._session, subject)
         _lock_subject_user(self._session, subject)
         _advisory_lock(self._session, _DEVICE_LOCK_DOMAIN, subject + ":" + device_id)
@@ -823,25 +877,40 @@ class SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage:
                 signature_verifier=self._signature_verifier,
             )
             claim = authorization.claim
-            self._lock_operation(
-                request_id=claim.request_id,
-                subject=claim.subject,
-                device_id=claim.device_id,
-                public_keys=(claim.public_key,),
-            )
-            now = self._now()
-            if admission_validator is not None:
-                if not callable(admission_validator):
-                    raise ValueError
-                admission_validator(now)
+            self._lock_request(claim.request_id)
             ports = _TransactionPorts(
                 self._session,
                 signature_verifier=self._signature_verifier,
             )
             replay = ports.get(claim.request_id)
-            if replay is None:
-                current_full = SqlAlchemyTransactionBoundCurrentFullVerifier(self._session)
-                current_full.verify_in_transaction(claim.subject, now=now)
+            if replay is not None:
+                now = self._now()
+                if claim.issued_at > now or claim.binding_valid_from > now:
+                    raise ValueError
+                candidate = _authorized_from(authorization)
+                accepted = _validated_replay(
+                    replay,
+                    candidate=candidate,
+                    signature_verifier=self._signature_verifier,
+                )
+                self._accepted_replay = accepted
+                return accepted.authorized_binding
+            self._lock_mutation(
+                subject=claim.subject,
+                device_id=claim.device_id,
+                public_keys=(claim.public_key,),
+            )
+            now = self._now()
+            if claim.issued_at > now or claim.binding_valid_from > now:
+                raise ValueError
+            if now >= claim.expires_at or now >= claim.binding_expires_at:
+                raise ValueError
+            if admission_validator is not None:
+                if not callable(admission_validator):
+                    raise ValueError
+                admission_validator(now)
+            current_full = SqlAlchemyTransactionBoundCurrentFullVerifier(self._session)
+            current_full.verify_in_transaction(claim.subject, now=now)
             coordinator = SocialMessagingDeviceBindingAuthorizationV1(
                 state_provider=ports,
                 replay_ledger=ports,
@@ -852,10 +921,8 @@ class SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage:
                 payload,
                 authenticated_subject=authenticated_subject,
             )
-            if replay is not None:
-                return result
             ports._binding_storage.apply_authorized(result.binding, now=now)
-            ports.persist(result, now=now)
+            self._accepted_replay = ports.persist(result, now=now)
             return result
         except DeviceBindingAuthorizationUnavailable:
             raise
@@ -879,22 +946,38 @@ class SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage:
             )
             claim = adoption.claim
             binding = claim.binding
-            self._lock_operation(
-                request_id=claim.request_id,
-                subject=binding.subject,
-                device_id=binding.device_id,
-                public_keys=(binding.public_key,),
-            )
-            now = self._now()
-            if admission_validator is not None:
-                if not callable(admission_validator):
-                    raise ValueError
-                admission_validator(now)
+            self._lock_request(claim.request_id)
             ports = _TransactionPorts(
                 self._session,
                 signature_verifier=self._signature_verifier,
             )
             replay = ports.get(claim.request_id)
+            if replay is not None:
+                now = self._now()
+                if claim.issued_at > now or binding.valid_from > now:
+                    raise ValueError
+                candidate = _adopted_from(adoption)
+                accepted = _validated_adoption_replay(
+                    replay,
+                    candidate=candidate,
+                    signature_verifier=self._signature_verifier,
+                )
+                self._accepted_replay = accepted
+                return accepted.adopted_binding
+            self._lock_mutation(
+                subject=binding.subject,
+                device_id=binding.device_id,
+                public_keys=(binding.public_key,),
+            )
+            now = self._now()
+            if claim.issued_at > now or binding.valid_from > now:
+                raise ValueError
+            if now >= claim.expires_at or now >= binding.expires_at:
+                raise ValueError
+            if admission_validator is not None:
+                if not callable(admission_validator):
+                    raise ValueError
+                admission_validator(now)
             current_full = SqlAlchemyTransactionBoundCurrentFullVerifier(self._session)
             coordinator = SocialMessagingLegacyBindingAdoptionV1(
                 state_provider=ports,
@@ -907,9 +990,7 @@ class SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage:
                 payload,
                 authenticated_subject=authenticated_subject,
             )
-            if replay is not None:
-                return result
-            ports.persist(result, now=now)
+            self._accepted_replay = ports.persist(result, now=now)
             return result
         except DeviceBindingAuthorizationUnavailable:
             raise

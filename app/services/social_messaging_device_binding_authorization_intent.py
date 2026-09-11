@@ -708,7 +708,7 @@ def _signed_payload_identity(
         )
 
 
-def verify_authorization_intent_submission(
+def _authenticated_authorization_intent_submission(
     intent_token: object,
     payload: object,
     *,
@@ -717,13 +717,15 @@ def verify_authorization_intent_submission(
     expected_kid: str,
     verification_keys: Sequence[Mapping[str, object]],
     signature_verifier,
-    now: datetime,
-) -> IdentitySignedDeviceBindingAuthorization | IdentitySignedDeviceBindingAdoption:
-    """Verify the separate seal and its exact signed-payload correspondence."""
+) -> tuple[
+    IdentitySignedDeviceBindingAuthorization | IdentitySignedDeviceBindingAdoption,
+    int,
+    int,
+]:
+    """Authenticate the exact token, event, and signed candidate without freshness."""
 
     try:
         subject = _canonical_actor(authenticated_subject)
-        timestamp = _utc_second(now)
         (
             claim_type,
             action,
@@ -759,7 +761,6 @@ def verify_authorization_intent_submission(
                 "verify_nbf": False,
             },
         )
-        current = int(timestamp.timestamp())
         exp = claims.get("exp")
         iat = claims.get("iat")
         expected = {
@@ -786,9 +787,63 @@ def verify_authorization_intent_submission(
             or type(exp) is not int
             or exp <= iat
             or exp - iat > MAX_AUTHORIZATION_WINDOW_SECONDS
-            or iat > current
-            or current >= exp
         ):
+            raise ValueError
+        return signed, iat, exp
+    except Exception:
+        raise DeviceBindingAuthorizationUnavailable() from None
+
+
+def authenticate_authorization_intent_submission(
+    intent_token: object,
+    payload: object,
+    *,
+    authenticated_subject: object,
+    issuer: str,
+    expected_kid: str,
+    verification_keys: Sequence[Mapping[str, object]],
+    signature_verifier,
+) -> IdentitySignedDeviceBindingAuthorization | IdentitySignedDeviceBindingAdoption:
+    """Authenticate exact replay material before consulting accepted state."""
+
+    signed, _issued_at, _expires_at = _authenticated_authorization_intent_submission(
+        intent_token,
+        payload,
+        authenticated_subject=authenticated_subject,
+        issuer=issuer,
+        expected_kid=expected_kid,
+        verification_keys=verification_keys,
+        signature_verifier=signature_verifier,
+    )
+    return signed
+
+
+def verify_authorization_intent_submission(
+    intent_token: object,
+    payload: object,
+    *,
+    authenticated_subject: object,
+    issuer: str,
+    expected_kid: str,
+    verification_keys: Sequence[Mapping[str, object]],
+    signature_verifier,
+    now: datetime,
+) -> IdentitySignedDeviceBindingAuthorization | IdentitySignedDeviceBindingAdoption:
+    """Authenticate exact intent material and require its normal fresh window."""
+
+    try:
+        timestamp = _utc_second(now)
+        signed, issued_at, expires_at = _authenticated_authorization_intent_submission(
+            intent_token,
+            payload,
+            authenticated_subject=authenticated_subject,
+            issuer=issuer,
+            expected_kid=expected_kid,
+            verification_keys=verification_keys,
+            signature_verifier=signature_verifier,
+        )
+        current = int(timestamp.timestamp())
+        if issued_at > current or current >= expires_at:
             raise ValueError
         return signed
     except Exception:
@@ -806,6 +861,7 @@ __all__ = [
     "MAX_INTENT_REQUEST_BYTES",
     "MAX_INTENT_TOKEN_BYTES",
     "TrustedAuthorizationIntent",
+    "authenticate_authorization_intent_submission",
     "canonical_authorization_intent_bytes",
     "derive_trusted_authorization_intent",
     "parse_authorization_intent_proposal",

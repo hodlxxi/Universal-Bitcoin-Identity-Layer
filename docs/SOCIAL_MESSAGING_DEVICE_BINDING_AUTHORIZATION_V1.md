@@ -142,6 +142,17 @@ one closed canonical object with schema
 `claimType`, the exact `claim`, `digest`, `signatureFormat`, `expectedPubkey`,
 an `unsignedEvent` without `pubkey`, `id`, or `sig`, and `intentToken`.
 
+Until one authorization is accepted, the same exact canonical proposal and
+`requestId` may be reconciled against a fresh authoritative snapshot and issued
+again at a later trusted whole second. Because UBID derives time-bound claim
+fields, the later semantic digest, carrier event ID, proof ID, and lifecycle
+binding ID can differ. Issuance grants no authority and performs no binding
+mutation; every issued candidate requires a new explicit participant
+signature. Once a request ID has an accepted winner, further intent issuance
+for it fails closed. Social must reconcile the authoritative binding snapshot
+before requesting another intent; this contract adds no automatic signing,
+background retry, or signer access.
+
 The intent token uses the already-loaded runtime signing key only in this
 strictly separate RS256 domain:
 
@@ -168,12 +179,14 @@ Final submission transports the token separately in the bounded
 existing canonical flattened participant payload, so storage persists no
 transport wrapper or intent token. UBID authenticates the confidential Social
 service, authenticates the viewer, validates exact seal/payload/carrier
-correspondence before opening storage, and validates the seal again against the
-post-lock trusted clock inside the caller-owned write transaction. Replay,
-complete authoritative state, Current-Full, timestamps, lifecycle rules,
-binding/evidence mutation, and replay retention remain in that same atomic
-transaction. Every failure rolls back. An earlier intent never outranks the
-final transactional state; stale or expired intents fail generically.
+correspondence before opening storage. Inside the caller-owned write
+transaction it takes the global request-ID lock and consults only immutable
+accepted replay/evidence first. If there is no exact accepted match, it
+validates the seal again against the post-mutation-lock trusted clock before
+complete authoritative state, Current-Full, lifecycle rules,
+binding/evidence mutation, and replay retention. Every failure rolls back. An
+earlier intent never outranks the final transactional state; an unaccepted
+stale or expired intent fails generically.
 
 ## Lifecycle state
 
@@ -281,17 +294,25 @@ request-ID namespace. The ledger may return either exact frozen replay-record
 type: a lifecycle record contains its request ID, authorization digest, and
 exact `AuthorizedDeviceBinding`; an adoption record contains its distinct
 adoption request ID, adoption digest, and exact
-`AdoptedDeviceBindingAuthorization`. Each coordinator rejects the other
-record type, so reuse between lifecycle and adoption fails closed.
+`AdoptedDeviceBindingAuthorization`. Both retain the exact canonical public
+result bytes. Each coordinator rejects the other record type, so reuse between
+lifecycle and adoption fails closed.
 
-The ledger is consulted only after canonical parsing, identity-signature
-verification, and request-window validation. An exact request ID, digest, and
-immutable result retry returns the same result without reinterpreting
-already-changed state. Reuse with changed signed content, a changed result,
-the wrong record type, duplicate or ambiguous lookup results, provider
-exceptions, or any malformed response fails closed. For a new adoption,
-retention occurs only after current Full, the exact current legacy binding,
-and absence of existing authorization evidence have all been established.
+Before ledger lookup, UBID requires bounded canonical token and payload shapes,
+the exact token key, signature, issuer, audience, subject, request ID and closed
+claims, and the exact reconstructed kind-27236 event ID and BIP340 signature.
+It then derives the complete candidate identity. Only an exact match of request
+ID, record type, signed candidate, digest, immutable result, and stored
+canonical result may bypass the already-accepted candidate's request/token
+expiry. That retry returns the exact stored result without repeating the
+mutation or reading Current-Full, lifecycle, binding, or adoption state. An
+expired candidate with no exact accepted match cannot mutate or obtain another
+candidate's result. Reuse with changed signed content, event, token, subject,
+request ID, proposal, digest, result, the wrong record type, duplicate or
+ambiguous lookup results, provider exceptions, or malformed state fails closed
+through the same generic external error. For a new adoption, retention occurs
+only after current Full, the exact current legacy binding, and absence of
+existing authorization evidence have all been established.
 
 The authorization-storage unit of work constructs the Current-Full verifier,
 replay ledger, legacy-binding reader, authorization-evidence reader, and
@@ -301,26 +322,27 @@ dialects, inactive transactions, or other isolation levels. None of its
 adapters begins, commits, rolls back, closes, or replaces the session. The
 caller completes the transaction with one commit or one complete rollback.
 
-Before any replay or state snapshot, the unit of work takes the following
-operation locks in global order. Each advisory lock is transaction-level:
+Before replay, the unit of work takes only the transaction-level global
+authorization/adoption request-ID lock. If no accepted record exists, it then
+takes the remaining mutation locks in global order:
 
-1. global authorization/adoption request ID;
-2. canonical subject in the exact Current-Full subject-lock domain;
-3. exact canonical subject `User` row with `FOR UPDATE`;
-4. subject-qualified device ID;
-5. the global public-key namespace guard;
-6. all public keys named by the signed request, sorted canonically.
+1. canonical subject in the exact Current-Full subject-lock domain;
+2. exact canonical subject `User` row with `FOR UPDATE`;
+3. subject-qualified device ID;
+4. the global public-key namespace guard;
+5. all public keys named by the signed request, sorted canonically.
 
-Only canonical parsing and identity-signature verification needed to obtain
-those trusted lock identifiers occurs before this sequence. The exact `User`
-row lock reuses the device-storage primitive in the same caller-owned session
-and transaction. The trusted clock is sampled exactly once, only after every
-lock in this operation-lock sequence has returned. That single whole-second
-UTC value is used for replay validation, Current-Full verification,
+Only canonical parsing, intent-token authentication, and identity-signature
+verification needed to obtain those trusted lock identifiers occurs before
+this sequence. The exact `User` row lock reuses the device-storage primitive in
+the same caller-owned session and transaction. On a new mutation, the trusted
+clock is sampled exactly once after every mutation lock has returned. That
+whole-second UTC value is used for fresh intent validation, Current-Full,
 coordinator validation, binding mutation, evidence creation, and replay
 persistence. Request, binding, adoption, and Current-Full expiry are therefore
-re-evaluated after waits at this operation-lock boundary; PostgreSQL
-transaction time is not used because it may precede those waits.
+re-evaluated after waits at this boundary; PostgreSQL transaction time is not
+used because it may precede those waits. An accepted replay samples the clock
+only to reject impossible future-dated material and takes no mutation locks.
 
 The public-key namespace guard covers rotate's predecessor key before that key
 can be learned from durable state. The earlier exact `User` row lock conflicts
@@ -338,9 +360,10 @@ the authoritative evidence row; another deferred composite foreign key binds
 the evidence's complete binding identity to the binding row. Lifecycle and
 adoption reconstruct and revalidate the exact signed payload on every read.
 An exact retry returns only the same typed digest, binding/result identity, and
-public result. A conflicting type, content, digest, result, malformed row, or
-constraint failure fails closed. Evidence, replay, and binding mutation are
-flushed in the caller transaction and therefore commit or roll back together.
+stored canonical public result. A conflicting type, content, digest, result,
+malformed row, or constraint failure fails closed. Evidence, replay, canonical
+result, and binding mutation are flushed in the caller transaction and
+therefore commit or roll back together.
 
 The Current-Full proof ID remains the canonical content identity defined in
 `CURRENT_ENTITLEMENT_EVIDENCE_V1.md`, not a caller assertion or independently

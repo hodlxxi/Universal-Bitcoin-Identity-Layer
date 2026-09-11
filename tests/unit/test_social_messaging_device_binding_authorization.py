@@ -54,6 +54,7 @@ from app.services.social_messaging_device_binding_authorization import (
     canonical_adoption_signed_bytes,
     canonical_authorization_event_serialization,
     canonical_authorization_json,
+    canonical_authorization_result_bytes,
     canonical_authorization_signed_bytes,
     parse_and_verify_device_binding_adoption,
     parse_and_verify_device_binding_authorization,
@@ -1061,6 +1062,98 @@ def test_exact_retry_is_idempotent_without_reconsulting_changed_current_state():
     assert [call[0] for call in state.calls] == ["binding", "device", "subject", "key"]
 
 
+@pytest.mark.parametrize("operation", ("register", "rotate", "revoke"))
+@pytest.mark.parametrize("winner_index", (0, 1))
+def test_lifecycle_reissued_candidate_is_one_atomic_winner(operation, winner_index):
+    first_time = NOW
+    second_time = NOW + timedelta(seconds=1)
+    if operation == "register":
+        state = StateProvider()
+        first_claim = claim(
+            binding_valid_from=first_time,
+            binding_expires_at=first_time + timedelta(days=30),
+            issued_at=first_time,
+            expires_at=first_time + timedelta(seconds=MAX_AUTHORIZATION_WINDOW_SECONDS),
+        )
+        second_claim = replace(
+            first_claim,
+            binding_valid_from=second_time,
+            binding_expires_at=second_time + timedelta(days=30),
+            issued_at=second_time,
+            expires_at=second_time + timedelta(seconds=MAX_AUTHORIZATION_WINDOW_SECONDS),
+        )
+    else:
+        current = accepted_register()
+        state = state_for_current(current, proposed_key=KEY_B)
+        builder = rotate_claim if operation == "rotate" else revoke_claim
+        first_claim = builder(current, binding_valid_from=first_time, issued_at=first_time)
+        second_claim = replace(
+            first_claim,
+            binding_valid_from=second_time,
+            issued_at=second_time,
+            expires_at=second_time + timedelta(seconds=MAX_AUTHORIZATION_WINDOW_SECONDS),
+        )
+
+    candidates = (first_claim, second_claim)
+    winner = candidates[winner_index]
+    loser = candidates[1 - winner_index]
+    replay = ReplayLedger()
+    authority = service(state, replay, now=second_time)
+    accepted = authority.authorize(payload(winner), authenticated_subject=SUBJECT)
+    calls_after_winner = tuple(state.calls)
+
+    assert_generic(lambda: authority.authorize(payload(loser), authenticated_subject=SUBJECT))
+    assert tuple(state.calls) == calls_after_winner
+    assert len(replay.records) == 1
+    retained = replay.records[winner.request_id]
+    assert retained.authorized_binding == accepted
+    assert retained.canonical_result == canonical_authorization_result_bytes(accepted)
+    assert accepted.authorization.digest == authorization_digest(winner)
+    assert accepted.authorization.digest != authorization_digest(loser)
+    assert accepted.authorization.binding_id != binding_id_for_claim(loser)
+
+
+def test_expired_unaccepted_candidate_fails_before_state_and_never_records():
+    state = StateProvider()
+    replay = ReplayLedger()
+    expired = claim(
+        binding_valid_from=NOW - timedelta(minutes=5),
+        issued_at=NOW - timedelta(minutes=5),
+        expires_at=NOW,
+    )
+
+    assert_generic(lambda: accept(expired, state=state, replay=replay, now=NOW))
+    assert state.calls == []
+    assert replay.records == {}
+    assert replay.calls == [("get", REQUEST_ID)]
+
+
+def test_lost_response_exact_retry_after_expiry_recovers_stored_canonical_result():
+    state = StateProvider()
+    replay = ReplayLedger()
+    clock = [NOW]
+    authority = SocialMessagingDeviceBindingAuthorizationV1(
+        state_provider=state,
+        replay_ledger=replay,
+        clock=lambda: clock[0],
+    )
+    source = payload()
+    accepted = authority.authorize(source, authenticated_subject=SUBJECT)
+    stored_result = replay.records[REQUEST_ID].canonical_result
+    state.binding_override = RuntimeError("mutable binding evidence unavailable")
+    state.device_override = RuntimeError("mutable device state unavailable")
+    state.subject_override = RuntimeError("mutable subject state unavailable")
+    state.key_overrides[KEY_A] = RuntimeError("mutable key state unavailable")
+    clock[0] = claim().expires_at + timedelta(seconds=1)
+
+    replayed = authority.authorize(source, authenticated_subject=SUBJECT)
+
+    assert replayed == accepted
+    assert canonical_authorization_result_bytes(replayed) == stored_result
+    assert [item[0] for item in state.calls] == ["binding", "device", "subject", "key"]
+    assert [item[0] for item in replay.calls] == ["get", "record", "get"]
+
+
 def test_same_event_with_different_valid_signature_is_not_an_exact_retry():
     state = StateProvider()
     replay = ReplayLedger()
@@ -1470,6 +1563,7 @@ def test_valid_legacy_adoption_requires_full_and_exact_current_unattested_bindin
             ADOPTION_REQUEST_ID,
             result.adoption.digest,
             result,
+            canonical_authorization_result_bytes(result),
         )
     }
     assert [item[0] for item in replay.calls] == ["get", "record"]
@@ -1501,6 +1595,68 @@ def test_exact_adoption_retry_returns_retained_result_without_reconsulting_chang
 
     assert authority.adopt(source, authenticated_subject=SUBJECT) == first
     assert [item[0] for item in replay.calls] == ["get", "record", "get"]
+    assert [item[0] for item in state.calls] == ["current", "evidence"]
+    assert len(full.calls) == 1
+
+
+@pytest.mark.parametrize("winner_index", (0, 1))
+def test_reissued_adoption_candidate_is_one_atomic_winner(winner_index):
+    binding = legacy_binding()
+    first_claim = adoption_claim(
+        binding,
+        issued_at=NOW,
+        expires_at=NOW + timedelta(seconds=MAX_AUTHORIZATION_WINDOW_SECONDS),
+    )
+    second_claim = replace(
+        first_claim,
+        issued_at=NOW + timedelta(seconds=1),
+        expires_at=NOW + timedelta(seconds=MAX_AUTHORIZATION_WINDOW_SECONDS + 1),
+    )
+    candidates = (first_claim, second_claim)
+    winner = candidates[winner_index]
+    loser = candidates[1 - winner_index]
+    state = AdoptionStateProvider(binding)
+    full = FullPrerequisite()
+    replay = ReplayLedger()
+    authority = adoption_service(state, full, replay, now=NOW + timedelta(seconds=1))
+    accepted = authority.adopt(adoption_payload(winner), authenticated_subject=SUBJECT)
+    state_calls = tuple(state.calls)
+    full_calls = tuple(full.calls)
+
+    assert_generic(lambda: authority.adopt(adoption_payload(loser), authenticated_subject=SUBJECT))
+    assert tuple(state.calls) == state_calls
+    assert tuple(full.calls) == full_calls
+    assert len(replay.records) == 1
+    retained = replay.records[ADOPTION_REQUEST_ID]
+    assert retained.adopted_binding == accepted
+    assert retained.canonical_result == canonical_authorization_result_bytes(accepted)
+    assert accepted.adoption.digest == adoption_digest(winner)
+    assert accepted.adoption.digest != adoption_digest(loser)
+
+
+def test_exact_adoption_winner_replays_after_expiry_without_mutable_reads():
+    state = AdoptionStateProvider()
+    full = FullPrerequisite()
+    replay = ReplayLedger()
+    clock = [NOW]
+    authority = SocialMessagingLegacyBindingAdoptionV1(
+        state_provider=state,
+        current_full_prerequisite=full,
+        replay_ledger=replay,
+        clock=lambda: clock[0],
+    )
+    source = adoption_payload()
+    accepted = authority.adopt(source, authenticated_subject=SUBJECT)
+    stored_result = replay.records[ADOPTION_REQUEST_ID].canonical_result
+    state.current_override = RuntimeError("mutable binding state unavailable")
+    state.evidence_override = RuntimeError("mutable evidence state unavailable")
+    full.result = RuntimeError("mutable Current-Full unavailable")
+    clock[0] = adoption_claim().expires_at + timedelta(seconds=1)
+
+    replayed = authority.adopt(source, authenticated_subject=SUBJECT)
+
+    assert replayed == accepted
+    assert canonical_authorization_result_bytes(replayed) == stored_result
     assert [item[0] for item in state.calls] == ["current", "evidence"]
     assert len(full.calls) == 1
 
@@ -1547,9 +1703,24 @@ def test_adoption_replay_provider_wrong_ambiguous_or_altered_records_fail_closed
     invalid_records = (
         [replay.records[ADOPTION_REQUEST_ID], replay.records[ADOPTION_REQUEST_ID]],
         {"request_id": ADOPTION_REQUEST_ID},
-        AdoptionReplayRecord("bb" * 32, result.adoption.digest, result),
-        AdoptionReplayRecord(ADOPTION_REQUEST_ID, "bb" * 32, result),
-        AdoptionReplayRecord(ADOPTION_REQUEST_ID, result.adoption.digest, wrong_result),
+        AdoptionReplayRecord(
+            "bb" * 32,
+            result.adoption.digest,
+            result,
+            canonical_authorization_result_bytes(result),
+        ),
+        AdoptionReplayRecord(
+            ADOPTION_REQUEST_ID,
+            "bb" * 32,
+            result,
+            canonical_authorization_result_bytes(result),
+        ),
+        AdoptionReplayRecord(
+            ADOPTION_REQUEST_ID,
+            result.adoption.digest,
+            wrong_result,
+            canonical_authorization_result_bytes(result),
+        ),
     )
     for invalid in invalid_records:
         replay.records[ADOPTION_REQUEST_ID] = invalid
@@ -1562,6 +1733,7 @@ def test_adoption_replay_record_result_must_be_exact_provider_return_type():
         ADOPTION_REQUEST_ID,
         "bb" * 32,
         accepted_register(),
+        canonical_authorization_result_bytes(accepted_register()),
     )
     assert_generic(lambda: adopt(replay=replay))
 
@@ -1994,8 +2166,21 @@ def test_replay_provider_must_return_exact_typed_result():
         REQUEST_ID,
         candidate.authorization.digest,
         replace(candidate, binding=replace(candidate.binding, public_key=KEY_B)),
+        canonical_authorization_result_bytes(candidate),
     )
     assert_generic(lambda: accept(replay=replay))
+
+
+def test_replay_provider_must_return_exact_stored_canonical_result():
+    replay = ReplayLedger()
+    accepted = accept(replay=replay)
+    replay.records[REQUEST_ID] = replace(
+        replay.records[REQUEST_ID],
+        canonical_result=b'{"schema":"wrong"}',
+    )
+
+    assert_generic(lambda: accept(replay=replay))
+    assert canonical_authorization_result_bytes(accepted) != b'{"schema":"wrong"}'
 
 
 def test_values_are_frozen_and_no_private_or_secret_material_is_output():

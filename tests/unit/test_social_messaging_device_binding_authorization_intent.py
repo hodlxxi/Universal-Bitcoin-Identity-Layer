@@ -21,6 +21,7 @@ from app.services.current_full_entitlement_proof import (
 from app.services.social_messaging_device_binding_authorization import (
     ADOPTION_SCHEMA,
     AUTHORIZATION_SCHEMA,
+    MAX_AUTHORIZATION_WINDOW_SECONDS,
     PROOF_ID_PREFIX,
     SIGNATURE_FORMAT,
     STATE_SCHEMA,
@@ -35,7 +36,6 @@ from app.services.social_messaging_device_binding_authorization import (
     DeviceBindingAuthorizationUnavailable,
     IdentitySignedDeviceBindingAdoption,
     IdentitySignedDeviceBindingAuthorization,
-    MAX_AUTHORIZATION_WINDOW_SECONDS,
     SocialMessagingDeviceBindingAuthorizationV1,
     _adopted_from,
     _authorized_from,
@@ -52,6 +52,7 @@ from app.services.social_messaging_device_binding_authorization_intent import (
     INTENT_TOKEN_TYPE,
     INTENT_TOKEN_USE,
     TrustedAuthorizationIntent,
+    authenticate_authorization_intent_submission,
     canonical_authorization_intent_bytes,
     derive_trusted_authorization_intent,
     parse_authorization_intent_proposal,
@@ -321,7 +322,52 @@ def test_register_intent_freezes_carrier_and_separate_token_domain(signing_mater
     assert verified.claim == intent.claim
 
 
-def test_register_token_and_exact_retained_retry_follow_semantic_deadline(signing_material):
+def test_same_unaccepted_proposal_can_receive_fresh_distinct_signed_intents():
+    first = derive(now=NOW)
+    second = derive(now=NOW + timedelta(seconds=1))
+    first_payload = signed_payload(first)
+    second_payload = signed_payload(second)
+
+    def binding_id(intent):
+        value = intent.claim
+        return messaging_device_binding_id(
+            subject=value.subject,
+            device_id=value.device_id,
+            public_key=value.public_key,
+            binding_version=value.binding_version,
+            valid_from=value.binding_valid_from,
+            expires_at=value.binding_expires_at,
+            operation=value.operation,
+            prior_binding_id=value.prior_binding_id,
+            request_id=value.request_id,
+        )
+
+    assert first.claim.request_id == second.claim.request_id == REGISTER_REQUEST
+    assert first.claim.subject == second.claim.subject == SUBJECT
+    assert first.claim.device_id == second.claim.device_id == DEVICE_ID
+    assert first.claim.public_key == second.claim.public_key == KEY_A
+    assert second.claim.issued_at == first.claim.issued_at + timedelta(seconds=1)
+    assert second.claim.binding_valid_from == first.claim.binding_valid_from + timedelta(seconds=1)
+    assert second.claim.expires_at == first.claim.expires_at + timedelta(seconds=1)
+    assert second.claim.binding_expires_at == first.claim.binding_expires_at + timedelta(seconds=1)
+    assert second.digest != first.digest
+    assert authorization_event_id(second.claim) != authorization_event_id(first.claim)
+    assert binding_id(second) != binding_id(first)
+    assert PROOF_ID_PREFIX + second.digest != PROOF_ID_PREFIX + first.digest
+    assert second.claim.binding_valid_from != first.claim.binding_valid_from
+    assert second_payload != first_payload
+    assert json.loads(second_payload)["signature"] != json.loads(first_payload)["signature"]
+
+
+def test_accepted_request_id_cannot_receive_a_new_intent():
+    state = State()
+    state.replay = object()
+
+    with pytest.raises(DeviceBindingAuthorizationUnavailable):
+        derive(state=state, now=NOW + timedelta(seconds=1))
+
+
+def test_exact_accepted_retry_survives_semantic_deadline(signing_material):
     state = State()
     intent = derive(state=state)
     encoded_token = token(intent, signing_material)
@@ -369,8 +415,17 @@ def test_register_token_and_exact_retained_retry_follow_semantic_deadline(signin
             signature_verifier=SignatureVerifier(),
             now=clock[0],
         )
-    with pytest.raises(DeviceBindingAuthorizationUnavailable):
-        authority.authorize(signed, authenticated_subject=SUBJECT)
+    authenticated = authenticate_authorization_intent_submission(
+        encoded_token,
+        signed,
+        authenticated_subject=SUBJECT,
+        issuer=ISSUER,
+        expected_kid=KID,
+        verification_keys=(signing_material[1],),
+        signature_verifier=SignatureVerifier(),
+    )
+    assert authenticated.claim == intent.claim
+    assert authority.authorize(signed, authenticated_subject=SUBJECT) == first
 
 
 def test_earlier_binding_expiry_caps_claim_and_token_deadline(signing_material):

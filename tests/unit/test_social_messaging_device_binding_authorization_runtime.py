@@ -200,6 +200,9 @@ class Session:
 
 def instance(monkeypatch, session_factory, *, principal=None):
     monkeypatch.setattr(runtime_module, "validate_confidential_service_config", lambda _config: None)
+    monkeypatch.setattr(
+        runtime_module, "authenticate_authorization_intent_submission", lambda *args, **kwargs: object()
+    )
     monkeypatch.setattr(runtime_module, "verify_authorization_intent_submission", lambda *args, **kwargs: object())
     return runtime_module.MessagingDeviceBindingAuthorizationRuntime(
         service_config=service_config(),
@@ -243,9 +246,16 @@ def test_runtime_uses_one_caller_owned_session_and_transaction(monkeypatch, acti
             calls.append(("adopt", payload, authenticated_subject))
             return object()
 
+        def accepted_result_bytes(self, _result):
+            return b'{"ok":true}'
+
     monkeypatch.setattr(runtime_module, "SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage", Storage)
-    monkeypatch.setattr(runtime_module, "canonical_authorization_result_bytes", lambda _result: b'{"ok":true}')
     value = instance(monkeypatch, lambda: session)
+    monkeypatch.setattr(
+        runtime_module,
+        "authenticate_authorization_intent_submission",
+        lambda *_args, **_kwargs: events.append("intent-authenticated"),
+    )
     monkeypatch.setattr(
         runtime_module,
         "verify_authorization_intent_submission",
@@ -256,7 +266,7 @@ def test_runtime_uses_one_caller_owned_session_and_transaction(monkeypatch, acti
     assert value.authorize_for_service(service_credential(), "viewer-token", payload, "intent-token") == b'{"ok":true}'
     assert calls == [("adopt" if action == "adopt" else "lifecycle", payload, SUBJECT)]
     assert events == [
-        ("intent", NOW),
+        "intent-authenticated",
         "begin",
         "storage",
         ("intent", NOW),
@@ -291,12 +301,13 @@ def test_runtime_rolls_back_and_closes_on_storage_or_serialization_failure(monke
                     raise RuntimeError("sensitive database detail")
                 return object()
 
+            def accepted_result_bytes(self, _result):
+                if failure_point == "serializer":
+                    raise RuntimeError("sensitive serializer detail")
+                return b'{"ok":true}'
+
         monkeypatch.setattr(runtime_module, "SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage", Storage)
 
-        def serialize(_result):
-            raise RuntimeError("sensitive serializer detail")
-
-        monkeypatch.setattr(runtime_module, "canonical_authorization_result_bytes", serialize)
         value = instance(monkeypatch, lambda: session)
 
         with pytest.raises(DeviceBindingAuthorizationUnavailable) as caught:
@@ -308,12 +319,12 @@ def test_runtime_rolls_back_and_closes_on_storage_or_serialization_failure(monke
         assert events == ["begin", "rollback", "close"]
 
 
-def test_invalid_or_expired_intent_is_rejected_before_transaction(monkeypatch):
+def test_unauthenticated_intent_is_rejected_before_transaction(monkeypatch):
     opened = []
     value = instance(monkeypatch, lambda: opened.append(True))
     monkeypatch.setattr(
         runtime_module,
-        "verify_authorization_intent_submission",
+        "authenticate_authorization_intent_submission",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(DeviceBindingAuthorizationUnavailable()),
     )
     with pytest.raises(DeviceBindingAuthorizationUnavailable):
