@@ -186,7 +186,9 @@ validates the seal again against the post-mutation-lock trusted clock before
 complete authoritative state, Current-Full, lifecycle rules,
 binding/evidence mutation, and replay retention. Every failure rolls back. An
 earlier intent never outranks the final transactional state; an unaccepted
-stale or expired intent fails generically.
+stale intent fails generically. An expired intent has the one narrowly defined
+definitive outcome described below only after its exact authenticated replay
+identity is absent and transaction rollback is known to have succeeded.
 
 ## Lifecycle state
 
@@ -344,6 +346,25 @@ re-evaluated after waits at this boundary; PostgreSQL transaction time is not
 used because it may precede those waits. An accepted replay samples the clock
 only to reject impossible future-dated material and takes no mutation locks.
 
+After the request lock and exact replay lookup, a cryptographically and
+canonically authenticated candidate whose intent deadline has elapsed, and
+which has no accepted replay row, is an expired-unaccepted candidate. This
+condition is detected before Current-Full, binding, evidence, or replay writes.
+The internal transaction owner must complete rollback and close successfully
+before exposing it. Only then does the authorizations route return HTTP 409;
+the response remains exactly the generic
+`{"error":"device_binding_authorization_unavailable"}` object with the same
+no-store headers as other authorization failures. This signal contains no
+reason detail or identifier.
+
+Malformed, noncanonical, mismatched, conflicting, future-issued, unauthorized,
+stale-state, Current-Full, replay-read, locking, storage, serialization,
+runtime, commit, rollback, or close failures never use this definitive
+outcome. They retain the existing generic status, including HTTP 503 for
+ambiguous authorization failures. A rollback or close exception suppresses an
+otherwise eligible definitive signal. Exact accepted replay remains HTTP 200
+with its byte-identical stored canonical result even after the intent deadline.
+
 The public-key namespace guard covers rotate's predecessor key before that key
 can be learned from durable state. The earlier exact `User` row lock conflicts
 with a legacy binding writer even though that writer does not participate in
@@ -480,7 +501,8 @@ ID, device ID, binding operation/version and active state, binding interval,
 and authorization proof/interval. It does not return the participant subject,
 raw X25519 key, identity signature, signed request, Current-Full proof, or
 storage detail. Exact retries reconstruct the same verified typed result and
-therefore the same response bytes. Every signed-authorization, replay,
-Current-Full, state, storage, transaction, or serialization failure maps to
-the single non-sensitive internal API error
-`device_binding_authorization_unavailable`.
+therefore the same response bytes. The sole definitive expired-unaccepted
+condition maps to HTTP 409 only after successful rollback and close. Every
+other signed-authorization, replay, Current-Full, state, storage, transaction,
+or serialization failure maps to HTTP 503. Both use the same single
+non-sensitive internal API error `device_binding_authorization_unavailable`.

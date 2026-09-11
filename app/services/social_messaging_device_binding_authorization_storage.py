@@ -86,6 +86,10 @@ _PUBLIC_KEY_LOCK_DOMAIN = b"HODLXXI_SOCIAL_DEVICE_AUTHORIZATION_PUBLIC_KEY_LOCK_
 _PUBLIC_KEY_GUARD_DOMAIN = b"HODLXXI_SOCIAL_DEVICE_AUTHORIZATION_PUBLIC_KEY_GUARD_V1\x00"
 
 
+class _ExpiredUnacceptedAuthorization(RuntimeError):
+    """An authenticated, locked request has no replay winner and is expired."""
+
+
 class SocialMessagingDeviceBindingAuthorizationEvidenceRow(Base):
     """The one immutable identity authorization for a binding."""
 
@@ -903,7 +907,9 @@ class SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage:
             now = self._now()
             if claim.issued_at > now or claim.binding_valid_from > now:
                 raise ValueError
-            if now >= claim.expires_at or now >= claim.binding_expires_at:
+            if now >= claim.expires_at:
+                raise _ExpiredUnacceptedAuthorization
+            if now >= claim.binding_expires_at:
                 raise ValueError
             if admission_validator is not None:
                 if not callable(admission_validator):
@@ -925,6 +931,8 @@ class SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage:
             self._accepted_replay = ports.persist(result, now=now)
             return result
         except DeviceBindingAuthorizationUnavailable:
+            raise
+        except _ExpiredUnacceptedAuthorization:
             raise
         except (SQLAlchemyError, TypeError, ValueError):
             raise DeviceBindingAuthorizationUnavailable() from None
@@ -972,7 +980,9 @@ class SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage:
             now = self._now()
             if claim.issued_at > now or binding.valid_from > now:
                 raise ValueError
-            if now >= claim.expires_at or now >= binding.expires_at:
+            if now >= claim.expires_at:
+                raise _ExpiredUnacceptedAuthorization
+            if now >= binding.expires_at:
                 raise ValueError
             if admission_validator is not None:
                 if not callable(admission_validator):
@@ -993,6 +1003,8 @@ class SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage:
             self._accepted_replay = ports.persist(result, now=now)
             return result
         except DeviceBindingAuthorizationUnavailable:
+            raise
+        except _ExpiredUnacceptedAuthorization:
             raise
         except (SQLAlchemyError, TypeError, ValueError):
             raise DeviceBindingAuthorizationUnavailable() from None

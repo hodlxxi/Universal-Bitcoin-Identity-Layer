@@ -26,6 +26,7 @@ from app.services.social_messaging_device_binding_authorization_intent import (
 )
 from app.services.social_messaging_device_binding_authorization_runtime import (
     MESSAGING_DEVICE_AUTHORIZATION_SCOPE,
+    MessagingDeviceBindingAuthorizationExpiredUnaccepted,
     MessagingDeviceBindingAuthorizationRuntime,
     MessagingDeviceBindingAuthorizationViewerDenied,
     configured_messaging_device_binding_authorization_runtime,
@@ -167,6 +168,8 @@ def authorize_internal_social_messaging_device_binding():
         return _json_error("invalid_token", 401)
     except MessagingDeviceBindingAuthorizationViewerDenied:
         return _json_error("invalid_viewer_credential", 401)
+    except MessagingDeviceBindingAuthorizationExpiredUnaccepted:
+        return _json_error("device_binding_authorization_unavailable", 409)
     except DeviceBindingAuthorizationUnavailable:
         return _json_error("device_binding_authorization_unavailable", 503)
     except Exception:

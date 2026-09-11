@@ -12,6 +12,7 @@ from app.services.confidential_service_credentials import CredentialDenied
 from app.services.social_messaging_device_binding_authorization import DeviceBindingAuthorizationUnavailable
 from app.services.social_messaging_device_binding_authorization_runtime import (
     MESSAGING_DEVICE_AUTHORIZATION_SCOPE,
+    MessagingDeviceBindingAuthorizationExpiredUnaccepted,
     MessagingDeviceBindingAuthorizationViewerDenied,
 )
 
@@ -229,6 +230,51 @@ def test_operation_authenticates_service_before_forwarding_exact_ascii(monkeypat
     assert_no_store(response)
 
 
+@pytest.mark.parametrize("action", ("register", "rotate", "revoke", "adopt"))
+def test_exact_expired_accepted_replay_returns_stored_http_200_bytes(monkeypatch, action):
+    runtime = Runtime()
+    exact_result = json.dumps(
+        {
+            "action": action,
+            "schema": "hodlxxi.social_messaging_device_binding_authorization_result.v1",
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+    runtime.authorize_for_service = lambda *_args: exact_result
+    monkeypatch.setattr(routes, "_runtime", lambda: runtime)
+    if action == "adopt":
+        payload = json.dumps(
+            {
+                "action": "adopt",
+                "schema": "hodlxxi.social_messaging_device_binding_adoption.v1",
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    else:
+        payload = json.dumps(
+            {
+                "operation": action,
+                "schema": "hodlxxi.social_messaging_device_binding_authorization.v1",
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    response = client().post(
+        routes.AUTHORIZATIONS_ROUTE,
+        data=payload,
+        content_type="application/json",
+        headers=headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.data == exact_result
+    assert response.content_type == "application/json"
+    assert_no_store(response)
+
+
 def test_intent_route_uses_same_authorities_and_forwards_only_exact_proposal(monkeypatch):
     runtime = Runtime()
     monkeypatch.setattr(routes, "_runtime", lambda: runtime)
@@ -336,6 +382,11 @@ def test_request_boundary_rejects_non_ascii_oversize_and_non_json(monkeypatch):
             {"error": "device_binding_authorization_unavailable"},
         ),
         (
+            MessagingDeviceBindingAuthorizationExpiredUnaccepted(),
+            409,
+            {"error": "device_binding_authorization_unavailable"},
+        ),
+        (
             RuntimeError("sensitive database detail"),
             503,
             {"error": "device_binding_authorization_unavailable"},
@@ -367,4 +418,50 @@ def test_runtime_failures_are_generic_and_non_sensitive(monkeypatch, error, stat
     assert response.status_code == status
     assert response.get_json() == body
     assert "sensitive" not in response.get_data(as_text=True)
+    assert_no_store(response)
+
+
+def test_definitive_expiry_body_is_byte_identical_to_generic_failure(monkeypatch):
+    runtime = Runtime()
+    monkeypatch.setattr(routes, "_runtime", lambda: runtime)
+    http = client()
+
+    def response_for(error):
+        runtime.error = None
+        runtime.authorize_for_service = lambda *_args: (_ for _ in ()).throw(error)
+        return http.post(
+            routes.AUTHORIZATIONS_ROUTE,
+            data=PAYLOAD,
+            content_type="application/json",
+            headers=headers(),
+        )
+
+    definitive = response_for(MessagingDeviceBindingAuthorizationExpiredUnaccepted())
+    ambiguous = response_for(DeviceBindingAuthorizationUnavailable())
+
+    assert definitive.status_code == 409
+    assert ambiguous.status_code == 503
+    assert definitive.data == ambiguous.data == b'{"error":"device_binding_authorization_unavailable"}\n'
+    assert definitive.content_length == ambiguous.content_length == len(definitive.data)
+    assert definitive.get_json() == {"error": "device_binding_authorization_unavailable"}
+    assert_no_store(definitive)
+    assert_no_store(ambiguous)
+
+
+def test_definitive_expiry_signal_is_not_409_on_the_intent_route(monkeypatch):
+    runtime = Runtime()
+    runtime.create_intent_for_service = lambda *_args: (_ for _ in ()).throw(
+        MessagingDeviceBindingAuthorizationExpiredUnaccepted()
+    )
+    monkeypatch.setattr(routes, "_runtime", lambda: runtime)
+
+    response = client().post(
+        routes.AUTHORIZATION_INTENTS_ROUTE,
+        data=INTENT_PROPOSAL,
+        content_type="application/json",
+        headers=headers(),
+    )
+
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "device_binding_authorization_unavailable"}
     assert_no_store(response)
