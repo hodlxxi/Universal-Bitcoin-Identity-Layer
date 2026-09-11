@@ -44,10 +44,15 @@ from app.services.social_messaging_device_binding_authorization import (
     IdentitySignedDeviceBindingAuthorization,
     SocialMessagingDeviceBindingAuthorizationV1,
     SocialMessagingLegacyBindingAdoptionV1,
+    _authorized_from,
     adoption_digest,
+    adoption_event_id,
     authorization_digest,
+    authorization_event_id,
+    canonical_adoption_event_serialization,
     canonical_adoption_json,
     canonical_adoption_signed_bytes,
+    canonical_authorization_event_serialization,
     canonical_authorization_json,
     canonical_authorization_signed_bytes,
     parse_and_verify_device_binding_adoption,
@@ -108,7 +113,7 @@ def claim(**changes):
 def signed(value=None, *, key=IDENTITY_KEY):
     value = value or claim()
     digest = authorization_digest(value)
-    signature = key.sign_schnorr(bytes.fromhex(digest), b"\x00" * 32).hex()
+    signature = key.sign_schnorr(bytes.fromhex(authorization_event_id(value)), b"\x00" * 32).hex()
     return IdentitySignedDeviceBindingAuthorization(value, digest, SIGNATURE_FORMAT, signature)
 
 
@@ -166,7 +171,7 @@ def adoption_claim(value=None, **changes):
 def signed_adoption(value=None, *, key=IDENTITY_KEY):
     value = value or adoption_claim()
     digest = adoption_digest(value)
-    signature = key.sign_schnorr(bytes.fromhex(digest), b"\x00" * 32).hex()
+    signature = key.sign_schnorr(bytes.fromhex(adoption_event_id(value)), b"\x00" * 32).hex()
     return IdentitySignedDeviceBindingAdoption(value, digest, SIGNATURE_FORMAT, signature)
 
 
@@ -627,9 +632,28 @@ def test_exact_canonical_signed_bytes_and_fixed_bip340_vector():
     assert canonical_authorization_signed_bytes(value) == expected
     assert hashlib.sha256(expected).hexdigest() == authorization.digest
     assert authorization.digest == "70aa19a24077c3365a836f0476660f0132ab7959615d2c8c67ba75afd9071d9c"
+    expected_serialization = json.dumps(
+        [
+            0,
+            SUBJECT,
+            1788906599,
+            27236,
+            [
+                ["purpose", "hodlxxi-social-messaging-device-binding-authorization-v1"],
+                ["semantic-digest", authorization.digest],
+                ["request-id", REQUEST_ID],
+                ["action", "register"],
+            ],
+            expected.decode("ascii"),
+        ],
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+    assert canonical_authorization_event_serialization(value) == expected_serialization
+    assert authorization_event_id(value) == "4fb89f90de1379e47893ad335c4839805be4265767d1972b7281aea2ef2e0ad0"
     assert authorization.signature == (
-        "afedbfdd98495e098195a1716c3241fe490fad95f127cbda9a292cccabb644da"
-        "e5b91c3fe13c3e11df70445071afb92b53b486a984b74f6c7f8c3893f3e12bf7"
+        "6fb5dcbb6791eaf44bb2fa9282a1db21c702e88db58ab388d974baae4b082ff69"
+        "cfbfe4eb62fe36a8040fb9de010a1e6a9a2b6232332fac21d2d7a2a7e689570"
     )
     parsed = parse_and_verify_device_binding_authorization(
         canonical_authorization_json(authorization),
@@ -692,6 +716,152 @@ def test_wrong_signer_and_wrong_authenticated_participant_fail():
             payload(),
             authenticated_subject=OTHER_SUBJECT,
         )
+    )
+
+
+def test_old_direct_semantic_digest_signatures_fail_for_lifecycle_and_adoption():
+    authorization = signed()
+    direct = IDENTITY_KEY.sign_schnorr(bytes.fromhex(authorization.digest), b"\x00" * 32).hex()
+    altered = {**json.loads(canonical_authorization_json(authorization)), "signature": direct}
+    assert_generic(
+        lambda: parse_and_verify_device_binding_authorization(
+            json.dumps(altered, sort_keys=True, separators=(",", ":")),
+            authenticated_subject=SUBJECT,
+        )
+    )
+    adoption = signed_adoption()
+    direct = IDENTITY_KEY.sign_schnorr(bytes.fromhex(adoption.digest), b"\x00" * 32).hex()
+    altered = {**json.loads(canonical_adoption_json(adoption)), "signature": direct}
+    assert_generic(
+        lambda: parse_and_verify_device_binding_adoption(
+            json.dumps(altered, sort_keys=True, separators=(",", ":")),
+            authenticated_subject=SUBJECT,
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda event: event.__setitem__(1, OTHER_SUBJECT),
+        lambda event: event.__setitem__(2, event[2] + 1),
+        lambda event: event.__setitem__(3, 27235),
+        lambda event: event[4][0].__setitem__(1, "wrong-purpose"),
+        lambda event: event[4][1].__setitem__(1, "00" * 32),
+        lambda event: event[4][2].__setitem__(1, "66" * 32),
+        lambda event: event[4][3].__setitem__(1, "rotate"),
+        lambda event: event[4].reverse(),
+        lambda event: event[4].pop(),
+        lambda event: event[4][0].append("extra"),
+        lambda event: event.__setitem__(5, event[5] + " "),
+    ),
+)
+def test_signatures_over_any_substituted_carrier_component_fail(mutation):
+    authorization = signed()
+    event = json.loads(canonical_authorization_event_serialization(authorization.claim))
+    mutation(event)
+    alternate_serialization = json.dumps(
+        event,
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+    alternate_id = hashlib.sha256(alternate_serialization).digest()
+    alternate_signature = IDENTITY_KEY.sign_schnorr(alternate_id, b"\x00" * 32).hex()
+    altered = {
+        **json.loads(canonical_authorization_json(authorization)),
+        "signature": alternate_signature,
+    }
+    assert_generic(
+        lambda: parse_and_verify_device_binding_authorization(
+            json.dumps(altered, sort_keys=True, separators=(",", ":")),
+            authenticated_subject=SUBJECT,
+        )
+    )
+
+
+def test_rotate_and_revoke_carrier_fixed_vectors():
+    registered = accepted_register()
+    rotated_claim = rotate_claim(registered)
+    rotated = signed(rotated_claim)
+    rotated_content = (
+        b'{"authorization":{"algorithm":"x25519-v1","bindingExpiresAt":"2026-10-08T22:29:59Z",'
+        b'"bindingRecordSchema":"hodlxxi.social_messaging_device_binding_record.v1",'
+        b'"bindingRecordVersion":1,"bindingValidFrom":"2026-09-08T22:30:00Z","bindingVersion":2,'
+        b'"deviceId":"2222222222222222222222222222222222222222222222222222222222222222",'
+        b'"expiresAt":"2026-09-08T22:35:00Z","issuedAt":"2026-09-08T22:30:00Z",'
+        b'"operation":"rotate","priorBindingId":"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d",'
+        b'"publicKey":"0a00000000000000000000000000000000000000000000000000000000000000",'
+        b'"requestId":"4444444444444444444444444444444444444444444444444444444444444444",'
+        b'"schema":"hodlxxi.social_messaging_device_binding_authorization.v1",'
+        b'"subject":"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",'
+        b'"version":1},"domain":"HODLXXI_SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_V1"}'
+    )
+    assert canonical_authorization_signed_bytes(rotated_claim) == rotated_content
+    assert rotated.binding_id == "cc4efc97cef56180a86b1d9235b754fa717b45d4b9593ebdb04be4226c357b10"
+    assert rotated.digest == "16c47dd55844cf3086124b87249ec395b7d42759215f14ccfa99259fa51dd80c"
+    assert canonical_authorization_event_serialization(rotated_claim) == json.dumps(
+        [
+            0,
+            SUBJECT,
+            1788906600,
+            27236,
+            [
+                ["purpose", "hodlxxi-social-messaging-device-binding-authorization-v1"],
+                ["semantic-digest", rotated.digest],
+                ["request-id", "44" * 32],
+                ["action", "rotate"],
+            ],
+            rotated_content.decode("ascii"),
+        ],
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+    assert authorization_event_id(rotated_claim) == ("a429b02a9223fcb463d64da2483fc8ec644d2002889cdc9fa29ba1ec72732f28")
+    assert rotated.signature == (
+        "c919383d95f589fe9661636b0365f4a0231654a929728d14b085a0f7f130efdb"
+        "64fe2f1975eb2f5ee67ccd80e01f8e7f17402fbb55e47f1de3e85921e9a67d93"
+    )
+
+    accepted_rotate = _authorized_from(rotated)
+    revoked_claim = revoke_claim(accepted_rotate)
+    revoked = signed(revoked_claim)
+    revoked_content = (
+        b'{"authorization":{"algorithm":"x25519-v1","bindingExpiresAt":"2026-10-08T22:29:59Z",'
+        b'"bindingRecordSchema":"hodlxxi.social_messaging_device_binding_record.v1",'
+        b'"bindingRecordVersion":1,"bindingValidFrom":"2026-09-08T22:30:00Z","bindingVersion":3,'
+        b'"deviceId":"2222222222222222222222222222222222222222222222222222222222222222",'
+        b'"expiresAt":"2026-09-08T22:35:00Z","issuedAt":"2026-09-08T22:30:00Z",'
+        b'"operation":"revoke","priorBindingId":"cc4efc97cef56180a86b1d9235b754fa717b45d4b9593ebdb04be4226c357b10",'
+        b'"publicKey":"0a00000000000000000000000000000000000000000000000000000000000000",'
+        b'"requestId":"5555555555555555555555555555555555555555555555555555555555555555",'
+        b'"schema":"hodlxxi.social_messaging_device_binding_authorization.v1",'
+        b'"subject":"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",'
+        b'"version":1},"domain":"HODLXXI_SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_V1"}'
+    )
+    assert canonical_authorization_signed_bytes(revoked_claim) == revoked_content
+    assert revoked.binding_id == "a02864a0890e7528c34a3136ee040d661221a3eb5fb56415ffc4c617c60ea838"
+    assert revoked.digest == "a7db4b3f77f902abfffe99ea33739b2c65f7a1ce2f0f313065e9f7bbdcdba8bb"
+    assert canonical_authorization_event_serialization(revoked_claim) == json.dumps(
+        [
+            0,
+            SUBJECT,
+            1788906600,
+            27236,
+            [
+                ["purpose", "hodlxxi-social-messaging-device-binding-authorization-v1"],
+                ["semantic-digest", revoked.digest],
+                ["request-id", "55" * 32],
+                ["action", "revoke"],
+            ],
+            revoked_content.decode("ascii"),
+        ],
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+    assert authorization_event_id(revoked_claim) == ("1da8e3972f9d82a15103a86de94ff06321e110065716baf5d3129a435063b2f6")
+    assert revoked.signature == (
+        "d20c569136c2e96bd941ae5ca324afc5db716c736c9013b2ca43aab3391758da"
+        "eb6500f4e446fee52d7c7c2d2d79e37453684a9994d390afe75dbd148a7f295d"
     )
 
 
@@ -888,6 +1058,30 @@ def test_exact_retry_is_idempotent_without_reconsulting_changed_current_state():
     state.key_overrides[KEY_A] = RuntimeError("state unavailable after downstream apply")
 
     assert authority.authorize(source, authenticated_subject=SUBJECT) == first
+    assert [call[0] for call in state.calls] == ["binding", "device", "subject", "key"]
+
+
+def test_same_event_with_different_valid_signature_is_not_an_exact_retry():
+    state = StateProvider()
+    replay = ReplayLedger()
+    authority = service(state, replay)
+    source = payload()
+    authority.authorize(source, authenticated_subject=SUBJECT)
+    changed_signature = IDENTITY_KEY.sign_schnorr(
+        bytes.fromhex(authorization_event_id(claim())),
+        b"\x01" * 32,
+    ).hex()
+    altered = {
+        **json.loads(source),
+        "signature": changed_signature,
+    }
+
+    assert_generic(
+        lambda: authority.authorize(
+            json.dumps(altered, sort_keys=True, separators=(",", ":")),
+            authenticated_subject=SUBJECT,
+        )
+    )
     assert [call[0] for call in state.calls] == ["binding", "device", "subject", "key"]
 
 
@@ -1192,8 +1386,8 @@ def test_exact_canonical_adoption_signed_bytes_and_fixed_bip340_vector():
     )
     expected_digest = "c96902ddb67f6d63c1579e81100f267be27f5f0cd12727b521c76c66d8f25c36"
     expected_signature = (
-        "06b5a3e0ae6fb0b14047b3a0ec34640e4993730660540deedbaae73b6c9fba65"
-        "fbf7ddbba40e555c2148654a18a841faf403f4285acb00e0abfb3cb8fa313421"
+        "70e3bc1a5609d946e607c8a63506ac3770889ae01b0c60721e88fa1228ba047f"
+        "1911f4a3a64aac0d60687df2a183cff1e33e7e64a6233a6708df4e16f9a6022f"
     )
     value = adoption_claim()
     authorization = signed_adoption(value)
@@ -1203,14 +1397,35 @@ def test_exact_canonical_adoption_signed_bytes_and_fixed_bip340_vector():
     assert hashlib.sha256(expected).hexdigest() == expected_digest
     assert adoption_digest(value) == expected_digest
     assert authorization.digest == expected_digest
+    expected_serialization = json.dumps(
+        [
+            0,
+            SUBJECT,
+            1788906600,
+            27236,
+            [
+                ["purpose", "hodlxxi-social-messaging-device-binding-authorization-v1"],
+                ["semantic-digest", expected_digest],
+                ["request-id", ADOPTION_REQUEST_ID],
+                ["action", "adopt"],
+            ],
+            expected.decode("ascii"),
+        ],
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+    assert canonical_adoption_event_serialization(value) == expected_serialization
+    assert adoption_event_id(value) == "68bb9d6a6dc3a13630a47e27350be22859be407a0c2ff903a6820ab214d50955"
     assert authorization.signature == expected_signature
     assert (
-        PrivateKey(bytes.fromhex("00" * 31 + "03")).sign_schnorr(bytes.fromhex(expected_digest), b"\x00" * 32).hex()
+        PrivateKey(bytes.fromhex("00" * 31 + "03"))
+        .sign_schnorr(bytes.fromhex(adoption_event_id(value)), b"\x00" * 32)
+        .hex()
         == expected_signature
     )
     assert (
         PublicKeyXOnly(bytes.fromhex("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9")).verify(
-            bytes.fromhex(expected_signature), bytes.fromhex(expected_digest)
+            bytes.fromhex(expected_signature), bytes.fromhex(adoption_event_id(value))
         )
         is True
     )

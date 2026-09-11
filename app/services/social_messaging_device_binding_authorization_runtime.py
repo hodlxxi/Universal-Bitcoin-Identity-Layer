@@ -10,9 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Mapping, Protocol
 
-from app.services.confidential_service_assertion_replay_storage import (
-    PostgresConfidentialServiceAssertionReplayStore,
-)
+from app.services.confidential_service_assertion_replay_storage import PostgresConfidentialServiceAssertionReplayStore
 from app.services.confidential_service_credentials import (
     ConfidentialServiceConfig,
     CredentialDenied,
@@ -29,14 +27,21 @@ from app.services.social_messaging_device_binding_authorization import (
     PROOF_ID_PREFIX,
     AdoptedDeviceBindingAuthorization,
     AuthorizedDeviceBinding,
+    Bip340IdentitySignatureVerifier,
     DeviceBindingAuthorizationUnavailable,
     canonical_adoption_json,
     canonical_authorization_json,
+)
+from app.services.social_messaging_device_binding_authorization_intent import (
+    canonical_authorization_intent_bytes,
+    seal_authorization_intent,
+    verify_authorization_intent_submission,
 )
 from app.services.social_messaging_device_binding_authorization_storage import (
     SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage,
 )
 from app.services.social_messaging_device_contract import MessagingDeviceBinding
+from app.services.social_messaging_device_storage import MAX_BINDING_LIFETIME_SECONDS, MIN_BINDING_LIFETIME_SECONDS
 from app.services.social_messaging_recipient_routing import VerifiedBindingAuthorization
 
 MESSAGING_DEVICE_AUTHORIZATION_SCOPE = "social:messaging-device-binding-authorization:manage"
@@ -45,6 +50,7 @@ MESSAGING_DEVICE_AUTHORIZATION_EXTENSION = "social_messaging_device_binding_auth
 RESULT_SCHEMA = "hodlxxi.social_messaging_device_binding_authorization_result.v1"
 RESULT_VERSION = 1
 VIEWER_REQUIRED_SCOPE = "openid"
+DEFAULT_BINDING_LIFETIME_SECONDS = 30 * 24 * 60 * 60
 
 
 class MessagingDeviceBindingAuthorizationConfigurationError(RuntimeError):
@@ -216,6 +222,8 @@ class MessagingDeviceBindingAuthorizationRuntime:
     viewer_oauth_client_id: str
     viewer_token_validator: Callable[[str], BearerPrincipal]
     session_factory: Callable[[], _AuthorizationSession]
+    binding_lifetime_seconds: int
+    clock: Callable[[], datetime]
 
     def __post_init__(self) -> None:
         try:
@@ -232,6 +240,9 @@ class MessagingDeviceBindingAuthorizationRuntime:
                 or self.viewer_oauth_client_id.strip() != self.viewer_oauth_client_id
                 or not callable(self.viewer_token_validator)
                 or not callable(self.session_factory)
+                or type(self.binding_lifetime_seconds) is not int
+                or not MIN_BINDING_LIFETIME_SECONDS <= self.binding_lifetime_seconds <= MAX_BINDING_LIFETIME_SECONDS
+                or not callable(self.clock)
             ):
                 raise ValueError
         except Exception:
@@ -281,12 +292,24 @@ class MessagingDeviceBindingAuthorizationRuntime:
         service: VerifiedServiceCredential,
         viewer_token: str,
         payload: object,
+        intent_token: object,
     ) -> bytes:
         """Own one transaction from begin through serialized result and commit."""
 
         self._require_service(service)
         subject = self._viewer_subject(viewer_token)
         action = _authorization_action(payload)
+        signature_verifier = Bip340IdentitySignatureVerifier()
+        verify_authorization_intent_submission(
+            intent_token,
+            payload,
+            authenticated_subject=subject,
+            issuer=self.service_config.issuer,
+            expected_kid=self.service_signing_kid,
+            verification_keys=self.service_config.service_jwks,
+            signature_verifier=signature_verifier,
+            now=self.clock(),
+        )
         session: _AuthorizationSession | None = None
         try:
             session = self.session_factory()
@@ -298,14 +321,99 @@ class MessagingDeviceBindingAuthorizationRuntime:
             ):
                 raise ValueError
             session.begin()
-            storage = SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage(session)
+            storage = SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage(
+                session,
+                signature_verifier=signature_verifier,
+                clock=self.clock,
+            )
+
+            def validate_admission(now: datetime) -> None:
+                verify_authorization_intent_submission(
+                    intent_token,
+                    payload,
+                    authenticated_subject=subject,
+                    issuer=self.service_config.issuer,
+                    expected_kid=self.service_signing_kid,
+                    verification_keys=self.service_config.service_jwks,
+                    signature_verifier=signature_verifier,
+                    now=now,
+                )
+
             result: AuthorizedDeviceBinding | AdoptedDeviceBindingAuthorization
             if action == "adopt":
-                result = storage.adopt_legacy(payload, authenticated_subject=subject)
+                result = storage.adopt_legacy(
+                    payload,
+                    authenticated_subject=subject,
+                    admission_validator=validate_admission,
+                )
             else:
-                result = storage.authorize_lifecycle(payload, authenticated_subject=subject)
+                result = storage.authorize_lifecycle(
+                    payload,
+                    authenticated_subject=subject,
+                    admission_validator=validate_admission,
+                )
             response = canonical_authorization_result_bytes(result)
             session.commit()
+            return response
+        except DeviceBindingAuthorizationUnavailable:
+            if session is not None:
+                try:
+                    session.rollback()
+                except Exception:
+                    pass
+            raise
+        except Exception:
+            if session is not None:
+                try:
+                    session.rollback()
+                except Exception:
+                    pass
+            raise DeviceBindingAuthorizationUnavailable() from None
+        finally:
+            if session is not None:
+                try:
+                    session.close()
+                except Exception:
+                    pass
+
+    def create_intent_for_service(
+        self,
+        service: VerifiedServiceCredential,
+        viewer_token: str,
+        payload: object,
+    ) -> bytes:
+        """Derive and seal one intent; always roll back the read transaction."""
+
+        self._require_service(service)
+        subject = self._viewer_subject(viewer_token)
+        session: _AuthorizationSession | None = None
+        try:
+            session = self.session_factory()
+            if (
+                not callable(getattr(session, "begin", None))
+                or not callable(getattr(session, "rollback", None))
+                or not callable(getattr(session, "close", None))
+            ):
+                raise ValueError
+            session.begin()
+            storage = SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage(
+                session,
+                clock=self.clock,
+            )
+            intent = storage.create_intent(
+                payload,
+                authenticated_subject=subject,
+                binding_lifetime_seconds=self.binding_lifetime_seconds,
+            )
+            token = seal_authorization_intent(
+                intent,
+                issuer=self.service_config.issuer,
+                signing_key=self.service_signing_key,
+                signing_kid=self.service_signing_kid,
+                verification_keys=self.service_config.service_jwks,
+            )
+            response = canonical_authorization_intent_bytes(intent, intent_token=token)
+            session.rollback()
             return response
         except DeviceBindingAuthorizationUnavailable:
             if session is not None:
@@ -352,6 +460,7 @@ def build_messaging_device_binding_authorization_runtime(
     *,
     session_factory=None,
     viewer_token_validator=None,
+    clock=None,
 ) -> MessagingDeviceBindingAuthorizationRuntime | None:
     if config.get("SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_INTERNAL_ENABLED") is not True:
         return None
@@ -408,6 +517,15 @@ def build_messaging_device_binding_authorization_runtime(
             config,
             "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_VIEWER_OAUTH_CLIENT_ID",
         )
+        binding_lifetime_seconds = config.get(
+            "SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS",
+            DEFAULT_BINDING_LIFETIME_SECONDS,
+        )
+        if (
+            type(binding_lifetime_seconds) is not int
+            or not MIN_BINDING_LIFETIME_SECONDS <= binding_lifetime_seconds <= MAX_BINDING_LIFETIME_SECONDS
+        ):
+            raise ValueError
         if session_factory is None:
             from app.database import get_session
 
@@ -423,6 +541,14 @@ def build_messaging_device_binding_authorization_runtime(
                     expected_client_id=viewer_oauth_client_id,
                 )
 
+        if clock is None:
+
+            def clock():
+                return datetime.now(timezone.utc).replace(microsecond=0)
+
+        if not callable(clock):
+            raise ValueError
+
         return MessagingDeviceBindingAuthorizationRuntime(
             service_config=service_config,
             replay_consumer=replay_consumer,
@@ -431,6 +557,8 @@ def build_messaging_device_binding_authorization_runtime(
             viewer_oauth_client_id=viewer_oauth_client_id,
             viewer_token_validator=viewer_token_validator,
             session_factory=session_factory,
+            binding_lifetime_seconds=binding_lifetime_seconds,
+            clock=clock,
         )
     except MessagingDeviceBindingAuthorizationConfigurationError:
         raise

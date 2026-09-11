@@ -17,6 +17,7 @@ from app.services.social_messaging_device_binding_authorization_runtime import (
 
 SERVICE_TOKEN = "service-token"
 VIEWER_TOKEN = "viewer-token"
+INTENT_TOKEN = "a.b.c"
 ASSERTION = "client-assertion"
 PAYLOAD = json.dumps(
     {
@@ -27,6 +28,18 @@ PAYLOAD = json.dumps(
     separators=(",", ":"),
 )
 RESULT = b'{"action":"register","schema":"hodlxxi.social_messaging_device_binding_authorization_result.v1"}'
+INTENT_PROPOSAL = json.dumps(
+    {
+        "deviceId": "22" * 32,
+        "expectedBindingId": None,
+        "operation": "register",
+        "publicKey": "09" + "00" * 31,
+        "requestId": "33" * 32,
+    },
+    sort_keys=True,
+    separators=(",", ":"),
+)
+INTENT_RESULT = b'{"schema":"hodlxxi.social_messaging_device_binding_authorization_intent.v1"}'
 
 
 class Runtime:
@@ -46,11 +59,17 @@ class Runtime:
             raise self.error
         return self.service
 
-    def authorize_for_service(self, service, viewer_token, payload):
-        self.calls.append(("authorize", service, viewer_token, payload))
+    def authorize_for_service(self, service, viewer_token, payload, intent_token):
+        self.calls.append(("authorize", service, viewer_token, payload, intent_token))
         if self.error is not None:
             raise self.error
         return RESULT
+
+    def create_intent_for_service(self, service, viewer_token, payload):
+        self.calls.append(("intent", service, viewer_token, payload))
+        if self.error is not None:
+            raise self.error
+        return INTENT_RESULT
 
 
 def client():
@@ -64,6 +83,7 @@ def headers(*, service=SERVICE_TOKEN, viewer=VIEWER_TOKEN):
     return {
         "Authorization": f"Bearer {service}",
         routes.VIEWER_AUTHORIZATION_HEADER: f"Bearer {viewer}",
+        routes.INTENT_TOKEN_HEADER: INTENT_TOKEN,
     }
 
 
@@ -90,6 +110,10 @@ def test_routes_are_absent_without_the_dedicated_runtime():
         (routes.SERVICE_TOKEN_ROUTE, {"data": token_form()}),
         (
             routes.AUTHORIZATIONS_ROUTE,
+            {"data": PAYLOAD, "content_type": "application/json", "headers": headers()},
+        ),
+        (
+            routes.AUTHORIZATION_INTENTS_ROUTE,
             {"data": PAYLOAD, "content_type": "application/json", "headers": headers()},
         ),
     ):
@@ -200,9 +224,59 @@ def test_operation_authenticates_service_before_forwarding_exact_ascii(monkeypat
     assert response.content_type == "application/json"
     assert runtime.calls == [
         ("service", SERVICE_TOKEN),
-        ("authorize", runtime.service, VIEWER_TOKEN, PAYLOAD),
+        ("authorize", runtime.service, VIEWER_TOKEN, PAYLOAD, INTENT_TOKEN),
     ]
     assert_no_store(response)
+
+
+def test_intent_route_uses_same_authorities_and_forwards_only_exact_proposal(monkeypatch):
+    runtime = Runtime()
+    monkeypatch.setattr(routes, "_runtime", lambda: runtime)
+    response = client().post(
+        routes.AUTHORIZATION_INTENTS_ROUTE,
+        data=INTENT_PROPOSAL,
+        content_type="application/json",
+        headers=headers(),
+    )
+    assert response.status_code == 200
+    assert response.data == INTENT_RESULT
+    assert runtime.calls == [
+        ("service", SERVICE_TOKEN),
+        ("intent", runtime.service, VIEWER_TOKEN, INTENT_PROPOSAL),
+    ]
+    assert_no_store(response)
+
+
+def test_submission_requires_separate_bounded_intent_header(monkeypatch):
+    runtime = Runtime()
+    monkeypatch.setattr(routes, "_runtime", lambda: runtime)
+    supplied = headers()
+    supplied.pop(routes.INTENT_TOKEN_HEADER)
+    response = client().post(
+        routes.AUTHORIZATIONS_ROUTE,
+        data=PAYLOAD,
+        content_type="application/json",
+        headers=supplied,
+    )
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "invalid_request"}
+    assert runtime.calls == [("service", SERVICE_TOKEN)]
+    assert_no_store(response)
+
+    for invalid in ("not-a-jwt", "a..c", "a" * (routes.MAX_INTENT_TOKEN_BYTES + 1)):
+        runtime.calls.clear()
+        supplied = headers()
+        supplied[routes.INTENT_TOKEN_HEADER] = invalid
+        response = client().post(
+            routes.AUTHORIZATIONS_ROUTE,
+            data=PAYLOAD,
+            content_type="application/json",
+            headers=supplied,
+        )
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "invalid_request"}
+        assert runtime.calls == [("service", SERVICE_TOKEN)]
+        assert_no_store(response)
 
 
 def test_missing_or_invalid_service_never_reaches_request_runtime(monkeypatch):

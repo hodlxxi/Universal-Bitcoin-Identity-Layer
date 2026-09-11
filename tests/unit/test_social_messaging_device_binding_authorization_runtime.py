@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import inspect
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -27,7 +27,9 @@ from app.services.social_messaging_device_binding_authorization import (
     IdentitySignedDeviceBindingAdoption,
     IdentitySignedDeviceBindingAuthorization,
     adoption_digest,
+    adoption_event_id,
     authorization_digest,
+    authorization_event_id,
 )
 from app.services.social_messaging_device_binding_authorization_storage import (
     SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage,
@@ -115,7 +117,7 @@ def authorized_result():
         claim,
         digest,
         SIGNATURE_FORMAT,
-        IDENTITY_KEY.sign_schnorr(bytes.fromhex(digest), b"\x00" * 32).hex(),
+        IDENTITY_KEY.sign_schnorr(bytes.fromhex(authorization_event_id(claim)), b"\x00" * 32).hex(),
     )
     binding = MessagingDeviceBinding(
         subject=SUBJECT,
@@ -161,7 +163,7 @@ def adopted_result():
         claim,
         digest,
         SIGNATURE_FORMAT,
-        IDENTITY_KEY.sign_schnorr(bytes.fromhex(digest), b"\x00" * 32).hex(),
+        IDENTITY_KEY.sign_schnorr(bytes.fromhex(adoption_event_id(claim)), b"\x00" * 32).hex(),
     )
     verification = VerifiedBindingAuthorization(
         proof_id=PROOF_ID_PREFIX + digest,
@@ -198,6 +200,7 @@ class Session:
 
 def instance(monkeypatch, session_factory, *, principal=None):
     monkeypatch.setattr(runtime_module, "validate_confidential_service_config", lambda _config: None)
+    monkeypatch.setattr(runtime_module, "verify_authorization_intent_submission", lambda *args, **kwargs: object())
     return runtime_module.MessagingDeviceBindingAuthorizationRuntime(
         service_config=service_config(),
         replay_consumer=lambda _jti, _deadline: True,
@@ -206,6 +209,8 @@ def instance(monkeypatch, session_factory, *, principal=None):
         viewer_oauth_client_id="social-browser",
         viewer_token_validator=lambda _token: principal or viewer(),
         session_factory=session_factory,
+        binding_lifetime_seconds=30 * 24 * 60 * 60,
+        clock=lambda: NOW,
     )
 
 
@@ -224,32 +229,46 @@ def test_runtime_uses_one_caller_owned_session_and_transaction(monkeypatch, acti
     calls = []
 
     class Storage:
-        def __init__(self, supplied_session):
+        def __init__(self, supplied_session, **_kwargs):
             assert supplied_session is session
             events.append("storage")
 
-        def authorize_lifecycle(self, payload, *, authenticated_subject):
+        def authorize_lifecycle(self, payload, *, authenticated_subject, admission_validator):
+            admission_validator(NOW)
             calls.append(("lifecycle", payload, authenticated_subject))
             return object()
 
-        def adopt_legacy(self, payload, *, authenticated_subject):
+        def adopt_legacy(self, payload, *, authenticated_subject, admission_validator):
+            admission_validator(NOW)
             calls.append(("adopt", payload, authenticated_subject))
             return object()
 
     monkeypatch.setattr(runtime_module, "SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage", Storage)
     monkeypatch.setattr(runtime_module, "canonical_authorization_result_bytes", lambda _result: b'{"ok":true}')
     value = instance(monkeypatch, lambda: session)
+    monkeypatch.setattr(
+        runtime_module,
+        "verify_authorization_intent_submission",
+        lambda *_args, **kwargs: events.append(("intent", kwargs["now"])),
+    )
     payload = dispatch_payload(action)
 
-    assert value.authorize_for_service(service_credential(), "viewer-token", payload) == b'{"ok":true}'
+    assert value.authorize_for_service(service_credential(), "viewer-token", payload, "intent-token") == b'{"ok":true}'
     assert calls == [("adopt" if action == "adopt" else "lifecycle", payload, SUBJECT)]
-    assert events == ["begin", "storage", "commit", "close"]
+    assert events == [
+        ("intent", NOW),
+        "begin",
+        "storage",
+        ("intent", NOW),
+        "commit",
+        "close",
+    ]
 
 
 def test_existing_storage_builds_current_full_from_its_exact_session():
     source = inspect.getsource(SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage)
 
-    assert source.count("SqlAlchemyTransactionBoundCurrentFullVerifier(self._session)") == 2
+    assert source.count("SqlAlchemyTransactionBoundCurrentFullVerifier(self._session)") == 3
     assert "self._session.begin(" not in source
     assert "self._session.commit(" not in source
     assert "self._session.rollback(" not in source
@@ -262,10 +281,11 @@ def test_runtime_rolls_back_and_closes_on_storage_or_serialization_failure(monke
         session = Session(events)
 
         class Storage:
-            def __init__(self, supplied_session):
+            def __init__(self, supplied_session, **_kwargs):
                 assert supplied_session is session
 
-            def authorize_lifecycle(self, _payload, *, authenticated_subject):
+            def authorize_lifecycle(self, _payload, *, authenticated_subject, admission_validator):
+                admission_validator(NOW)
                 assert authenticated_subject == SUBJECT
                 if failure_point == "storage":
                     raise RuntimeError("sensitive database detail")
@@ -280,17 +300,69 @@ def test_runtime_rolls_back_and_closes_on_storage_or_serialization_failure(monke
         value = instance(monkeypatch, lambda: session)
 
         with pytest.raises(DeviceBindingAuthorizationUnavailable) as caught:
-            value.authorize_for_service(service_credential(), "viewer-token", dispatch_payload("register"))
+            value.authorize_for_service(
+                service_credential(), "viewer-token", dispatch_payload("register"), "intent-token"
+            )
 
         assert caught.value.__cause__ is None
         assert events == ["begin", "rollback", "close"]
+
+
+def test_invalid_or_expired_intent_is_rejected_before_transaction(monkeypatch):
+    opened = []
+    value = instance(monkeypatch, lambda: opened.append(True))
+    monkeypatch.setattr(
+        runtime_module,
+        "verify_authorization_intent_submission",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(DeviceBindingAuthorizationUnavailable()),
+    )
+    with pytest.raises(DeviceBindingAuthorizationUnavailable):
+        value.authorize_for_service(
+            service_credential(),
+            "viewer-token",
+            dispatch_payload("register"),
+            "expired-intent",
+        )
+    assert opened == []
+
+
+def test_intent_creation_is_read_only_and_rolls_back_on_success(monkeypatch):
+    events = []
+    session = Session(events)
+    derived = object()
+
+    class Storage:
+        def __init__(self, supplied_session, **_kwargs):
+            assert supplied_session is session
+            events.append("storage")
+
+        def create_intent(self, payload, *, authenticated_subject, binding_lifetime_seconds):
+            assert (payload, authenticated_subject) == ("proposal", SUBJECT)
+            assert binding_lifetime_seconds == 30 * 24 * 60 * 60
+            events.append("derive")
+            return derived
+
+    monkeypatch.setattr(
+        runtime_module,
+        "SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage",
+        Storage,
+    )
+    monkeypatch.setattr(runtime_module, "seal_authorization_intent", lambda *_args, **_kwargs: "token")
+    monkeypatch.setattr(
+        runtime_module,
+        "canonical_authorization_intent_bytes",
+        lambda intent, *, intent_token: b'{"intent":true}' if (intent, intent_token) == (derived, "token") else b"",
+    )
+    value = instance(monkeypatch, lambda: session)
+    assert value.create_intent_for_service(service_credential(), "viewer-token", "proposal") == b'{"intent":true}'
+    assert events == ["begin", "storage", "derive", "rollback", "close"]
 
 
 def test_viewer_and_service_are_exact_before_any_transaction(monkeypatch):
     opened = []
     value = instance(monkeypatch, lambda: opened.append(True), principal=viewer(client_id="foreign"))
     with pytest.raises(runtime_module.MessagingDeviceBindingAuthorizationViewerDenied):
-        value.authorize_for_service(service_credential(), "viewer-token", dispatch_payload("register"))
+        value.authorize_for_service(service_credential(), "viewer-token", dispatch_payload("register"), "intent-token")
     assert opened == []
 
     value = instance(monkeypatch, lambda: opened.append(True))
@@ -299,6 +371,7 @@ def test_viewer_and_service_are_exact_before_any_transaction(monkeypatch):
             service_credential(scope="social:messaging-device:manage"),
             "viewer-token",
             dispatch_payload("register"),
+            "intent-token",
         )
     assert opened == []
 

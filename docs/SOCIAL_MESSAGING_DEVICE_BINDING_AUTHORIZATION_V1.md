@@ -8,16 +8,16 @@ migration application, and deployment are separate phases. This change does
 not itself activate the flag or perform a deployment, and this document does
 not infer environment migration, restart, or deployment history from source.
 
-## Identity-signature convention
+## Deterministic Nostr signature carrier
 
 The signing identity is UBID's canonical lowercase 32-byte x-only secp256k1
 participant public key. It must equal the independently authenticated
 participant. OAuth or session possession supplies that authenticated context;
 it is not binding authorization.
 
-V1 reuses UBID's established identity signature convention without adding a
-cryptographic dependency: `bip340_schnorr_sha256`. The participant signs the
-32-byte SHA-256 digest of compact, key-sorted ASCII JSON:
+V1 uses signature format `nostr_event_id_bip340_v1`. The existing semantic
+claim, canonical semantic bytes, and SHA-256 semantic digest below remain
+authoritative and byte-for-byte unchanged:
 
 ```text
 {"authorization":<claim>,"domain":"HODLXXI_SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_V1"}
@@ -38,11 +38,38 @@ The closed claim contains exactly:
 - canonical globally replay-protected `requestId`;
 - whole-second UTC request `issuedAt` and `expiresAt`.
 
-The signed object adds its lowercase SHA-256 `digest`, exact
-`signatureFormat`, and lowercase 64-byte Schnorr `signature`. This
-authorization digest is signature and evidence identity only. It is never a
-binding ID, predecessor ID, expected binding ID, device-handle input, package
-identity, routing identity, or replacement for any of those values.
+The participant does not sign that semantic digest directly. UBID reconstructs
+a purpose-specific NIP-01 event with `kind` 27236, the authenticated canonical
+subject as `pubkey`, the exact Unix second of `issuedAt` as `created_at`, the
+semantic bytes decoded as ASCII as `content`, and exactly these ordered tags:
+
+```json
+[
+  ["purpose", "hodlxxi-social-messaging-device-binding-authorization-v1"],
+  ["semantic-digest", "<semantic digest>"],
+  ["request-id", "<requestId>"],
+  ["action", "<register|rotate|revoke|adopt>"]
+]
+```
+
+The exact event serialization is compact UTF-8 JSON for
+`[0,pubkey,created_at,27236,tags,content]`. Its lowercase SHA-256 is the event
+ID, and the 64-byte BIP340 signature is over that raw 32-byte ID. UBID trusts
+no caller-supplied event field or ID. It reconstructs every component, requires
+the semantic-digest tag/final digest/SHA-256 of content to agree, and rejects
+direct semantic-digest signatures and every altered kind, time, tag, content,
+subject, ID, or signature.
+
+Kind 27236 is a repository-local application assignment in Nostr's ephemeral
+range. It is not an official NIP allocation. This private carrier is never
+published to a relay, and relay publication is neither evidence nor required.
+
+The submitted signed object keeps its existing closed flattened shape. Only
+`signatureFormat` changes to `nostr_event_id_bip340_v1`, and `signature` is the
+returned lowercase 64-byte event-ID signature. The unchanged semantic digest
+continues to identify evidence. It is never a binding ID, predecessor ID,
+expected binding ID, device-handle input, package identity, routing identity,
+or replacement for any of those values.
 
 The sole authoritative `bindingId` is SHA-256 of the existing canonical
 binding-record bytes. Those bytes are compact, key-sorted ASCII JSON with
@@ -64,8 +91,10 @@ and authorization digests, determine the new signed bytes; adding only the
 schema/version fields did not cause every changed byte. The authorization
 digest is now
 `70aa19a24077c3365a836f0476660f0132ab7959615d2c8c67ba75afd9071d9c`.
-Its deterministic offline Schnorr signature vector is now
-`afedbfdd98495e098195a1716c3241fe490fad95f127cbda9a292cccabb644dae5b91c3fe13c3e11df70445071afb92b53b486a984b74f6c7f8c3893f3e12bf7`.
+Its carrier event ID is
+`4fb89f90de1379e47893ad335c4839805be4265767d1972b7281aea2ef2e0ad0`,
+and its zero-auxiliary-randomness Schnorr signature vector is
+`6fb5dcbb6791eaf44bb2fa9282a1db21c702e88db58ab388d974baae4b082ff69cfbfe4eb62fe36a8040fb9de010a1e6a9a2b6232332fac21d2d7a2a7e689570`.
 The authorization contract remains behind the default-off runtime flag. The
 additive storage migration does not change the external payload. Binding
 storage, handle, package, routing, and resolver vectors are unchanged.
@@ -78,7 +107,7 @@ UBID's centralized validator, including low-order, high-bit-alias, and field
 range rejection. Neither an identity private key nor an X25519 private key is
 an input or output.
 
-The request authorization window is at most 300 seconds and must contain the
+The semantic request authorization window is at most 300 seconds and must contain the
 trusted whole-second server time. The separately signed binding interval must
 also contain server time. Every lifecycle claim requires exact whole-second
 `bindingValidFrom` equal to `issuedAt`. Register and rotate sign their exact
@@ -89,6 +118,62 @@ deadline limits lifecycle-command use; it does not erase accepted signature
 evidence. Routing evidence starts at the signed `issuedAt` and may remain
 useful after the short command window, but its expiry is bounded by the signed
 binding expiry.
+
+## Trusted authorization intent
+
+The browser cannot author the semantic claim. It submits one compact,
+canonical, closed proposal. Lifecycle proposals contain exactly `operation`,
+`deviceId`, `publicKey`, `requestId`, and `expectedBindingId`; revoke requires a
+null public key, register requires a null expected binding, and rotate/revoke
+use the expected binding only as a checked concurrency hint. Adoption proposals
+contain exactly `operation=adopt`, `requestId`, and the selected `bindingId` for
+authoritative lookup. A caller-supplied subject, clock, interval, version,
+predecessor, derived binding ID, state snapshot, or Current-Full proof is an
+unknown field and fails.
+
+UBID derives subject from the viewer bearer and derives or validates operation
+eligibility, binding version, predecessor, revoke key, binding interval,
+adoption record, binding ID, whole-second timestamps, semantic bytes/digest,
+the unsigned carrier, complete binding state, and Current-Full from trusted
+transaction-bound inputs. Intent creation performs no write, reserves no
+request ID, persists no token, and rolls its read transaction back. It returns
+one closed canonical object with schema
+`hodlxxi.social_messaging_device_binding_authorization_intent.v1`, version 1,
+`claimType`, the exact `claim`, `digest`, `signatureFormat`, `expectedPubkey`,
+an `unsignedEvent` without `pubkey`, `id`, or `sig`, and `intentToken`.
+
+The intent token uses the already-loaded runtime signing key only in this
+strictly separate RS256 domain:
+
+```text
+typ=hodlxxi-device-binding-intent+jwt
+tokenUse=device_binding_authorization_intent
+purpose=social_messaging_device_binding_authorization_intent_v1
+aud=urn:hodlxxi:ubid:social-messaging-device-binding-authorization-submit:v1
+```
+
+Its closed claims bind exact issuer, subject, `iat`, `exp`, `jti=requestId`,
+claim type, action, semantic digest, reconstructed event ID, and signature
+format. The intent-token deadline equals the exact semantic claim deadline,
+which is at most 300 seconds after `issuedAt`; an earlier binding or claim
+expiry remains the deadline and the token never extends it. Verification
+selects the exact configured RSA key ID, permits
+only RS256 and the protected intent type, validates the closed claim set, and
+does not reuse the access-token parser. The token contains no secret, is never
+logged, is not participant authorization or Current-Full proof, and is not
+persisted as authorization evidence.
+
+Final submission transports the token separately in the bounded
+`X-HODLXXI-Device-Binding-Intent` header. The request body remains only the
+existing canonical flattened participant payload, so storage persists no
+transport wrapper or intent token. UBID authenticates the confidential Social
+service, authenticates the viewer, validates exact seal/payload/carrier
+correspondence before opening storage, and validates the seal again against the
+post-lock trusted clock inside the caller-owned write transaction. Replay,
+complete authoritative state, Current-Full, timestamps, lifecycle rules,
+binding/evidence mutation, and replay retention remain in that same atomic
+transaction. Every failure rolls back. An earlier intent never outranks the
+final transactional state; stale or expired intents fail generically.
 
 ## Lifecycle state
 
@@ -157,15 +242,17 @@ routing.
 The independent frozen adoption fixture embeds the corrected register binding
 vector above, uses the participant x-only public key derived from BIP340 test
 secret scalar `3`, and uses 32 zero auxiliary bytes for deterministic signing.
-Its expected canonical signed bytes are hard-coded independently of the
+Its expected canonical semantic bytes are hard-coded independently of the
 production serializer in the unit test. The canonical byte length is `958`,
-the SHA-256 adoption digest is
+the unchanged SHA-256 adoption digest is
 `c96902ddb67f6d63c1579e81100f267be27f5f0cd12727b521c76c66d8f25c36`,
-and the deterministic BIP340 signature is
-`06b5a3e0ae6fb0b14047b3a0ec34640e4993730660540deedbaae73b6c9fba65fbf7ddbba40e555c2148654a18a841faf403f4285acb00e0abfb3cb8fa313421`.
-The test hashes those independent bytes, checks the production serializer and
-digest against them, reproduces the zero-aux signature, and verifies it with
-the corresponding x-only public key.
+its carrier event ID is
+`68bb9d6a6dc3a13630a47e27350be22859be407a0c2ff903a6820ab214d50955`.
+The zero-auxiliary-randomness carrier signature is
+`70e3bc1a5609d946e607c8a63506ac3770889ae01b0c60721e88fa1228ba047f1911f4a3a64aac0d60687df2a183cff1e33e7e64a6233a6708df4e16f9a6022f`.
+The test hashes the independent semantic bytes, checks the production
+serializer and digest, reconstructs the carrier bytes and event ID, reproduces
+the zero-aux signature, and verifies it with the corresponding x-only key.
 
 The adoption coordinator consumes only injected immutable ports. A strict
 transaction-bound current-Full prerequisite must expose
@@ -306,10 +393,12 @@ only when
 `SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_INTERNAL_ENABLED` is exactly
 enabled. It does not inherit or reuse the legacy
 `SOCIAL_MESSAGING_DEVICE_INTERNAL_ENABLED` gate. When disabled, neither the
-runtime extension nor either route exists. Explicit enablement requires the
+runtime extension nor any dedicated route exists. Explicit enablement requires the
 complete dedicated confidential-client, issuer, token/resource audience,
 viewer OAuth client, client JWKS directory, signing JWKS directory, and clock
-skew configuration. Missing, malformed, symlinked, overlapping, or incomplete
+skew configuration. Register intent uses the existing bounded device-binding
+lifetime setting when present and the source contract's 30-day default otherwise.
+Missing, malformed, symlinked, overlapping, or incomplete
 trust material fails application construction. The builder reads existing key
 material only; it creates no key, row, transaction, background task, or
 migration.
@@ -319,8 +408,11 @@ The private routes are:
 - `POST /internal/v1/social/messaging/device-binding-authorization-service-token`
   for the existing strict `private_key_jwt` client-credentials exchange and
   durable assertion replay consumption;
+- `POST /internal/v1/social/messaging/device-binding-authorization-intents` for
+  authoritative read-only claim derivation and the short-lived sealed intent;
 - `POST /internal/v1/social/messaging/device-binding-authorizations` for one
-  exact register, rotate, revoke, or adoption authorization.
+  exact register, rotate, revoke, or adoption authorization, with the intent
+  token supplied separately in `X-HODLXXI-Device-Binding-Intent`.
 
 The service-token route rejects query parameters and requires a declared,
 positive `Content-Length` no greater than 24 KiB before form parsing. That
@@ -338,6 +430,12 @@ operation route also validates the established
 participant subject from that exact typed result. The viewer bearer supplies
 only independently authenticated subject context. It is never accepted as
 binding authorization or as Current-Full evidence.
+
+When this successor runtime is enabled, the legacy OAuth-only mutating
+`POST /internal/v1/social/messaging/device-bindings` fails closed before
+credential or payload processing. The legacy read-only binding snapshot route
+remains available. With the successor runtime disabled, legacy behavior is
+unchanged.
 
 The route accepts only a bounded printable-ASCII canonical JSON body. It
 passes that exact text to the existing signed lifecycle or adoption parser;
