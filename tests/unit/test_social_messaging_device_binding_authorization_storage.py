@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -84,8 +85,8 @@ def test_lock_order_includes_subject_user_row_before_device_guard_and_sorted_key
         lambda _session, subject: events.append(("subject-user-row", subject)),
     )
 
-    value._lock_operation(
-        request_id=REQUEST,
+    value._lock_request(REQUEST)
+    value._lock_mutation(
         subject=SUBJECT,
         device_id=DEVICE,
         public_keys=(KEY_B, KEY_A, KEY_B),
@@ -119,27 +120,49 @@ def test_transaction_bound_binding_adapter_has_no_transaction_lifecycle_methods(
 
 def test_lifecycle_clock_is_sampled_once_only_after_all_operation_locks(monkeypatch):
     events = []
-    result = object()
+    result = SimpleNamespace(binding=object())
     authorization = SimpleNamespace(
         claim=SimpleNamespace(
             request_id=REQUEST,
             subject=SUBJECT,
             device_id=DEVICE,
             public_key=KEY_A,
+            issued_at=storage.datetime(2026, 9, 10, tzinfo=storage.timezone.utc),
+            expires_at=storage.datetime(2026, 9, 10, 0, 5, tzinfo=storage.timezone.utc),
+            binding_valid_from=storage.datetime(2026, 9, 10, tzinfo=storage.timezone.utc),
+            binding_expires_at=storage.datetime(2026, 10, 10, tzinfo=storage.timezone.utc),
         )
     )
 
     def clock():
-        assert events == ["locks-returned"]
+        assert events == ["request-lock", "replay", "mutation-lock"]
         events.append("clock")
         return storage.datetime(2026, 9, 10, tzinfo=storage.timezone.utc)
 
     class Ports:
         def __init__(self, *_args, **_kwargs):
-            assert events == ["locks-returned", "clock", "admission"]
+            assert events == ["request-lock"]
 
         def get(self, _request_id):
+            events.append("replay")
+            return None
+
+        class _BindingStorage:
+            def apply_authorized(self, _binding, *, now):
+                events.append(("mutation", now))
+
+        _binding_storage = _BindingStorage()
+
+        def persist(self, _result, *, now):
+            events.append(("persist", now))
             return object()
+
+    class Full:
+        def __init__(self, _session):
+            pass
+
+        def verify_in_transaction(self, subject, *, now):
+            events.append(("current-full", subject, now))
 
     class Coordinator:
         def __init__(self, **kwargs):
@@ -155,15 +178,17 @@ def test_lifecycle_clock_is_sampled_once_only_after_all_operation_locks(monkeypa
     )
     monkeypatch.setattr(
         value,
-        "_lock_operation",
-        lambda **_kwargs: events.append("locks-returned"),
+        "_lock_request",
+        lambda _request_id: events.append("request-lock"),
     )
+    monkeypatch.setattr(value, "_lock_mutation", lambda **_kwargs: events.append("mutation-lock"))
     monkeypatch.setattr(
         storage,
         "parse_and_verify_device_binding_authorization",
         lambda *_args, **_kwargs: authorization,
     )
     monkeypatch.setattr(storage, "_TransactionPorts", Ports)
+    monkeypatch.setattr(storage, "SqlAlchemyTransactionBoundCurrentFullVerifier", Full)
     monkeypatch.setattr(storage, "SocialMessagingDeviceBindingAuthorizationV1", Coordinator)
 
     assert (
@@ -174,7 +199,18 @@ def test_lifecycle_clock_is_sampled_once_only_after_all_operation_locks(monkeypa
         )
         is result
     )
-    assert events == ["locks-returned", "clock", "admission"]
+    assert events[:5] == [
+        "request-lock",
+        "replay",
+        "mutation-lock",
+        "clock",
+        "admission",
+    ]
+    assert events[5] == (
+        "current-full",
+        SUBJECT,
+        storage.datetime(2026, 9, 10, tzinfo=storage.timezone.utc),
+    )
 
 
 def test_adoption_clock_is_sampled_once_only_after_all_operation_locks(monkeypatch):
@@ -183,28 +219,53 @@ def test_adoption_clock_is_sampled_once_only_after_all_operation_locks(monkeypat
     adoption = SimpleNamespace(
         claim=SimpleNamespace(
             request_id=REQUEST,
-            binding=SimpleNamespace(subject=SUBJECT, device_id=DEVICE, public_key=KEY_A),
+            issued_at=storage.datetime(2026, 9, 10, tzinfo=storage.timezone.utc),
+            expires_at=storage.datetime(2026, 9, 10, 0, 5, tzinfo=storage.timezone.utc),
+            binding=SimpleNamespace(
+                subject=SUBJECT,
+                device_id=DEVICE,
+                public_key=KEY_A,
+                valid_from=storage.datetime(2026, 9, 1, tzinfo=storage.timezone.utc),
+                expires_at=storage.datetime(2026, 10, 1, tzinfo=storage.timezone.utc),
+            ),
         )
     )
 
     def clock():
-        assert events == ["locks-returned"]
+        assert events == ["request-lock", "replay", "mutation-lock"]
         events.append("clock")
         return storage.datetime(2026, 9, 10, tzinfo=storage.timezone.utc)
 
     class Ports:
         def __init__(self, *_args, **_kwargs):
-            assert events == ["locks-returned", "clock", "admission"]
+            assert events == ["request-lock"]
 
         def get(self, _request_id):
+            events.append("replay")
+            return None
+
+        def persist(self, _result, *, now):
+            events.append(("persist", now))
             return object()
+
+    class Full:
+        def __init__(self, _session):
+            pass
+
+        def verify_in_transaction(self, subject, *, now):
+            events.append(("current-full", subject, now))
 
     class Coordinator:
         def __init__(self, **kwargs):
             self.clock = kwargs["clock"]
+            self.current_full = kwargs["current_full_prerequisite"]
 
         def adopt(self, *_args, **_kwargs):
             assert self.clock() == storage.datetime(2026, 9, 10, tzinfo=storage.timezone.utc)
+            self.current_full.verify_in_transaction(
+                SUBJECT,
+                now=storage.datetime(2026, 9, 10, tzinfo=storage.timezone.utc),
+            )
             return result
 
     value = storage.SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage(
@@ -213,9 +274,10 @@ def test_adoption_clock_is_sampled_once_only_after_all_operation_locks(monkeypat
     )
     monkeypatch.setattr(
         value,
-        "_lock_operation",
-        lambda **_kwargs: events.append("locks-returned"),
+        "_lock_request",
+        lambda _request_id: events.append("request-lock"),
     )
+    monkeypatch.setattr(value, "_lock_mutation", lambda **_kwargs: events.append("mutation-lock"))
     monkeypatch.setattr(
         storage,
         "parse_and_verify_device_binding_adoption",
@@ -225,7 +287,7 @@ def test_adoption_clock_is_sampled_once_only_after_all_operation_locks(monkeypat
     monkeypatch.setattr(
         storage,
         "SqlAlchemyTransactionBoundCurrentFullVerifier",
-        lambda _session: object(),
+        Full,
     )
     monkeypatch.setattr(storage, "SocialMessagingLegacyBindingAdoptionV1", Coordinator)
 
@@ -237,7 +299,148 @@ def test_adoption_clock_is_sampled_once_only_after_all_operation_locks(monkeypat
         )
         is result
     )
-    assert events == ["locks-returned", "clock", "admission"]
+    assert events[:5] == [
+        "request-lock",
+        "replay",
+        "mutation-lock",
+        "clock",
+        "admission",
+    ]
+    assert events[5] == (
+        "current-full",
+        SUBJECT,
+        storage.datetime(2026, 9, 10, tzinfo=storage.timezone.utc),
+    )
+
+
+def test_exact_expired_lifecycle_replay_skips_admission_full_state_and_mutation(monkeypatch):
+    events = []
+    issued_at = storage.datetime(2026, 9, 10, tzinfo=storage.timezone.utc)
+    authorization = SimpleNamespace(
+        claim=SimpleNamespace(
+            request_id=REQUEST,
+            subject=SUBJECT,
+            device_id=DEVICE,
+            public_key=KEY_A,
+            issued_at=issued_at,
+            expires_at=issued_at + timedelta(seconds=300),
+            binding_valid_from=issued_at,
+            binding_expires_at=issued_at + timedelta(days=30),
+        )
+    )
+    candidate = object()
+    accepted = object()
+    retained = SimpleNamespace(authorized_binding=accepted, canonical_result=b'{"accepted":true}')
+
+    class Ports:
+        def __init__(self, *_args, **_kwargs):
+            events.append("ports")
+
+        def get(self, request_id):
+            events.append(("replay", request_id))
+            return retained
+
+    value = storage.SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage(
+        _Session(),
+        clock=lambda: issued_at + timedelta(seconds=301),
+    )
+    monkeypatch.setattr(value, "_lock_request", lambda _request_id: events.append("request-lock"))
+    monkeypatch.setattr(
+        value,
+        "_lock_mutation",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("mutation locks")),
+    )
+    monkeypatch.setattr(
+        storage,
+        "parse_and_verify_device_binding_authorization",
+        lambda *_args, **_kwargs: authorization,
+    )
+    monkeypatch.setattr(storage, "_TransactionPorts", Ports)
+    monkeypatch.setattr(storage, "_authorized_from", lambda value: candidate if value is authorization else None)
+
+    def validate_replay(value, *, candidate: object, signature_verifier):
+        events.append("exact-replay")
+        assert value is retained
+        assert candidate is not None
+        assert signature_verifier is value_under_test._signature_verifier
+        return retained
+
+    value_under_test = value
+    monkeypatch.setattr(storage, "_validated_replay", validate_replay)
+
+    assert (
+        value.authorize_lifecycle(
+            "payload",
+            authenticated_subject=SUBJECT,
+            admission_validator=lambda _now: (_ for _ in ()).throw(AssertionError("freshness read")),
+        )
+        is accepted
+    )
+    assert events == ["request-lock", "ports", ("replay", REQUEST), "exact-replay"]
+
+
+def test_exact_expired_adoption_replay_skips_admission_full_and_binding_reads(monkeypatch):
+    events = []
+    issued_at = storage.datetime(2026, 9, 10, tzinfo=storage.timezone.utc)
+    binding = SimpleNamespace(
+        subject=SUBJECT,
+        device_id=DEVICE,
+        public_key=KEY_A,
+        valid_from=issued_at - timedelta(days=1),
+        expires_at=issued_at + timedelta(days=30),
+    )
+    adoption = SimpleNamespace(
+        claim=SimpleNamespace(
+            request_id=REQUEST,
+            issued_at=issued_at,
+            expires_at=issued_at + timedelta(seconds=300),
+            binding=binding,
+        )
+    )
+    candidate = object()
+    accepted = object()
+    retained = SimpleNamespace(adopted_binding=accepted, canonical_result=b'{"accepted":true}')
+
+    class Ports:
+        def __init__(self, *_args, **_kwargs):
+            events.append("ports")
+
+        def get(self, request_id):
+            events.append(("replay", request_id))
+            return retained
+
+    value = storage.SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage(
+        _Session(),
+        clock=lambda: issued_at + timedelta(seconds=301),
+    )
+    monkeypatch.setattr(value, "_lock_request", lambda _request_id: events.append("request-lock"))
+    monkeypatch.setattr(
+        value,
+        "_lock_mutation",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("mutation locks")),
+    )
+    monkeypatch.setattr(
+        storage,
+        "parse_and_verify_device_binding_adoption",
+        lambda *_args, **_kwargs: adoption,
+    )
+    monkeypatch.setattr(storage, "_TransactionPorts", Ports)
+    monkeypatch.setattr(storage, "_adopted_from", lambda value: candidate if value is adoption else None)
+    monkeypatch.setattr(
+        storage,
+        "_validated_adoption_replay",
+        lambda replay, **_kwargs: events.append("exact-replay") or replay,
+    )
+
+    assert (
+        value.adopt_legacy(
+            "payload",
+            authenticated_subject=SUBJECT,
+            admission_validator=lambda _now: (_ for _ in ()).throw(AssertionError("freshness read")),
+        )
+        is accepted
+    )
+    assert events == ["request-lock", "ports", ("replay", REQUEST), "exact-replay"]
 
 
 def test_authorization_models_compile_bounded_postgresql_contracts():

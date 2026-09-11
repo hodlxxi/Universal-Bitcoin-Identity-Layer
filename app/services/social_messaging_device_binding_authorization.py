@@ -46,6 +46,8 @@ SIGNATURE_FORMAT = "nostr_event_id_bip340_v1"
 NOSTR_EVENT_KIND = 27236
 NOSTR_EVENT_PURPOSE = "hodlxxi-social-messaging-device-binding-authorization-v1"
 PROOF_ID_PREFIX = "hodlxxi-binding-authorization-v1-sha256:"
+RESULT_SCHEMA = "hodlxxi.social_messaging_device_binding_authorization_result.v1"
+RESULT_VERSION = 1
 VERSION = 1
 
 MAX_AUTHORIZATION_BYTES = 8_192
@@ -240,6 +242,7 @@ class AuthorizationReplayRecord:
     request_id: str
     authorization_digest: str
     authorized_binding: AuthorizedDeviceBinding
+    canonical_result: bytes
 
 
 @dataclass(frozen=True)
@@ -247,6 +250,7 @@ class AdoptionReplayRecord:
     request_id: str
     adoption_digest: str
     adopted_binding: AdoptedDeviceBindingAuthorization
+    canonical_result: bytes
 
 
 class IdentitySignatureVerifier(Protocol):
@@ -1091,6 +1095,103 @@ def _validated_evidence(
     raise ValueError
 
 
+def _verified_result_values(
+    value: object,
+) -> tuple[str, str, MessagingDeviceBinding, VerifiedBindingAuthorization, datetime]:
+    if type(value) is AuthorizedDeviceBinding:
+        authorization = value.authorization
+        canonical_authorization_json(authorization)
+        claim = authorization.claim
+        action = claim.operation
+        request_id = claim.request_id
+        binding_id = authorization.binding_id
+        evidence_valid_from = claim.issued_at
+        digest = authorization.digest
+        binding = value.binding
+        verification = value.verification
+        if (
+            type(binding) is not MessagingDeviceBinding
+            or type(verification) is not VerifiedBindingAuthorization
+            or binding.subject != claim.subject
+            or binding.device_id != claim.device_id
+            or binding.public_key != claim.public_key
+            or binding.binding_version != claim.binding_version
+            or binding.valid_from != claim.binding_valid_from
+            or binding.expires_at != claim.binding_expires_at
+            or binding.operation != claim.operation
+            or binding.prior_binding_id != claim.prior_binding_id
+            or binding.request_id != claim.request_id
+            or binding.active is not (claim.operation != "revoke")
+        ):
+            raise ValueError
+    elif type(value) is AdoptedDeviceBindingAuthorization:
+        adoption = value.adoption
+        canonical_adoption_json(adoption)
+        adoption_claim = adoption.claim
+        action = adoption_claim.action
+        request_id = adoption_claim.request_id
+        binding_id = adoption.binding_id
+        evidence_valid_from = adoption_claim.issued_at
+        digest = adoption.digest
+        binding = value.binding
+        verification = value.verification
+        if (
+            type(binding) is not MessagingDeviceBinding
+            or type(verification) is not VerifiedBindingAuthorization
+            or binding != adoption_claim.binding
+        ):
+            raise ValueError
+    else:
+        raise ValueError
+
+    if (
+        binding.binding_id != binding_id
+        or verification.proof_id != PROOF_ID_PREFIX + digest
+        or verification.subject != binding.subject
+        or verification.device_id != binding.device_id
+        or verification.binding_id != binding.binding_id
+        or verification.binding_version != binding.binding_version
+        or verification.public_key != binding.public_key
+        or verification.valid_from != binding.valid_from
+        or verification.expires_at != binding.expires_at
+        or verification.evidence_valid_from != evidence_valid_from
+        or verification.evidence_expires_at != binding.expires_at
+    ):
+        raise ValueError
+    return action, request_id, binding, verification, evidence_valid_from
+
+
+def canonical_authorization_result_bytes(value: object) -> bytes:
+    """Serialize the exact immutable result retained for accepted replay."""
+
+    try:
+        action, request_id, binding, verification, evidence_valid_from = _verified_result_values(value)
+        payload = {
+            "action": action,
+            "active": binding.active,
+            "authorizationExpiresAt": _timestamp(verification.evidence_expires_at),
+            "authorizationProofId": verification.proof_id,
+            "authorizationValidFrom": _timestamp(evidence_valid_from),
+            "bindingId": binding.binding_id,
+            "bindingOperation": binding.operation,
+            "bindingVersion": binding.binding_version,
+            "deviceId": binding.device_id,
+            "expiresAt": _timestamp(binding.expires_at),
+            "requestId": request_id,
+            "schema": RESULT_SCHEMA,
+            "validFrom": _timestamp(binding.valid_from),
+            "version": RESULT_VERSION,
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
+        if len(encoded) > MAX_AUTHORIZATION_BYTES:
+            raise ValueError
+        return encoded
+    except DeviceBindingAuthorizationUnavailable:
+        raise
+    except Exception:
+        raise DeviceBindingAuthorizationUnavailable() from None
+
+
 def _validated_device_state(
     value: object,
     *,
@@ -1245,13 +1346,16 @@ def _validated_replay(
     request_id = _hex64(value.request_id)
     digest = _hex64(value.authorization_digest)
     authorized = _validated_authorized(value.authorized_binding, signature_verifier)
+    canonical_result = value.canonical_result
     if (
         request_id != candidate.authorization.claim.request_id
         or digest != candidate.authorization.digest
         or authorized != candidate
+        or type(canonical_result) is not bytes
+        or canonical_result != canonical_authorization_result_bytes(authorized)
     ):
         raise ValueError
-    return AuthorizationReplayRecord(request_id, digest, authorized)
+    return AuthorizationReplayRecord(request_id, digest, authorized, canonical_result)
 
 
 def _validated_adoption_replay(
@@ -1265,9 +1369,16 @@ def _validated_adoption_replay(
     request_id = _hex64(value.request_id)
     digest = _hex64(value.adoption_digest)
     adopted = _validated_adopted(value.adopted_binding, signature_verifier)
-    if request_id != candidate.adoption.claim.request_id or digest != candidate.adoption.digest or adopted != candidate:
+    canonical_result = value.canonical_result
+    if (
+        request_id != candidate.adoption.claim.request_id
+        or digest != candidate.adoption.digest
+        or adopted != candidate
+        or type(canonical_result) is not bytes
+        or canonical_result != canonical_authorization_result_bytes(adopted)
+    ):
         raise ValueError
-    return AdoptionReplayRecord(request_id, digest, adopted)
+    return AdoptionReplayRecord(request_id, digest, adopted, canonical_result)
 
 
 class SocialMessagingDeviceBindingAuthorizationV1:
@@ -1313,12 +1424,7 @@ class SocialMessagingDeviceBindingAuthorizationV1:
             )
             claim = authorization.claim
             now = _trusted_utc_second(self._clock())
-            if (
-                claim.issued_at > now
-                or now >= claim.expires_at
-                or claim.binding_valid_from > now
-                or now >= claim.binding_expires_at
-            ):
+            if claim.issued_at > now or claim.binding_valid_from > now:
                 raise ValueError
             candidate = _authorized_from(authorization)
 
@@ -1329,6 +1435,9 @@ class SocialMessagingDeviceBindingAuthorizationV1:
                     candidate=candidate,
                     signature_verifier=self._signature_verifier,
                 ).authorized_binding
+
+            if now >= claim.expires_at or now >= claim.binding_expires_at:
+                raise ValueError
 
             binding_id_records = _validated_binding_id_state(
                 self._state_provider.authorization_for_binding(
@@ -1432,6 +1541,7 @@ class SocialMessagingDeviceBindingAuthorizationV1:
                 request_id=claim.request_id,
                 authorization_digest=authorization.digest,
                 authorized_binding=candidate,
+                canonical_result=canonical_authorization_result_bytes(candidate),
             )
             retained = self._replay_ledger.record(record)
             return _validated_replay(
@@ -1533,12 +1643,7 @@ class SocialMessagingLegacyBindingAdoptionV1:
             claim = adoption.claim
             binding = claim.binding
             now = _trusted_utc_second(self._clock())
-            if (
-                claim.issued_at > now
-                or now >= claim.expires_at
-                or binding.valid_from > now
-                or now >= binding.expires_at
-            ):
+            if claim.issued_at > now or binding.valid_from > now:
                 raise ValueError
             candidate = _adopted_from(adoption)
 
@@ -1549,6 +1654,9 @@ class SocialMessagingLegacyBindingAdoptionV1:
                     candidate=candidate,
                     signature_verifier=self._signature_verifier,
                 ).adopted_binding
+
+            if now >= claim.expires_at or now >= binding.expires_at:
+                raise ValueError
 
             _validated_current_full(
                 self._current_full_prerequisite.verify_in_transaction(binding.subject, now=now),
@@ -1583,6 +1691,7 @@ class SocialMessagingLegacyBindingAdoptionV1:
                 request_id=claim.request_id,
                 adoption_digest=adoption.digest,
                 adopted_binding=candidate,
+                canonical_result=canonical_authorization_result_bytes(candidate),
             )
             retained = self._replay_ledger.record(record)
             return _validated_adoption_replay(
@@ -1693,6 +1802,8 @@ __all__ = [
     "NOSTR_EVENT_KIND",
     "NOSTR_EVENT_PURPOSE",
     "PROOF_ID_PREFIX",
+    "RESULT_SCHEMA",
+    "RESULT_VERSION",
     "SIGNATURE_DOMAIN",
     "SIGNATURE_FORMAT",
     "STATE_SCHEMA",
@@ -1710,6 +1821,7 @@ __all__ = [
     "canonical_adoption_unsigned_event",
     "canonical_authorization_event_serialization",
     "canonical_authorization_json",
+    "canonical_authorization_result_bytes",
     "canonical_authorization_signed_bytes",
     "canonical_authorization_unsigned_event",
     "parse_and_verify_device_binding_adoption",

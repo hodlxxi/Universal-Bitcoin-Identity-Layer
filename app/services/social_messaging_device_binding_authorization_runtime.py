@@ -24,15 +24,16 @@ from app.services.social_messaging_device_binding_authorization import (
     ADOPTION_SCHEMA,
     AUTHORIZATION_SCHEMA,
     MAX_AUTHORIZATION_BYTES,
-    PROOF_ID_PREFIX,
+    RESULT_SCHEMA,
+    RESULT_VERSION,
     AdoptedDeviceBindingAuthorization,
     AuthorizedDeviceBinding,
     Bip340IdentitySignatureVerifier,
     DeviceBindingAuthorizationUnavailable,
-    canonical_adoption_json,
-    canonical_authorization_json,
+    canonical_authorization_result_bytes,
 )
 from app.services.social_messaging_device_binding_authorization_intent import (
+    authenticate_authorization_intent_submission,
     canonical_authorization_intent_bytes,
     seal_authorization_intent,
     verify_authorization_intent_submission,
@@ -40,15 +41,11 @@ from app.services.social_messaging_device_binding_authorization_intent import (
 from app.services.social_messaging_device_binding_authorization_storage import (
     SqlAlchemySocialMessagingDeviceBindingAuthorizationStorage,
 )
-from app.services.social_messaging_device_contract import MessagingDeviceBinding
 from app.services.social_messaging_device_storage import MAX_BINDING_LIFETIME_SECONDS, MIN_BINDING_LIFETIME_SECONDS
-from app.services.social_messaging_recipient_routing import VerifiedBindingAuthorization
 
 MESSAGING_DEVICE_AUTHORIZATION_SCOPE = "social:messaging-device-binding-authorization:manage"
 MESSAGING_DEVICE_AUTHORIZATION_PURPOSE = "social_messaging_device_binding_authorization_manage"
 MESSAGING_DEVICE_AUTHORIZATION_EXTENSION = "social_messaging_device_binding_authorization_runtime_v1"
-RESULT_SCHEMA = "hodlxxi.social_messaging_device_binding_authorization_result.v1"
-RESULT_VERSION = 1
 VIEWER_REQUIRED_SCOPE = "openid"
 DEFAULT_BINDING_LIFETIME_SECONDS = 30 * 24 * 60 * 60
 
@@ -71,112 +68,6 @@ class _AuthorizationSession(Protocol):
     def rollback(self) -> None: ...
 
     def close(self) -> None: ...
-
-
-def _timestamp(value: object) -> str:
-    if type(value) is not datetime or value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError
-    normalized = value.astimezone(timezone.utc)
-    if normalized.microsecond:
-        raise ValueError
-    return normalized.isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-def _verified_result_values(
-    value: object,
-) -> tuple[str, str, MessagingDeviceBinding, VerifiedBindingAuthorization, datetime]:
-    if type(value) is AuthorizedDeviceBinding:
-        authorization = value.authorization
-        canonical_authorization_json(authorization)
-        claim = authorization.claim
-        action = claim.operation
-        request_id = claim.request_id
-        binding_id = authorization.binding_id
-        evidence_valid_from = claim.issued_at
-        digest = authorization.digest
-        binding = value.binding
-        verification = value.verification
-        if (
-            type(binding) is not MessagingDeviceBinding
-            or type(verification) is not VerifiedBindingAuthorization
-            or binding.subject != claim.subject
-            or binding.device_id != claim.device_id
-            or binding.public_key != claim.public_key
-            or binding.binding_version != claim.binding_version
-            or binding.valid_from != claim.binding_valid_from
-            or binding.expires_at != claim.binding_expires_at
-            or binding.operation != claim.operation
-            or binding.prior_binding_id != claim.prior_binding_id
-            or binding.request_id != claim.request_id
-            or binding.active is not (claim.operation != "revoke")
-        ):
-            raise ValueError
-    elif type(value) is AdoptedDeviceBindingAuthorization:
-        adoption = value.adoption
-        canonical_adoption_json(adoption)
-        adoption_claim = adoption.claim
-        action = adoption_claim.action
-        request_id = adoption_claim.request_id
-        binding_id = adoption.binding_id
-        evidence_valid_from = adoption_claim.issued_at
-        digest = adoption.digest
-        binding = value.binding
-        verification = value.verification
-        if (
-            type(binding) is not MessagingDeviceBinding
-            or type(verification) is not VerifiedBindingAuthorization
-            or binding != adoption_claim.binding
-        ):
-            raise ValueError
-    else:
-        raise ValueError
-
-    if (
-        binding.binding_id != binding_id
-        or verification.proof_id != PROOF_ID_PREFIX + digest
-        or verification.subject != binding.subject
-        or verification.device_id != binding.device_id
-        or verification.binding_id != binding.binding_id
-        or verification.binding_version != binding.binding_version
-        or verification.public_key != binding.public_key
-        or verification.valid_from != binding.valid_from
-        or verification.expires_at != binding.expires_at
-        or verification.evidence_valid_from != evidence_valid_from
-        or verification.evidence_expires_at != binding.expires_at
-    ):
-        raise ValueError
-    return action, request_id, binding, verification, evidence_valid_from
-
-
-def canonical_authorization_result_bytes(value: object) -> bytes:
-    """Serialize one exact verified storage result without exposing key material."""
-
-    try:
-        action, request_id, binding, verification, evidence_valid_from = _verified_result_values(value)
-        payload = {
-            "action": action,
-            "active": binding.active,
-            "authorizationExpiresAt": _timestamp(verification.evidence_expires_at),
-            "authorizationProofId": verification.proof_id,
-            "authorizationValidFrom": _timestamp(evidence_valid_from),
-            "bindingId": binding.binding_id,
-            "bindingOperation": binding.operation,
-            "bindingVersion": binding.binding_version,
-            "deviceId": binding.device_id,
-            "expiresAt": _timestamp(binding.expires_at),
-            "requestId": request_id,
-            "schema": RESULT_SCHEMA,
-            "validFrom": _timestamp(binding.valid_from),
-            "version": RESULT_VERSION,
-        }
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
-        if len(encoded) > MAX_AUTHORIZATION_BYTES:
-            raise ValueError
-        return encoded
-    except DeviceBindingAuthorizationUnavailable:
-        raise
-    except Exception:
-        raise DeviceBindingAuthorizationUnavailable() from None
 
 
 def _authorization_action(payload: object) -> str:
@@ -300,7 +191,7 @@ class MessagingDeviceBindingAuthorizationRuntime:
         subject = self._viewer_subject(viewer_token)
         action = _authorization_action(payload)
         signature_verifier = Bip340IdentitySignatureVerifier()
-        verify_authorization_intent_submission(
+        authenticate_authorization_intent_submission(
             intent_token,
             payload,
             authenticated_subject=subject,
@@ -308,7 +199,6 @@ class MessagingDeviceBindingAuthorizationRuntime:
             expected_kid=self.service_signing_kid,
             verification_keys=self.service_config.service_jwks,
             signature_verifier=signature_verifier,
-            now=self.clock(),
         )
         session: _AuthorizationSession | None = None
         try:
@@ -352,7 +242,7 @@ class MessagingDeviceBindingAuthorizationRuntime:
                     authenticated_subject=subject,
                     admission_validator=validate_admission,
                 )
-            response = canonical_authorization_result_bytes(result)
+            response = storage.accepted_result_bytes(result)
             session.commit()
             return response
         except DeviceBindingAuthorizationUnavailable:
