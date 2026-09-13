@@ -86,6 +86,9 @@ Many historical checkpoint documents now include a standard status note at the t
 These are useful for future development, staging, compatibility, and design intent, but should not be presented as current production readiness evidence unless a current smoke/runbook says so:
 
 - `docs/NIP17_RUNTIME_PLAN.md`
+- `docs/SOCIAL_MOBILE_DEVICE_AUTHORIZATION_V1.md` — canonical Phase 1 mobile
+  challenge binding, QR transcript/approval, method separation, fixed vectors,
+  and dormant acceptance/session-exchange seams; no mobile routes or activation
 - `docs/SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_V1.md` —
   disabled-by-default deterministic Nostr-carrier and trusted-intent contract,
   runtime/factory/internal-HTTP wiring for identity-authorized device-binding

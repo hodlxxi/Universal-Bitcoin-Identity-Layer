@@ -73,8 +73,35 @@ sorted lexicographically by the canonical JSON serializer; strings, booleans,
 integers, and null retain their JSON types. All timestamps are whole-second
 UTC-Z values. The producer accepts only exact immutable domain record types,
 not subclasses, mappings, inherited fields, properties, accessors, or
-caller-shaped objects. Persisted timestamps with subsecond precision are not
-rounded and fail closed at this proof boundary.
+caller-shaped objects. Trusted persisted evidence timestamps are projected
+down to the canonical whole second for this proof only; they are never rounded
+up. The producer first checks the original evidence interval, then the floored
+wire deadline. Thus fractional rows within the same canonical second produce
+the same canonical content identity, but values across a second boundary do
+not compose. Already-expired or not-yet-active evidence remains rejected, and
+the fractional tail of `valid_until` cannot extend the canonical proof's expiry.
+Proof inputs and outputs still require exact whole seconds; there is no clock
+tolerance. Storage, materializer timestamps, row ordering and locking remain
+unchanged.
+
+The precision failure originated in the real device-adoption intent path:
+`create_intent` calls `derive_trusted_authorization_intent`, which calls the
+locked `SqlAlchemyTransactionBoundCurrentFullVerifier`. Its `_record` conversion
+preserves database microseconds. The materializers similarly preserve observed
+time, compute `valid_until=observed_at+300s`, and use
+`created_at=max(materializer_time, observed_at)`. The proof producer previously
+rejected any fractional `observed_at`, `valid_until` or `created_at` before
+producing the canonical intent. This could surface as a generic 503.
+
+There is no signed-entitlement-proof/row equality comparison in this path.
+This proof is the transaction-derived content identity described below, not a
+signed bearer assertion. The correction stays at that trusted producer. The
+pure `validate_current_full_entitlement_composition` inspection seam requires
+the typed result from a trusted verifier and compares the complete canonical
+state, including user/evidence IDs and source evidence hash. An arbitrary row,
+matching timestamp, caller-shaped object or digest cannot replace that result.
+The focused regression passes fractional materialized evidence through the
+real locked-reader and adoption-intent producer with a no-I/O transaction double.
 
 The identifier is
 `hodlxxi-full-entitlement-v1-sha256:` plus lowercase SHA-256 of those exact

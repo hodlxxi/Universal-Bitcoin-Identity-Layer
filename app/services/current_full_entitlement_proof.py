@@ -74,6 +74,18 @@ def _timestamp(value: object) -> str:
     return _utc_second(value).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def _evidence_second(value: object) -> datetime:
+    """Project trusted evidence precision to the existing canonical wire second.
+
+    Only evidence read by the trusted producer may use this projection. Proof
+    fields and caller clocks still require exact whole seconds. Floor, never
+    round: the resulting expiry cannot be later than the persisted deadline.
+    """
+    if type(value) is not datetime or value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError
+    return value.astimezone(timezone.utc).replace(microsecond=0)
+
+
 def _subject(value: object) -> str:
     if type(value) is not str or canonical_xonly_pubkey(value) != value:
         raise ValueError
@@ -100,7 +112,7 @@ def _state(value: object) -> CurrentFullEntitlementProofState:
     ):
         raise ValueError
     for timestamp in (evidence.observed_at, evidence.valid_until, evidence.created_at):
-        _utc_second(timestamp)
+        _evidence_second(timestamp)
     return CurrentFullEntitlementProofState(
         user_id=value.user_id,
         user_subject=subject,
@@ -120,17 +132,17 @@ def canonical_full_entitlement_proof_preimage(value: object) -> bytes:
             "proof": {
                 "evidence": {
                     "contractVersion": evidence.contract_version,
-                    "createdAt": _timestamp(evidence.created_at),
+                    "createdAt": _timestamp(_evidence_second(evidence.created_at)),
                     "currentFullRelationSatisfied": evidence.current_full_relation_satisfied,
                     "evidenceId": evidence.evidence_id,
                     "evidenceSource": evidence.evidence_source,
                     "evidenceVersion": evidence.evidence_version,
                     "identityClass": evidence.identity_class.value,
-                    "observedAt": _timestamp(evidence.observed_at),
+                    "observedAt": _timestamp(_evidence_second(evidence.observed_at)),
                     "revokedAt": None,
                     "sourceEvidenceSha256": evidence.source_evidence_sha256,
                     "subject": evidence.subject_pubkey,
-                    "validUntil": _timestamp(evidence.valid_until),
+                    "validUntil": _timestamp(_evidence_second(evidence.valid_until)),
                 },
                 "schema": SCHEMA,
                 "user": {
@@ -157,14 +169,21 @@ def produce_verified_current_full_entitlement(
         state = _state(value)
         current_time = _utc_second(now)
         evidence = state.evidence
+        # Check the original interval first. Canonicalization cannot activate a
+        # future row or revive expired evidence. Then enforce the shorter wire
+        # deadline as well, including the fractional tail of valid_until.
         if not evidence.observed_at <= current_time < evidence.valid_until:
+            raise ValueError
+        valid_from = _evidence_second(evidence.observed_at)
+        expires_at = _evidence_second(evidence.valid_until)
+        if not valid_from <= current_time < expires_at:
             raise ValueError
         preimage = canonical_full_entitlement_proof_preimage(state)
         return VerifiedCurrentFullEntitlement(
             proof_id=PROOF_ID_PREFIX + hashlib.sha256(preimage).hexdigest(),
             subject=state.user_subject,
-            valid_from=evidence.observed_at,
-            expires_at=evidence.valid_until,
+            valid_from=valid_from,
+            expires_at=expires_at,
         )
     except CurrentFullEntitlementProofUnavailable:
         raise
@@ -204,6 +223,25 @@ def validate_verified_current_full_entitlement(
         raise CurrentFullEntitlementProofUnavailable() from None
 
 
+def validate_current_full_entitlement_composition(
+    verified: object,
+    state: object,
+    *,
+    now: datetime,
+) -> VerifiedCurrentFullEntitlement:
+    """Compare a trusted verifier result with the entire canonical state.
+
+    This is an inspection seam, not a new authority source. A raw database row,
+    digest string, or caller-shaped proof cannot replace the verified result.
+    All row identities and metadata remain in the comparison, not just time.
+    """
+    expected = produce_verified_current_full_entitlement(state, now=now)
+    checked = validate_verified_current_full_entitlement(verified, subject=expected.subject, now=now)
+    if checked != expected:
+        raise CurrentFullEntitlementProofUnavailable()
+    return checked
+
+
 __all__ = [
     "DOMAIN",
     "PROOF_ID_PREFIX",
@@ -217,4 +255,5 @@ __all__ = [
     "canonical_full_entitlement_proof_preimage",
     "produce_verified_current_full_entitlement",
     "validate_verified_current_full_entitlement",
+    "validate_current_full_entitlement_composition",
 ]
