@@ -4,19 +4,19 @@ OAuth2/OIDC Blueprint - Token Issuance, Authorization, Introspection
 Implements OAuth 2.0 and OpenID Connect flows with PKCE.
 """
 
-import logging
-import hmac
 import base64
 import hashlib
+import hmac
+import logging
 import re
 import secrets
 import time
-from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode, urlparse, urlsplit
 
 from flask import Blueprint, current_app, jsonify, redirect, request, session
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.audit_logger import get_audit_logger
 from app.auth_api_core import canonical_xonly_pubkey
@@ -30,6 +30,9 @@ from app.db_storage import (
     store_oauth_code,
     update_oauth_client_secret,
 )
+from app.security import limiter as _limiter
+from app.services.canonical_oauth_browser_subject import resolve_oauth_browser_subject
+from app.services.oauth_bearer_validation import validate_canonical_access_token
 from app.services.oauth_scope_policy import (
     PUBLIC_DYNAMIC_SCOPES,
     SCOPE_POLICY_VERSION,
@@ -39,10 +42,7 @@ from app.services.oauth_scope_policy import (
     serialize_scopes,
     validate_client_scopes,
 )
-from app.services.oauth_bearer_validation import validate_canonical_access_token
-from app.services.canonical_oauth_browser_subject import resolve_oauth_browser_subject
-from app.security import limiter as _limiter
-from werkzeug.security import check_password_hash, generate_password_hash
+from app.services.oauth_session_lifecycle import OAuthSessionUnavailable, configured_lifecycle
 
 
 class _NoopLimiter:
@@ -414,7 +414,19 @@ def authorize():
             "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
         }
 
-        store_oauth_code(auth_code, code_data, ttl=600)  # 10 minute expiry
+        lifecycle = configured_lifecycle(current_app)
+        if lifecycle is not None and lifecycle.client_id == client_id:
+            from app.services.oauth_browser_authentication import browser_reference
+
+            auth_code = lifecycle.authorize(
+                subject=user_pubkey,
+                browser_generation=browser_reference(),
+                redirect_uri=redirect_uri,
+                scope=scope,
+                code_challenge=code_challenge,
+            )
+        else:
+            store_oauth_code(auth_code, code_data, ttl=600)  # 10 minute expiry
 
         audit_logger.log_event(
             "oauth.authorize_success", client_id=client_id, user_pubkey=user_pubkey, scope=scope, ip=request.remote_addr
@@ -427,6 +439,8 @@ def authorize():
 
         return redirect(redirect_url)
 
+    except OAuthSessionUnavailable:
+        return jsonify({"error": "server_error", "error_description": "Authentication unavailable"}), 503
     except Exception as e:
         logger.error(f"Authorization failed: {e}", exc_info=True)
         return jsonify({"error": "server_error", "error_description": "Internal server error"}), 500
@@ -487,6 +501,17 @@ def token():
                 "oauth.token_failed", reason="invalid_client", client_id=client_id, ip=request.remote_addr
             )
             return jsonify({"error": "invalid_client", "error_description": "Invalid client credentials"}), 401
+
+        lifecycle = configured_lifecycle(current_app)
+        if lifecycle is not None and lifecycle.client_id == client_id:
+            try:
+                result = lifecycle.exchange(code=code, redirect_uri=redirect_uri, code_verifier=code_verifier)
+            except OAuthSessionUnavailable:
+                return jsonify({"error": "invalid_grant", "error_description": "Authentication unavailable"}), 400
+            response = jsonify(result)
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Pragma"] = "no-cache"
+            return response
 
         # Retrieve and validate authorization code
         code_data = get_oauth_code(code)
