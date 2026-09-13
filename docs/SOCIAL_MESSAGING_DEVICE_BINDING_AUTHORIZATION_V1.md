@@ -10,6 +10,12 @@ not infer environment migration, restart, or deployment history from source.
 
 ## Deterministic Nostr signature carrier
 
+The additive [mobile authorization contract](SOCIAL_MOBILE_DEVICE_AUTHORIZATION_V1.md)
+defines challenge-bound LEGACY and desktop QR approval as dormant, separate
+methods. It preserves the carrier below and does not activate new routes or
+change this runtime's default-off configuration. Mobile messaging must not
+require a Nostr browser extension on the phone.
+
 The signing identity is UBID's canonical lowercase 32-byte x-only secp256k1
 participant public key. It must equal the independently authenticated
 participant. OAuth or session possession supplies that authenticated context;

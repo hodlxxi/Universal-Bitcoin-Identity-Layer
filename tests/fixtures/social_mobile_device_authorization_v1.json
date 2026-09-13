@@ -1,0 +1,215 @@
+{
+  "compressedPublicKey": "02f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+  "entries": [
+    {
+      "bindingId": "6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d",
+      "content": "{\"authorization\":{\"algorithm\":\"x25519-v1\",\"bindingExpiresAt\":\"2026-10-08T22:29:59Z\",\"bindingRecordSchema\":\"hodlxxi.social_messaging_device_binding_record.v1\",\"bindingRecordVersion\":1,\"bindingValidFrom\":\"2026-09-08T22:29:59Z\",\"bindingVersion\":1,\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"expiresAt\":\"2026-09-08T22:34:59Z\",\"issuedAt\":\"2026-09-08T22:29:59Z\",\"operation\":\"register\",\"priorBindingId\":null,\"publicKey\":\"0900000000000000000000000000000000000000000000000000000000000000\",\"requestId\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"schema\":\"hodlxxi.social_messaging_device_binding_authorization.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1},\"domain\":\"HODLXXI_SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_V1\"}",
+      "legacy_challenge_v1": {
+        "digest": "11da449f38e032bde995d83daca940206d81dbf8481b4824a0baf4a701d307de",
+        "signature": "IIYwkJh/Ka8GX7icTgKiN2w1rbgrpqZt1+6z3gp8SsfLGkUmJ2c9H+Y4iNmc7NPeZcN6F1OOD+/qzgRr7Lclp6k=",
+        "signingDigest": "79dc3212c19dd572d4663d3e761473ce0c25340dd41e6a1bc1d0cd28328d6f10"
+      },
+      "nostr_event_v1": {
+        "digest": "edc761c2ba04b5a35a01185142dfd17c4d999689a881f8c0881857a1ef7afdb7",
+        "eventId": "4fb89f90de1379e47893ad335c4839805be4265767d1972b7281aea2ef2e0ad0",
+        "signature": "6fb5dcbb6791eaf44bb2fa9282a1db21c702e88db58ab388d974baae4b082ff69cfbfe4eb62fe36a8040fb9de010a1e6a9a2b6232332fac21d2d7a2a7e689570"
+      },
+      "now": 1788906599,
+      "operation": "register",
+      "proposal": {
+        "deviceId": "2222222222222222222222222222222222222222222222222222222222222222",
+        "expectedBindingId": null,
+        "operation": "register",
+        "publicKey": "0900000000000000000000000000000000000000000000000000000000000000",
+        "requestId": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "qr_desktop_v1": {
+        "comparisonCode": "455F-C2AC-7BCA",
+        "content": "{\"authorization\":{\"algorithm\":\"x25519-v1\",\"bindingExpiresAt\":\"2026-10-08T22:29:59Z\",\"bindingRecordSchema\":\"hodlxxi.social_messaging_device_binding_record.v1\",\"bindingRecordVersion\":1,\"bindingValidFrom\":\"2026-09-08T22:29:59Z\",\"bindingVersion\":1,\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"expiresAt\":\"2026-09-08T22:34:59Z\",\"issuedAt\":\"2026-09-08T22:29:59Z\",\"operation\":\"register\",\"priorBindingId\":null,\"publicKey\":\"0900000000000000000000000000000000000000000000000000000000000000\",\"requestId\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"schema\":\"hodlxxi.social_messaging_device_binding_authorization.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1},\"domain\":\"HODLXXI_SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_V1\"}",
+        "digest": "455fc2ac7bcaebc2d2b31a476be508aaa78385fc5c882ceed29e1422786cb563",
+        "eventId": "5bdcb94b35043c5b30d95f5fa7047481ddd9c4852f280c0423f92ed6c9734890",
+        "exchangeIdentity": "{\"authorizationDigest\":\"455fc2ac7bcaebc2d2b31a476be508aaa78385fc5c882ceed29e1422786cb563\",\"bindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"exchangeCommitment\":\"504973fdab490107a3b6936a5b45baed460b53aa57b2be37589a000680b7290e\",\"expiresAt\":\"2026-09-08T22:34:59Z\",\"pairingId\":\"9999999999999999999999999999999999999999999999999999999999999999\",\"requestId\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"schema\":\"hodlxxi.social_phone_session_exchange_identity.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+        "exchangeIdentityDigest": "6cc86e2401e0e7ab5434793d33efebed93639f2199723f176bac4e145179722a",
+        "possessionProof": "6dfe683570bbd2fa47176508eab7d612c7d8eb48be3c9b7a0200e0808e9196f0",
+        "signature": "d237db355a850550b7720972b2740df39fd2552286dca68f5056c8c472fccfc84603df452e323fe7f4a5fe97da7cc063a1afcd8f6f1cb964dc176fbb6e8a567e"
+      },
+      "semanticDigest": "70aa19a24077c3365a836f0476660f0132ab7959615d2c8c67ba75afd9071d9c"
+    },
+    {
+      "bindingId": "cc4efc97cef56180a86b1d9235b754fa717b45d4b9593ebdb04be4226c357b10",
+      "content": "{\"authorization\":{\"algorithm\":\"x25519-v1\",\"bindingExpiresAt\":\"2026-10-08T22:29:59Z\",\"bindingRecordSchema\":\"hodlxxi.social_messaging_device_binding_record.v1\",\"bindingRecordVersion\":1,\"bindingValidFrom\":\"2026-09-08T22:30:00Z\",\"bindingVersion\":2,\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"expiresAt\":\"2026-09-08T22:35:00Z\",\"issuedAt\":\"2026-09-08T22:30:00Z\",\"operation\":\"rotate\",\"priorBindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"publicKey\":\"0a00000000000000000000000000000000000000000000000000000000000000\",\"requestId\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"schema\":\"hodlxxi.social_messaging_device_binding_authorization.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1},\"domain\":\"HODLXXI_SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_V1\"}",
+      "legacy_challenge_v1": {
+        "digest": "75947972edddb68d4fa12d4f11de04cc82ee857f29f19a03b1a4e3c5b24eb295",
+        "signature": "IIYwkJh/Ka8GX7icTgKiN2w1rbgrpqZt1+6z3gp8SsfLGkUmJ2c9H+Y4iNmc7NPeZcN6F1OOD+/qzgRr7Lclp6k=",
+        "signingDigest": "79dc3212c19dd572d4663d3e761473ce0c25340dd41e6a1bc1d0cd28328d6f10"
+      },
+      "nostr_event_v1": {
+        "digest": "15b4a356a59967715ae49059aa5fecb82068500507a765ef0756ebbac8967a21",
+        "eventId": "a429b02a9223fcb463d64da2483fc8ec644d2002889cdc9fa29ba1ec72732f28",
+        "signature": "c919383d95f589fe9661636b0365f4a0231654a929728d14b085a0f7f130efdb64fe2f1975eb2f5ee67ccd80e01f8e7f17402fbb55e47f1de3e85921e9a67d93"
+      },
+      "now": 1788906600,
+      "operation": "rotate",
+      "proposal": {
+        "deviceId": "2222222222222222222222222222222222222222222222222222222222222222",
+        "expectedBindingId": "6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d",
+        "operation": "rotate",
+        "publicKey": "0a00000000000000000000000000000000000000000000000000000000000000",
+        "requestId": "4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "qr_desktop_v1": {
+        "comparisonCode": "8BDA-D83F-E696",
+        "content": "{\"authorization\":{\"algorithm\":\"x25519-v1\",\"bindingExpiresAt\":\"2026-10-08T22:29:59Z\",\"bindingRecordSchema\":\"hodlxxi.social_messaging_device_binding_record.v1\",\"bindingRecordVersion\":1,\"bindingValidFrom\":\"2026-09-08T22:30:00Z\",\"bindingVersion\":2,\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"expiresAt\":\"2026-09-08T22:34:59Z\",\"issuedAt\":\"2026-09-08T22:30:00Z\",\"operation\":\"rotate\",\"priorBindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"publicKey\":\"0a00000000000000000000000000000000000000000000000000000000000000\",\"requestId\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"schema\":\"hodlxxi.social_messaging_device_binding_authorization.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1},\"domain\":\"HODLXXI_SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_V1\"}",
+        "digest": "8bdad83fe6967da91ba2de8fe36ae443a0432367a7a6cc1ec1260bda05c164a4",
+        "eventId": "dc2e7c4c5ab48b23c078921f002a7e98aa62b65d4954447a5dd0e64e5583d3d7",
+        "exchangeIdentity": "{\"authorizationDigest\":\"8bdad83fe6967da91ba2de8fe36ae443a0432367a7a6cc1ec1260bda05c164a4\",\"bindingId\":\"cc4efc97cef56180a86b1d9235b754fa717b45d4b9593ebdb04be4226c357b10\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"exchangeCommitment\":\"504973fdab490107a3b6936a5b45baed460b53aa57b2be37589a000680b7290e\",\"expiresAt\":\"2026-09-08T22:34:59Z\",\"pairingId\":\"9999999999999999999999999999999999999999999999999999999999999999\",\"requestId\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"schema\":\"hodlxxi.social_phone_session_exchange_identity.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+        "exchangeIdentityDigest": "31a375340511c5ba315cf6ede6dc51bc1f802fd8c2a1870f0d50b72e0e1694b9",
+        "possessionProof": "520673c06b2ebb126a0e2c5bfe39c78fc9705c11e2e6e74b573b74fb7063b91f",
+        "signature": "469b19260e9345e7be98d8e69560218f250d10e400276c2ecb7d21736e6c955608dba45bd8da5bbf9d9db78a12a1cf647b574fceacd6cd85eb956a43d1dc9b64"
+      },
+      "semanticDigest": "16c47dd55844cf3086124b87249ec395b7d42759215f14ccfa99259fa51dd80c"
+    },
+    {
+      "bindingId": "a02864a0890e7528c34a3136ee040d661221a3eb5fb56415ffc4c617c60ea838",
+      "content": "{\"authorization\":{\"algorithm\":\"x25519-v1\",\"bindingExpiresAt\":\"2026-10-08T22:29:59Z\",\"bindingRecordSchema\":\"hodlxxi.social_messaging_device_binding_record.v1\",\"bindingRecordVersion\":1,\"bindingValidFrom\":\"2026-09-08T22:30:00Z\",\"bindingVersion\":3,\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"expiresAt\":\"2026-09-08T22:35:00Z\",\"issuedAt\":\"2026-09-08T22:30:00Z\",\"operation\":\"revoke\",\"priorBindingId\":\"cc4efc97cef56180a86b1d9235b754fa717b45d4b9593ebdb04be4226c357b10\",\"publicKey\":\"0a00000000000000000000000000000000000000000000000000000000000000\",\"requestId\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"schema\":\"hodlxxi.social_messaging_device_binding_authorization.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1},\"domain\":\"HODLXXI_SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_V1\"}",
+      "legacy_challenge_v1": {
+        "digest": "b0044a316372be0ed5bceebf28ae6c834f04130b554021465e218a238b384113",
+        "signature": "IIYwkJh/Ka8GX7icTgKiN2w1rbgrpqZt1+6z3gp8SsfLGkUmJ2c9H+Y4iNmc7NPeZcN6F1OOD+/qzgRr7Lclp6k=",
+        "signingDigest": "79dc3212c19dd572d4663d3e761473ce0c25340dd41e6a1bc1d0cd28328d6f10"
+      },
+      "nostr_event_v1": {
+        "digest": "09ee29504489c5b7541e01b25533d46c93e5b96a9456cd61fad06018e4672acb",
+        "eventId": "1da8e3972f9d82a15103a86de94ff06321e110065716baf5d3129a435063b2f6",
+        "signature": "d20c569136c2e96bd941ae5ca324afc5db716c736c9013b2ca43aab3391758daeb6500f4e446fee52d7c7c2d2d79e37453684a9994d390afe75dbd148a7f295d"
+      },
+      "now": 1788906600,
+      "operation": "revoke",
+      "proposal": {
+        "deviceId": "2222222222222222222222222222222222222222222222222222222222222222",
+        "expectedBindingId": "cc4efc97cef56180a86b1d9235b754fa717b45d4b9593ebdb04be4226c357b10",
+        "operation": "revoke",
+        "publicKey": null,
+        "requestId": "5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      "qr_desktop_v1": {
+        "comparisonCode": "C3E1-EBBF-E901",
+        "content": "{\"authorization\":{\"algorithm\":\"x25519-v1\",\"bindingExpiresAt\":\"2026-10-08T22:29:59Z\",\"bindingRecordSchema\":\"hodlxxi.social_messaging_device_binding_record.v1\",\"bindingRecordVersion\":1,\"bindingValidFrom\":\"2026-09-08T22:30:00Z\",\"bindingVersion\":3,\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"expiresAt\":\"2026-09-08T22:34:59Z\",\"issuedAt\":\"2026-09-08T22:30:00Z\",\"operation\":\"revoke\",\"priorBindingId\":\"cc4efc97cef56180a86b1d9235b754fa717b45d4b9593ebdb04be4226c357b10\",\"publicKey\":\"0a00000000000000000000000000000000000000000000000000000000000000\",\"requestId\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"schema\":\"hodlxxi.social_messaging_device_binding_authorization.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1},\"domain\":\"HODLXXI_SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_V1\"}",
+        "digest": "c3e1ebbfe9017973840a2f8b399d4dc9f3d669de67d69026b72165b9f0fa920d",
+        "eventId": "e8fab632bde6a12a2210ce71fca875997585172c9983656cf53ec733b29a1d95",
+        "exchangeDenied": true,
+        "possessionProof": "45e76e15fc96c8841030ef25e881b52f9d33a11a7163722a7258e60e483cc788",
+        "signature": "16ba932482b8e74f5e6270d36c40138d2d1a16cf548dcf8147bd3a569122546e0aec025bd45db9d34ed730e84ac1c216a5027d700437075e9ed019e0874f0a6e"
+      },
+      "semanticDigest": "a7db4b3f77f902abfffe99ea33739b2c65f7a1ce2f0f313065e9f7bbdcdba8bb"
+    },
+    {
+      "bindingId": "6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d",
+      "content": "{\"adoption\":{\"action\":\"adopt\",\"bindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"bindingRecord\":{\"algorithm\":\"x25519-v1\",\"bindingVersion\":1,\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"expiresAt\":\"2026-10-08T22:29:59Z\",\"operation\":\"register\",\"priorBindingId\":null,\"publicKey\":\"0900000000000000000000000000000000000000000000000000000000000000\",\"requestId\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"schema\":\"hodlxxi.social_messaging_device_binding_record.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"validFrom\":\"2026-09-08T22:29:59Z\",\"version\":1},\"expiresAt\":\"2026-09-08T22:35:00Z\",\"issuedAt\":\"2026-09-08T22:30:00Z\",\"requestId\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"schema\":\"hodlxxi.social_messaging_device_binding_adoption.v1\",\"version\":1},\"domain\":\"HODLXXI_SOCIAL_MESSAGING_DEVICE_BINDING_ADOPTION_V1\"}",
+      "legacy_challenge_v1": {
+        "digest": "dedf21a10a3cfcda29d1cefac354cd08097f3d4499bdf6739845dc4d24ecd281",
+        "signature": "IIYwkJh/Ka8GX7icTgKiN2w1rbgrpqZt1+6z3gp8SsfLGkUmJ2c9H+Y4iNmc7NPeZcN6F1OOD+/qzgRr7Lclp6k=",
+        "signingDigest": "79dc3212c19dd572d4663d3e761473ce0c25340dd41e6a1bc1d0cd28328d6f10"
+      },
+      "nostr_event_v1": {
+        "digest": "501b34cb971f18bbdf711ba6db122b9cd92b0256fbcd145ec5103000e5f73cd5",
+        "eventId": "68bb9d6a6dc3a13630a47e27350be22859be407a0c2ff903a6820ab214d50955",
+        "signature": "70e3bc1a5609d946e607c8a63506ac3770889ae01b0c60721e88fa1228ba047f1911f4a3a64aac0d60687df2a183cff1e33e7e64a6233a6708df4e16f9a6022f"
+      },
+      "now": 1788906600,
+      "operation": "adopt",
+      "proposal": {
+        "bindingId": "6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d",
+        "operation": "adopt",
+        "requestId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "qr_desktop_v1": {
+        "comparisonCode": "435D-8C92-14A4",
+        "content": "{\"adoption\":{\"action\":\"adopt\",\"bindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"bindingRecord\":{\"algorithm\":\"x25519-v1\",\"bindingVersion\":1,\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"expiresAt\":\"2026-10-08T22:29:59Z\",\"operation\":\"register\",\"priorBindingId\":null,\"publicKey\":\"0900000000000000000000000000000000000000000000000000000000000000\",\"requestId\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"schema\":\"hodlxxi.social_messaging_device_binding_record.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"validFrom\":\"2026-09-08T22:29:59Z\",\"version\":1},\"expiresAt\":\"2026-09-08T22:34:59Z\",\"issuedAt\":\"2026-09-08T22:30:00Z\",\"requestId\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"schema\":\"hodlxxi.social_messaging_device_binding_adoption.v1\",\"version\":1},\"domain\":\"HODLXXI_SOCIAL_MESSAGING_DEVICE_BINDING_ADOPTION_V1\"}",
+        "digest": "435d8c9214a49723d4ba0b4bda1b67219928937d5dedf94524c609ce4a1fa257",
+        "eventId": "9d07162be7752b98e8aa662cb542f9eea1b9b4ce98b21d27184dfc8fb95e9655",
+        "exchangeIdentity": "{\"authorizationDigest\":\"435d8c9214a49723d4ba0b4bda1b67219928937d5dedf94524c609ce4a1fa257\",\"bindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"exchangeCommitment\":\"504973fdab490107a3b6936a5b45baed460b53aa57b2be37589a000680b7290e\",\"expiresAt\":\"2026-09-08T22:34:59Z\",\"pairingId\":\"9999999999999999999999999999999999999999999999999999999999999999\",\"requestId\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"schema\":\"hodlxxi.social_phone_session_exchange_identity.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+        "exchangeIdentityDigest": "d52819e9e2063d533e86f37fb8b71d236a08bebc372fc72108ecc322d28d7405",
+        "possessionProof": "175545080a6504494f9e10e1d50eb42bfb88c75efe3f1a37e9989f3fd955204e",
+        "signature": "81ed2a4ea0be63974532dd6221b244a6b773d26535b4c449cbbbc9a225f337db31d84c3c0c5e45cd632cf756ef0aae509dd3f5a177c796bca19e75ed0491b25a"
+      },
+      "semanticDigest": "c96902ddb67f6d63c1579e81100f267be27f5f0cd12727b521c76c66d8f25c36"
+    }
+  ],
+  "exchangeVerifier": "8888888888888888888888888888888888888888888888888888888888888888",
+  "legacyContext": {
+    "challenge": "12345678-1234-4234-8234-123456789abc",
+    "loginContext": "6666666666666666666666666666666666666666666666666666666666666666"
+  },
+  "note": "Synthetic public test vectors only. Pairing secrets are deterministic test inputs.",
+  "pairingContext": {
+    "createdAt": "2026-09-08T22:29:59Z",
+    "desktopContext": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "exchangeCommitment": "504973fdab490107a3b6936a5b45baed460b53aa57b2be37589a000680b7290e",
+    "expiresAt": "2026-09-08T22:34:59Z",
+    "pairingId": "9999999999999999999999999999999999999999999999999999999999999999",
+    "secretCommitment": "ca1c1bd2dec908cf0083a36f3dc82b1425c5832ffb1501225d660960e43283e2"
+  },
+  "pairingSecret": "7777777777777777777777777777777777777777777777777777777777777777",
+  "schema": "hodlxxi.social_mobile_device_authorization_vectors.v1",
+  "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+  "version": 1,
+  "x25519NegativeVectors": {
+    "prohibitedEncodings": [
+      "0000000000000000000000000000000000000000000000000000000000000000",
+      "0100000000000000000000000000000000000000000000000000000000000000",
+      "5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224e8dcf54e900",
+      "e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800",
+      "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"
+    ],
+    "nonCanonicalFieldEncodings": [
+      "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "efffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "f0ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "f1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "f2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "f3ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "f4ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "f5ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "f6ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "f7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "f8ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "f9ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "faffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "fbffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "fcffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "fdffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "feffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"
+    ],
+    "highBitAliases": [
+      "0000000000000000000000000000000000000000000000000000000000000080",
+      "0100000000000000000000000000000000000000000000000000000000000080",
+      "0900000000000000000000000000000000000000000000000000000000000080",
+      "5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224e8dcf54e980",
+      "e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b880",
+      "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "efffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "f0ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "f1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "f2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "f3ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "f4ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "f5ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "f6ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "f7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "f8ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "f9ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "faffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "fbffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "fcffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "fdffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "feffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    ]
+  }
+}
