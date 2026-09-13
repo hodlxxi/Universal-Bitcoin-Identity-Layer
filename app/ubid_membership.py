@@ -154,6 +154,10 @@ def on_successful_login(pubkey: str) -> UbidUser:
       * put user info into session
       * optionally charge sats for the login
     """
+    from app.services.oauth_browser_authentication import require_verified_browser_completion
+
+    require_verified_browser_completion(pubkey)
+
     ensure_membership_tables()
 
     now = datetime.utcnow()

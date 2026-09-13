@@ -44,14 +44,15 @@ Session replacement, invalidation through the existing durable session owner,
 generation changes, user inactivity, subject changes, and context changes deny
 completion, cancellation, and authenticated recovery.
 
-**Browser integration prerequisite:** the current factory browser login stores
-authentication in Flask session state; its logout clears that state. It does
-not establish the above durable session mapping. An adapter must explicitly
-establish the authenticated mapping and invalidate it on logout/replacement
-before this service is wired to those flows. Generic OAuth claims, token
-possession, a browser-supplied session identifier, or a cached continuity object
-must not substitute for that adapter. The existing durable `sessions` model is
-reused; no parallel bearer validator or email/password identity is introduced.
+**Browser integration prerequisite:** the dormant
+[OAuth Session lifecycle](OAUTH_SESSION_LIFECYCLE_V1.md) provides the explicit
+canonical token-to-Session mapping and generation invalidation. Its factory
+composition, authenticated mobile/logout ingress and Social logout notification
+remain separate activation prerequisites. Without that composition, browser
+login/logout still only changes Flask session state. Generic OAuth claims,
+token possession, a browser-supplied session identifier, or a cached continuity
+object must not substitute for the authoritative resolver. The existing durable
+`sessions` model and canonical bearer validator are reused.
 
 ## Records and migration
 

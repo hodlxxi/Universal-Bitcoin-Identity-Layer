@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 import jwt
 from cryptography.hazmat.primitives import serialization
+
 from app.auth_api_core import canonical_xonly_pubkey
 from app.db_storage import get_canonical_jwt_record_by_jti
 from app.jwks import get_key_by_kid
@@ -63,8 +64,13 @@ def validate_canonical_access_token_with_config(
     *,
     config: BearerValidationConfig,
     expected_client_id: str | None = None,
+    record_loader=None,
 ) -> BearerPrincipal:
-    """Validate one locally issued canonical JWT without Flask state."""
+    """Validate one locally issued canonical JWT without Flask state.
+
+    record_loader is a trusted repository adapter for callers that must reread
+    issuance within their own transaction. It does not replace any token check.
+    """
     try:
         if not isinstance(encoded_token, str) or not encoded_token or len(encoded_token) > config.max_bearer_length:
             _reject()
@@ -88,7 +94,7 @@ def validate_canonical_access_token_with_config(
         if not isinstance(audience, str) or not audience:
             _reject()
 
-        record = get_canonical_jwt_record_by_jti(jti)
+        record = (record_loader or get_canonical_jwt_record_by_jti)(jti)
         if not isinstance(record, dict):
             _reject()
         record_client = record.get("client_id")

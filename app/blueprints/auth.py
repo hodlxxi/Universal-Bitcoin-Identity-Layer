@@ -14,8 +14,9 @@ from flask import Blueprint, jsonify, request, session
 from app.audit_logger import get_audit_logger
 from app.browser_routes import perform_browser_logout, render_browser_login
 from app.db_storage import create_user, get_user_by_pubkey
-from app.services.canonical_oauth_browser_subject import persist_verified_browser_subject
 from app.security import limiter
+from app.services.canonical_oauth_browser_subject import persist_verified_browser_subject
+from app.services.oauth_browser_authentication import complete_verified_legacy_browser_login
 from app.utils import (
     derive_legacy_address_from_pubkey,
     generate_challenge,
@@ -47,7 +48,7 @@ def _persist_canonical_login_identity(verified_pubkey: str) -> str:
     )
 
 
-@auth_bp.route("/logout")
+@auth_bp.route("/logout", methods=["GET", "POST"])
 def logout():
     """Log out current user and redirect to login page."""
     return perform_browser_logout(audit_logger=audit_logger, remote_addr=request.remote_addr)
@@ -146,6 +147,7 @@ def verify_signature():
 
     try:
         _persist_canonical_login_identity(matched_pubkey)
+        complete_verified_legacy_browser_login(matched_pubkey)
     except Exception:
         logger.exception("Canonical login identity persistence failed")
         audit_logger.log_event(
