@@ -86,6 +86,9 @@ Many historical checkpoint documents now include a standard status note at the t
 These are useful for future development, staging, compatibility, and design intent, but should not be presented as current production readiness evidence unless a current smoke/runbook says so:
 
 - `docs/NIP17_RUNTIME_PLAN.md`
+- `docs/SOCIAL_MOBILE_DEVICE_AUTHORIZATION_PERSISTENCE_V1.md` — dormant durable
+  mobile service, PostgreSQL lifecycle/replay ownership, authenticated continuity
+  prerequisite and exact session-exchange handoff; no routes or activation
 - `docs/SOCIAL_MOBILE_DEVICE_AUTHORIZATION_V1.md` — canonical Phase 1 mobile
   challenge binding, QR transcript/approval, method separation, fixed vectors,
   and dormant acceptance/session-exchange seams; no mobile routes or activation
