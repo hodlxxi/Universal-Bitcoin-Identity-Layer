@@ -247,8 +247,18 @@ browser logout retry. Extension-disabled logout keeps its existing behavior.
 Social local logout currently supplies no authoritative UBID notification in
 this repository. Social logout/replacement must later invoke authenticated
 ingress backed by the invalidation primitive, using its trusted recorded OAuth
-identity and recovering the same invalidation outcome. This remains unimplemented.
+identity and recovering the same invalidation outcome. The dormant
+[mobile ingress](SOCIAL_MOBILE_AUTHORIZATION_INGRESS_V1.md) supplies the
+revocation-only `invalidate_original` command and transport; Social delivery,
+acknowledgement and local cleanup remain unimplemented. Its exact original
+signed credential can retry only its own invalidation after expiry/revocation
+and yields no authentication or replacement-generation authority.
 The server-only primitive is not itself an HTTP authentication boundary.
+
+Lifecycle-enabled GET logout with a missing/expired/revoked browser generation
+still needs a safe local-cleanup path before activation. Prior adjacent/full
+interpreter shutdown was not normal; CI's `os._exit(rc)` does not establish
+normal shutdown. Neither caveat is fixed by mobile ingress.
 
 The factory issues no refresh tokens and rejects refresh_token grants.
 Therefore there is no refresh-based Session extension: another code exchange

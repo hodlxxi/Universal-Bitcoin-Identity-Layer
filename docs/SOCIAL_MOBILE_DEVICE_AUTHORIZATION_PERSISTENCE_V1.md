@@ -3,8 +3,11 @@
 This is the durable, repository-local companion to the
 [mobile protocol](SOCIAL_MOBILE_DEVICE_AUTHORIZATION_V1.md). The protocol's
 canonical bytes, signature domains, binding identities, and exchange identity
-remain authoritative. The service and migration are dormant: there is no route,
-factory registration, deployment, browser session issuer, or feature activation.
+remain authoritative. The service and migration are dormant. The separate
+[confidential ingress](SOCIAL_MOBILE_AUTHORIZATION_INGRESS_V1.md) defines explicit
+injectable POST routes, original context recovery and historical handoff delivery.
+There is no default factory registration, deployment, browser session issuer or
+feature activation.
 
 ## Authority and continuity
 
@@ -153,9 +156,10 @@ does not imply rollback and does not permit re-signing.
 
 ## Confidential service contracts
 
-There are **no HTTP routes**. All methods fail closed with
-`mobile device authorization unavailable`; an eventual transport must preserve
-that non-sensitive outward failure and supply its own authenticated ingress.
+This storage module contains **no HTTP routes**. Its separate
+[ingress contract](SOCIAL_MOBILE_AUTHORIZATION_INGRESS_V1.md) preserves independent
+authentication and the non-sensitive failure boundary. All service methods fail
+closed with `mobile device authorization unavailable`.
 
 | Method | Inputs beyond trusted identity context | Committed output |
 | --- | --- | --- |
@@ -212,6 +216,12 @@ are stored. Neither participant private keys nor device-local private X25519
 CryptoKeys are accepted, recovered, serialized, logged or persisted.
 
 ## Required integration before activation
+
+The dormant ingress now supplies trusted context generation/recovery, explicit
+service/viewer/proof boundaries, durable historical delivery and revocation-only
+retry transport. It does not activate them or implement Social's issuer.
+Stale-cookie GET logout cleanup remains required before activation. Prior full
+test process shutdown and the CI explicit-exit workaround remain separate caveats.
 
 The browser/OAuth continuity mapping and logout invalidation, confidential
 ingress/client authorization, session issuer delivery and recovery, Social UI
