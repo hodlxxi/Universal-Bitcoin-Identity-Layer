@@ -266,6 +266,32 @@ class SqlAlchemyMobileAuthorizationService:
         session.add(MobileRequestRow(request_id=candidate.semantic.request_id, owner="mobile", digest=candidate.digest))
         session.flush()
 
+    def original_context(self, operation_id, *, method, session_id, subject):
+        """Recover an original context only for the current authenticated owner.
+
+        This is an ingress adapter, not authority for a later command. The real
+        command independently repeats _owned/_auth in its own transaction.
+        """
+
+        def command(session):
+            if type(operation_id) is not str or not 1 <= len(operation_id) <= 64:
+                raise ValueError
+            _advisory_lock(session, _OPERATION_LOCK, operation_id)
+            row = session.get(MobileOperationRow, operation_id)
+            if row is None:
+                raise ValueError
+            owned = self._owned(
+                session,
+                operation_id,
+                method=method,
+                session_id=session_id,
+                subject=subject,
+                context_id=row.context_id,
+            )
+            return owned.context_id
+
+        return self._run(command)
+
     def reserve_legacy(self, content, *, session_id, subject, login_context):
         """Generate and reserve a fresh UUID before releasing it for signing.
 
@@ -698,48 +724,96 @@ class SqlAlchemyMobileAuthorizationService:
         return self._run(command)
 
     def consume_exchange(self, pairing_id, *, verifier, subject, revision, authorization_digest):
+        return self._run(
+            lambda session: self._consume_exchange(
+                session,
+                pairing_id,
+                verifier=verifier,
+                subject=subject,
+                revision=revision,
+                authorization_digest=authorization_digest,
+            )
+        )
+
+    def exchange_delivery(self, pairing_id, *, verifier, revision, authorization_digest):
+        """Proof-checked durable handoff history; never fresh issuance authority.
+
+        Subject is derived only from the locked original operation. The frozen
+        Phase-1 identity and existing consumption checks remain unchanged.
+        """
+
         def command(session):
             _advisory_lock(session, _OPERATION_LOCK, protocol._hex(pairing_id))
             row = session.get(MobileOperationRow, pairing_id, with_for_update=True)
-            if row is None or row.method != protocol.QR or row.subject != subject or row.status != "accepted":
+            if row is None:
                 raise ValueError
-            receipt = session.get(MobileAcceptanceRow, pairing_id)
-            exchange = session.get(MobileExchangeRow, pairing_id)
-            if receipt is None or exchange is None or receipt.authorization_digest != authorization_digest:
-                raise ValueError
-            verified = self._verified(row, receipt.proof_source, receipt.accepted_at)
-            if receipt.result_source != _result(verified.candidate):
-                raise ValueError
-            handoff = session.get(MobileSessionHandoffRow, pairing_id)
-            if handoff is None:
-                _lock_subject_for_evidence_change(session, subject)
-                _lock_subject_user(session, subject)
-                binding = SqlAlchemyTransactionBoundSocialMessagingDeviceStorage(session).binding_for_id(
-                    receipt.binding_id
-                )
-                if binding != _binding(verified.candidate) or not binding.active:
-                    raise ValueError
-            now = self._now()
-            # An equal retry recovers only the committed handoff metadata. It
-            # never causes a second consumption or issues another session.
-            check_time = now if handoff is None else handoff.consumed_at
-            identity = protocol.consume_phone_exchange(
-                protocol.PairingState(row.source, row.revision, "accepted", _acceptance(verified.candidate)),
+            recovered = session.get(MobileSessionHandoffRow, pairing_id) is not None
+            identity = self._consume_exchange(
+                session,
+                pairing_id,
                 verifier=verifier,
-                subject=subject,
-                expected_revision=revision,
-                consume_once=lambda *_args: True,
-                now=check_time,
+                subject=row.subject,
+                revision=revision,
+                authorization_digest=authorization_digest,
             )
-            if exchange.expires_at != verified.candidate.semantic.expires_at:
+            session.flush()
+            handoff = session.get(MobileSessionHandoffRow, pairing_id)
+            if handoff is None or handoff.identity_source != identity:
                 raise ValueError
-            if handoff is not None:
-                if handoff.identity_source != identity:
-                    raise ValueError
-                return identity
-            if now >= exchange.expires_at:
-                raise ValueError
-            session.add(MobileSessionHandoffRow(operation_id=pairing_id, identity_source=identity, consumed_at=now))
-            return identity
+            semantic = protocol.inspect_claim(protocol.parse_json(row.source)["content"], row.subject)
+            return protocol.canonical(
+                dict(
+                    schema="hodlxxi.social_mobile_handoff_delivery.v1",
+                    version=1,
+                    identity=protocol.parse_json(identity),
+                    operation=semantic.operation,
+                    revision=row.revision,
+                    consumedAt=_stamp(handoff.consumed_at),
+                    delivery="recovered" if recovered else "created",
+                    freshIssuanceAuthorized=False,
+                )
+            )
 
         return self._run(command)
+
+    def _consume_exchange(self, session, pairing_id, *, verifier, subject, revision, authorization_digest):
+        _advisory_lock(session, _OPERATION_LOCK, protocol._hex(pairing_id))
+        row = session.get(MobileOperationRow, pairing_id, with_for_update=True)
+        if row is None or row.method != protocol.QR or row.subject != subject or row.status != "accepted":
+            raise ValueError
+        receipt = session.get(MobileAcceptanceRow, pairing_id)
+        exchange = session.get(MobileExchangeRow, pairing_id)
+        if receipt is None or exchange is None or receipt.authorization_digest != authorization_digest:
+            raise ValueError
+        verified = self._verified(row, receipt.proof_source, receipt.accepted_at)
+        if receipt.result_source != _result(verified.candidate):
+            raise ValueError
+        handoff = session.get(MobileSessionHandoffRow, pairing_id)
+        if handoff is None:
+            _lock_subject_for_evidence_change(session, subject)
+            _lock_subject_user(session, subject)
+            binding = SqlAlchemyTransactionBoundSocialMessagingDeviceStorage(session).binding_for_id(receipt.binding_id)
+            if binding != _binding(verified.candidate) or not binding.active:
+                raise ValueError
+        now = self._now()
+        # An equal retry recovers only the committed handoff metadata. It
+        # never causes a second consumption or issues another session.
+        check_time = now if handoff is None else handoff.consumed_at
+        identity = protocol.consume_phone_exchange(
+            protocol.PairingState(row.source, row.revision, "accepted", _acceptance(verified.candidate)),
+            verifier=verifier,
+            subject=subject,
+            expected_revision=revision,
+            consume_once=lambda *_args: True,
+            now=check_time,
+        )
+        if exchange.expires_at != verified.candidate.semantic.expires_at:
+            raise ValueError
+        if handoff is not None:
+            if handoff.identity_source != identity:
+                raise ValueError
+            return identity
+        if now >= exchange.expires_at:
+            raise ValueError
+        session.add(MobileSessionHandoffRow(operation_id=pairing_id, identity_source=identity, consumed_at=now))
+        return identity

@@ -20,6 +20,7 @@ import jwt
 from sqlalchemy import select, text, update
 
 from app.auth_api_core import canonical_xonly_pubkey
+from app.jwks import get_key_by_kid
 from app.models import (
     OAuthBrowserGeneration,
     OAuthClient,
@@ -30,12 +31,14 @@ from app.models import (
     Session,
     User,
 )
+from app.services.bearer_credentials import DEFAULT_MAX_BEARER_LENGTH, has_compact_jwt_shape
 from app.services.oauth_bearer_validation import (
     TOKEN_CONTRACT,
     BearerValidationConfig,
     validate_canonical_access_token_with_config,
 )
 from app.services.oauth_scope_policy import (
+    RESERVED_SCOPES,
     SCOPE_POLICY_VERSION,
     client_allowed_scopes,
     parse_scopes,
@@ -567,6 +570,85 @@ class SqlAlchemyOAuthSessionLifecycle:
         def command(db):
             viewer = self._validate(db, viewer_bearer)
             self._invalidate_token(db, viewer.jti, viewer.user_id)
+
+        return self._run(command)
+
+    def invalidate_original(self, viewer_bearer: str) -> None:
+        """Revoke only this exact signed, durably recorded original generation.
+
+        Expiry/revocation are deliberately tolerated ONLY by this command. It
+        returns no identity or authentication evidence. The immutable generation
+        supplies the original subject even after User deactivation/key change.
+        Unknown signing keys fail closed, including after key retirement.
+        """
+
+        def command(db):
+            if (
+                type(viewer_bearer) is not str
+                or len(viewer_bearer) > DEFAULT_MAX_BEARER_LENGTH
+                or not has_compact_jwt_shape(viewer_bearer)
+            ):
+                raise OAuthSessionUnavailable()
+            digest = hashlib.sha256(viewer_bearer.encode("ascii")).hexdigest()
+            # The exact stored digest selects the record; unverified JWT claims
+            # cannot select a User, Session or a generation to invalidate.
+            token = db.execute(select(OAuthToken).where(OAuthToken.access_token == digest)).scalar_one_or_none()
+            if token is None or token.client_id != self.client_id:
+                raise OAuthSessionUnavailable()
+            generation = db.get(OAuthSessionGeneration, token.id)
+            if generation is None or generation.client_id != self.client_id or generation.user_id != token.user_id:
+                raise OAuthSessionUnavailable()
+            header = jwt.get_unverified_header(viewer_bearer)
+            kid = header.get("kid")
+            if header.get("alg") != "RS256" or type(kid) is not str or not 1 <= len(kid) <= 255:
+                raise OAuthSessionUnavailable()
+            key = get_key_by_kid(self._validation.jwks_dir, kid)
+            if key is None:
+                raise OAuthSessionUnavailable()
+            issuer = self._validation.issuer.rstrip("/")
+            claims = jwt.decode(
+                viewer_bearer,
+                key.public_key(),
+                algorithms=["RS256"],
+                audience=self.client_id,
+                issuer=issuer,
+                leeway=0,
+                options={
+                    "require": ["iss", "aud", "sub", "iat", "exp", "jti", "scope", "token_use", "token_contract"],
+                    "verify_exp": False,
+                    "verify_iat": True,
+                },
+            )
+            scopes = parse_scopes(claims.get("scope"))
+            metadata = dict(
+                token_contract=TOKEN_CONTRACT,
+                token_use="access",
+                issuer=issuer,
+                audience=self.client_id,
+                kid=kid,
+                digest_algorithm="sha256",
+                scope_policy_version=SCOPE_POLICY_VERSION,
+            )
+            if (
+                claims.get("aud") != self.client_id
+                or claims.get("sub") != _subject(generation.subject)
+                or claims.get("jti") != token.id
+                or claims.get("token_use") != "access"
+                or claims.get("token_contract") != TOKEN_CONTRACT
+                or claims.get("scope") != serialize_scopes(scopes)
+                or token.scope != claims["scope"]
+                or "openid" not in scopes
+                or scopes & RESERVED_SCOPES
+                or token.metadata_json != metadata
+                or type(claims["iat"]) is not int
+                or type(claims["exp"]) is not int
+                or not 0 < claims["exp"] - claims["iat"] <= 86400
+                or int(_utc(token.created_at).timestamp()) != claims["iat"]
+                or _utc(token.access_token_expires_at).timestamp() > claims["exp"]
+                or _utc(token.created_at) > self._now()
+            ):
+                raise OAuthSessionUnavailable()
+            self._invalidate_token(db, token.id, token.user_id)
 
         return self._run(command)
 
