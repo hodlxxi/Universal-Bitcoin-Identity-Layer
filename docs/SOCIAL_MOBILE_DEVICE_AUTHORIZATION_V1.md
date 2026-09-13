@@ -248,10 +248,14 @@ fallback, or wallet vendor API is defined here.
 
 ## Required later integration and verification
 
-The next phase must implement durable immutable challenge reservations, atomic
-mobile evidence/lifecycle acceptance, and the challenge-bound OAuth continuation
-before claiming mobile onboarding works. QR needs the corresponding durable
-offer/revision/consumption owner and session issuer, then explicit UI integration.
+The repository-local durable owner is specified separately in
+[Mobile authorization persistence V1](SOCIAL_MOBILE_DEVICE_AUTHORIZATION_PERSISTENCE_V1.md).
+That source does not activate this protocol or establish the browser/OAuth
+continuity mapping and confidential Social session issuer by itself.
+
+Before claiming mobile onboarding works, runtime integration must connect that
+durable owner to the challenge-bound OAuth continuation and the QR session
+issuer, then complete explicit UI integration.
 Existing routes remain unchanged until those boundaries are reviewed together.
 
 The identical `tests/fixtures/social_mobile_device_authorization_v1.json` files
