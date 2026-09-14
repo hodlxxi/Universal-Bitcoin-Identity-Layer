@@ -168,7 +168,7 @@ class SqlAlchemyMobileAuthorizationService:
     No default factory, Redis fallback, clock tolerance or session minting exists.
     """
 
-    def __init__(self, session_factory, *, clock=None, legacy_challenge_factory=None):
+    def __init__(self, session_factory, *, clock=None, legacy_challenge_factory=None, issuance_client_id=None):
         if (
             not callable(session_factory)
             or clock is not None
@@ -180,6 +180,11 @@ class SqlAlchemyMobileAuthorizationService:
         self._factory = session_factory
         self._clock = clock or (lambda: int(datetime.now(timezone.utc).timestamp()))
         self._legacy_challenge_factory = legacy_challenge_factory or (lambda: str(uuid4()))
+        if issuance_client_id is not None and (
+            type(issuance_client_id) is not str or not 1 <= len(issuance_client_id) <= 255
+        ):
+            raise protocol.MobileAuthorizationUnavailable()
+        self._issuance_client_id = issuance_client_id
 
     def _now(self):
         value = self._clock()
@@ -362,6 +367,12 @@ class SqlAlchemyMobileAuthorizationService:
                     )
                 )
                 session.flush()
+                if self._issuance_client_id is not None:
+                    # Only an explicitly composed issuer records provenance, in
+                    # the offer's original transaction. Never adopt old history.
+                    from app.services.social_session_issuance import record_pairing_parent
+
+                    record_pairing_parent(session, offer.pairing_id, session_id, self._issuance_client_id)
                 return True
 
             options = {} if random_bytes is None else dict(random_bytes=random_bytes)
