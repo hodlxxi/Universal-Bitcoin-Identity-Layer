@@ -86,6 +86,10 @@ Many historical checkpoint documents now include a standard status note at the t
 These are useful for future development, staging, compatibility, and design intent, but should not be presented as current production readiness evidence unless a current smoke/runbook says so:
 
 - `docs/NIP17_RUNTIME_PLAN.md`
+- `docs/SOCIAL_SESSION_ISSUANCE_V1.md` — dormant PostgreSQL one-shot phone
+  authority, original OAuth-generation provenance, canonical viewer credential,
+  bound recovery, current resolution and exact revocation; no default factory
+  composition, Social runtime wiring or activation
 - `docs/SOCIAL_MOBILE_AUTHORIZATION_INGRESS_V1.md` — dormant confidential mobile
   POST contracts, independent backend/viewer/proof checks, original operation
   context, historical handoff delivery and generation-scoped invalidation;
