@@ -80,7 +80,7 @@ enable the independent device-binding authorization feature.
 
 ## Offline verification
 
-Run `python scripts/test_social_mobile_session_wiring_offline.py` using the
+Run `python scripts/run_social_mobile_session_wiring_offline.py` using the
 existing project environment. It selects only the wiring, issuance schema,
 shared signer and pure lifecycle construction tests. It skips the shared
 infrastructure conftest, clears inherited environment,

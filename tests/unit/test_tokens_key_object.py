@@ -50,6 +50,9 @@ class NonExportableTestKey(rsa.RSAPrivateKey):
     def __copy__(self):
         return self
 
+    def __deepcopy__(self, memo):
+        return self
+
 
 @pytest.fixture(scope="module")
 def signing_key():
