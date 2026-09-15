@@ -1,5 +1,8 @@
 # Social session issuance V1 operation contract
 
+An optional [trusted runtime composition](SOCIAL_MOBILE_SESSION_RUNTIME.md)
+provides a separate operator-selected factory; the ordinary factory stays dormant.
+
 Dormant source, PostgreSQL owner. Source installation does not activate routes in the default factory. The database commit authorizes one exact Social client/issuer, subject/device/binding and accepted phone handoff. A later cookie is retryable presentation of that same decision. No atomic PostgreSQL-plus-cookie delivery is claimed.
 
 ## Composition and provisioning
