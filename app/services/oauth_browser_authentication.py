@@ -101,7 +101,6 @@ def protected_browser_logout() -> Response | tuple[Response, int] | None:
     try:
         reference = browser_reference()
         if request.method in {"GET", "HEAD"}:
-            lifecycle.browser_subject(reference)
             response = make_response(
                 render_template_string(
                     "<!doctype html><title>Log out</title><h1>Log out of UBID?</h1>"
