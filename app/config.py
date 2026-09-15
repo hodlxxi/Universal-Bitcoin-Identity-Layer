@@ -15,6 +15,24 @@ _TRUTHY_VALUES = {"1", "true", "yes", "on"}
 class AppConfig(TypedDict):
     """Typed representation of the application's configuration."""
 
+    SOCIAL_MOBILE_AUTHORIZATION_ENABLED: bool
+    SOCIAL_SESSION_ISSUANCE_ENABLED: bool
+    SOCIAL_MOBILE_AUTHORIZATION_VIEWER_OAUTH_CLIENT_ID: str
+    SOCIAL_MOBILE_AUTHORIZATION_BACKEND_ID: str
+    SOCIAL_MOBILE_AUTHORIZATION_SERVICE_PRINCIPAL: str
+    SOCIAL_MOBILE_AUTHORIZATION_CLIENT_JWKS_DIR: str
+    SOCIAL_MOBILE_AUTHORIZATION_SERVICE_JWKS_DIR: str
+    SOCIAL_MOBILE_AUTHORIZATION_SERVICE_SIGNING_KEY_ID: str
+    SOCIAL_MOBILE_AUTHORIZATION_SERVICE_SIGNING_KEY_PATH: str
+    SOCIAL_SESSION_ISSUANCE_BACKEND_ID: str
+    SOCIAL_SESSION_ISSUANCE_SERVICE_PRINCIPAL: str
+    SOCIAL_SESSION_ISSUANCE_CLIENT_JWKS_DIR: str
+    SOCIAL_SESSION_ISSUANCE_SERVICE_JWKS_DIR: str
+    SOCIAL_SESSION_ISSUANCE_SERVICE_SIGNING_KEY_ID: str
+    SOCIAL_SESSION_ISSUANCE_SERVICE_SIGNING_KEY_PATH: str
+    SOCIAL_SESSION_ISSUANCE_SCOPE: str
+    SOCIAL_SESSION_ISSUANCE_PURPOSE: str
+
     RPC_HOST: str
     RPC_PORT: int
     RPC_USER: str
@@ -140,6 +158,15 @@ def _get_optional_env_int(name: str) -> Optional[int]:
         raise ValueError(f"Environment variable {name} must be an integer (got {raw_value!r})") from exc
 
 
+def _get_explicit_mobile_flag(name: str) -> bool:
+    value = os.getenv(name)
+    if value in (None, "", "false"):
+        return False
+    if value == "true":
+        return True
+    raise ValueError("mobile session configuration invalid")
+
+
 def get_config() -> AppConfig:
     """Load application configuration from environment variables."""
 
@@ -209,6 +236,34 @@ def get_config() -> AppConfig:
         "APP_VERSION": os.getenv("APP_VERSION", "1.0.0-alpha"),
         "APP_HOST": os.getenv("APP_HOST", "0.0.0.0"),
         "APP_PORT": _get_env_int("APP_PORT", 5000),
+        # Parsed here, installed only by create_social_mobile_app.
+        "SOCIAL_MOBILE_AUTHORIZATION_ENABLED": _get_explicit_mobile_flag("SOCIAL_MOBILE_AUTHORIZATION_ENABLED"),
+        "SOCIAL_SESSION_ISSUANCE_ENABLED": _get_explicit_mobile_flag("SOCIAL_SESSION_ISSUANCE_ENABLED"),
+        "SOCIAL_MOBILE_AUTHORIZATION_VIEWER_OAUTH_CLIENT_ID": os.getenv(
+            "SOCIAL_MOBILE_AUTHORIZATION_VIEWER_OAUTH_CLIENT_ID", ""
+        ),
+        "SOCIAL_MOBILE_AUTHORIZATION_BACKEND_ID": os.getenv("SOCIAL_MOBILE_AUTHORIZATION_BACKEND_ID", ""),
+        "SOCIAL_MOBILE_AUTHORIZATION_SERVICE_PRINCIPAL": os.getenv("SOCIAL_MOBILE_AUTHORIZATION_SERVICE_PRINCIPAL", ""),
+        "SOCIAL_MOBILE_AUTHORIZATION_CLIENT_JWKS_DIR": os.getenv("SOCIAL_MOBILE_AUTHORIZATION_CLIENT_JWKS_DIR", ""),
+        "SOCIAL_MOBILE_AUTHORIZATION_SERVICE_JWKS_DIR": os.getenv("SOCIAL_MOBILE_AUTHORIZATION_SERVICE_JWKS_DIR", ""),
+        "SOCIAL_MOBILE_AUTHORIZATION_SERVICE_SIGNING_KEY_ID": os.getenv(
+            "SOCIAL_MOBILE_AUTHORIZATION_SERVICE_SIGNING_KEY_ID", ""
+        ),
+        "SOCIAL_MOBILE_AUTHORIZATION_SERVICE_SIGNING_KEY_PATH": os.getenv(
+            "SOCIAL_MOBILE_AUTHORIZATION_SERVICE_SIGNING_KEY_PATH", ""
+        ),
+        "SOCIAL_SESSION_ISSUANCE_BACKEND_ID": os.getenv("SOCIAL_SESSION_ISSUANCE_BACKEND_ID", ""),
+        "SOCIAL_SESSION_ISSUANCE_SERVICE_PRINCIPAL": os.getenv("SOCIAL_SESSION_ISSUANCE_SERVICE_PRINCIPAL", ""),
+        "SOCIAL_SESSION_ISSUANCE_CLIENT_JWKS_DIR": os.getenv("SOCIAL_SESSION_ISSUANCE_CLIENT_JWKS_DIR", ""),
+        "SOCIAL_SESSION_ISSUANCE_SERVICE_JWKS_DIR": os.getenv("SOCIAL_SESSION_ISSUANCE_SERVICE_JWKS_DIR", ""),
+        "SOCIAL_SESSION_ISSUANCE_SERVICE_SIGNING_KEY_ID": os.getenv(
+            "SOCIAL_SESSION_ISSUANCE_SERVICE_SIGNING_KEY_ID", ""
+        ),
+        "SOCIAL_SESSION_ISSUANCE_SERVICE_SIGNING_KEY_PATH": os.getenv(
+            "SOCIAL_SESSION_ISSUANCE_SERVICE_SIGNING_KEY_PATH", ""
+        ),
+        "SOCIAL_SESSION_ISSUANCE_SCOPE": os.getenv("SOCIAL_SESSION_ISSUANCE_SCOPE", ""),
+        "SOCIAL_SESSION_ISSUANCE_PURPOSE": os.getenv("SOCIAL_SESSION_ISSUANCE_PURPOSE", ""),
         # Private Social Full-directory delivery (disabled unless explicitly complete)
         "PRIVACY_FULL_DIRECTORY_INTERNAL_ENABLED": _get_env_bool(
             "PRIVACY_FULL_DIRECTORY_INTERNAL_ENABLED",

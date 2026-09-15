@@ -199,6 +199,31 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     return app
 
 
+def create_social_mobile_app(config_override: Optional[AppConfig] = None) -> Flask:
+    """Separate operator-selected entrypoint; ordinary create_app stays dormant."""
+    from app.services.social_mobile_session_runtime import (
+        ENABLE_FLAGS,
+        MobileSessionConfigurationError,
+        configure_social_mobile_session,
+    )
+
+    cfg = config_override or get_config()
+    flags = tuple(cfg.get(name, False) for name in ENABLE_FLAGS)
+    if all(value is False for value in flags):
+        return create_app(cfg)
+    if any(value is not True for value in flags):
+        raise MobileSessionConfigurationError()
+    app = create_app(cfg)
+    from app import database
+
+    # Use only the already initialized PostgreSQL owner; never initialize a
+    # second database or fall back to SQLite/default connection settings here.
+    if database._engine is None or database._engine.dialect.name != "postgresql":
+        raise MobileSessionConfigurationError()
+    configure_social_mobile_session(app, cfg, session_factory=database.get_session)
+    return app
+
+
 def register_messaging_device_binding_authorization_blueprint(app: Flask) -> bool:
     """Register only the explicitly configured private authorization surface."""
 
