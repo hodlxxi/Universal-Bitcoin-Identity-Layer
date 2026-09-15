@@ -307,7 +307,9 @@ class SqlAlchemyOAuthSessionLifecycle:
 
         def command(db):
             browser = db.get(OAuthBrowserGeneration, generation_id)
-            if browser is None or browser.client_id != self.client_id:
+            if browser is None:
+                return
+            if browser.client_id != self.client_id:
                 raise OAuthSessionUnavailable()
             # Unlike admission, revocation remains possible for inactive owners.
             db.get(User, browser.user_id, with_for_update=True, populate_existing=True)
