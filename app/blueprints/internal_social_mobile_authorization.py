@@ -1,7 +1,5 @@
 """Dormant closed POST routes for the confidential Social backend."""
 
-from functools import partial
-
 from flask import Blueprint, current_app, request
 
 from app.services.bearer_credentials import BearerHeaderError, parse_bearer_authorization_header
@@ -111,11 +109,21 @@ def _command(command):
         return _error()
 
 
+def _command_view(command):
+    def view():
+        return _command(command)
+
+    suffix = command.replace("/", "_").replace("-", "_")
+    view.__name__ = f"_command_{suffix}"
+    view.__qualname__ = view.__name__
+    return view
+
+
 for _name in COMMANDS:
     internal_social_mobile_authorization_bp.add_url_rule(
         PREFIX + "/" + _name,
         endpoint=_name.replace("/", "_"),
-        view_func=partial(_command, _name),
+        view_func=_command_view(_name),
         methods=["POST"],
         provide_automatic_options=False,
     )
