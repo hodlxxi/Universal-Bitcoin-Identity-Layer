@@ -1153,61 +1153,74 @@ if (qrBox && typeof QRCode !== "undefined") renderQR(qrBox, lnurl);
       }
     }
 
+    let nostrLoginInFlight = false;
     async function loginWithNostr() {
-      if (!window.nostr) {
-        alert("No Nostr extension found");
-        return;
-      }
+      // Legacy click/touch bindings may invoke this again before navigation.
+      if (nostrLoginInFlight) return;
+      nostrLoginInFlight = true;
+      let redirectStarted = false;
+      try {
+        if (!window.nostr) {
+          alert("No Nostr extension found");
+          return;
+        }
 
-      let pubkey = await window.nostr.getPublicKey();
+        let pubkey = await window.nostr.getPublicKey();
 
-      // normalize x-only pubkey to compressed form for backend challenge route
-      if (/^[0-9a-f]{64}$/i.test(pubkey)) {
-        pubkey = "02" + pubkey;
-      }
+        // normalize x-only pubkey to compressed form for backend challenge route
+        if (/^[0-9a-f]{64}$/i.test(pubkey)) {
+          pubkey = "02" + pubkey;
+        }
 
-      const r = await fetch("/api/challenge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pubkey, method: "nostr" }),
-      });
+        const r = await fetch("/api/challenge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pubkey, method: "nostr" }),
+        });
 
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        alert(d.error || "Challenge failed");
-        return;
-      }
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          alert(d.error || "Challenge failed");
+          return;
+        }
 
-      const verifyUrl = window.location.origin + "/api/verify";
+        const verifyUrl = window.location.origin + "/api/verify";
 
-      const event = {
-        kind: 22242,
-        created_at: Math.floor(Date.now() / 1000),
-        tags: [
-          ["challenge", d.challenge],
-          ["url", verifyUrl]
-        ],
-        content: "",
-      };
+        const event = {
+          kind: 22242,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [
+            ["challenge", d.challenge],
+            ["url", verifyUrl]
+          ],
+          content: "",
+        };
 
-      const signed = await window.nostr.signEvent(event);
+        const signed = await window.nostr.signEvent(event);
 
-      const vr = await fetch("/api/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          challenge_id: d.challenge_id,
-          pubkey,
-          nostr_event: signed,
-        }),
-      });
+        const vr = await fetch("/api/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            challenge_id: d.challenge_id,
+            pubkey,
+            nostr_event: signed,
+          }),
+        });
 
-      const j2 = await vr.json().catch(() => ({}));
-      if (vr.ok && j2.verified) {
-        window.location.href = getRedirectUrl();
-      } else {
-        console.error("Nostr verify failed:", j2);
-        alert(j2.error || "Verification failed");
+        const j2 = await vr.json().catch(() => ({}));
+        if (vr.ok && j2.verified) {
+          window.location.href = getRedirectUrl();
+          redirectStarted = true;
+        } else {
+          console.error("Nostr verify failed:", j2);
+          alert(j2.error || "Verification failed");
+        }
+      } catch (e) {
+        alert("Nostr login failed. Please try again.");
+      } finally {
+        // Keep the guard after success until the page navigates away.
+        if (!redirectStarted) nostrLoginInFlight = false;
       }
     }
 
