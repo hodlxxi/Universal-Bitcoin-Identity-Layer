@@ -235,3 +235,12 @@ harness with synthetic users, sessions, entitlement and bindings. Tests include
 actual migration execution/rollback, exact Phase-1 vectors, existing binding
 consumers, request collisions, transaction failures, concurrency, lifecycle,
 session swaps, replay and exchange recovery. No live infrastructure is needed.
+
+## Dormant messaging evidence consumer
+
+The [accepted mobile routing adapter](SOCIAL_MESSAGING_MOBILE_ROUTING_V1.md)
+adds the previously deferred read-only messaging evidence consumer. It reuses
+these existing operation/receipt and global ownership tables without a migration
+or mutation. Its new proof namespace preserves method separation. All gates
+remain false by default; the original acceptance/session services and runtime
+package issuer are unchanged, and mobile login does not imply messaging readiness.

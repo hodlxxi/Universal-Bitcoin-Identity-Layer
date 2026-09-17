@@ -142,3 +142,15 @@ deviceHandle-to-viewer/recipient/device/binding relationship or the message-ID
 decision ledger. That migration is explicitly deferred. Social will later need
 its own independent ciphertext/message store; neither store is introduced in
 this phase.
+
+## Accepted mobile evidence prerequisite
+
+The dormant [accepted mobile routing adapter](SOCIAL_MESSAGING_MOBILE_ROUTING_V1.md)
+now reads the established committed mobile ownership and re-verifies LEGACY/QR
+proofs for the exact binding. Its distinct mobile proof namespace is accepted
+only with the routing gate's explicit `mobile_authorization_enabled=True`;
+the default is false. Existing Nostr evidence and all wire/handle/package
+identifiers are unchanged. The earlier identity-verifier-only description above
+remains the default path. No routing registry, runtime package retention,
+sender-device admission, ciphertext transport or inbox is activated by this
+prerequisite. The linked document lists every remaining Phase 3 boundary.

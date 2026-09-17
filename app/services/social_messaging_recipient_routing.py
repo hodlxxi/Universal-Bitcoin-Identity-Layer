@@ -58,7 +58,7 @@ _ALIAS = re.compile(r"p_[A-Za-z0-9_-]{22}\Z").fullmatch
 _SNAPSHOT_ID = re.compile(r"sha256:[0-9a-f]{64}\Z").fullmatch
 _MESSAGE_ID = re.compile(r"m_[A-Za-z0-9_-]{43}\Z").fullmatch
 _ENVELOPE_DIGEST = re.compile(r"hodlxxi-social-message-envelope-v1-sha256:[0-9a-f]{64}\Z").fullmatch
-_BINDING_PROOF_ID = re.compile(r"hodlxxi-binding-authorization-v1-sha256:[0-9a-f]{64}\Z").fullmatch
+_BINDING_PROOF_ID = re.compile(r"hodlxxi-(?:mobile-)?binding-authorization-v1-sha256:[0-9a-f]{64}\Z").fullmatch
 _FULL_PROOF_ID = re.compile(r"hodlxxi-full-entitlement-v1-sha256:[0-9a-f]{64}\Z").fullmatch
 _REQUEST_FIELDS = {
     "envelopeDigest",
@@ -526,6 +526,7 @@ def _verified_binding_route(
     now: datetime,
     issued_at: int,
     expires_at: int,
+    mobile_authorization_enabled: bool = False,
 ) -> tuple[RecipientRoutingSnapshotRoute, dict[str, object]]:
     if type(binding) is not MessagingDeviceBinding:
         raise ValueError
@@ -568,6 +569,7 @@ def _verified_binding_route(
     if (
         type(evidence.proof_id) is not str
         or _BINDING_PROOF_ID(evidence.proof_id) is None
+        or (evidence.proof_id.startswith("hodlxxi-mobile-") and not mobile_authorization_enabled)
         or _canonical_subject(evidence.subject) != subject
         or _hex64(evidence.device_id) != device_id
         or _hex64(evidence.binding_id) != binding_id
@@ -840,9 +842,11 @@ class SocialMessagingRecipientRoutingGateV1:
         alias_secret: bytes,
         alias_version: int = 1,
         clock: Callable[[], datetime] | None = None,
+        mobile_authorization_enabled: bool = False,
     ) -> None:
         if (
-            not callable(getattr(repository, "retain_snapshot", None))
+            type(mobile_authorization_enabled) is not bool
+            or not callable(getattr(repository, "retain_snapshot", None))
             or not callable(getattr(repository, "read_snapshot", None))
             or not callable(getattr(repository, "record_decision", None))
             or not callable(getattr(binding_provider, "current_for_subject", None))
@@ -857,6 +861,7 @@ class SocialMessagingRecipientRoutingGateV1:
         ):
             raise ValueError("invalid recipient routing dependency")
         self._repository = repository
+        self._mobile_authorization_enabled = mobile_authorization_enabled
         self._binding_provider = binding_provider
         self._binding_authorization_verifier = binding_authorization_verifier
         self._full_entitlement_verifier = full_entitlement_verifier
@@ -899,6 +904,7 @@ class SocialMessagingRecipientRoutingGateV1:
                 now=now,
                 issued_at=issued_at,
                 expires_at=expires_at,
+                mobile_authorization_enabled=self._mobile_authorization_enabled,
             )
             for item in bindings
         ]
