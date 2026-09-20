@@ -108,6 +108,11 @@ These are useful for future development, staging, compatibility, and design inte
   runtime/factory/internal-HTTP wiring for identity-authorized device-binding
   operations; kind 27236 is repository-local and never published; source
   presence is not runtime activation or deployment
+- `docs/SOCIAL_MESSAGING_DEVICE_PROOF_PROFILE_V1.md` — dormant byte-identical
+  Exact Messaging Device Proof Profile V1 and Enrollment V2 shape contracts;
+  Social contains the current strict Ed25519 primitive, UBID never reports
+  cryptographic or final-admission authority, and the atomic owner remains
+  explicitly pending
 - `docs/milestones/NIP17_SITE_LOCAL_MESSAGING_V0.md`
 - `docs/ops/NIP17_*.md`
 - `docs/ops/NIP59_*.md`
