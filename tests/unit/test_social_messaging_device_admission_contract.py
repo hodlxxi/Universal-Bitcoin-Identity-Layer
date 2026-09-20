@@ -170,12 +170,18 @@ def test_independent_fixed_context_input_statement_and_digest_vectors(name):
     assert parsed_input.approval_event_wire == value["approvalEventWire"]
     assert parsed_input.actual_request_wire == value["actualRequestWire"]
     assert parsed_input.routing_request_wire == value["routingRequestWire"]
-    independent_context_digest = "hodlxxi-social-device-verification-context-v1-sha256:" + hashlib.sha256(
-        b"HODLXXI_SOCIAL_DEVICE_VERIFICATION_CONTEXT_V1\0" + value["contextWire"].encode("ascii")
-    ).hexdigest()
-    independent_input_digest = "hodlxxi-social-device-verification-input-v1-sha256:" + hashlib.sha256(
-        b"HODLXXI_SOCIAL_DEVICE_VERIFICATION_INPUT_V1\0" + value["inputWire"].encode("ascii")
-    ).hexdigest()
+    independent_context_digest = (
+        "hodlxxi-social-device-verification-context-v1-sha256:"
+        + hashlib.sha256(
+            b"HODLXXI_SOCIAL_DEVICE_VERIFICATION_CONTEXT_V1\0" + value["contextWire"].encode("ascii")
+        ).hexdigest()
+    )
+    independent_input_digest = (
+        "hodlxxi-social-device-verification-input-v1-sha256:"
+        + hashlib.sha256(
+            b"HODLXXI_SOCIAL_DEVICE_VERIFICATION_INPUT_V1\0" + value["inputWire"].encode("ascii")
+        ).hexdigest()
+    )
     assert canonical(json.loads(value["contextWire"])) == value["contextWire"]
     assert canonical(json.loads(value["inputWire"])) == value["inputWire"]
     assert value["contextDigest"] == independent_context_digest
@@ -265,9 +271,10 @@ def test_constructor_round_trips_are_exact_fixture_bytes(name):
         ).decode("ascii")
         == value["payloadWire"]
     )
-    assert contract.canonical_verification_statement_protected_header_v1_bytes(kid=CONFIG["kid"]).decode(
-        "ascii"
-    ) == value["protectedHeaderWire"]
+    assert (
+        contract.canonical_verification_statement_protected_header_v1_bytes(kid=CONFIG["kid"]).decode("ascii")
+        == value["protectedHeaderWire"]
+    )
 
 
 @pytest.mark.parametrize("field", sorted(CONTEXT_FIELDS))
@@ -735,9 +742,7 @@ def test_challenge_command_device_id_must_equal_the_canonical_actual_request_dev
         ("ed25519PublicKey", "66" * 32),
     ),
 )
-def test_enrollment_challenge_response_rejects_each_canonical_context_cross_binding_mismatch(
-    field, replacement
-):
+def test_enrollment_challenge_response_rejects_each_canonical_context_cross_binding_mismatch(field, replacement):
     path = contract.ADMISSION_PREFIX + "/enrollment-challenge"
     value = json.loads(VECTORS["responseWires"]["/enrollment-challenge"])
     challenge = {**json.loads(value["challengeWire"]), field: replacement}
@@ -760,9 +765,7 @@ def test_enrollment_challenge_response_rejects_each_canonical_context_cross_bind
         ("sessionBinding", "75" * 32),
     ),
 )
-def test_device_request_challenge_response_rejects_each_canonical_context_cross_binding_mismatch(
-    field, replacement
-):
+def test_device_request_challenge_response_rejects_each_canonical_context_cross_binding_mismatch(field, replacement):
     path = contract.ADMISSION_PREFIX + "/challenge-read"
     value = json.loads(VECTORS["responseWires"]["/challenge-read"])
     challenge = json.loads(value["challengeWire"])
@@ -781,16 +784,9 @@ def test_device_request_challenge_response_rejects_each_canonical_context_cross_
     "state,challenge_present,context_present,phone_proof_present,approval_event_present,receipt_present",
     (
         [("prepared", False, False, False, False, False)]
-        + [
-            ("challenged", True, True, phone, approval, False)
-            for phone in (False, True)
-            for approval in (False, True)
-        ]
+        + [("challenged", True, True, phone, approval, False) for phone in (False, True) for approval in (False, True)]
         + [("consumed", True, True, True, True, True)]
-        + [
-            (state, False, False, False, False, False)
-            for state in ("cancelled", "expired", "invalidated")
-        ]
+        + [(state, False, False, False, False, False) for state in ("cancelled", "expired", "invalidated")]
         + [
             (state, True, True, phone, approval, False)
             for state in ("cancelled", "expired", "invalidated")
@@ -1128,8 +1124,7 @@ def test_ports_cannot_accept_or_return_a_bare_boolean_verification_result():
             assert signature.return_annotation not in (bool, "bool")
             assert all(parameter.annotation not in (bool, "bool") for parameter in signature.parameters.values())
             assert all(
-                parameter.name not in {"verified", "admit", "admitted"}
-                for parameter in signature.parameters.values()
+                parameter.name not in {"verified", "admit", "admitted"} for parameter in signature.parameters.values()
             )
     source = (ROOT / "app/services/social_messaging_device_admission_contract.py").read_text()
     assert "def admit(" not in source
@@ -1139,9 +1134,7 @@ def test_ports_cannot_accept_or_return_a_bare_boolean_verification_result():
 
 def test_challenge_storage_protocol_separates_receipted_consumption_from_receipt_free_terminalization():
     consumed = inspect.signature(contract.ChallengeStorageOwner.record_consumed_challenge_transition)
-    non_consumed = inspect.signature(
-        contract.ChallengeStorageOwner.record_non_consumed_terminal_challenge_transition
-    )
+    non_consumed = inspect.signature(contract.ChallengeStorageOwner.record_non_consumed_terminal_challenge_transition)
     assert tuple(consumed.parameters) == ("self", "challenge", "transition", "receipt")
     assert consumed.parameters["receipt"].annotation in (
         contract.AdmissionReceiptV1,
@@ -1181,19 +1174,11 @@ def test_inspection_nonclaims_have_no_constructor_override_fields():
 def test_no_io_route_factory_runtime_or_framework_import_exists():
     source_path = ROOT / "app/services/social_messaging_device_admission_contract.py"
     tree = ast.parse(source_path.read_text())
-    imports = {
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    } | {
-        node.module or ""
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
+    imports = {alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names} | {
+        node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
     }
     assert not any(
-        name.startswith(("flask", "sqlalchemy", "socket", "requests", "urllib", "redis", "psycopg"))
-        for name in imports
+        name.startswith(("flask", "sqlalchemy", "socket", "requests", "urllib", "redis", "psycopg")) for name in imports
     )
     for path in ("app/factory.py", "app/config.py"):
         assert "social_messaging_device_admission_contract" not in (ROOT / path).read_text()

@@ -113,9 +113,7 @@ _HEX128 = re.compile(r"[0-9a-f]{128}\Z").fullmatch
 _CONFIGURED_IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}\Z").fullmatch
 _CONTEXT_DIGEST = re.compile(r"hodlxxi-social-device-verification-context-v1-sha256:[0-9a-f]{64}\Z").fullmatch
 _INPUT_DIGEST = re.compile(r"hodlxxi-social-device-verification-input-v1-sha256:[0-9a-f]{64}\Z").fullmatch
-_X25519_COMMITMENT = re.compile(
-    r"hodlxxi-social-messaging-x25519-public-key-v1-sha256:[0-9a-f]{64}\Z"
-).fullmatch
+_X25519_COMMITMENT = re.compile(r"hodlxxi-social-messaging-x25519-public-key-v1-sha256:[0-9a-f]{64}\Z").fullmatch
 _FULL_PROOF_ID = re.compile(r"hodlxxi-full-entitlement-v1-sha256:[0-9a-f]{64}\Z").fullmatch
 _BODY_DIGEST = re.compile(r"hodlxxi-social-device-request-body-v1-sha256:[0-9a-f]{64}\Z").fullmatch
 _HANDLE = re.compile(r"d_[A-Za-z0-9_-]{22}\Z").fullmatch
@@ -549,8 +547,7 @@ def _audience(value: object) -> str:
                 if str(ipaddress.IPv4Address(host)) != host:
                     raise ValueError
             elif re.fullmatch(r"[0-9]+|0x[0-9a-f]*", labels[-1]) or any(
-                re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) is None
-                or label.startswith("xn--")
+                re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) is None or label.startswith("xn--")
                 for label in labels
             ):
                 raise ValueError
@@ -629,9 +626,7 @@ def parse_verification_context_v1(source: object) -> VerificationContextV1:
         if predecessor is not None or approver_session is not None or approver_full is not None:
             _deny()
     else:
-        if (predecessor is None and association_version != 1) or (
-            predecessor is not None and association_version <= 1
-        ):
+        if (predecessor is None and association_version != 1) or (predecessor is not None and association_version <= 1):
             _deny()
         if predecessor is None and authority_epoch != 1:
             _deny()
@@ -726,8 +721,8 @@ def _parse_request(source: object) -> dict[str, object]:
     ):
         _deny()
     _audience(value["audience"])
-    for field in ("bindingId", "deviceId", "sessionBinding", "subject"):
-        _hex64(value[field])
+    for field_name in ("bindingId", "deviceId", "sessionBinding", "subject"):
+        _hex64(value[field_name])
     binding_version = _integer(value["bindingVersion"], positive=True)
     if binding_version > 1_024:
         _deny()
@@ -1337,9 +1332,9 @@ def _route(path: object) -> AdmissionRouteContractV1:
 
 
 def _validate_command_values(route: AdmissionRouteContractV1, value: dict[str, object]) -> None:
-    for field in ("presentationId", "deviceId", "enrollmentId", "challengeId"):
-        if field in value:
-            _hex64(value[field])
+    for field_name in ("presentationId", "deviceId", "enrollmentId", "challengeId"):
+        if field_name in value:
+            _hex64(value[field_name])
     if "ed25519PublicKey" in value:
         _hex64(value["ed25519PublicKey"])
     if "proofWire" in value:
@@ -1402,9 +1397,9 @@ def _receipt_from_object(value: object) -> AdmissionReceiptV1:
 
 
 def _validate_response_values(route: AdmissionRouteContractV1, value: dict[str, object]) -> None:
-    for field in ("sessionBinding", "enrollmentId", "challengeId"):
-        if field in value:
-            _hex64(value[field])
+    for field_name in ("sessionBinding", "enrollmentId", "challengeId"):
+        if field_name in value:
+            _hex64(value[field_name])
     if "expiresAt" in value:
         _integer(value["expiresAt"], positive=True)
     if route.response_kind == "challenge":
