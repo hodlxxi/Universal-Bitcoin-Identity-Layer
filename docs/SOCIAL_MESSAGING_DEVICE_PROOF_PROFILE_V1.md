@@ -31,21 +31,23 @@ and reconstructs the shared canonical shape. Its result is explicitly
 `not_evaluated_by_ubid` for Ed25519 and always `denied` for final admission.
 This avoids duplicated cryptographic authority.
 
-It does not establish final authority. The architecture audit result is:
+It does not establish final authority. The selected future architecture is
+defined by [`SOCIAL_DEVICE_ADMISSION_V1.md`](SOCIAL_DEVICE_ADMISSION_V1.md):
 
 ```text
-FINAL_AUTHORITY_MODEL=ATOMIC_OWNER_PENDING
-ATOMIC_CHALLENGE_OWNER=PENDING
-FINAL_ADMISSION_OWNER=PENDING
+FINAL_AUTHORITY_MODEL=UBID_ATOMIC_OWNER_SELECTED_NOT_IMPLEMENTED
+ATOMIC_CHALLENGE_OWNER=UBID_SELECTED_NOT_IMPLEMENTED
+FINAL_ADMISSION_OWNER=UBID_SELECTED_NOT_IMPLEMENTED
 ```
 
 UBID already owns or specifies accepted X25519 binding evidence, mobile
 authorization and replay state, canonical session state and transaction-bound
-Current-Full evidence. The reviewed documents do not yet assign one component
-to combine those state owners with this exact Ed25519 proof, immutable challenge
-storage and atomic consumption. The future Ed25519 key-association,
-rotation/revocation and challenge owners are also pending; existing UBID state
-does not silently select them.
+Current-Full evidence. UBID is selected to combine those state owners with an
+authenticated Social verification statement, immutable challenge storage and
+atomic consumption. The pure contract only freezes that boundary. The
+statement verifier, Ed25519 association lifecycle, rotation/revocation
+integration, storage and atomic owner remain future work; existing UBID state
+does not implement them.
 
 Runtime activation is explicitly blocked until one atomic authority either:
 
@@ -57,9 +59,12 @@ Runtime activation is explicitly blocked until one atomic authority either:
    attestation with frozen exact bytes, audience, expiry, replay binding,
    transaction binding and failure semantics.
 
-This correction does not design or implement option 2. A boolean, string,
+The linked pure contract selects option 2 and freezes its canonical shape, but
+does not implement its RSA verifier or atomic consumer. A boolean, string,
 historical result or ordinary service assertion such as `valid=true` is never
-cryptographic proof or final-admission authority.
+cryptographic proof or final-admission authority. Its statement shape requires
+both the statement issuer and verification-context audience to equal the same
+exact configured Social issuer.
 
 ## Encoding and closed parsing
 
@@ -218,7 +223,7 @@ substitution. The existing Phase 2 and Phase 3 routing fixture hashes remain
 unchanged.
 
 `DEVICE_PROOF_RUNTIME_ENABLED` and `ENROLLMENT_V2_RUNTIME_ENABLED` are false.
-There is no atomic single-use challenge owner, current association verifier or
-final admission path. A cryptographically valid proof remains a narrow dormant
-result and cannot authorize routing, storage, delivery, inbox access or any
-other operation.
+There is no implemented atomic single-use challenge owner, current association
+verifier or final admission path. A cryptographically valid proof remains a
+narrow dormant result and cannot authorize routing, storage, delivery, inbox
+access or any other operation.

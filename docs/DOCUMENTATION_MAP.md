@@ -111,8 +111,12 @@ These are useful for future development, staging, compatibility, and design inte
 - `docs/SOCIAL_MESSAGING_DEVICE_PROOF_PROFILE_V1.md` — dormant byte-identical
   Exact Messaging Device Proof Profile V1 and Enrollment V2 shape contracts;
   Social contains the current strict Ed25519 primitive, UBID never reports
-  cryptographic or final-admission authority, and the atomic owner remains
-  explicitly pending
+  cryptographic or final-admission authority; the selected dormant UBID owner
+  and authenticated statement boundary are linked below
+- `docs/SOCIAL_DEVICE_ADMISSION_V1.md` — dormant pure final-device-admission
+  context/input/JWS-shape, route, receipt, state and typed-port contracts;
+  UBID is selected as the future atomic owner, but verification, persistence,
+  routes, effects, runtime wiring and final admission remain unimplemented
 - `docs/milestones/NIP17_SITE_LOCAL_MESSAGING_V0.md`
 - `docs/ops/NIP17_*.md`
 - `docs/ops/NIP59_*.md`
