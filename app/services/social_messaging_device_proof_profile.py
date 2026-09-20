@@ -204,6 +204,27 @@ def _subject(value: object) -> str:
     return _hex64(value)
 
 
+def _canonical_ipv6_hex(address: ipaddress.IPv6Address) -> str:
+    # Freeze pure-hex RFC 5952 spelling, including IPv4-mapped addresses.
+    value = int(address)
+    groups = [(value >> shift) & 0xFFFF for shift in range(112, -1, -16)]
+    best_start = best_length = run_start = run_length = 0
+    for index, group in enumerate(groups):
+        if group == 0:
+            if run_length == 0:
+                run_start = index
+            run_length += 1
+            # Strictly longer preserves the first run when lengths tie.
+            if run_length > best_length:
+                best_start, best_length = run_start, run_length
+        else:
+            run_length = 0
+    encoded = [format(group, "x") for group in groups]
+    if best_length < 2:
+        return ":".join(encoded)
+    return ":".join(encoded[:best_start]) + "::" + ":".join(encoded[best_start + best_length :])
+
+
 def _audience(value: object) -> str:
     # Frozen HTTPS-origin grammar shared with Social; no URL/IDNA normalization.
     try:
@@ -217,7 +238,7 @@ def _audience(value: object) -> str:
             raise ValueError
         if host.startswith("["):
             # No zone identifiers or dotted IPv4 tails; compare canonical hex.
-            if ipaddress.IPv6Address(host[1:-1]).compressed != host[1:-1]:
+            if _canonical_ipv6_hex(ipaddress.IPv6Address(host[1:-1])) != host[1:-1]:
                 raise ValueError
         else:
             labels = host.split(".")

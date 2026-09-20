@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 from pathlib import Path
 
@@ -185,6 +186,37 @@ def test_shared_canonical_audience_corpus_through_real_contract_paths(case):
                 SocialMessagingDeviceProofUnavailable, match="^social messaging device proof unavailable$"
             ):
                 canonical_device_proof_signing_preimage_v1(challenge_wire, PROOF["publicKey"])
+
+
+@pytest.mark.parametrize(
+    "audience,accepted",
+    (
+        ("https://[::ffff:c000:201]", True),
+        ("https://[::ffff:192.0.2.1]", False),
+    ),
+    ids=("mapped-hex", "dotted-tail"),
+)
+def test_mapped_ipv6_audience_ignores_stdlib_dotted_serialization(monkeypatch, audience, accepted):
+    # Reproduce Python 3.12.14's mapped-address spelling on older interpreters.
+    monkeypatch.setattr(ipaddress.IPv6Address, "compressed", property(lambda address: "::ffff:192.0.2.1"))
+    enrollment_wire = change(ENROLLMENT["wire"], audience=audience)
+    request_wire = change(PROOF["actualRequestWire"], audience=audience)
+    challenge_wire = change(PROOF["storedChallengeWire"], request=request_wire)
+
+    if accepted:
+        assert canonical_enrollment_v2_bytes(**enrollment_values(audience=audience)).decode("ascii") == enrollment_wire
+        assert parse_enrollment_v2(enrollment_wire).audience == audience
+        assert (
+            inspect(actual_request_wire=request_wire, stored_challenge_wire=challenge_wire).canonical_structure_validity
+            == "valid"
+        )
+    else:
+        with pytest.raises(SocialMessagingDeviceProofUnavailable):
+            canonical_enrollment_v2_bytes(**enrollment_values(audience=audience))
+        with pytest.raises(SocialMessagingDeviceProofUnavailable):
+            parse_enrollment_v2(enrollment_wire)
+        with pytest.raises(SocialMessagingDeviceProofUnavailable):
+            inspect(actual_request_wire=request_wire, stored_challenge_wire=challenge_wire)
 
 
 def test_ubid_returns_shape_only_and_never_claims_cryptographic_or_final_authority():

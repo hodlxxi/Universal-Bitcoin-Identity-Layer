@@ -144,8 +144,9 @@ exactly `https://HOST` or `https://HOST:PORT`. Validation never normalizes input
   also reject alternate JSON escapes.
 
 Social shares one audience validator between admission candidates and
-Enrollment V2. UBID validates the host grammar explicitly and compares IPv4
-and IPv6 against standard-library `ipaddress` canonical spelling. Every shared
+Enrollment V2. UBID validates the host grammar explicitly, compares IPv4
+against standard-library `ipaddress` canonical spelling, and compares IPv6
+against an explicit pure-hex RFC 5952 serializer of its eight 16-bit groups. Every shared
 corpus member is exercised through enrollment constructors/parsers and the
 real request/challenge proof paths in both repositories. The fixture SHA-256
 assertions pin the corpus alongside the unchanged signed vectors. These shape
