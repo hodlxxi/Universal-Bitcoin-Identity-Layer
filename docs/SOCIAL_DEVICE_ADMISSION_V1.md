@@ -1,19 +1,20 @@
 # Social Device Admission V1
 
-Status: **dormant pure contracts and authenticated statement verifier;
+Status: **dormant contracts, authenticated statement verifier and immutable challenge store;
 final admission remains denied**. The source defines canonical bytes,
 ownership, state vocabulary, typed future ports and an explicitly injected,
-disabled-by-default public trust registration. It adds no migration, model,
-database adapter, route, blueprint, factory/config import, key provisioning,
-socket client, service credential or runtime activation.
+disabled-by-default public trust registration. The challenge store adds a
+model, SQL migration and transaction-bound database adapter. There is no route,
+blueprint, factory/config import, key provisioning, socket client, service
+credential or runtime activation. Migration source is not migration application.
 
 ## Architecture selection
 
 UBID is the selected future owner of challenge creation and persistence,
 atomic single-use consumption, Ed25519 association lifecycle,
 rotation/revocation invalidation, exact operation effects and final device
-admission. Those durable capabilities are selected but are not implemented by
-this increment.
+admission. Immutable challenge persistence is implemented below; the atomic
+consumer and the other durable capabilities remain future work.
 
 Social is the cryptographic attestor. It owns strict Ed25519
 verification and Enrollment V2 Ed25519 plus Nostr approval verification. The
@@ -349,6 +350,104 @@ commit must be reconciled from immutable history and must never be treated as
 a known rollback or re-executed. Deadline checks are exclusive and must be
 sampled again after waits.
 
+## Immutable challenge storage
+
+`app/services/social_device_challenge_store.py` supplies the dormant
+`SocialDeviceAdmissionChallengeRow`, frozen `DeviceAdmissionChallengeV1`, pure
+`parse_stored_device_challenge_v1` decoder and `SqlAlchemyDeviceChallengeStore`.
+The additive migration is
+`migrations/2026-09-21_social_device_challenge_store_v1.sql`. This repository
+uses ordered, dated SQL migrations rather than an Alembic revision graph. The
+file follows the session issuance migration and must be applied atomically by
+an explicitly authorized migration owner. `metadata.create_all` does not
+install the required guards and is insufficient.
+
+The `social_device_admission_challenges` table contains only:
+
+| Column | Persistence contract |
+|---|---|
+| `challenge_id` | Immutable primary key and sole indexed duplicate; exact equality with the context and challenge IDs is required for unique creation and row locking. |
+| `context_wire` | Immutable, exact canonical printable ASCII `TEXT`, at most 4,096 bytes. |
+| `challenge_wire` | Immutable, exact canonical printable ASCII `TEXT`, at most 4,096 bytes. |
+| `routing_request_wire` | Immutable, exact canonical printable ASCII `TEXT`, at most 2,048 bytes; present only for ciphertext submit. |
+| `state` | Separate lifecycle state using the frozen challenge vocabulary. |
+
+Every context identity, including challenge kind, attempt ID, subject, device,
+session binding, binding ID/version, X25519 commitment, Ed25519 key,
+association/predecessor/version, authority epoch and phone/approver Full proof
+and session identities, is derived from the exact context. Operation and exact
+integer epoch-millisecond `issuedAt`/`expiresAt` are derived from the challenge.
+For device requests, the actual request is already an exact canonical string
+inside the challenge and is not stored twice. Creation requires the supplied
+actual request to match that embedded string byte-for-byte. Enrollment has
+null actual/routing requests; recipient self-read has null routing. These
+nullability and cross-document checks reuse the existing admission parsers.
+The store does not create a new preimage, digest, proof ID or serializer.
+
+The original attempt ID and issued-at time are the creation metadata. No
+additional creation clock, ordering sequence or invented idempotency identity
+is needed: the primary key arbitrates competing creates. `create_issued`
+performs a plain insert; an existing ID always fails, including exact retries
+and terminal history. A contender waits for an uncommitted conflicting insert:
+after commit it is denied; after rollback it can create. A returned create
+record is provisional until the caller commits. Reconciliation after uncertain
+commit uses a read of retained evidence, never an overwrite or assumed retry.
+
+All reads reparse the original strings through the shared canonical contract
+and compare the indexed key. They neither normalize JSON nor load mutable ORM
+evidence objects. Only the original strings persist; derived record fields
+are not additional authority columns. Invalid, ambiguous, noncanonical or
+mismatched stored evidence fails closed. SQL bounds and key checks supplement
+the complete Python parser. SQL JSON casts in constraints inspect the key;
+they do not rewrite `TEXT` into JSON/JSONB storage. Direct database writers
+remain trusted infrastructure; arbitrary database-owner changes are not a
+cryptographic integrity boundary.
+
+Database triggers reject evidence replacement, deletion and truncation. Inserts
+must be `issued`. The schema permits only `issued` to `expired`, `invalidated`
+or `cancelled`, without any evidence change, and forbids terminal reopening.
+There is no adapter transition API. `consumed` is reserved vocabulary that the
+decoder can represent, but SQL insertion/transition to it is denied in this
+increment. A future atomic consumer must supply the receipt/effect integrity
+constraints and corresponding migration before enabling consumed transitions.
+An expired challenge remains stored evidence; deadline inspection takes an
+explicit `now`, uses `issuedAt <= now < expiresAt` with zero skew and never
+changes timestamps or state. Creation/storage does not assert current validity.
+
+The adapter requires a clean, active PostgreSQL READ COMMITTED SQLAlchemy
+`Session` transaction and the installed immutable guards. It captures that
+transaction and any current savepoint; every operation checks the same active
+identity and refuses transaction or savepoint replacement. The caller must
+flush pending ORM work explicitly. All SQL uses the caller's same pinned
+connection and physical transaction; closed, invalidated or replaced
+connections and driver autocommit are rejected. A logical SQLAlchemy
+transaction alone is insufficient to establish a durable row lock. The adapter
+never begins, commits, rolls
+back, closes or replaces a transaction, and has no ambient session factory,
+environment connection string or clock. All failures expose only `social
+device challenge storage unavailable`, without exception chains, and poison
+that adapter instance. The caller must propagate failures and roll back its
+whole unit of work; the adapter cannot prevent arbitrary caller code from
+catching a failure and attempting unrelated work.
+
+`read_for_update(challenge_id)` selects the authoritative row with PostgreSQL
+`FOR UPDATE` in the injected transaction, retaining the lock until the caller
+completes it. It reads current database columns even if an ORM object or an
+earlier read is cached. It returns any stored state, never skips locked rows,
+and is not a successful consumption capability. The future owner must require
+`issued`, resample exclusive deadlines after waits, authenticate the exact
+Social statement, recheck current authority, and commit challenge transition,
+association/effect and receipt in this same transaction. No second independent
+transaction is hidden behind the read. The full future `ChallengeStorageOwner`
+protocol is intentionally not implemented because terminal recording remains
+absent. No network or Unix-socket attestation call occurs while holding a lock.
+
+The guarded integration test accepts only an explicitly identified disposable
+PostgreSQL 16 target under a unique temporary directory, on a non-live loopback
+TCP port, with Unix sockets disabled and synthetic data. It never falls back to
+`DATABASE_URL` or default PostgreSQL settings. Live migration application,
+service access and runtime activation remain separately authorized operations.
+
 ## Fixed public vectors
 
 `tests/fixtures/social_device_admission_v1.json` contains independent fixed
@@ -379,8 +478,8 @@ fixed synthetic vectors remain unchanged and tests require no Social checkout.
 ## Activation blockers and non-claims
 
 Future work must separately provide and test active trust provisioning and
-invalidation, PostgreSQL challenge/association/receipt schema, immutable
-challenge repository, transaction-bound viewer/session/Current-Full/binding
+invalidation, PostgreSQL association/receipt schema and consumed-transition
+constraints, transaction-bound viewer/session/Current-Full/binding
 authority, atomic enrollment owner, routing/effect owner, internal routes,
 purpose-bound Unix-socket client, quotas, credentials and explicit factory
 composition. Migration application, credential provisioning, socket exposure,
