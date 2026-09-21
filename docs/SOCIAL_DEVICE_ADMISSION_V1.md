@@ -1,10 +1,11 @@
 # Social Device Admission V1
 
-Status: **dormant pure contract only; final admission remains denied**. The
-source contract defines canonical bytes, ownership, state vocabulary and typed
-future ports. It adds no migration, model, database adapter, route, blueprint,
-factory/config import, key provisioning, socket client, service credential or
-runtime activation.
+Status: **dormant pure contracts and authenticated statement verifier;
+final admission remains denied**. The source defines canonical bytes,
+ownership, state vocabulary, typed future ports and an explicitly injected,
+disabled-by-default public trust registration. It adds no migration, model,
+database adapter, route, blueprint, factory/config import, key provisioning,
+socket client, service credential or runtime activation.
 
 ## Architecture selection
 
@@ -14,13 +15,15 @@ rotation/revocation invalidation, exact operation effects and final device
 admission. Those durable capabilities are selected but are not implemented by
 this increment.
 
-Social remains the future cryptographic attestor. It owns strict Ed25519
+Social is the cryptographic attestor. It owns strict Ed25519
 verification and Enrollment V2 Ed25519 plus Nostr approval verification. The
 boundary selected between Social and UBID is a purpose-specific Unix-socket
 protocol carrying a dedicated infrastructure-signed verification statement.
-The socket client, route, RSA verifier and trusted-key registry are future
-work. The existing UBID proof-profile results remain shape-only and cannot be
-promoted into cryptographic authority.
+The socket client and route remain future work. UBID's pure RSA verifier and
+immutable public trust configuration are implemented below; operational key
+registration and runtime composition remain future work. The existing UBID
+proof-profile results remain shape-only and cannot be promoted into
+cryptographic authority.
 
 Compromise of Social's dedicated verification signer or strict verifier is an
 explicit residual trust boundary: an authorized malicious attestor could
@@ -190,9 +193,66 @@ alternate context and input cannot be attested by that configured issuer.
 The parser rejects `none`, other algorithms, wrong type, unknown or missing
 members, embedded JWK, `jku`, `x5u`, duplicate/noncanonical JSON and
 noncanonical base64url. It intentionally accepts any canonical nonempty
-signature bytes as shape: RSA signature verification belongs to a future
-authenticated verifier with a dedicated public trust registration. No private
-key or crypto verifier exists in this source increment.
+signature bytes as shape. The separate authenticated verifier below adds RSA
+verification without changing the shape inspector or its non-claims.
+
+## Authenticated statement verifier
+
+`app/services/social_device_verification_statement.py` provides
+`SocialDeviceVerificationStatementConfig` and
+`verify_social_device_verification_statement_v1`. The empty configuration is
+disabled. Explicit configuration binds the exact Social issuer, UBID consume
+audience, client ID, service principal, fixed statement purpose, and one or
+more public RSA JWKs. This is a dedicated trust domain; it neither imports nor
+calls the generic confidential service-token decoder.
+
+Registration is immutable and validates all keys eagerly, including when
+disabled. JWKs contain exactly `kty`, `use`, `alg`, `kid`, `n`, and `e`, with
+`RSA`, `sig`, and `RS256` fixed. Identifiers use the existing contract grammar.
+Modulus and exponent use minimal, unpadded canonical Base64urlUInt; keys are
+2,048..8,192 bits with odd modulus and a valid odd public exponent. Encoded
+modulus and exponent are bounded to 1,366 and 16 characters respectively.
+Unknown members, every RSA private parameter (`d`, `p`, `q`, `dp`, `dq`, `qi`,
+`oth`), symmetric material, private key objects, remote key locators, malformed
+keys and duplicate identifiers are rejected. Only copies of validated public
+material are retained. Key selection requires exactly one registered key with
+the exact protected-header `kid`; there is no fallback to another key.
+
+The verifier invokes the existing canonical statement/context/input inspector
+with exact configured expectations and caller-supplied epoch-millisecond time
+and deadlines. The future atomic owner must supply the expected wires and
+deadlines from authoritative state. Enrollment requires an approver-session
+deadline; device requests require none. All deadlines remain exclusive with
+zero skew. The statement must also fit inside the exact embedded challenge's
+issued-at/expiry interval, even if an injected challenge deadline is later.
+
+Registration uses PyJWT's established public-JWK loader. Only after all shape
+and binding checks does the verifier use `cryptography`'s
+**RSASSA-PKCS1-v1_5 with SHA-256** verification over
+the inspector's original `signing_input` and decoded signature. It never
+reserializes header or payload for signature verification. PSS, alternate
+hashes, algorithm/type substitutions and noncanonical representations cannot
+authenticate. All configuration and verification failures expose only
+`social device verification statement denied`, without internal exception
+chains or logging inputs, signatures or key material.
+
+Success returns a frozen `AuthenticatedSocialDeviceVerificationStatementV1`
+containing only issuer, audience, client ID, service principal, purpose,
+result, challenge kind/ID, attempt ID, context/input digests, issued-at,
+expires-at, token ID, key ID and SHA-256 DER-SPKI fingerprint. Its public
+constructor and subclassing are disabled; neither a shape-inspection record
+nor caller booleans can construct it. There is no conversion from the earlier
+future-port placeholder. This API boundary does not claim isolation against
+arbitrary Python reflection or mutation of trusted process code.
+
+The record authenticates Social's statement, not current Full/session/binding
+authority, challenge consumption, an operation effect or an admission receipt.
+It is not a bearer credential and has no execution capability. Reverification
+is stateless; replay prevention, trust invalidation after waits and the atomic
+consumer remain future work. There is no ambient clock, environment access,
+key loading/provisioning, storage, I/O or factory import. Final admission
+remains denied, challenge consumption remains unimplemented, and current
+authority remains unevaluated.
 
 ## Internal route vocabulary
 
@@ -308,13 +368,18 @@ sha256:569df6a856bb51a38cabd7fca78160ad847ac3ba433af226a1810f1f351a9cce
 The request proof signatures are explicit shape-only synthetic bytes. The
 Enrollment V2 public evidence is copied byte-for-byte from the independently
 signed shared proof-profile fixture. Tests independently validate the fixed RSA
-signatures from public material, while production parsing continues to report
-RSA verification as `not_evaluated`.
+signatures from public material through the authenticated verifier, while the
+separate shape parser continues to report RSA verification as `not_evaluated`.
+Social's producer uses the same closed header/payload vocabulary, digest
+domains and exact ASCII compact-JWS signing input. Its deterministic `jti`
+derivation supplies a token identifier; UBID authenticates that signed hex64
+claim without turning it into a replay record or admission authority. The
+fixed synthetic vectors remain unchanged and tests require no Social checkout.
 
 ## Activation blockers and non-claims
 
-Future work must separately provide and test the RSA verifier and active trust
-registration, PostgreSQL challenge/association/receipt schema, immutable
+Future work must separately provide and test active trust provisioning and
+invalidation, PostgreSQL challenge/association/receipt schema, immutable
 challenge repository, transaction-bound viewer/session/Current-Full/binding
 authority, atomic enrollment owner, routing/effect owner, internal routes,
 purpose-bound Unix-socket client, quotas, credentials and explicit factory
