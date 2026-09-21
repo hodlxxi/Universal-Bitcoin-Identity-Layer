@@ -10,9 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping, NoReturn, cast
 
-from sqlalchemy import CheckConstraint, Column, String, Text, insert, select, text
+from sqlalchemy import Boolean, CheckConstraint, Column, String, Text, insert, select, text
 from sqlalchemy.engine import Connection
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.expression import ColumnElement
 
 from app.models import Base, _CanonicalLowerHex
 from app.services import social_messaging_device_admission_contract as contract
@@ -38,6 +40,33 @@ def _deny() -> NoReturn:
     raise SocialDeviceChallengeStorageUnavailable()
 
 
+class _PostgreSQLChallengeCheck(ColumnElement):
+    """Preserve PostgreSQL checks without breaking shared SQLite metadata DDL.
+
+    SQLite only materializes the shared model metadata for existing tests. It
+    is never an authoritative challenge store; the adapter rejects its dialect.
+    """
+
+    inherit_cache = False
+    type = Boolean()
+
+    def __init__(self, expression: str) -> None:
+        self.postgresql_sql = expression
+
+
+@compiles(_PostgreSQLChallengeCheck)
+@compiles(_PostgreSQLChallengeCheck, "postgresql")
+def _compile_postgresql_challenge_check(element, _compiler, **_kwargs):
+    return element.postgresql_sql
+
+
+@compiles(_PostgreSQLChallengeCheck, "sqlite")
+def _compile_sqlite_challenge_metadata_check(_element, _compiler, **_kwargs):
+    # PostgreSQL evidence enforcement lives in the unchanged migration. Do not
+    # emulate its JSON/regex/byte semantics or grant storage authority in SQLite.
+    return "1"
+
+
 class SocialDeviceAdmissionChallengeRow(Base):
     """Only the locking key duplicates canonical evidence; state is separate."""
 
@@ -56,22 +85,26 @@ class SocialDeviceAdmissionChallengeRow(Base):
             name="ck_social_challenge_state",
         ),
         CheckConstraint(
-            "octet_length(context_wire) BETWEEN 1 AND 4096 AND context_wire !~ '[^ -~]'",
+            _PostgreSQLChallengeCheck("octet_length(context_wire) BETWEEN 1 AND 4096 AND context_wire !~ '[^ -~]'"),
             name="ck_social_challenge_context_wire",
         ),
         CheckConstraint(
-            "octet_length(challenge_wire) BETWEEN 1 AND 4096 AND challenge_wire !~ '[^ -~]'",
+            _PostgreSQLChallengeCheck("octet_length(challenge_wire) BETWEEN 1 AND 4096 AND challenge_wire !~ '[^ -~]'"),
             name="ck_social_challenge_wire",
         ),
         CheckConstraint(
-            "routing_request_wire IS NULL OR (octet_length(routing_request_wire) BETWEEN 1 AND 2048 "
-            "AND routing_request_wire !~ '[^ -~]')",
+            _PostgreSQLChallengeCheck(
+                "routing_request_wire IS NULL OR (octet_length(routing_request_wire) BETWEEN 1 AND 2048 "
+                "AND routing_request_wire !~ '[^ -~]')"
+            ),
             name="ck_social_challenge_routing_wire",
         ),
         CheckConstraint(
-            "(context_wire::json ->> 'challengeId' = challenge_id AND "
-            "COALESCE(challenge_wire::json ->> 'challengeId', "
-            "challenge_wire::json ->> 'enrollmentChallengeId') = challenge_id) IS TRUE",
+            _PostgreSQLChallengeCheck(
+                "(context_wire::json ->> 'challengeId' = challenge_id AND "
+                "COALESCE(challenge_wire::json ->> 'challengeId', "
+                "challenge_wire::json ->> 'enrollmentChallengeId') = challenge_id) IS TRUE"
+            ),
             name="ck_social_challenge_wire_id",
         ),
     )

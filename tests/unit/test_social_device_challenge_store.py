@@ -6,14 +6,18 @@ import ast
 import hashlib
 import inspect
 import json
+import re
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy.dialects import postgresql
+from sqlalchemy import create_engine
+from sqlalchemy import inspect as inspect_database
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.orm import Session as SqlAlchemySession
 from sqlalchemy.schema import CreateTable
 from sqlalchemy.sql.dml import Insert
 
@@ -197,6 +201,48 @@ def test_model_stores_only_required_wires_state_and_one_indexed_duplicate():
     assert "PRIMARY KEY (challenge_id)" in ddl
     assert "CURRENT_TIMESTAMP" not in ddl + sql
     assert "ON CONFLICT" not in sql
+
+
+def test_shared_sqlite_metadata_create_and_drop_after_challenge_model_import():
+    engine = create_engine("sqlite:///:memory:")
+    try:
+        storage.Base.metadata.create_all(engine)
+        assert {
+            "users",
+            "oauth_tokens",
+            "oauth_codes",
+            "agent_events",
+            storage.TABLE,
+        } <= set(inspect_database(engine).get_table_names())
+        storage.Base.metadata.drop_all(engine)
+        assert inspect_database(engine).get_table_names() == []
+    finally:
+        engine.dispose()
+
+
+def test_real_sqlite_session_still_cannot_construct_authoritative_challenge_store():
+    engine = create_engine("sqlite:///:memory:")
+    try:
+        with SqlAlchemySession(engine) as session, session.begin():
+            with pytest.raises(DENIED, match=ERROR):
+                storage.SqlAlchemyDeviceChallengeStore(session)
+    finally:
+        engine.dispose()
+
+
+def test_postgresql_constraint_compilation_matches_unchanged_migration():
+    assert hashlib.sha256(MIGRATION.read_bytes()).hexdigest() == (
+        "2379d18b81e468ff9044ca2209db9f38e1b23cccac70520bfed24b4765d42ef2"
+    )
+    migration = re.sub(r"\s+", "", MIGRATION.read_text())
+    table = storage.SocialDeviceAdmissionChallengeRow.__table__
+    for constraint in table.constraints:
+        if constraint.name:
+            expression = str(constraint.sqltext.compile(dialect=postgresql.dialect()))
+            expected = re.sub(r"\s+", "", f"CONSTRAINT {constraint.name} CHECK ({expression})")
+            assert expected in migration
+    sqlite_ddl = str(CreateTable(table).compile(dialect=sqlite.dialect()))
+    assert not any(token in sqlite_ddl for token in ("!~", "::json", "octet_length"))
 
 
 @pytest.mark.parametrize("name", VECTORS)
@@ -487,7 +533,9 @@ def test_no_io_at_import_no_runtime_dependency_no_admission_api():
         "typing",
         "sqlalchemy",
         "sqlalchemy.engine",
+        "sqlalchemy.ext.compiler",
         "sqlalchemy.orm",
+        "sqlalchemy.sql.expression",
         "app.models",
         "app.services",
     }

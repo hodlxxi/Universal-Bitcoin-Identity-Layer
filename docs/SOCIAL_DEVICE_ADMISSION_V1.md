@@ -362,6 +362,14 @@ file follows the session issuance migration and must be applied atomically by
 an explicitly authorized migration owner. `metadata.create_all` does not
 install the required guards and is insufficient.
 
+The model uses a local SQLAlchemy dialect compiler for PostgreSQL-only wire
+and JSON checks. PostgreSQL compilation preserves the migration expressions
+exactly. For SQLite shared `Base.metadata.create_all`/`drop_all` compatibility,
+those checks compile to a constant true expression; portable state and identity
+checks remain. This is metadata compatibility only: SQLite neither enforces
+the PostgreSQL evidence/trigger contract nor implements the challenge store.
+The adapter continues to reject every non-PostgreSQL transaction.
+
 The `social_device_admission_challenges` table contains only:
 
 | Column | Persistence contract |
