@@ -208,7 +208,9 @@ binding, X25519 commitment and challenge substitution therefore fail.
 
 One current active association is permitted per exact device. Rotation and
 revocation must atomically invalidate the predecessor association and every
-outstanding challenge. No lifecycle storage is implemented in this increment.
+outstanding challenge. Dormant PostgreSQL association storage is described in
+[`SOCIAL_DEVICE_ADMISSION_V1.md`](SOCIAL_DEVICE_ADMISSION_V1.md); challenge
+consumption and final admission remain future work.
 
 ## Fixed vectors and runtime boundary
 
@@ -223,7 +225,8 @@ substitution. The existing Phase 2 and Phase 3 routing fixture hashes remain
 unchanged.
 
 `DEVICE_PROOF_RUNTIME_ENABLED` and `ENROLLMENT_V2_RUNTIME_ENABLED` are false.
-There is no implemented atomic single-use challenge owner, current association
-verifier or final admission path. A cryptographically valid proof remains a
+There is no implemented atomic single-use challenge owner or final admission
+path. The dormant PostgreSQL association reader proves only current Ed25519
+association. A cryptographically valid proof remains a
 narrow dormant result and cannot authorize routing, storage, delivery, inbox
 access or any other operation.

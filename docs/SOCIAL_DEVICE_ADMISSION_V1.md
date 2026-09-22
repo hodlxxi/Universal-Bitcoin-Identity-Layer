@@ -1,10 +1,13 @@
 # Social Device Admission V1
 
-Status: **dormant contracts, authenticated statement verifier and immutable challenge store;
-final admission remains denied**. The source defines canonical bytes,
+Status: **dormant contracts, authenticated statement verifier, immutable
+challenge store and Ed25519 association store; final admission remains
+denied**. The source defines canonical bytes,
 ownership, state vocabulary, typed future ports and an explicitly injected,
 disabled-by-default public trust registration. The challenge store adds a
-model, SQL migration and transaction-bound database adapter. There is no route,
+model, SQL migration and transaction-bound database adapter. The Ed25519
+association store adds a separate model and additive migration. There is no
+route,
 blueprint, factory/config import, key provisioning, socket client, service
 credential or runtime activation. Migration source is not migration application.
 
@@ -155,8 +158,8 @@ it cannot reopen the revoked generation or reuse a prior Ed25519 key or
 enrollment challenge ID in the chain. Initial creation cannot be replayed
 after any history exists. Replay rejects skipped or repeated epochs, wrong
 versions, cross-subject/device successors, stale predecessors, forks,
-rollback and resurrection. A future durable owner must enforce one current
-association per exact device and serialize competing transitions at commit;
+rollback and resurrection. The durable owner below enforces one current
+association per exact device and serializes competing transitions at commit;
 independent in-memory candidate histories cannot establish that fact.
 
 `current_association_matches_v1` compares the fully parsed frozen
@@ -170,6 +173,44 @@ generation. Binding, entitlement, challenge, cryptographic statement and
 operation checks remain independent future admission checks. Fixed lifecycle
 vectors are in
 `tests/fixtures/social_messaging_device_ed25519_association_lifecycle_v1.json`.
+
+## Durable Ed25519 association authority
+
+`app/services/social_device_ed25519_association_storage.py` is a dormant
+PostgreSQL adapter for the pure lifecycle above. Its additive migration creates
+one exact `(subject, deviceId)` chain row and immutable event history, without
+backfill. The row records the current generation and epoch; every read locks
+the pair, reparses all canonical event wires, replays the frozen lifecycle and
+checks the row against the resulting snapshot. The read returns only current
+Ed25519 association facts, or no current association after revocation. A
+separate locked history read retains rotated and revoked evidence.
+
+Initial association, rotation and re-enrollment require an exact canonical
+Enrollment V2 verification input and the typed result of the authenticated
+Social statement verifier. The adapter binds the statement digests to the
+input and its context, compares the context with the new lifecycle generation,
+and checks explicit epoch-millisecond `now` against enrollment and statement
+intervals. The caller must acquire the statement through the configured
+verifier and independently own the challenge, current session, Current-Full,
+X25519 binding and operation transaction checks. Revocation and explicit
+invalidation require exact current ID and epoch. Invalidation advances the
+epoch without changing the current generation.
+
+Every method uses a caller-owned active read-committed PostgreSQL transaction;
+it never commits, rolls back, closes or creates a session. Lock order is pair
+advisory lock, chain row, then immutable events in epoch order. The advisory
+lock protects the absent-row case; a hash collision only adds contention.
+PostgreSQL triggers serialize event insertion with the chain row, advance the
+materialized current state, reject direct rewrites/deletes/truncation, and
+prevent an empty chain from committing. Unique indexes prevent generation ID,
+version, predecessor, key and enrollment challenge reuse. The adapter rejects
+SQLite as an authority even though its shared model metadata remains safe for
+SQLite create/drop tests.
+
+This storage does not consume an enrollment challenge, invalidate outstanding
+challenges, prove a current session, Current-Full or X25519 binding, or admit a
+device. Migration source is not migration application; no runtime factory,
+route or Social transport is activated.
 
 ## Verification input
 
