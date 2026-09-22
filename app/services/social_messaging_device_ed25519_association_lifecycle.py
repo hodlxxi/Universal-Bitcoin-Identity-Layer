@@ -13,10 +13,7 @@ import re
 from dataclasses import dataclass, replace
 from typing import NoReturn, cast
 
-from app.services.social_messaging_device_admission_contract import (
-    VerificationContextV1,
-    parse_verification_context_v1,
-)
+from app.services.social_messaging_device_admission_contract import VerificationContextV1, parse_verification_context_v1
 from app.services.social_messaging_device_proof_profile import (
     MAX_SAFE_INTEGER,
     enrollment_v2_digest,
@@ -136,12 +133,8 @@ def canonical_association_creation_v1_bytes(
         _deny()
 
 
-def association_id_v1(
-    enrollment_wire: object, association_version: object, predecessor_association_id: object
-) -> str:
-    preimage = canonical_association_creation_v1_bytes(
-        enrollment_wire, association_version, predecessor_association_id
-    )
+def association_id_v1(enrollment_wire: object, association_version: object, predecessor_association_id: object) -> str:
+    preimage = canonical_association_creation_v1_bytes(enrollment_wire, association_version, predecessor_association_id)
     return hashlib.sha256(ASSOCIATION_ID_DOMAIN.encode("ascii") + b"\0" + preimage).hexdigest()
 
 
@@ -159,9 +152,10 @@ def _valid_event(event: object) -> AssociationEventV1:
     if event.kind in CREATION_KINDS:
         if type(event.enrollment_wire) is not str:
             _deny()
-        if association_id_v1(
-            event.enrollment_wire, event.association_version, event.predecessor_association_id
-        ) != event.association_id:
+        if (
+            association_id_v1(event.enrollment_wire, event.association_version, event.predecessor_association_id)
+            != event.association_id
+        ):
             _deny()
     elif event.enrollment_wire is not None:
         _deny()
@@ -260,14 +254,14 @@ def association_snapshot_v1(lifecycle: object) -> AssociationSnapshotV1:
                     history = history[:-1] + (
                         replace(previous, state="rotated") if event.kind == "rotate" else previous,
                     )
-                if (
-                    any(
-                        item.association_id == event.association_id
-                        or item.ed25519_public_key == enrollment.ed25519_public_key
-                        for item in history
-                    )
-                    or event.association_id
-                    in (enrollment.device_id, enrollment.ed25519_public_key, enrollment.x25519_binding_id)
+                if any(
+                    item.association_id == event.association_id
+                    or item.ed25519_public_key == enrollment.ed25519_public_key
+                    for item in history
+                ) or event.association_id in (
+                    enrollment.device_id,
+                    enrollment.ed25519_public_key,
+                    enrollment.x25519_binding_id,
                 ):
                     raise ValueError
                 history += (

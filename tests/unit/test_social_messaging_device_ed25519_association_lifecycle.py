@@ -8,13 +8,8 @@ from pathlib import Path
 import pytest
 
 from app.services import social_messaging_device_ed25519_association_lifecycle as lifecycle
-from app.services.social_messaging_device_admission_contract import (
-    parse_verification_context_v1,
-)
-from app.services.social_messaging_device_proof_profile import (
-    enrollment_v2_digest,
-    parse_enrollment_v2,
-)
+from app.services.social_messaging_device_admission_contract import parse_verification_context_v1
+from app.services.social_messaging_device_proof_profile import enrollment_v2_digest, parse_enrollment_v2
 
 FIXTURES = Path(__file__).parents[1] / "fixtures"
 VECTORS = json.loads((FIXTURES / "social_messaging_device_ed25519_association_lifecycle_v1.json").read_bytes())
@@ -216,9 +211,7 @@ def test_current_association_matches_frozen_context_with_request_predecessor_nul
         first_epoch_four, changed_context(successor, associationVersion=3)
     )
     assert not lifecycle.current_association_matches_v1(first_epoch_four, contexts["initialEnrollment"])
-    assert not lifecycle.current_association_matches_v1(
-        first_epoch_four, changed_context(successor, subject="41" * 32)
-    )
+    assert not lifecycle.current_association_matches_v1(first_epoch_four, changed_context(successor, subject="41" * 32))
     assert not lifecycle.current_association_matches_v1(
         first_epoch_four, changed_context(successor, deviceId="42" * 32)
     )
