@@ -114,6 +114,63 @@ SHA256(
 )
 ```
 
+## Ed25519 association lifecycle (pure source contract)
+
+`app/services/social_messaging_device_ed25519_association_lifecycle.py`
+defines a dormant, immutable event sequence for one exact `(subject, deviceId)`
+association chain. Events are candidate evidence: a future atomic owner must
+authenticate enrollment and load the complete locked history before replay or
+current-authority comparison. This source does not consume a challenge, store
+an association, admit a device or invalidate an outstanding challenge.
+
+`associationId` identifies one concrete Ed25519 association generation. It is
+the lowercase hexadecimal SHA-256 of ASCII
+`HODLXXI_SOCIAL_MESSAGING_DEVICE_ED25519_ASSOCIATION_ID_V1`, one NUL byte and
+the compact, sorted-key ASCII JSON creation preimage. That preimage has exactly
+`associationVersion`, `deviceId`, `ed25519PublicKey`, `enrollmentDigest`,
+`predecessorAssociationId`, `schema`, `subject`, `version`. The schema is
+`hodlxxi.social_messaging_device_ed25519_association_creation.v1`; version is
+1. `enrollmentDigest` is the existing domain-separated digest of the exact
+canonical Enrollment V2 wire. Neither `associationId`, `authorityEpoch` nor a
+storage identifier is an input to its own derivation. It is distinct from the
+device ID, Ed25519 key and X25519 binding ID.
+
+`associationVersion` counts generations in this exact chain: initial is 1,
+and each successful rotation or re-enrollment is its predecessor's version
+plus 1. `predecessorAssociationId` is null only for initial creation and is
+the exact prior generation ID for a successor. `authorityEpoch` counts
+committed authority-invalidating transitions: initial is 1, and rotation,
+explicit invalidation, revocation and re-enrollment each advance it exactly
+once. Invalidation preserves the current association and version while
+invalidating earlier authority observations. Thus version 2 and epoch 4 are
+valid together; they are never inferred from one another.
+
+Rotation requires an active predecessor; a future committed rotation must
+make it `rotated` as the new generation becomes active in one transaction.
+Revocation requires an active generation,
+leaves its version unchanged, advances the epoch and leaves no current
+association. Re-enrollment after revocation requires the exact revoked
+predecessor, increments version and epoch, and creates a fresh association;
+it cannot reopen the revoked generation or reuse a prior Ed25519 key or
+enrollment challenge ID in the chain. Initial creation cannot be replayed
+after any history exists. Replay rejects skipped or repeated epochs, wrong
+versions, cross-subject/device successors, stale predecessors, forks,
+rollback and resurrection. A future durable owner must enforce one current
+association per exact device and serialize competing transitions at commit;
+independent in-memory candidate histories cannot establish that fact.
+
+`current_association_matches_v1` compares the fully parsed frozen
+`VerificationContextV1` with the active generation's exact subject, device,
+Ed25519 key, association ID, version and current epoch. For an enrollment
+context it also compares the exact predecessor. The frozen
+`device-request-v1` context requires a null predecessor because that field is
+not applicable to a request; the comparison therefore uses the current
+association ID, version and epoch without treating null as a new initial
+generation. Binding, entitlement, challenge, cryptographic statement and
+operation checks remain independent future admission checks. Fixed lifecycle
+vectors are in
+`tests/fixtures/social_messaging_device_ed25519_association_lifecycle_v1.json`.
+
 ## Verification input
 
 The input is at most 24,576 ASCII bytes and contains exactly:
