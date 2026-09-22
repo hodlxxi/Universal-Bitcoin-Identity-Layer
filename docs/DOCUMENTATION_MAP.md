@@ -115,10 +115,10 @@ These are useful for future development, staging, compatibility, and design inte
   and authenticated statement boundary are linked below
 - `docs/SOCIAL_DEVICE_ADMISSION_V1.md` — dormant pure final-device-admission
   context/input/JWS-shape, route, receipt, state and typed-port contracts,
-  authenticated statement verifier, immutable challenge store and durable
-  Ed25519 association store; UBID is selected as the future atomic owner, but
-  challenge consumption, effects, runtime wiring and final admission remain
-  unimplemented
+  authenticated statement verifier, immutable challenge store, durable
+  Ed25519 association store and transaction-bound current-authority adapter;
+  UBID is selected as the future atomic owner, but challenge consumption,
+  effects, runtime wiring and final admission remain unimplemented
 - `docs/milestones/NIP17_SITE_LOCAL_MESSAGING_V0.md`
 - `docs/ops/NIP17_*.md`
 - `docs/ops/NIP59_*.md`

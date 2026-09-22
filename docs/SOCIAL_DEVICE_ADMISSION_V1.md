@@ -1,8 +1,8 @@
 # Social Device Admission V1
 
 Status: **dormant contracts, authenticated statement verifier, immutable
-challenge store and Ed25519 association store; final admission remains
-denied**. The source defines canonical bytes,
+challenge store, Ed25519 association store and transaction-bound current
+authority; final admission remains denied**. The source defines canonical bytes,
 ownership, state vocabulary, typed future ports and an explicitly injected,
 disabled-by-default public trust registration. The challenge store adds a
 model, SQL migration and transaction-bound database adapter. The Ed25519
@@ -16,8 +16,9 @@ credential or runtime activation. Migration source is not migration application.
 UBID is the selected future owner of challenge creation and persistence,
 atomic single-use consumption, Ed25519 association lifecycle,
 rotation/revocation invalidation, exact operation effects and final device
-admission. Immutable challenge persistence is implemented below; the atomic
-consumer and the other durable capabilities remain future work.
+admission. Immutable challenge persistence and provisional current-authority
+evaluation are implemented below; challenge consumption, exact effects and
+final admission remain future work.
 
 Social is the cryptographic attestor. It owns strict Ed25519
 verification and Enrollment V2 Ed25519 plus Nostr approval verification. The
@@ -197,6 +198,51 @@ cryptographic statement verification, challenge consumption and operation
 effect remain independent required checks. Fixed public vectors, including
 every substitution and device/approver role separation, are in
 `tests/fixtures/social_admission_session_binding_v1.json`.
+
+## Transaction-bound current authority
+
+`app/services/social_current_admission_authority.py` implements the frozen
+`TransactionBoundAdmissionAuthority` port. It accepts an already-active,
+caller-owned PostgreSQL READ COMMITTED session and never begins, commits,
+rolls back, closes or replaces its transaction. Construction receives the
+exact device Social issuance selector and, only for enrollment, the exact
+desktop approver OAuth Session selector previously resolved from authenticated
+server-side presentation state. Neither selector is read from a context hash,
+and neither is a bearer capability by itself.
+
+The adapter first takes the Current-Full subject advisory lock, exact `User`
+row and evidence rows. It then locks active OAuth/Social owners in causal
+order: clients, Social issuer, exact OAuth generations, browser generations,
+parent/approver OAuth tokens and Sessions, then the child Social token and
+immutable issuance. Discovery reads select those exact rows but grant no
+authority; every authority row is subsequently locked and re-read. The
+parent-before-child token order matches durable invalidation triggers. The
+already-held Full/User boundary serializes OAuth replacement and X25519
+writers before the adapter locks the exact X25519 row. Ed25519 remains last in
+its independent pair-advisory, chain-row and event-history order. Current-Full
+invalidation shares the first advisory domain. This is the global admission
+read order; code adding another owner must reconcile with it before acquiring
+locks.
+
+After all waits, the adapter revalidates every owner with the explicit integer
+epoch-millisecond `observed_at`. Expiry is exclusive with zero skew. It derives
+the device `sessionBinding` from the locked Social issuance and its exact
+parent OAuth generation. Enrollment independently derives
+`approverSessionBinding` from the locked desktop OAuth generation and repeats
+the Current-Full proof comparison for that role. It then compares the exact
+current X25519 identity/commitment and the complete current Ed25519 association
+identity, including predecessor only where the frozen operation matrix makes
+it applicable.
+
+Success returns only `CurrentAdmissionAuthorityV1`: a context digest, current
+authority epoch, earliest locked authority deadline and the compared Full
+proof identities. This is provisional evidence for a future atomic consumer.
+It does not inspect or mutate a challenge, create a receipt, execute an effect,
+activate enrollment, persist ciphertext, route or read messages, grant final
+admission, add a route or enable runtime. SQLite, missing owner guards,
+replaced transactions, malformed state and every mismatch deny through the
+existing non-sensitive admission failure. No migration is introduced by this
+adapter.
 
 ## Verification context
 
