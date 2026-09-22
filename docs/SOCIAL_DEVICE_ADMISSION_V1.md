@@ -77,6 +77,127 @@ No API accepts a caller-provided verification boolean. There is no generic
 admission method or reusable admission token. A receipt is immutable history
 and has neither bearer nor re-execution authority.
 
+## Session binding prerequisite (pure source contract)
+
+`app/services/social_admission_session_binding.py` freezes the previously
+opaque `sessionBinding` and `approverSessionBinding` meanings. It is additive:
+the existing admission context, input and fixture bytes are unchanged. The
+module performs no I/O, has no clock or runtime state, loads no credential,
+and does not decide whether any persisted authority is current.
+
+`sessionBinding` identifies one exact Social device session authority
+generation. Its canonical preimage is compact, lexically key-sorted printable
+ASCII JSON with exactly:
+
+```text
+schema = hodlxxi.social_admission_session_binding_preimage.v1
+version = 1
+subject
+deviceId
+x25519BindingId
+socialSessionIssuanceId
+socialSessionTokenId
+parentOAuthTokenId
+parentOAuthSessionId
+parentOAuthBrowserGenerationId
+clientId
+```
+
+The subject, device, X25519 binding, Social issuance, parent OAuth Session and
+browser identifiers are lowercase hexadecimal with their source-contract
+lengths: subject/device/binding/issuance/Session/browser are 64 characters;
+the two token generation identifiers are 32 characters. `clientId` is 1..255
+printable ASCII characters under the closed configured-identifier grammar.
+These inputs come from one locked `SocialSessionIssuance`, its exact
+`parent_token_id` `OAuthSessionGeneration`, and that generation's immutable
+Session/browser ownership. The Social issuance's `token_id` is distinct from
+its non-bearer `issuance_id`. No access-token bytes, access-token digest,
+viewer credential, pairing secret or private material is an input.
+
+The exact derivation is:
+
+```text
+sessionBinding = lowercase_hex(
+  SHA256(
+    ASCII("HODLXXI_SOCIAL_ADMISSION_SESSION_BINDING_V1")
+    || NUL
+    || ASCII(canonicalDeviceSessionPreimage)
+  )
+)
+```
+
+It is therefore not a Session ID, OAuth token ID, access token, X25519 binding
+ID, device ID, Ed25519 association ID or OAuth browser generation ID. Those
+immutable identifiers remain separate inputs or separate authority dimensions;
+none alone is the resulting commitment.
+
+`approverSessionBinding` identifies the independently authenticated desktop
+approver OAuth authority generation used by Enrollment V2. Its canonical
+preimage is compact, lexically key-sorted printable ASCII JSON with exactly:
+
+```text
+schema = hodlxxi.social_admission_approver_session_binding_preimage.v1
+version = 1
+subject
+oauthTokenId
+oauthSessionId
+oauthBrowserGenerationId
+clientId
+```
+
+Its derivation uses the distinct role domain:
+
+```text
+approverSessionBinding = lowercase_hex(
+  SHA256(
+    ASCII("HODLXXI_SOCIAL_ADMISSION_APPROVER_SESSION_BINDING_V1")
+    || NUL
+    || ASCII(canonicalApproverSessionPreimage)
+  )
+)
+```
+
+The future enrollment owner must resolve that preimage from the authenticated
+desktop approver, not from the new device or caller-supplied identity. The role
+domains ensure that even an approver OAuth generation also present among the
+device session's ancestry cannot produce the device `sessionBinding`. The new
+device's binding cannot satisfy the approver comparison and cannot self-approve.
+`approverFullProofId` remains a separate frozen context field and current-Full
+authority check; it is not folded into either session preimage.
+
+The future `TransactionBoundAdmissionAuthority` must keep three operations
+separate in one caller-owned transaction:
+
+1. Resolve trusted server-side presentation/session ownership, lock the current
+   persisted rows, and validate current User, client, issuer, OAuth token,
+   Session, browser generation, Social issuance and exact X25519 binding. For
+   enrollment it must independently resolve, lock and validate the desktop
+   approver OAuth generation. Context hashes are never selectors for this step.
+2. Construct the exact preimage from those locked immutable columns and derive
+   the expected role-specific binding. Inconsistent joins, owners, subjects,
+   clients, devices or binding identities deny before comparison.
+3. Compare the derived lowercase 64-hex value byte-for-byte with the parsed
+   `VerificationContextV1` field. The pure helpers validate both sides and use
+   constant-time comparison, but deliberately do not perform step 1.
+
+A matching hash is not evidence that the underlying authority is active. If
+an OAuth Session expires or is deactivated, an OAuth token is revoked, a
+browser generation is replaced, a Social issuance token is revoked, or the
+exact X25519 binding is revoked/rotated, the old rows have no current binding
+to return even though their immutable historical preimage still hashes to the
+same value. A replacement OAuth generation changes its token, Session and/or
+browser identifiers. A replacement Social issuance changes its issuance and
+token identifiers. An X25519 replacement changes `x25519BindingId`. The newly
+derived current value therefore differs after replacement; after expiry or
+revocation without replacement, comparison is not reached. No new mutable
+session epoch is introduced.
+
+Ed25519 `associationId`/`authorityEpoch`, current-Full proof identity,
+cryptographic statement verification, challenge consumption and operation
+effect remain independent required checks. Fixed public vectors, including
+every substitution and device/approver role separation, are in
+`tests/fixtures/social_admission_session_binding_v1.json`.
+
 ## Verification context
 
 The context is at most 4,096 ASCII bytes and contains exactly:

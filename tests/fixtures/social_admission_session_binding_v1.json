@@ -1,0 +1,50 @@
+{
+  "approverSessionBindingDomain": "HODLXXI_SOCIAL_ADMISSION_APPROVER_SESSION_BINDING_V1",
+  "schema": "hodlxxi.social_admission_session_binding_vectors.v1",
+  "sessionBindingDomain": "HODLXXI_SOCIAL_ADMISSION_SESSION_BINDING_V1",
+  "vectors": {
+    "approverSessionBinding": {
+      "preimage": "{\"clientId\":\"social-viewer-v1\",\"oauthBrowserGenerationId\":\"f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1\",\"oauthSessionId\":\"e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1\",\"oauthTokenId\":\"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\",\"schema\":\"hodlxxi.social_admission_approver_session_binding_preimage.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+      "sha256": "abe23b3666495dff2044f76868b6a690050cfd8e9849717b4deaabc2833bbb2c"
+    },
+    "deviceApproverRoleSeparation": {
+      "approverPreimage": "{\"clientId\":\"social-viewer-v1\",\"oauthBrowserGenerationId\":\"f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1\",\"oauthSessionId\":\"e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1\",\"oauthTokenId\":\"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\",\"schema\":\"hodlxxi.social_admission_approver_session_binding_preimage.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+      "approverSha256": "abe23b3666495dff2044f76868b6a690050cfd8e9849717b4deaabc2833bbb2c",
+      "devicePreimage": "{\"clientId\":\"social-viewer-v1\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"parentOAuthBrowserGenerationId\":\"f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1\",\"parentOAuthSessionId\":\"e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1\",\"parentOAuthTokenId\":\"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\",\"schema\":\"hodlxxi.social_admission_session_binding_preimage.v1\",\"socialSessionIssuanceId\":\"abababababababababababababababababababababababababababababababab\",\"socialSessionTokenId\":\"c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1,\"x25519BindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\"}",
+      "deviceSha256": "0504913c4af7f08a5a8a7057000772105bbbd2c6500f5e10fb8666394042b40c"
+    },
+    "differentApproverSession": {
+      "preimage": "{\"clientId\":\"social-viewer-v1\",\"oauthBrowserGenerationId\":\"f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3\",\"oauthSessionId\":\"e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3\",\"oauthTokenId\":\"d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3\",\"schema\":\"hodlxxi.social_admission_approver_session_binding_preimage.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+      "sha256": "c9974f1170787f22f07cd1245ccf7ef31e346fbe49278e5004eadede8d9a5972"
+    },
+    "differentClient": {
+      "preimage": "{\"clientId\":\"social-viewer-v2\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"parentOAuthBrowserGenerationId\":\"f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1\",\"parentOAuthSessionId\":\"e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1\",\"parentOAuthTokenId\":\"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\",\"schema\":\"hodlxxi.social_admission_session_binding_preimage.v1\",\"socialSessionIssuanceId\":\"abababababababababababababababababababababababababababababababab\",\"socialSessionTokenId\":\"c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1,\"x25519BindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\"}",
+      "sha256": "35da5f3a1f44b9f0b1dad3ad0ad8a0b4d4633efd650b3bc699dfba27b8fbbb80"
+    },
+    "differentDevice": {
+      "preimage": "{\"clientId\":\"social-viewer-v1\",\"deviceId\":\"3232323232323232323232323232323232323232323232323232323232323232\",\"parentOAuthBrowserGenerationId\":\"f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1\",\"parentOAuthSessionId\":\"e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1\",\"parentOAuthTokenId\":\"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\",\"schema\":\"hodlxxi.social_admission_session_binding_preimage.v1\",\"socialSessionIssuanceId\":\"abababababababababababababababababababababababababababababababab\",\"socialSessionTokenId\":\"c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1,\"x25519BindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\"}",
+      "sha256": "70f529634869a3a5f3e3cc51fb2fc5f41a627305e26cb753ded508f62c6be744"
+    },
+    "differentOAuthSessionGeneration": {
+      "preimage": "{\"clientId\":\"social-viewer-v1\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"parentOAuthBrowserGenerationId\":\"f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2\",\"parentOAuthSessionId\":\"e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2\",\"parentOAuthTokenId\":\"d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2\",\"schema\":\"hodlxxi.social_admission_session_binding_preimage.v1\",\"socialSessionIssuanceId\":\"abababababababababababababababababababababababababababababababab\",\"socialSessionTokenId\":\"c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1,\"x25519BindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\"}",
+      "sha256": "f9cfc17dea8b8abbf10377b303a4dd144d3628b46ccf94e6c88139271c365f24"
+    },
+    "differentSubject": {
+      "preimage": "{\"clientId\":\"social-viewer-v1\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"parentOAuthBrowserGenerationId\":\"f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1\",\"parentOAuthSessionId\":\"e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1\",\"parentOAuthTokenId\":\"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\",\"schema\":\"hodlxxi.social_admission_session_binding_preimage.v1\",\"socialSessionIssuanceId\":\"abababababababababababababababababababababababababababababababab\",\"socialSessionTokenId\":\"c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1\",\"subject\":\"3131313131313131313131313131313131313131313131313131313131313131\",\"version\":1,\"x25519BindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\"}",
+      "sha256": "128995a3ae1f844351929296e3bb571e40ee96e46f1e32bc37140684bb0a4b2e"
+    },
+    "differentX25519Binding": {
+      "preimage": "{\"clientId\":\"social-viewer-v1\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"parentOAuthBrowserGenerationId\":\"f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1\",\"parentOAuthSessionId\":\"e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1\",\"parentOAuthTokenId\":\"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\",\"schema\":\"hodlxxi.social_admission_session_binding_preimage.v1\",\"socialSessionIssuanceId\":\"abababababababababababababababababababababababababababababababab\",\"socialSessionTokenId\":\"c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1,\"x25519BindingId\":\"3333333333333333333333333333333333333333333333333333333333333333\"}",
+      "sha256": "63d7a76068d2e372cd699efd687925af571e2ebc511c95650b58d9326b98d9d2"
+    },
+    "normalSocialDeviceSessionBinding": {
+      "preimage": "{\"clientId\":\"social-viewer-v1\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"parentOAuthBrowserGenerationId\":\"f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1\",\"parentOAuthSessionId\":\"e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1\",\"parentOAuthTokenId\":\"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\",\"schema\":\"hodlxxi.social_admission_session_binding_preimage.v1\",\"socialSessionIssuanceId\":\"abababababababababababababababababababababababababababababababab\",\"socialSessionTokenId\":\"c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1,\"x25519BindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\"}",
+      "sha256": "0504913c4af7f08a5a8a7057000772105bbbd2c6500f5e10fb8666394042b40c"
+    },
+    "replacementSocialIssuance": {
+      "preimage": "{\"clientId\":\"social-viewer-v1\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"parentOAuthBrowserGenerationId\":\"f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1\",\"parentOAuthSessionId\":\"e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1\",\"parentOAuthTokenId\":\"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\",\"schema\":\"hodlxxi.social_admission_session_binding_preimage.v1\",\"socialSessionIssuanceId\":\"acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac\",\"socialSessionTokenId\":\"c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1,\"x25519BindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\"}",
+      "sha256": "61a90c305d1e4fc9e02605b8f5d8205460439064a706d3bb4edc8a1a272f70c9"
+    }
+  },
+  "version": 1
+}
