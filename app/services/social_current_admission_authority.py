@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hmac
 import re
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import NoReturn
 from urllib.parse import urlsplit
@@ -134,6 +135,27 @@ def _one_locked(session: Session, statement):
     if len(rows) != 1:
         _deny()
     return rows[0]
+
+
+@dataclass(frozen=True, slots=True)
+class _LockedNonEd25519AuthorityV1:
+    """Internal continuation after the shared Full/session/X25519 locks."""
+
+    context: admission.VerificationContextV1
+    observed_ms: int
+    observed_second: datetime
+    deadlines: tuple[int, ...]
+    full_verifier: SqlAlchemyTransactionBoundCurrentFullVerifier
+
+
+@dataclass(frozen=True, slots=True)
+class _ValidatedNonEd25519AuthorityV1:
+    """The reusable #551 dimensions, excluding current Ed25519 authority."""
+
+    context_digest: str
+    locked_deadline_ms: int
+    full_proof_id: str
+    approver_full_proof_id: str | None
 
 
 class SqlAlchemyTransactionBoundAdmissionAuthority:
@@ -480,6 +502,226 @@ class SqlAlchemyTransactionBoundAdmissionAuthority:
         except Exception:
             _deny()
 
+    def _lock_non_ed25519_authority(
+        self,
+        context: admission.VerificationContextV1,
+        *,
+        observed_at: int,
+    ) -> _LockedNonEd25519AuthorityV1:
+        self._check_transaction()
+        if (
+            type(context) is not admission.VerificationContextV1
+            or admission.parse_verification_context_v1(context.wire) != context
+        ):
+            _deny()
+        observed_ms, observed, observed_second = _observed(observed_at)
+        enrollment = context.challenge_kind == "enrollment-v2"
+        if enrollment != (self._approver_oauth_session_id is not None):
+            _deny()
+
+        full_verifier = SqlAlchemyTransactionBoundCurrentFullVerifier(self._session)
+        # This first call establishes the global subject/User/evidence
+        # boundary before any OAuth, X25519, or Ed25519 authority lock.
+        full_verifier.verify_in_transaction(context.subject, now=observed_second)
+        user = _one_locked(
+            self._session,
+            select(User).where(User.pubkey == context.subject),
+        )
+        if user.pubkey != context.subject or user.is_active is not True:
+            _deny()
+
+        issuance_probe = self._issuance_for_discovery()
+        if (
+            issuance_probe is None
+            or issuance_probe.subject != context.subject
+            or issuance_probe.client_id != self._device_client_id
+        ):
+            _deny()
+        parent_probe = self._session.get(
+            OAuthSessionGeneration,
+            issuance_probe.parent_token_id,
+            populate_existing=True,
+        )
+        if parent_probe is None:
+            _deny()
+
+        approver_probe = None
+        if enrollment:
+            approver_probe = self._generation_for_session(self._approver_oauth_session_id)
+
+        expected_clients = {self._device_client_id}
+        if self._approver_client_id is not None:
+            expected_clients.add(self._approver_client_id)
+        clients = {client_id: self._lock_client(client_id) for client_id in sorted(expected_clients)}
+
+        issuer = self._session.get(
+            SocialSessionIssuer,
+            self._device_client_id,
+            with_for_update=True,
+            populate_existing=True,
+        )
+        if issuer is None:
+            _deny()
+
+        generation_probes = {parent_probe.token_id: parent_probe}
+        if approver_probe is not None:
+            generation_probes[approver_probe.token_id] = approver_probe
+        generations = {token_id: self._lock_generation(token_id) for token_id in sorted(generation_probes)}
+        parent = generations[parent_probe.token_id]
+        approver = None if approver_probe is None else generations[approver_probe.token_id]
+        browsers = {
+            generation.browser_generation_id: self._lock_browser(generation)
+            for generation in sorted(
+                generations.values(),
+                key=lambda item: item.browser_generation_id,
+            )
+        }
+        oauth_rows = {}
+        for token_id in sorted(generations):
+            generation = generations[token_id]
+            oauth_rows[token_id] = (
+                self._lock_token(token_id),
+                self._lock_session(generation.session_id),
+            )
+        social_token = self._lock_token(issuance_probe.token_id)
+        issuance = self._lock_issuance()
+
+        parent_deadline = self._validate_oauth_generation(
+            parent,
+            expected_session_id=parent.session_id,
+            expected_client_id=self._device_client_id,
+            user=user,
+            client=clients[self._device_client_id],
+            browser=browsers[parent.browser_generation_id],
+            token=oauth_rows[parent.token_id][0],
+            durable=oauth_rows[parent.token_id][1],
+            observed=observed,
+        )
+        social_deadline = self._validate_social_issuance(
+            issuance,
+            context=context,
+            user=user,
+            client=clients[self._device_client_id],
+            issuer=issuer,
+            parent=parent,
+            social_token=social_token,
+            observed_ms=observed_ms,
+            observed=observed,
+        )
+
+        device_preimage = session_binding.canonical_session_binding_preimage_v1_bytes(
+            subject=context.subject,
+            device_id=context.device_id,
+            x25519_binding_id=context.binding_id,
+            social_session_issuance_id=issuance.issuance_id,
+            social_session_token_id=issuance.token_id,
+            parent_oauth_token_id=parent.token_id,
+            parent_oauth_session_id=parent.session_id,
+            parent_oauth_browser_generation_id=parent.browser_generation_id,
+            client_id=issuance.client_id,
+        ).decode("ascii")
+        session_binding.require_session_binding_match_v1(
+            device_preimage,
+            context.session_binding,
+        )
+
+        deadlines = [parent_deadline, social_deadline]
+        if enrollment:
+            if approver is None or self._approver_client_id is None:
+                _deny()
+            if approver.subject != context.subject:
+                _deny()
+            approver_deadline = self._validate_oauth_generation(
+                approver,
+                expected_session_id=self._approver_oauth_session_id,
+                expected_client_id=self._approver_client_id,
+                user=user,
+                client=clients[self._approver_client_id],
+                browser=browsers[approver.browser_generation_id],
+                token=oauth_rows[approver.token_id][0],
+                durable=oauth_rows[approver.token_id][1],
+                observed=observed,
+            )
+            approver_preimage = session_binding.canonical_approver_session_binding_preimage_v1_bytes(
+                subject=approver.subject,
+                oauth_token_id=approver.token_id,
+                oauth_session_id=approver.session_id,
+                oauth_browser_generation_id=approver.browser_generation_id,
+                client_id=approver.client_id,
+            ).decode("ascii")
+            session_binding.require_approver_session_binding_match_v1(
+                approver_preimage,
+                context.approver_session_binding,
+            )
+            deadlines.append(approver_deadline)
+
+        binding = SqlAlchemyTransactionBoundSocialMessagingDeviceStorage(self._session).binding_for_id(
+            context.binding_id
+        )
+        if (
+            binding is None
+            or binding.subject != context.subject
+            or binding.device_id != context.device_id
+            or binding.binding_id != context.binding_id
+            or binding.binding_version != context.binding_version
+            or binding.active is not True
+            or binding.operation not in {"register", "rotate"}
+            or not binding.valid_from <= observed < binding.expires_at
+            or not hmac.compare_digest(
+                x25519_public_key_commitment_v1(binding.public_key),
+                context.x25519_public_key_commitment,
+            )
+        ):
+            _deny()
+        deadlines.append(_epoch_milliseconds(binding.expires_at))
+        return _LockedNonEd25519AuthorityV1(
+            context=context,
+            observed_ms=observed_ms,
+            observed_second=observed_second,
+            deadlines=tuple(deadlines),
+            full_verifier=full_verifier,
+        )
+
+    def _finalize_non_ed25519_authority(
+        self,
+        locked: _LockedNonEd25519AuthorityV1,
+    ) -> _ValidatedNonEd25519AuthorityV1:
+        if type(locked) is not _LockedNonEd25519AuthorityV1:
+            _deny()
+        context = locked.context
+        deadlines = list(locked.deadlines)
+        full = locked.full_verifier.verify_in_transaction(
+            context.subject,
+            now=locked.observed_second,
+        )
+        if not hmac.compare_digest(full.proof_id, context.full_proof_id):
+            _deny()
+        deadlines.append(_epoch_milliseconds(full.expires_at))
+        approver_full_proof_id = None
+        if context.challenge_kind == "enrollment-v2":
+            approver_full = locked.full_verifier.verify_in_transaction(
+                context.subject,
+                now=locked.observed_second,
+            )
+            if not hmac.compare_digest(
+                approver_full.proof_id,
+                context.approver_full_proof_id,
+            ):
+                _deny()
+            deadlines.append(_epoch_milliseconds(approver_full.expires_at))
+            approver_full_proof_id = approver_full.proof_id
+
+        locked_deadline = min(deadlines)
+        if locked.observed_ms >= locked_deadline:
+            _deny()
+        self._check_transaction(check_guards=True)
+        return _ValidatedNonEd25519AuthorityV1(
+            context_digest=admission.verification_context_digest_v1(context.wire),
+            locked_deadline_ms=locked_deadline,
+            full_proof_id=full.proof_id,
+            approver_full_proof_id=approver_full_proof_id,
+        )
+
     def lock_current_authority(
         self,
         context: admission.VerificationContextV1,
@@ -487,173 +729,10 @@ class SqlAlchemyTransactionBoundAdmissionAuthority:
         observed_at: int,
     ) -> admission.CurrentAdmissionAuthorityV1:
         try:
-            self._check_transaction()
-            if (
-                type(context) is not admission.VerificationContextV1
-                or admission.parse_verification_context_v1(context.wire) != context
-            ):
-                _deny()
-            observed_ms, observed, observed_second = _observed(observed_at)
-            enrollment = context.challenge_kind == "enrollment-v2"
-            if enrollment != (self._approver_oauth_session_id is not None):
-                _deny()
-
-            full_verifier = SqlAlchemyTransactionBoundCurrentFullVerifier(self._session)
-            # This first call establishes the global subject/User/evidence
-            # boundary before any OAuth, X25519, or Ed25519 authority lock.
-            full_verifier.verify_in_transaction(context.subject, now=observed_second)
-            user = _one_locked(
-                self._session,
-                select(User).where(User.pubkey == context.subject),
+            locked = self._lock_non_ed25519_authority(
+                context,
+                observed_at=observed_at,
             )
-            if user.pubkey != context.subject or user.is_active is not True:
-                _deny()
-
-            issuance_probe = self._issuance_for_discovery()
-            if (
-                issuance_probe is None
-                or issuance_probe.subject != context.subject
-                or issuance_probe.client_id != self._device_client_id
-            ):
-                _deny()
-            parent_probe = self._session.get(
-                OAuthSessionGeneration,
-                issuance_probe.parent_token_id,
-                populate_existing=True,
-            )
-            if parent_probe is None:
-                _deny()
-
-            approver_probe = None
-            if enrollment:
-                approver_probe = self._generation_for_session(self._approver_oauth_session_id)
-
-            expected_clients = {self._device_client_id}
-            if self._approver_client_id is not None:
-                expected_clients.add(self._approver_client_id)
-            clients = {client_id: self._lock_client(client_id) for client_id in sorted(expected_clients)}
-
-            issuer = self._session.get(
-                SocialSessionIssuer,
-                self._device_client_id,
-                with_for_update=True,
-                populate_existing=True,
-            )
-            if issuer is None:
-                _deny()
-
-            generation_probes = {parent_probe.token_id: parent_probe}
-            if approver_probe is not None:
-                generation_probes[approver_probe.token_id] = approver_probe
-            generations = {token_id: self._lock_generation(token_id) for token_id in sorted(generation_probes)}
-            parent = generations[parent_probe.token_id]
-            approver = None if approver_probe is None else generations[approver_probe.token_id]
-            browsers = {
-                generation.browser_generation_id: self._lock_browser(generation)
-                for generation in sorted(
-                    generations.values(),
-                    key=lambda item: item.browser_generation_id,
-                )
-            }
-            oauth_rows = {}
-            for token_id in sorted(generations):
-                generation = generations[token_id]
-                oauth_rows[token_id] = (
-                    self._lock_token(token_id),
-                    self._lock_session(generation.session_id),
-                )
-            social_token = self._lock_token(issuance_probe.token_id)
-            issuance = self._lock_issuance()
-
-            parent_deadline = self._validate_oauth_generation(
-                parent,
-                expected_session_id=parent.session_id,
-                expected_client_id=self._device_client_id,
-                user=user,
-                client=clients[self._device_client_id],
-                browser=browsers[parent.browser_generation_id],
-                token=oauth_rows[parent.token_id][0],
-                durable=oauth_rows[parent.token_id][1],
-                observed=observed,
-            )
-            social_deadline = self._validate_social_issuance(
-                issuance,
-                context=context,
-                user=user,
-                client=clients[self._device_client_id],
-                issuer=issuer,
-                parent=parent,
-                social_token=social_token,
-                observed_ms=observed_ms,
-                observed=observed,
-            )
-
-            device_preimage = session_binding.canonical_session_binding_preimage_v1_bytes(
-                subject=context.subject,
-                device_id=context.device_id,
-                x25519_binding_id=context.binding_id,
-                social_session_issuance_id=issuance.issuance_id,
-                social_session_token_id=issuance.token_id,
-                parent_oauth_token_id=parent.token_id,
-                parent_oauth_session_id=parent.session_id,
-                parent_oauth_browser_generation_id=parent.browser_generation_id,
-                client_id=issuance.client_id,
-            ).decode("ascii")
-            session_binding.require_session_binding_match_v1(
-                device_preimage,
-                context.session_binding,
-            )
-
-            deadlines = [parent_deadline, social_deadline]
-            if enrollment:
-                if approver is None or self._approver_client_id is None:
-                    _deny()
-                if approver.subject != context.subject:
-                    _deny()
-                approver_deadline = self._validate_oauth_generation(
-                    approver,
-                    expected_session_id=self._approver_oauth_session_id,
-                    expected_client_id=self._approver_client_id,
-                    user=user,
-                    client=clients[self._approver_client_id],
-                    browser=browsers[approver.browser_generation_id],
-                    token=oauth_rows[approver.token_id][0],
-                    durable=oauth_rows[approver.token_id][1],
-                    observed=observed,
-                )
-                approver_preimage = session_binding.canonical_approver_session_binding_preimage_v1_bytes(
-                    subject=approver.subject,
-                    oauth_token_id=approver.token_id,
-                    oauth_session_id=approver.session_id,
-                    oauth_browser_generation_id=approver.browser_generation_id,
-                    client_id=approver.client_id,
-                ).decode("ascii")
-                session_binding.require_approver_session_binding_match_v1(
-                    approver_preimage,
-                    context.approver_session_binding,
-                )
-                deadlines.append(approver_deadline)
-
-            binding = SqlAlchemyTransactionBoundSocialMessagingDeviceStorage(self._session).binding_for_id(
-                context.binding_id
-            )
-            if (
-                binding is None
-                or binding.subject != context.subject
-                or binding.device_id != context.device_id
-                or binding.binding_id != context.binding_id
-                or binding.binding_version != context.binding_version
-                or binding.active is not True
-                or binding.operation not in {"register", "rotate"}
-                or not binding.valid_from <= observed < binding.expires_at
-                or not hmac.compare_digest(
-                    x25519_public_key_commitment_v1(binding.public_key),
-                    context.x25519_public_key_commitment,
-                )
-            ):
-                _deny()
-            deadlines.append(_epoch_milliseconds(binding.expires_at))
-
             association = SqlAlchemyEd25519AssociationStore(self._session).lock_current_association(
                 context.subject, context.device_id
             )
@@ -666,44 +745,20 @@ class SqlAlchemyTransactionBoundAdmissionAuthority:
                 or association.association_id != context.association_id
                 or association.association_version != context.association_version
                 or association.authority_epoch != context.authority_epoch
-                or enrollment
+                or context.challenge_kind == "enrollment-v2"
                 and association.predecessor_association_id != context.predecessor_association_id
             ):
                 _deny()
 
             # Re-enter the already-held Full locks after every other wait and
             # compare both independent roles against current durable evidence.
-            full = full_verifier.verify_in_transaction(
-                context.subject,
-                now=observed_second,
-            )
-            if not hmac.compare_digest(full.proof_id, context.full_proof_id):
-                _deny()
-            deadlines.append(_epoch_milliseconds(full.expires_at))
-            approver_full_proof_id = None
-            if enrollment:
-                approver_full = full_verifier.verify_in_transaction(
-                    context.subject,
-                    now=observed_second,
-                )
-                if not hmac.compare_digest(
-                    approver_full.proof_id,
-                    context.approver_full_proof_id,
-                ):
-                    _deny()
-                deadlines.append(_epoch_milliseconds(approver_full.expires_at))
-                approver_full_proof_id = approver_full.proof_id
-
-            locked_deadline = min(deadlines)
-            if observed_ms >= locked_deadline:
-                _deny()
-            self._check_transaction(check_guards=True)
+            non_ed25519 = self._finalize_non_ed25519_authority(locked)
             return admission.CurrentAdmissionAuthorityV1(
-                context_digest=admission.verification_context_digest_v1(context.wire),
+                context_digest=non_ed25519.context_digest,
                 authority_epoch=association.authority_epoch,
-                locked_deadline_ms=locked_deadline,
-                full_proof_id=full.proof_id,
-                approver_full_proof_id=approver_full_proof_id,
+                locked_deadline_ms=non_ed25519.locked_deadline_ms,
+                full_proof_id=non_ed25519.full_proof_id,
+                approver_full_proof_id=non_ed25519.approver_full_proof_id,
             )
         except admission.SocialMessagingDeviceAdmissionUnavailable:
             self._failed = True
