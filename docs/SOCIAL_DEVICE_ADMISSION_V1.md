@@ -1,13 +1,13 @@
 # Social Device Admission V1
 
 Status: **dormant contracts, authenticated statement verifier, immutable
-challenge store, Ed25519 association store and transaction-bound current
-authority; final admission remains denied**. The source defines canonical bytes,
+challenge store, Ed25519 association store, transaction-bound current
+authority, and pure enrollment transition-authority/effect-identity contract;
+final admission remains denied**. The source defines canonical bytes,
 ownership, state vocabulary, typed future ports and an explicitly injected,
 disabled-by-default public trust registration. The challenge store adds a
 model, SQL migration and transaction-bound database adapter. The Ed25519
-association store adds a separate model and additive migration. There is no
-route,
+association store adds a separate model and additive migration. There is no route,
 blueprint, factory/config import, key provisioning, socket client, service
 credential or runtime activation. Migration source is not migration application.
 
@@ -243,6 +243,143 @@ admission, add a route or enable runtime. SQLite, missing owner guards,
 replaced transactions, malformed state and every mismatch deny through the
 existing non-sensitive admission failure. No migration is introduced by this
 adapter.
+
+`CurrentAdmissionAuthorityV1` continues to mean that every identity in the
+context, including its Ed25519 association generation and authority epoch, is
+already current. That meaning is not changed for enrollment. In particular,
+it cannot prove a proposed rotation or re-enrollment successor before the
+successor exists, and initial enrollment has no current Ed25519 generation to
+compare. Its independently checked non-Ed25519 dimensions -- exact context,
+Current-Full proofs, device and approver sessions, X25519 binding and earliest
+locked deadline -- remain required enrollment preconditions, but its Ed25519
+fields must not be reinterpreted as pre-effect successor evidence.
+Specifically, the context digest, locked deadline and Full proof identities
+retain their existing meanings after independent validation. The
+`CurrentAdmissionAuthorityV1.authority_epoch` is the epoch of an
+already-current context and cannot be used as proof that the proposed
+successor epoch is current. The enrollment-specific authority instead records
+both locked `preEffectAuthorityEpoch` and lifecycle-derived
+`proposedAuthorityEpoch` without changing the existing type.
+
+## Enrollment transition authority and effect identity (pure prerequisite)
+
+`app/services/social_enrollment_transition_authority.py` freezes the separate
+`EnrollmentTransitionAuthorityV1` contract for one exact authenticated
+`enrollment-v2` / `enrollment-activate` attempt. It describes authorization
+against locked pre-effect state; it does not mean admitted, effect executed,
+challenge consumed, receipt issued or committed. The module is pure and
+dormant. It performs no I/O, reads no environment or clock, and provides no
+storage adapter, transaction owner, route or runtime wiring.
+
+A future PostgreSQL adapter must construct this authority only after following
+the established global admission lock order and, after every wait, validating
+the exact issued challenge, authenticated Social verification statement,
+Current-Full proofs, device and approver sessions, X25519 authority and locked
+Ed25519 history. The adapter must supply explicit integer epoch-millisecond
+observation/deadline values. The pure helper accepts the frozen lifecycle as
+candidate locked evidence and applies the existing lifecycle functions; it
+does not establish that a database lock exists.
+
+The closed authority wire is compact, sorted-key printable ASCII JSON with
+schema `hodlxxi.social_enrollment_transition_authority.v1`, version 1, and
+exactly:
+
+```text
+schema, version
+operation = enrollment-activate
+challengeKind = enrollment-v2
+challengeId, subject, deviceId
+contextDigest, inputDigest, enrollmentDigest, statementTokenId
+observedAt, lockedDeadlineMs
+fullProofId, approverFullProofId
+transitionKind = initial | rotate | reenroll
+preEffectAssociationState
+preEffectAssociationId, preEffectAssociationVersion, preEffectAuthorityEpoch
+proposedEd25519PublicKey
+proposedAssociationId, proposedAssociationVersion
+proposedPredecessorAssociationId, proposedAuthorityEpoch
+```
+
+The transition matrix is exact:
+
+- `initial` requires an absent pre-effect association, null pre-effect ID and
+  version, epoch 0, null predecessor, and proposed version/epoch 1/1.
+- `rotate` requires the exact current active predecessor. The proposed
+  predecessor equals that locked association ID, and proposed version and
+  authority epoch are each the predecessor snapshot value plus one.
+- `reenroll` requires no current association and the exact last generation to
+  be revoked. The proposed predecessor equals that revoked association ID,
+  and proposed version and authority epoch are each the locked snapshot value
+  plus one.
+
+No fourth transition exists. In every case the existing lifecycle computes
+the candidate generation and compares every proposed Ed25519 field with the
+context. The proposed successor is never called or treated as current before
+mutation. Stale/forked predecessors, wrong versions or epochs, replaced
+subjects/devices, reused keys/challenges and every lifecycle state outside the
+matrix fail through the one non-sensitive contract error. The typed authority's
+public constructor and subclassing are disabled; wire validation alone does
+not grant typed authority. As with the authenticated statement boundary,
+arbitrary Python reflection or mutation of trusted process code is not treated
+as a process trust boundary.
+
+The exact operation-instance identity preimage is compact, sorted-key ASCII
+JSON with schema `hodlxxi.social_enrollment_effect_id_preimage.v1`, version 1,
+and exactly `challengeId`, `challengeKind`, `contextDigest`, `deviceId`,
+`inputDigest`, `operation`, `statementTokenId`, `subject`, `schema`, `version`.
+The real authenticated statement exposes its canonical token ID, rather than a
+digest of the compact signed statement, as statement identity; that token ID
+is therefore the bound statement identity. Signing key ID/fingerprint remain
+authenticated trust metadata and are not substituted for the statement's
+operation-instance identity.
+The identifier is lowercase hexadecimal:
+
+```text
+effect_id = SHA256(
+  ASCII("HODLXXI_SOCIAL_ENROLLMENT_EFFECT_ID_V1")
+  || NUL
+  || ASCII(effectIdPreimage)
+)
+```
+
+The promised-transition preimage is compact, sorted-key ASCII JSON with
+schema `hodlxxi.social_enrollment_effect_transition.v1`, version 1, and
+exactly:
+
+```text
+challengeId, challengeKind, operation, subject, deviceId, enrollmentDigest
+transitionKind
+preEffectAssociationState, preEffectAssociationId
+preEffectAssociationVersion, preEffectAuthorityEpoch
+proposedState = active
+proposedEd25519PublicKey, proposedAssociationId
+proposedAssociationVersion, proposedPredecessorAssociationId
+proposedAuthorityEpoch
+schema, version
+```
+
+Non-applicable initial predecessor fields are explicit JSON nulls rather than
+omitted. The digest is lowercase hexadecimal:
+
+```text
+effect_digest = SHA256(
+  ASCII("HODLXXI_SOCIAL_ENROLLMENT_EFFECT_DIGEST_V1")
+  || NUL
+  || ASCII(effectTransitionPreimage)
+)
+```
+
+The domains and preimages keep operation-instance identity distinct from the
+state transition promised. Neither derivation uses randomness, time, bearer
+material or mutable post-effect database state. `PreparedAdmissionEffectV1`
+will contain operation `enrollment-activate` and these two values. Here,
+prepared means only that this exact effect is deterministically described and
+authorized against locked pre-effect state; it does not claim execution or
+commit. The future atomic owner must still compose operation mutation,
+immutable receipt and issued-to-consumed challenge transition in one
+caller-owned transaction. Fixed authority, ID, digest, mutation and rejection
+vectors are in
+`tests/fixtures/social_enrollment_transition_authority_effect_identity_v1.json`.
 
 ## Verification context
 
