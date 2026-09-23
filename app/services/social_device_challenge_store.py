@@ -1,8 +1,10 @@
 """Dormant immutable challenge evidence in a caller-owned PostgreSQL transaction.
 
-No session factory, clock, authority check, consumption, receipt or operation
-effect lives here. Importing the model does not connect to a database. Apply
-the dedicated SQL migration separately; metadata.create_all is insufficient.
+No session factory, clock, receipt creation or operation effect lives here.
+The narrow enrollment consumption method requires an exact typed authority and
+an already-stored matching receipt in the same caller transaction. Importing
+the model does not connect to a database. Apply both dedicated SQL migrations
+separately; metadata.create_all is insufficient.
 """
 
 from __future__ import annotations
@@ -10,20 +12,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping, NoReturn, cast
 
-from sqlalchemy import Boolean, CheckConstraint, Column, String, Text, insert, select, text
+from sqlalchemy import Boolean, CheckConstraint, Column, String, Text, insert, select, text, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import ColumnElement
 
 from app.models import Base, _CanonicalLowerHex
+from app.services import social_enrollment_transition_authority as transition
 from app.services import social_messaging_device_admission_contract as contract
+from app.services.social_messaging_device_proof_profile import MAX_SAFE_INTEGER, enrollment_v2_digest
 
 TABLE = "social_device_admission_challenges"
 RUNTIME_ENABLED = False
-CHALLENGE_CONSUMPTION = "not_implemented"
+CHALLENGE_CONSUMPTION = "transaction_bound_enrollment_only"
 OPERATION_EFFECT = "not_implemented"
-RECEIPT_ISSUANCE = "not_implemented"
+RECEIPT_ISSUANCE = "separate_transaction_bound_primitive"
 CURRENT_AUTHORITY = "not_evaluated"
 FINAL_ADMISSION = "denied"
 UNAVAILABLE_MESSAGE = "social device challenge storage unavailable"
@@ -342,6 +346,89 @@ class SqlAlchemyDeviceChallengeStore:
             if evidence.context.challenge_id != key:
                 _deny()
             return evidence
+        except Exception:
+            self._failed = True
+        _deny()
+
+    def record_enrollment_consumed(
+        self,
+        authority: transition.EnrollmentTransitionAuthorityV1,
+        *,
+        observed_at: object,
+    ) -> DeviceAdmissionChallengeV1:
+        """Perform only the exact issued-to-consumed enrollment transition.
+
+        The matching effect and receipt are commit-time database invariants.
+        This method re-locks the authoritative challenge row, rechecks its
+        explicit zero-skew deadline, and never completes the transaction.
+        """
+
+        try:
+            if type(authority) is not transition.EnrollmentTransitionAuthorityV1:
+                _deny()
+            authority = transition._exact_authority(authority)
+            if type(observed_at) is not int or not 0 <= observed_at <= MAX_SAFE_INTEGER:
+                _deny()
+            challenge = self.read_for_update(authority.challenge_id)
+            context = challenge.context
+            prepared = transition.prepared_enrollment_effect_v1(authority)
+            if (
+                challenge.state != "issued"
+                or challenge.operation != transition.OPERATION
+                or challenge.actual_request_wire is not None
+                or challenge.routing_request_wire is not None
+                or challenge.inspect_deadline(now=observed_at).disposition != "current"
+                or context.challenge_kind != transition.CHALLENGE_KIND
+                or context.challenge_id != authority.challenge_id
+                or context.subject != authority.subject
+                or context.device_id != authority.device_id
+                or context.ed25519_public_key != authority.proposed_ed25519_public_key
+                or context.association_id != authority.proposed_association_id
+                or context.association_version != authority.proposed_association_version
+                or context.predecessor_association_id != authority.proposed_predecessor_association_id
+                or context.authority_epoch != authority.proposed_authority_epoch
+                or contract.verification_context_digest_v1(context.wire) != authority.context_digest
+                or enrollment_v2_digest(challenge.challenge_wire) != authority.enrollment_digest
+            ):
+                _deny()
+            self._check_transaction()
+            receipt = (
+                self._connection.execute(
+                    text(
+                        "SELECT effect_id, effect_digest, proposed_association_id "
+                        "FROM social_device_enrollment_admission_receipts "
+                        "WHERE challenge_id = :challenge_id"
+                    ),
+                    {"challenge_id": authority.challenge_id},
+                )
+                .mappings()
+                .one()
+            )
+            if (
+                receipt["effect_id"] != prepared.effect_id
+                or receipt["effect_digest"] != prepared.effect_digest
+                or receipt["proposed_association_id"] != authority.proposed_association_id
+            ):
+                _deny()
+            table = SocialDeviceAdmissionChallengeRow.__table__
+            row = (
+                self._connection.execute(
+                    update(table)
+                    .where(
+                        table.c.challenge_id == authority.challenge_id,
+                        table.c.state == "issued",
+                    )
+                    .values(state="consumed")
+                    .returning(*table.c)
+                    .execution_options(autoflush=False)
+                )
+                .mappings()
+                .one()
+            )
+            consumed = parse_stored_device_challenge_v1(row)
+            if consumed.state != "consumed" or consumed.context != context:
+                _deny()
+            return consumed
         except Exception:
             self._failed = True
         _deny()

@@ -1,0 +1,25 @@
+{
+  "schema": "hodlxxi.social_enrollment_receipt_identity_vectors.v1",
+  "sourceFixtureSha256": "4fc69cb883664e6fedcba1f624f3ab0b57b644f11e90a905e252ccec354b4571",
+  "vectors": {
+    "initial": {
+      "decidedAt": 1788906600123,
+      "receiptId": "2e4409c680272fcdb8b81659efbe1d613518a025779bc6e1c2b4ca59ad95b07b",
+      "receiptIdPreimage": "{\"challengeId\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"effectDigest\":\"ce25fef36043e33c61d19b88102a2b4165761da8d2187ddea6a49b2612d34fe1\",\"effectId\":\"355267872e7533429602db60647a54262e35b214f429944c0a5e7cdd006fb431\",\"operation\":\"enrollment-activate\",\"schema\":\"hodlxxi.social_enrollment_receipt_id_preimage.v1\",\"version\":1}",
+      "receiptWire": "{\"challengeId\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"decidedAt\":1788906600123,\"operation\":\"enrollment-activate\",\"receiptId\":\"2e4409c680272fcdb8b81659efbe1d613518a025779bc6e1c2b4ca59ad95b07b\",\"schema\":\"hodlxxi.social_device_admission_receipt.v1\",\"status\":\"committed\",\"version\":1}"
+    },
+    "reenrollment": {
+      "decidedAt": 1788906600125,
+      "receiptId": "dce0d8da33a46ed03520d0a2ee8ba244d7f266cadb31dec5a476e5360928d330",
+      "receiptIdPreimage": "{\"challengeId\":\"7373737373737373737373737373737373737373737373737373737373737373\",\"effectDigest\":\"8be56b1be1b57d4bb4201bb570b3a6d59f53bf01d69bfcb21ff4c69c6838840d\",\"effectId\":\"c9005ac33214431296cf884c61d25c1559857a3efbbbd7da68defde0eefa5a44\",\"operation\":\"enrollment-activate\",\"schema\":\"hodlxxi.social_enrollment_receipt_id_preimage.v1\",\"version\":1}",
+      "receiptWire": "{\"challengeId\":\"7373737373737373737373737373737373737373737373737373737373737373\",\"decidedAt\":1788906600125,\"operation\":\"enrollment-activate\",\"receiptId\":\"dce0d8da33a46ed03520d0a2ee8ba244d7f266cadb31dec5a476e5360928d330\",\"schema\":\"hodlxxi.social_device_admission_receipt.v1\",\"status\":\"committed\",\"version\":1}"
+    },
+    "rotation": {
+      "decidedAt": 1788906600124,
+      "receiptId": "419a862fb535f020a72ec66554ac249dade45f4f9ecc809daa32b6a20a680baa",
+      "receiptIdPreimage": "{\"challengeId\":\"7272727272727272727272727272727272727272727272727272727272727272\",\"effectDigest\":\"67b55483dc7196eb77be3e03308ae510d3aebdddab96c46fa76433dd7eb31348\",\"effectId\":\"342b37a1ff4d11167fd9293c0cbf68d1e9870cb69285f5d283e0734971b74e5d\",\"operation\":\"enrollment-activate\",\"schema\":\"hodlxxi.social_enrollment_receipt_id_preimage.v1\",\"version\":1}",
+      "receiptWire": "{\"challengeId\":\"7272727272727272727272727272727272727272727272727272727272727272\",\"decidedAt\":1788906600124,\"operation\":\"enrollment-activate\",\"receiptId\":\"419a862fb535f020a72ec66554ac249dade45f4f9ecc809daa32b6a20a680baa\",\"schema\":\"hodlxxi.social_device_admission_receipt.v1\",\"status\":\"committed\",\"version\":1}"
+    }
+  },
+  "version": 1
+}

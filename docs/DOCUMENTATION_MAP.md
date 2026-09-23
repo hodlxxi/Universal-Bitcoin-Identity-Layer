@@ -117,10 +117,11 @@ These are useful for future development, staging, compatibility, and design inte
   context/input/JWS-shape, route, receipt, state and typed-port contracts,
   authenticated statement verifier, immutable challenge store, durable
   Ed25519 association store, transaction-bound current-authority adapter and
-  transaction-bound pre-effect enrollment transition-authority adapter; UBID
-  is selected as the future atomic owner, but effect execution, challenge
-  consumption, receipt persistence, runtime wiring and final admission remain
-  unimplemented
+  transaction-bound pre-effect enrollment transition-authority adapter,
+  deterministic immutable enrollment receipt store, enrollment-only challenge
+  consumption primitive and deferred three-row commit invariant; UBID is
+  selected as the future atomic owner, but that owner, effect composition,
+  runtime wiring and final admission remain unimplemented
 - `docs/milestones/NIP17_SITE_LOCAL_MESSAGING_V0.md`
 - `docs/ops/NIP17_*.md`
 - `docs/ops/NIP59_*.md`
