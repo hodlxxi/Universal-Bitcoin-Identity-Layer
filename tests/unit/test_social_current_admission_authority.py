@@ -113,7 +113,7 @@ def test_global_lock_order_is_explicit_and_parent_precedes_child_token():
     assert source.index("Current-Full subject advisory lock") < source.index("OAuth clients")
     assert source.index("OAuth clients") < source.index("Exact current X25519")
     assert source.index("Exact current X25519") < source.index("Ed25519 pair advisory lock")
-    method = inspect.getsource(authority.SqlAlchemyTransactionBoundAdmissionAuthority.lock_current_authority)
+    method = inspect.getsource(authority.SqlAlchemyTransactionBoundAdmissionAuthority._lock_non_ed25519_authority)
     assert method.index("for token_id in sorted(generation_probes)") < method.index(
         "for token_id in sorted(generations)"
     )

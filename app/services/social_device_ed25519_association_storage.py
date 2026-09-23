@@ -375,6 +375,14 @@ class SqlAlchemyEd25519AssociationStore:
             self._failed = True
             _deny()
 
+    def lock_lifecycle(self, subject: object, device_id: object) -> lifecycle.AssociationLifecycleV1:
+        """Return complete replayable event evidence under the history lock."""
+        try:
+            return self._locked(subject, device_id)[2]
+        except Exception:
+            self._failed = True
+            _deny()
+
     @staticmethod
     def _authenticated_enrollment(
         input_wire: object,

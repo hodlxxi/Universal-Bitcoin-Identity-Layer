@@ -557,9 +557,11 @@ def test_no_io_at_import_no_runtime_dependency_no_admission_api():
             with patch.dict(sys.modules, {spec.name: module}):
                 spec.loader.exec_module(module)
         assert module.RUNTIME_ENABLED is False
+    consumers = []
     for path in ROOT.joinpath("app").rglob("*.py"):
-        if path != Path(storage.__file__):
-            assert "social_device_challenge_store" not in path.read_text()
+        if path != Path(storage.__file__) and "social_device_challenge_store" in path.read_text():
+            consumers.append(path.relative_to(ROOT).as_posix())
+    assert consumers == ["app/services/social_enrollment_transition_authority_storage.py"]
     assert storage.FINAL_ADMISSION == "denied"
     assert storage.CHALLENGE_CONSUMPTION == storage.OPERATION_EFFECT == storage.RECEIPT_ISSUANCE == "not_implemented"
     assert not any(name in source for name in ("authorized=True", "verified=True", "admitted=True"))

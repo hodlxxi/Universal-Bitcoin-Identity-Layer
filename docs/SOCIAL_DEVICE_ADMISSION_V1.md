@@ -2,8 +2,9 @@
 
 Status: **dormant contracts, authenticated statement verifier, immutable
 challenge store, Ed25519 association store, transaction-bound current
-authority, and pure enrollment transition-authority/effect-identity contract;
-final admission remains denied**. The source defines canonical bytes,
+authority, pure enrollment transition-authority/effect-identity contract, and
+transaction-bound enrollment transition-authority adapter; final admission
+remains denied**. The source defines canonical bytes,
 ownership, state vocabulary, typed future ports and an explicitly injected,
 disabled-by-default public trust registration. The challenge store adds a
 model, SQL migration and transaction-bound database adapter. The Ed25519
@@ -16,9 +17,10 @@ credential or runtime activation. Migration source is not migration application.
 UBID is the selected future owner of challenge creation and persistence,
 atomic single-use consumption, Ed25519 association lifecycle,
 rotation/revocation invalidation, exact operation effects and final device
-admission. Immutable challenge persistence and provisional current-authority
-evaluation are implemented below; challenge consumption, exact effects and
-final admission remain future work.
+admission. Immutable challenge persistence, provisional current-authority
+evaluation and locked pre-effect enrollment transition authority are
+implemented below; challenge consumption, effect execution and final admission
+remain future work.
 
 Social is the cryptographic attestor. It owns strict Ed25519
 verification and Enrollment V2 Ed25519 plus Nostr approval verification. The
@@ -271,14 +273,15 @@ challenge consumed, receipt issued or committed. The module is pure and
 dormant. It performs no I/O, reads no environment or clock, and provides no
 storage adapter, transaction owner, route or runtime wiring.
 
-A future PostgreSQL adapter must construct this authority only after following
-the established global admission lock order and, after every wait, validating
-the exact issued challenge, authenticated Social verification statement,
-Current-Full proofs, device and approver sessions, X25519 authority and locked
-Ed25519 history. The adapter must supply explicit integer epoch-millisecond
-observation/deadline values. The pure helper accepts the frozen lifecycle as
-candidate locked evidence and applies the existing lifecycle functions; it
-does not establish that a database lock exists.
+The PostgreSQL adapter described below constructs this authority only after
+following the established global admission lock order and, after every wait,
+validating the exact issued challenge, authenticated Social verification
+statement, Current-Full proofs, device and approver sessions, X25519 authority
+and locked Ed25519 history. The adapter supplies explicit integer
+epoch-millisecond observation/deadline values. The pure helper accepts the
+frozen lifecycle as candidate locked evidence and applies the existing
+lifecycle functions; by itself it does not establish that a database lock
+exists.
 
 The closed authority wire is compact, sorted-key printable ASCII JSON with
 schema `hodlxxi.social_enrollment_transition_authority.v1`, version 1, and
@@ -380,6 +383,42 @@ immutable receipt and issued-to-consumed challenge transition in one
 caller-owned transaction. Fixed authority, ID, digest, mutation and rejection
 vectors are in
 `tests/fixtures/social_enrollment_transition_authority_effect_identity_v1.json`.
+
+## Transaction-bound enrollment transition authority
+
+`app/services/social_enrollment_transition_authority_storage.py` is the
+dormant PostgreSQL adapter that establishes the locked pre-effect evidence for
+the pure contract. It accepts only an already-active caller-owned READ
+COMMITTED SQLAlchemy transaction and the exact server-resolved device Social
+issuance and desktop approver OAuth Session selectors. It has no session
+factory, connection URL or clock and never begins, commits, rolls back, closes
+or replaces a transaction.
+
+The deterministic lock order is the exact challenge row first; the existing
+Current-Full/User, OAuth/browser/Session/Social issuance and X25519 order from
+the current-authority adapter next; and the Ed25519 pair advisory, chain and
+complete event-history order last. This permits a future consuming owner to
+retain the same first lock without reversing any existing authority-owner
+edge. Every locked owner is re-read and validated with the caller's explicit
+integer epoch-millisecond `observed_at`. PostgreSQL READ COMMITTED, physical
+transaction, connection and savepoint identity checks remain in force.
+
+The challenge must still be `issued`, byte-identical to the verification
+context and Enrollment V2 challenge, and current under exclusive zero-skew
+deadline semantics. The adapter accepts only the real authenticated Social
+statement type and binds it again to the exact challenge, attempt,
+context/input digests, enrollment result/purpose and observation time. It
+reuses the current-authority adapter's non-Ed25519 owner logic without calling
+the proposed successor current, then loads complete locked Ed25519 event
+evidence and invokes the pure transition matrix. `lockedDeadlineMs` is the
+earliest locked Full/session/X25519 or challenge deadline.
+
+Success returns only `EnrollmentTransitionAuthorityV1`. An optional caller may
+derive the pure `PreparedAdmissionEffectV1` description from it, but this
+adapter inserts no association event, changes no challenge state, creates no
+receipt and executes no effect. It rejects SQLite and other non-PostgreSQL
+backends. It adds no schema or migration, route, factory composition, socket
+surface or runtime activation. Final admission remains denied.
 
 ## Verification context
 
@@ -888,12 +927,11 @@ fixed synthetic vectors remain unchanged and tests require no Social checkout.
 ## Activation blockers and non-claims
 
 Future work must separately provide and test active trust provisioning and
-invalidation, PostgreSQL association/receipt schema and consumed-transition
-constraints, transaction-bound viewer/session/Current-Full/binding
-authority, atomic enrollment owner, routing/effect owner, internal routes,
-purpose-bound Unix-socket client, quotas, credentials and explicit factory
-composition. Migration application, credential provisioning, socket exposure,
-runtime activation and deployment require separate authorization.
+invalidation, receipt schema and consumed-transition constraints, atomic
+enrollment effect/consumption ownership, routing/effect ownership, internal
+routes, purpose-bound Unix-socket client, quotas, credentials and explicit
+factory composition. Migration application, credential provisioning, socket
+exposure, runtime activation and deployment require separate authorization.
 
 There is no participant or device private-key custody in UBID or Social server
 storage. A future dedicated Social infrastructure statement-signing key is a
