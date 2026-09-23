@@ -562,7 +562,7 @@ def test_no_io_at_import_no_runtime_dependency_no_admission_api():
     for path in ROOT.joinpath("app").rglob("*.py"):
         if path != Path(storage.__file__) and "social_device_challenge_store" in path.read_text():
             consumers.append(path.relative_to(ROOT).as_posix())
-    assert consumers == [
+    assert sorted(consumers) == [
         "app/services/social_enrollment_receipt_storage.py",
         "app/services/social_enrollment_transition_authority_storage.py",
     ]
