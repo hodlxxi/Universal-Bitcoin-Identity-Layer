@@ -1,8 +1,13 @@
 # Social messaging recipient routing V1
 
-Status: dormant, source-only contract. This phase adds no HTTP route, database
-table, migration, adapter, configuration, factory wiring, deployment, or
-runtime activation. It changes no Social source or ciphertext format.
+Status: dormant, source-only contract and PostgreSQL durability prerequisite.
+The additive source now includes a transaction-bound UBID repository adapter
+and migration for exact routing snapshots/routes, confidential pairwise-handle
+ownership and the message-ID decision ledger. The migration is not applied.
+There is no HTTP route, configuration, factory wiring, ciphertext persistence,
+self-read effect, request admission, receipt, challenge consumption,
+deployment or runtime activation. Social source and ciphertext formats are
+unchanged.
 
 ## Privacy and authority boundary
 
@@ -114,11 +119,27 @@ respectively. Subjects, device IDs, and binding IDs are canonical lowercase
 are nonnegative JavaScript-safe UTC epoch milliseconds; authority evidence
 uses whole-second UTC datetimes at its injected boundary.
 
-## Atomic repository contract and failure behavior
+## Durable repository contract and failure behavior
 
-This phase defines only a Protocol for a future atomic confidential repository.
-It provides exact snapshot retention, unambiguous snapshot lookup, and an
-atomic message-ID decision ledger. It must enforce:
+`app/services/social_messaging_recipient_routing_storage.py` implements the
+existing `RecipientRoutingRepository` Protocol. The additive migration is
+`migrations/2026-09-24_social_messaging_recipient_routing_registry_v1.sql`.
+It introduces five dormant UBID tables: immutable handle owners, snapshots,
+snapshot routes, decisions and decision routes. Exact canonical snapshot and
+decision strings remain authoritative bytes; indexed columns and complete
+ordered route rows are reparsed and compared on every adapter read.
+
+The handle owner records the original alias-version namespace, viewer,
+recipient, device, binding and binding version for the exact `d_` value. No
+public key, alias secret or reverse derivation is stored. The handle is the
+global primary key, and the complete owner tuple within one alias-version
+namespace is also unique. A same-tuple renewal reuses the retained owner. An
+alias-version rotation may add its new handle namespace but cannot rewrite or
+delete the old mapping. A same-version secret change cannot silently remap the
+same tuple to a second handle.
+
+The repository provides exact snapshot retention, unambiguous snapshot lookup,
+and a global message-ID decision ledger. It enforces:
 
 - one handle has one viewer/recipient/device/binding owner at a time;
 - exact snapshot registration is idempotent, including renewal for the same
@@ -136,12 +157,45 @@ Every failure exposed by this boundary is the same generic message:
 No partial route, count, target-existence detail, or dependency error crosses
 the boundary.
 
-An eventual implementation needs a new additive UBID routing-registry
-migration because no current table authoritatively retains the
-deviceHandle-to-viewer/recipient/device/binding relationship or the message-ID
-decision ledger. That migration is explicitly deferred. Social will later need
-its own independent ciphertext/message store; neither store is introduced in
-this phase.
+Database uniqueness and deferred completeness triggers require every canonical
+snapshot/decision route, exact owner relationship and snapshot-to-decision
+route match at commit. Updates, deletes and truncation are denied. The adapter
+also rejects noncanonical, duplicate, incomplete, conflicting or otherwise
+ambiguous retained history rather than choosing a row.
+
+The adapter accepts one caller-owned, already-active PostgreSQL READ COMMITTED
+SQLAlchemy transaction. It pins the Session transaction/savepoint, physical
+connection and database transaction/savepoint; requires driver autocommit off
+and all immutable/completeness triggers installed; and never begins, commits,
+rolls back, closes or replaces anything. SQLite metadata compatibility grants
+no authority. Core reads bypass ORM identity caching. Advisory-lock contenders
+re-read authoritative rows after every wait.
+
+Future request composition must first lock its exact challenge and establish
+`CurrentAdmissionAuthorityV1` under the admission lock order. Only then may it
+enter this registry's local sorted handle-owner, snapshot and message-ID order.
+No network or Unix call belongs inside those locks. The existing pure
+`SocialMessagingRecipientRoutingGateV1` remains unwired: its injected current
+binding/entitlement ports do not share this caller transaction, so composing
+the durable adapter into that gate would not establish atomic current
+authority without changing the gate's semantics.
+
+The immutable handle-owner rows are historical routing evidence for exact
+snapshot and decision idempotence only. This adapter deliberately exposes no
+active namespace selection, current-handle resolution or self-read authority.
+Those operations remain blocked until a separate authoritative alias-namespace
+and lifecycle owner can require exactly one ACTIVE namespace/owner for the
+requested handle in the same caller-owned transaction. Rotation and an unknown
+namespace must deny. A future owner must not infer current state from the
+greatest alias version, snapshot expiry or other retained history, or
+unverified caller input.
+
+This registry's decision proves only exact routing resolution against retained
+snapshot evidence. It is not ciphertext persistence, delivery, recipient read
+selection, a request operation effect, a committed receipt or final admission.
+Social still needs an independent transaction-bound ciphertext/message owner,
+and UBID still needs a bounded self-read selection/effect owner before request
+receipt storage or challenge consumption can truthfully be added.
 
 ## Accepted mobile evidence prerequisite
 
@@ -151,6 +205,6 @@ proofs for the exact binding. Its distinct mobile proof namespace is accepted
 only with the routing gate's explicit `mobile_authorization_enabled=True`;
 the default is false. Existing Nostr evidence and all wire/handle/package
 identifiers are unchanged. The earlier identity-verifier-only description above
-remains the default path. No routing registry, runtime package retention,
-sender-device admission, ciphertext transport or inbox is activated by this
-prerequisite. The linked document lists every remaining Phase 3 boundary.
+remains the default path. The dormant UBID routing registry does not activate
+runtime package retention, sender-device admission, ciphertext transport or an
+inbox. The linked document lists every remaining Phase 3 boundary.

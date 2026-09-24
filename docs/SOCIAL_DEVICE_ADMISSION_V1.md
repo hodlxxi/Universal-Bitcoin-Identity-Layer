@@ -11,7 +11,10 @@ vocabulary, typed future ports and an explicitly injected, disabled-by-default
 public trust registration. The challenge store adds a model, SQL migration and
 transaction-bound database adapter. The Ed25519 association store adds a
 separate model and additive migration. Request effect/receipt identity remains
-pure and has no storage or execution owner. There is no route, blueprint,
+pure and has no storage or execution owner. A separate dormant PostgreSQL
+recipient-routing registry now owns exact snapshots/routes, confidential
+pairwise-handle mappings and the message-ID decision ledger, but those records
+are not either request operation's real effect. There is no route, blueprint,
 factory/config import, key provisioning, socket client, service credential or
 runtime activation. Migration source is not migration application.
 
@@ -411,6 +414,22 @@ capability. `CurrentAdmissionAuthorityV1` remains the pre-effect request
 authority; no request transition authority, epoch advancement or successor is
 introduced. Existing enrollment domains, bytes, fixtures and behavior are
 unchanged.
+
+The dormant
+`app/services/social_messaging_recipient_routing_storage.py` adapter now
+implements exact routing snapshot/route retention, permanent confidential
+handle ownership and one-message-ID decision idempotence in a caller-owned
+PostgreSQL transaction. That decision remains only routing resolution. It does
+not persist ciphertext, select a self-read page, refine either prepared request
+effect with real effect evidence, issue a request receipt or consume a request
+challenge. Its immutable handle owners retain historical snapshot/decision
+evidence only; they do not identify the active alias namespace or a current
+handle. Active namespace selection, current-handle resolution and self-read
+remain blocked until a separate authoritative lifecycle owner can require
+exactly one ACTIVE namespace/owner in the same caller-owned transaction.
+The pure routing gate remains unwired because its authority ports are not the
+same locked transaction; a future request owner must supply that composition
+without network or Unix calls under database locks.
 
 Fixed valid, mutation, rejection, domain-separation and exact projection
 vectors are in
@@ -1219,9 +1238,10 @@ fixed synthetic vectors remain unchanged and tests require no Social checkout.
 ## Activation blockers and non-claims
 
 Future work must separately provide and test active trust provisioning and
-invalidation, durable routing/request-effect refinement and ownership, request
-receipt storage and atomic challenge consumption under a new additive
-migration, internal routes, purpose-bound Unix-socket client, quotas,
+invalidation, transaction-bound ciphertext persistence, bounded self-read
+selection/effect ownership, durable request-effect refinement, request receipt
+storage and atomic challenge consumption under a new additive migration,
+internal routes, purpose-bound Unix-socket client, quotas,
 credentials and explicit factory composition. Migration application,
 credential provisioning, socket exposure, runtime activation and deployment
 require separate authorization.
