@@ -1,0 +1,433 @@
+{
+  "ciphertextSubmitEffectSchema": "hodlxxi.social_device_request_ciphertext_submit_effect.v1",
+  "effectDigestDomain": "HODLXXI_SOCIAL_DEVICE_REQUEST_EFFECT_DIGEST_V1",
+  "effectIdDomain": "HODLXXI_SOCIAL_DEVICE_REQUEST_EFFECT_ID_V1",
+  "effectIdPreimageSchema": "hodlxxi.social_device_request_effect_id_preimage.v1",
+  "identityMutations": {
+    "effectDigest": {
+      "actualRequest": {
+        "field": "actualRequestWire",
+        "identity": "1aadcdcc02d27e21b7034574da54c9215ae913c7894603e7d3385bbce35295fa",
+        "replacement": "{\"audience\":\"https://social.example\",\"bindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"bindingVersion\":1,\"bodyDigest\":\"hodlxxi-social-device-request-body-v1-sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"method\":\"POST\",\"operation\":\"recipient-self-read\",\"path\":\"/messaging/v1/recipient-self-read\",\"recipientHandle\":\"d_PKfXNG5lmbfzHj2upkfaQA\",\"schema\":\"hodlxxi.social_messaging_device_request_candidate.v1\",\"sessionBinding\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+        "vector": "ciphertextSubmit"
+      },
+      "authorityEpoch": {
+        "field": "authorityEpoch",
+        "identity": "ed172dd0a68ac5efbd5fadd24dcd6a4865b506541f937e6aa33611d41e0d9f3d",
+        "replacement": 3,
+        "vector": "ciphertextSubmit"
+      },
+      "bodyDigest": {
+        "field": "bodyDigest",
+        "identity": "ba9ab61cbea4c9e80e858a1a6aaee1f2cb9418305d1e84f3d56fb0bfaeab16e3",
+        "replacement": "hodlxxi-social-device-request-body-v1-sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+        "vector": "ciphertextSubmit"
+      },
+      "ciphertextMessageId": {
+        "field": "messageId",
+        "identity": "97330b4005b0e4770912e2f60b48011267ee582ff780cda19710479cc9603c1c",
+        "replacement": "m_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "vector": "ciphertextSubmit"
+      },
+      "envelopeDigest": {
+        "field": "envelopeDigest",
+        "identity": "b26e319a9a60b57491a7c9f6a034f0319803aad62442b44d6350563496055fa3",
+        "replacement": "hodlxxi-social-message-envelope-v1-sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "vector": "ciphertextSubmit"
+      },
+      "fullProofId": {
+        "field": "fullProofId",
+        "identity": "b4afceaf129c60571533fa908647ce6cfe879e9e5084622bf93d9df3fd13b887",
+        "replacement": "hodlxxi-full-entitlement-v1-sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "vector": "ciphertextSubmit"
+      },
+      "lockedDeadlineMs": {
+        "field": "lockedDeadlineMs",
+        "identity": "e1370541728d321c0ce386279a486553b25759af61e578f1919ac687f8dfa2b3",
+        "replacement": 1788906658999,
+        "vector": "ciphertextSubmit"
+      },
+      "recipientDeviceHandleCanonicality": {
+        "field": "recipientDeviceHandles",
+        "identity": "8d9262529330ae666f7bbc5583e708f7587b21e2516e785542f6f1284785e6fe",
+        "replacement": [
+          "d_!!!!!!!!!!!!!!!!!!!!!!"
+        ],
+        "vector": "ciphertextSubmit"
+      },
+      "recipientDeviceHandleOrder": {
+        "field": "recipientDeviceHandles",
+        "identity": "43e433096e9d24e2f4b4a3628bcec39b3a012fb6952d9797841af8df913c544a",
+        "replacement": [
+          "d_AQEBAQEBAQEBAQEBAQEBAQ",
+          "d_AAAAAAAAAAAAAAAAAAAAAA"
+        ],
+        "vector": "ciphertextSubmit"
+      },
+      "recipientDeviceHandleSet": {
+        "field": "recipientDeviceHandles",
+        "identity": "10c3a71478201919bbb63091107a13a01943073b025dfe95f8dbc8c1fd0449ff",
+        "replacement": [
+          "d_AAAAAAAAAAAAAAAAAAAAAA",
+          "d_AQEBAQEBAQEBAQEBAQEBAQ"
+        ],
+        "vector": "ciphertextSubmit"
+      },
+      "recipientPackageSnapshot": {
+        "field": "recipientPackageSnapshotId",
+        "identity": "e2bac14195d1f1ae3674552a1e5eabb3b0ef4a967d01aed86d41b6b8c7847e28",
+        "replacement": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "vector": "ciphertextSubmit"
+      },
+      "selfReadActualRequest": {
+        "field": "actualRequestWire",
+        "identity": "e0b2b4ccead4540b2bfb13f67458e708e1b6d5c0984c1db57d6becd4ac324f7b",
+        "replacement": "{\"audience\":\"https://social.example\",\"bindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"bindingVersion\":1,\"bodyDigest\":\"hodlxxi-social-device-request-body-v1-sha256:c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"method\":\"POST\",\"operation\":\"ciphertext-submit\",\"path\":\"/messaging/v1/ciphertext-submit\",\"recipientHandle\":null,\"schema\":\"hodlxxi.social_messaging_device_request_candidate.v1\",\"sessionBinding\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+        "vector": "recipientSelfRead"
+      },
+      "selfReadBodyDigest": {
+        "field": "bodyDigest",
+        "identity": "1e6640d094e30340bbb34c6277ccdd1b33fcfc1ac651edcf98aea8029920a52f",
+        "replacement": "hodlxxi-social-device-request-body-v1-sha256:c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+        "vector": "recipientSelfRead"
+      },
+      "selfReadRecipientHandle": {
+        "field": "recipientHandle",
+        "identity": "540cf07e2ea92304dbccce25ca1bce8bf1bf80b81bf9d6f310f6a156f0eeea5e",
+        "replacement": "d_AAAAAAAAAAAAAAAAAAAAAA",
+        "vector": "recipientSelfRead"
+      }
+    },
+    "effectId": {
+      "authorityEpoch": {
+        "field": "authorityEpoch",
+        "identity": "753f3e70b47cfe0b47d6cda2e7b3834d41950f1b3e8390347499d1e23f6f81b1",
+        "replacement": 3,
+        "vector": "ciphertextSubmit"
+      },
+      "challengeId": {
+        "field": "challengeId",
+        "identity": "4c99d2aa00db96c252b2f6f6f566597d023aaa81961125abab21de7f54fd6d07",
+        "replacement": "5656565656565656565656565656565656565656565656565656565656565656",
+        "vector": "ciphertextSubmit"
+      },
+      "contextDigest": {
+        "field": "contextDigest",
+        "identity": "d94fb5c2e4d19170b19997ddce520dce18bcf70ffa7e87e8235a2e336ea1cff3",
+        "replacement": "hodlxxi-social-device-verification-context-v1-sha256:2f42a871279e158931c65e0333ee3e6aad4b71388931f0a268a1188b002f6396",
+        "vector": "ciphertextSubmit"
+      },
+      "fullProofId": {
+        "field": "fullProofId",
+        "identity": "e23a158de5d6a9f6bcd388aca542b2c38a8604aee724976ea4bace48a0ebe95a",
+        "replacement": "hodlxxi-full-entitlement-v1-sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "vector": "ciphertextSubmit"
+      },
+      "inputDigest": {
+        "field": "inputDigest",
+        "identity": "e85b7f2490b5915588bee5f58b3cc4ad012eb010b0f1f2c56675ecc773ab88e8",
+        "replacement": "hodlxxi-social-device-verification-input-v1-sha256:f9a1fd51a714aac09b1cc008f3b47120677d8b6467e05ebdaf0f27c8ebe3c388",
+        "vector": "ciphertextSubmit"
+      },
+      "lockedDeadlineMs": {
+        "field": "lockedDeadlineMs",
+        "identity": "25045534d61042acc35f5d4c99edc04e5fbffb684cc65a974258cc57d169ae62",
+        "replacement": 1788906658999,
+        "vector": "ciphertextSubmit"
+      },
+      "operation": {
+        "field": "operation",
+        "identity": "7f9f3d9db6d765cf58f86e696d5dda9b3391b1459b23e926aef4bd40ffc97568",
+        "replacement": "recipient-self-read",
+        "vector": "ciphertextSubmit"
+      },
+      "statementAttempt": {
+        "field": "statementAttemptId",
+        "identity": "b6a6fbd2a991157b61534694c943c5e634cd86384de8667e73da8233cf287264",
+        "replacement": "9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b",
+        "vector": "ciphertextSubmit"
+      },
+      "statementTokenJti": {
+        "field": "statementTokenId",
+        "identity": "73188a1790cca03fcb9e888c8aa826172a2338d80f2005a11c8a31e152eea657",
+        "replacement": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+        "vector": "ciphertextSubmit"
+      }
+    },
+    "receiptId": {
+      "authorityEpoch": {
+        "field": "authorityEpoch",
+        "identity": "548edcfec2524a7cc6fc71628ac62a79c0e535fcaf83c3880abf0a2390da1bc2",
+        "replacement": 3,
+        "vector": "ciphertextSubmit"
+      },
+      "challengeId": {
+        "field": "challengeId",
+        "identity": "e5de628a5cad5e6aa3d77a3e2cd677fc1ffdaa2df6f467858ef8b7e8b3b73e1d",
+        "replacement": "5656565656565656565656565656565656565656565656565656565656565656",
+        "vector": "ciphertextSubmit"
+      },
+      "contextDigest": {
+        "field": "contextDigest",
+        "identity": "09c4a22bd431c1f395cec8974eeea3042a25f6f4ce74e2813325687141dedbbe",
+        "replacement": "hodlxxi-social-device-verification-context-v1-sha256:2f42a871279e158931c65e0333ee3e6aad4b71388931f0a268a1188b002f6396",
+        "vector": "ciphertextSubmit"
+      },
+      "effectDigest": {
+        "field": "effectDigest",
+        "identity": "61ff4bda5676198156416e787391cc58c7bfdb7007244284ad40a10e64e19d4b",
+        "replacement": "a86ec7c8ff24d108f8e607f82374f811ab76b228da7bfb51aa159c2830006652",
+        "vector": "ciphertextSubmit"
+      },
+      "effectId": {
+        "field": "effectId",
+        "identity": "907b743ea534267513934efa0828308fb080b3e88c1b84c14076a62486b62f7d",
+        "replacement": "fa60bd26a5e817cb76a9301c22318d866e0ac24acc80a25663fc5e207b9f5810",
+        "vector": "ciphertextSubmit"
+      },
+      "fullProofId": {
+        "field": "fullProofId",
+        "identity": "a8160898b6e5389c8b8af4251e93773df6cede9cb9ad8accc83be36b179d00f7",
+        "replacement": "hodlxxi-full-entitlement-v1-sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "vector": "ciphertextSubmit"
+      },
+      "inputDigest": {
+        "field": "inputDigest",
+        "identity": "018f10ac8344ade0084f1b8887d83b2a786359cf23f76d2e7a81b8b38fd2a195",
+        "replacement": "hodlxxi-social-device-verification-input-v1-sha256:f9a1fd51a714aac09b1cc008f3b47120677d8b6467e05ebdaf0f27c8ebe3c388",
+        "vector": "ciphertextSubmit"
+      },
+      "lockedDeadlineMs": {
+        "field": "lockedDeadlineMs",
+        "identity": "4e37e520164f31388169eee1df171fa017e054938f5446cc3ae02f8c8bb5ade7",
+        "replacement": 1788906658999,
+        "vector": "ciphertextSubmit"
+      },
+      "operation": {
+        "field": "operation",
+        "identity": "5edcd4b6ad9321dfbf09ffda10b5a6acc1df64d4cefdd79878d48babe6918b50",
+        "replacement": "recipient-self-read",
+        "vector": "ciphertextSubmit"
+      },
+      "statementAttempt": {
+        "field": "statementAttemptId",
+        "identity": "8f337e316f4b531222002659ed2b556e1b8e570ee0a6b3653ae35b83d198dccb",
+        "replacement": "9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b",
+        "vector": "ciphertextSubmit"
+      },
+      "statementTokenJti": {
+        "field": "statementTokenId",
+        "identity": "d7049888f0cb0d22b2eff514667fcea833ee09f7be867b74b14823a0aa2ba38c",
+        "replacement": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+        "vector": "ciphertextSubmit"
+      }
+    }
+  },
+  "preparedEffectSchema": "hodlxxi.social_device_request_prepared_effect.v1",
+  "receiptIdDomain": "HODLXXI_SOCIAL_DEVICE_REQUEST_RECEIPT_ID_V1",
+  "receiptIdPreimageSchema": "hodlxxi.social_device_request_receipt_id_preimage.v1",
+  "recipientSelfReadEffectSchema": "hodlxxi.social_device_request_recipient_self_read_effect.v1",
+  "rejectionVectors": {
+    "crossOperationSubstitution": {
+      "actualRequestFrom": "recipientSelfRead",
+      "base": "ciphertextSubmit",
+      "routingRequest": null
+    },
+    "duplicateRecipientDeviceHandles": {
+      "base": "ciphertextSubmit",
+      "recipientDeviceHandles": [
+        "d_AAAAAAAAAAAAAAAAAAAAAA",
+        "d_AAAAAAAAAAAAAAAAAAAAAA"
+      ]
+    },
+    "missingRoutingRequestOnSubmit": {
+      "base": "ciphertextSubmit",
+      "routingRequest": null
+    },
+    "noncanonicalRecipientDeviceHandle": {
+      "base": "ciphertextSubmit",
+      "recipientDeviceHandles": [
+        "d_!!!!!!!!!!!!!!!!!!!!!!"
+      ]
+    },
+    "operationPathMismatch": {
+      "base": "ciphertextSubmit",
+      "operation": "recipient-self-read"
+    },
+    "reversedRecipientDeviceHandles": {
+      "base": "ciphertextSubmit",
+      "recipientDeviceHandles": [
+        "d_AQEBAQEBAQEBAQEBAQEBAQ",
+        "d_AAAAAAAAAAAAAAAAAAAAAA"
+      ]
+    },
+    "unexpectedRoutingRequestOnSelfRead": {
+      "base": "recipientSelfRead",
+      "routingRequestFrom": "ciphertextSubmit"
+    }
+  },
+  "schema": "hodlxxi.social_device_request_operation_effect_identity_vectors.v1",
+  "sourceFixtureSha256": "09722ca9ab230a7bbc73b2228dfed5e80cdd2c2bb44a32e8571bdcf246ca4324",
+  "sourceRoutingFixtureSha256": "90f7c3726a9dfcfa655630626d53d65b410e5e330456d5114d04982a53da2f1c",
+  "vectors": {
+    "ciphertextSubmit": {
+      "currentAuthority": {
+        "approverFullProofId": null,
+        "authorityEpoch": 2,
+        "contextDigest": "hodlxxi-social-device-verification-context-v1-sha256:8f3230a541bf5f300024c3d9437c614e845b96bf7b8e83b30dc00c9096a1f2dd",
+        "fullProofId": "hodlxxi-full-entitlement-v1-sha256:abababababababababababababababababababababababababababababababab",
+        "lockedDeadlineMs": 1788906659000
+      },
+      "effectDigest": "c3b2b8ac54ab8b9cd6e6729601940925fc7411b9221f03b6967330ac0e4fb182",
+      "effectDigestPreimage": "{\"actualRequestWire\":\"{\\\"audience\\\":\\\"https://social.example\\\",\\\"bindingId\\\":\\\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\\\",\\\"bindingVersion\\\":1,\\\"bodyDigest\\\":\\\"hodlxxi-social-device-request-body-v1-sha256:c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1\\\",\\\"deviceId\\\":\\\"2222222222222222222222222222222222222222222222222222222222222222\\\",\\\"method\\\":\\\"POST\\\",\\\"operation\\\":\\\"ciphertext-submit\\\",\\\"path\\\":\\\"/messaging/v1/ciphertext-submit\\\",\\\"recipientHandle\\\":null,\\\"schema\\\":\\\"hodlxxi.social_messaging_device_request_candidate.v1\\\",\\\"sessionBinding\\\":\\\"4444444444444444444444444444444444444444444444444444444444444444\\\",\\\"subject\\\":\\\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\\\",\\\"version\\\":1}\",\"associationId\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"associationVersion\":1,\"authorityEpoch\":2,\"bindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"bindingVersion\":1,\"bodyDigest\":\"hodlxxi-social-device-request-body-v1-sha256:c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1\",\"challengeId\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"challengeKind\":\"device-request-v1\",\"contextDigest\":\"hodlxxi-social-device-verification-context-v1-sha256:8f3230a541bf5f300024c3d9437c614e845b96bf7b8e83b30dc00c9096a1f2dd\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"envelopeDigest\":\"hodlxxi-social-message-envelope-v1-sha256:69b4d5ec2947348d67507821ee7d96c75172df61a81df5bb3464e34329492a43\",\"fullProofId\":\"hodlxxi-full-entitlement-v1-sha256:abababababababababababababababababababababababababababababababab\",\"lockedDeadlineMs\":1788906659000,\"messageId\":\"m_ByRBXnuYtdLvDClGY4Cdutf0ES5LaIWiv9z5FjNQbYo\",\"operation\":\"ciphertext-submit\",\"recipientDeviceHandles\":[\"d_PKfXNG5lmbfzHj2upkfaQA\"],\"recipientPackageSnapshotId\":\"sha256:7b6178076d8fa6d551f3fa431aa94661f1da804c012d9d49efbbcf2d81ebba1f\",\"routingRequestWire\":\"{\\\"envelopeDigest\\\":\\\"hodlxxi-social-message-envelope-v1-sha256:69b4d5ec2947348d67507821ee7d96c75172df61a81df5bb3464e34329492a43\\\",\\\"messageId\\\":\\\"m_ByRBXnuYtdLvDClGY4Cdutf0ES5LaIWiv9z5FjNQbYo\\\",\\\"recipientDeviceHandles\\\":[\\\"d_PKfXNG5lmbfzHj2upkfaQA\\\"],\\\"recipientPackageSnapshotId\\\":\\\"sha256:7b6178076d8fa6d551f3fa431aa94661f1da804c012d9d49efbbcf2d81ebba1f\\\",\\\"schema\\\":\\\"hodlxxi.social_messaging_recipient_routing_request.v1\\\",\\\"version\\\":1}\",\"schema\":\"hodlxxi.social_device_request_ciphertext_submit_effect.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+      "effectId": "22dc6ed40267617403aca75f7747c8f100ddcafda83fef17024f62a678156b6c",
+      "effectIdPreimage": "{\"approverFullProofId\":null,\"authorityEpoch\":2,\"challengeId\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"challengeKind\":\"device-request-v1\",\"contextDigest\":\"hodlxxi-social-device-verification-context-v1-sha256:8f3230a541bf5f300024c3d9437c614e845b96bf7b8e83b30dc00c9096a1f2dd\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"fullProofId\":\"hodlxxi-full-entitlement-v1-sha256:abababababababababababababababababababababababababababababababab\",\"inputDigest\":\"hodlxxi-social-device-verification-input-v1-sha256:1613f74532bd6219406c97e5d00e7022b8ea8f44f92a79fddc75091e2e0be643\",\"lockedDeadlineMs\":1788906659000,\"operation\":\"ciphertext-submit\",\"schema\":\"hodlxxi.social_device_request_effect_id_preimage.v1\",\"statementAttemptId\":\"9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a\",\"statementTokenId\":\"c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+      "observedAt": 1788906600000,
+      "preparedProjection": {
+        "approverFullProofId": null,
+        "authorityEpoch": 2,
+        "challengeId": "5555555555555555555555555555555555555555555555555555555555555555",
+        "challengeKind": "device-request-v1",
+        "contextDigest": "hodlxxi-social-device-verification-context-v1-sha256:8f3230a541bf5f300024c3d9437c614e845b96bf7b8e83b30dc00c9096a1f2dd",
+        "deviceId": "2222222222222222222222222222222222222222222222222222222222222222",
+        "effectDigest": "c3b2b8ac54ab8b9cd6e6729601940925fc7411b9221f03b6967330ac0e4fb182",
+        "effectId": "22dc6ed40267617403aca75f7747c8f100ddcafda83fef17024f62a678156b6c",
+        "fullProofId": "hodlxxi-full-entitlement-v1-sha256:abababababababababababababababababababababababababababababababab",
+        "inputDigest": "hodlxxi-social-device-verification-input-v1-sha256:1613f74532bd6219406c97e5d00e7022b8ea8f44f92a79fddc75091e2e0be643",
+        "lockedDeadlineMs": 1788906659000,
+        "operation": "ciphertext-submit",
+        "promisedEffect": {
+          "actualRequestWire": "{\"audience\":\"https://social.example\",\"bindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"bindingVersion\":1,\"bodyDigest\":\"hodlxxi-social-device-request-body-v1-sha256:c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"method\":\"POST\",\"operation\":\"ciphertext-submit\",\"path\":\"/messaging/v1/ciphertext-submit\",\"recipientHandle\":null,\"schema\":\"hodlxxi.social_messaging_device_request_candidate.v1\",\"sessionBinding\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+          "associationId": "8888888888888888888888888888888888888888888888888888888888888888",
+          "associationVersion": 1,
+          "authorityEpoch": 2,
+          "bindingId": "6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d",
+          "bindingVersion": 1,
+          "bodyDigest": "hodlxxi-social-device-request-body-v1-sha256:c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+          "challengeId": "5555555555555555555555555555555555555555555555555555555555555555",
+          "challengeKind": "device-request-v1",
+          "contextDigest": "hodlxxi-social-device-verification-context-v1-sha256:8f3230a541bf5f300024c3d9437c614e845b96bf7b8e83b30dc00c9096a1f2dd",
+          "deviceId": "2222222222222222222222222222222222222222222222222222222222222222",
+          "envelopeDigest": "hodlxxi-social-message-envelope-v1-sha256:69b4d5ec2947348d67507821ee7d96c75172df61a81df5bb3464e34329492a43",
+          "fullProofId": "hodlxxi-full-entitlement-v1-sha256:abababababababababababababababababababababababababababababababab",
+          "lockedDeadlineMs": 1788906659000,
+          "messageId": "m_ByRBXnuYtdLvDClGY4Cdutf0ES5LaIWiv9z5FjNQbYo",
+          "operation": "ciphertext-submit",
+          "recipientDeviceHandles": [
+            "d_PKfXNG5lmbfzHj2upkfaQA"
+          ],
+          "recipientPackageSnapshotId": "sha256:7b6178076d8fa6d551f3fa431aa94661f1da804c012d9d49efbbcf2d81ebba1f",
+          "routingRequestWire": "{\"envelopeDigest\":\"hodlxxi-social-message-envelope-v1-sha256:69b4d5ec2947348d67507821ee7d96c75172df61a81df5bb3464e34329492a43\",\"messageId\":\"m_ByRBXnuYtdLvDClGY4Cdutf0ES5LaIWiv9z5FjNQbYo\",\"recipientDeviceHandles\":[\"d_PKfXNG5lmbfzHj2upkfaQA\"],\"recipientPackageSnapshotId\":\"sha256:7b6178076d8fa6d551f3fa431aa94661f1da804c012d9d49efbbcf2d81ebba1f\",\"schema\":\"hodlxxi.social_messaging_recipient_routing_request.v1\",\"version\":1}",
+          "schema": "hodlxxi.social_device_request_ciphertext_submit_effect.v1",
+          "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+          "version": 1
+        },
+        "receiptId": "da2d87342f4cce943832bf57670fc99fe6a6c191bd00a506b6a3900a7273da1a",
+        "schema": "hodlxxi.social_device_request_prepared_effect.v1",
+        "statementAttemptId": "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a",
+        "statementTokenId": "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+        "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        "version": 1
+      },
+      "preparedProjectionWire": "{\"approverFullProofId\":null,\"authorityEpoch\":2,\"challengeId\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"challengeKind\":\"device-request-v1\",\"contextDigest\":\"hodlxxi-social-device-verification-context-v1-sha256:8f3230a541bf5f300024c3d9437c614e845b96bf7b8e83b30dc00c9096a1f2dd\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"effectDigest\":\"c3b2b8ac54ab8b9cd6e6729601940925fc7411b9221f03b6967330ac0e4fb182\",\"effectId\":\"22dc6ed40267617403aca75f7747c8f100ddcafda83fef17024f62a678156b6c\",\"fullProofId\":\"hodlxxi-full-entitlement-v1-sha256:abababababababababababababababababababababababababababababababab\",\"inputDigest\":\"hodlxxi-social-device-verification-input-v1-sha256:1613f74532bd6219406c97e5d00e7022b8ea8f44f92a79fddc75091e2e0be643\",\"lockedDeadlineMs\":1788906659000,\"operation\":\"ciphertext-submit\",\"promisedEffect\":{\"actualRequestWire\":\"{\\\"audience\\\":\\\"https://social.example\\\",\\\"bindingId\\\":\\\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\\\",\\\"bindingVersion\\\":1,\\\"bodyDigest\\\":\\\"hodlxxi-social-device-request-body-v1-sha256:c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1\\\",\\\"deviceId\\\":\\\"2222222222222222222222222222222222222222222222222222222222222222\\\",\\\"method\\\":\\\"POST\\\",\\\"operation\\\":\\\"ciphertext-submit\\\",\\\"path\\\":\\\"/messaging/v1/ciphertext-submit\\\",\\\"recipientHandle\\\":null,\\\"schema\\\":\\\"hodlxxi.social_messaging_device_request_candidate.v1\\\",\\\"sessionBinding\\\":\\\"4444444444444444444444444444444444444444444444444444444444444444\\\",\\\"subject\\\":\\\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\\\",\\\"version\\\":1}\",\"associationId\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"associationVersion\":1,\"authorityEpoch\":2,\"bindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"bindingVersion\":1,\"bodyDigest\":\"hodlxxi-social-device-request-body-v1-sha256:c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1\",\"challengeId\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"challengeKind\":\"device-request-v1\",\"contextDigest\":\"hodlxxi-social-device-verification-context-v1-sha256:8f3230a541bf5f300024c3d9437c614e845b96bf7b8e83b30dc00c9096a1f2dd\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"envelopeDigest\":\"hodlxxi-social-message-envelope-v1-sha256:69b4d5ec2947348d67507821ee7d96c75172df61a81df5bb3464e34329492a43\",\"fullProofId\":\"hodlxxi-full-entitlement-v1-sha256:abababababababababababababababababababababababababababababababab\",\"lockedDeadlineMs\":1788906659000,\"messageId\":\"m_ByRBXnuYtdLvDClGY4Cdutf0ES5LaIWiv9z5FjNQbYo\",\"operation\":\"ciphertext-submit\",\"recipientDeviceHandles\":[\"d_PKfXNG5lmbfzHj2upkfaQA\"],\"recipientPackageSnapshotId\":\"sha256:7b6178076d8fa6d551f3fa431aa94661f1da804c012d9d49efbbcf2d81ebba1f\",\"routingRequestWire\":\"{\\\"envelopeDigest\\\":\\\"hodlxxi-social-message-envelope-v1-sha256:69b4d5ec2947348d67507821ee7d96c75172df61a81df5bb3464e34329492a43\\\",\\\"messageId\\\":\\\"m_ByRBXnuYtdLvDClGY4Cdutf0ES5LaIWiv9z5FjNQbYo\\\",\\\"recipientDeviceHandles\\\":[\\\"d_PKfXNG5lmbfzHj2upkfaQA\\\"],\\\"recipientPackageSnapshotId\\\":\\\"sha256:7b6178076d8fa6d551f3fa431aa94661f1da804c012d9d49efbbcf2d81ebba1f\\\",\\\"schema\\\":\\\"hodlxxi.social_messaging_recipient_routing_request.v1\\\",\\\"version\\\":1}\",\"schema\":\"hodlxxi.social_device_request_ciphertext_submit_effect.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1},\"receiptId\":\"da2d87342f4cce943832bf57670fc99fe6a6c191bd00a506b6a3900a7273da1a\",\"schema\":\"hodlxxi.social_device_request_prepared_effect.v1\",\"statementAttemptId\":\"9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a\",\"statementTokenId\":\"c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+      "receiptId": "da2d87342f4cce943832bf57670fc99fe6a6c191bd00a506b6a3900a7273da1a",
+      "receiptIdPreimage": "{\"approverFullProofId\":null,\"authorityEpoch\":2,\"challengeId\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"challengeKind\":\"device-request-v1\",\"contextDigest\":\"hodlxxi-social-device-verification-context-v1-sha256:8f3230a541bf5f300024c3d9437c614e845b96bf7b8e83b30dc00c9096a1f2dd\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"effectDigest\":\"c3b2b8ac54ab8b9cd6e6729601940925fc7411b9221f03b6967330ac0e4fb182\",\"effectId\":\"22dc6ed40267617403aca75f7747c8f100ddcafda83fef17024f62a678156b6c\",\"fullProofId\":\"hodlxxi-full-entitlement-v1-sha256:abababababababababababababababababababababababababababababababab\",\"inputDigest\":\"hodlxxi-social-device-verification-input-v1-sha256:1613f74532bd6219406c97e5d00e7022b8ea8f44f92a79fddc75091e2e0be643\",\"lockedDeadlineMs\":1788906659000,\"operation\":\"ciphertext-submit\",\"schema\":\"hodlxxi.social_device_request_receipt_id_preimage.v1\",\"statementAttemptId\":\"9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a\",\"statementTokenId\":\"c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+      "sourceVector": "ciphertextSubmit",
+      "statementFacts": {
+        "attempt_id": "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a",
+        "audience": "https://ubid.example/internal/v1/social/device-admission/consume",
+        "challenge_id": "5555555555555555555555555555555555555555555555555555555555555555",
+        "challenge_kind": "device-request-v1",
+        "client_id": "social-device-admission-client-v1",
+        "context_digest": "hodlxxi-social-device-verification-context-v1-sha256:8f3230a541bf5f300024c3d9437c614e845b96bf7b8e83b30dc00c9096a1f2dd",
+        "expires_at": 1788906609000,
+        "input_digest": "hodlxxi-social-device-verification-input-v1-sha256:1613f74532bd6219406c97e5d00e7022b8ea8f44f92a79fddc75091e2e0be643",
+        "issued_at": 1788906600000,
+        "issuer": "https://social.example",
+        "key_fingerprint": "sha256:569df6a856bb51a38cabd7fca78160ad847ac3ba433af226a1810f1f351a9cce",
+        "key_id": "social-device-verifier-rs256-v1",
+        "purpose": "social_device_cryptographic_verification_v1",
+        "result": "strict-ed25519-valid",
+        "service_principal": "social-device-verifier-v1",
+        "token_id": "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2"
+      }
+    },
+    "recipientSelfRead": {
+      "currentAuthority": {
+        "approverFullProofId": null,
+        "authorityEpoch": 2,
+        "contextDigest": "hodlxxi-social-device-verification-context-v1-sha256:2f42a871279e158931c65e0333ee3e6aad4b71388931f0a268a1188b002f6396",
+        "fullProofId": "hodlxxi-full-entitlement-v1-sha256:abababababababababababababababababababababababababababababababab",
+        "lockedDeadlineMs": 1788906659000
+      },
+      "effectDigest": "a86ec7c8ff24d108f8e607f82374f811ab76b228da7bfb51aa159c2830006652",
+      "effectDigestPreimage": "{\"actualRequestWire\":\"{\\\"audience\\\":\\\"https://social.example\\\",\\\"bindingId\\\":\\\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\\\",\\\"bindingVersion\\\":1,\\\"bodyDigest\\\":\\\"hodlxxi-social-device-request-body-v1-sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2\\\",\\\"deviceId\\\":\\\"2222222222222222222222222222222222222222222222222222222222222222\\\",\\\"method\\\":\\\"POST\\\",\\\"operation\\\":\\\"recipient-self-read\\\",\\\"path\\\":\\\"/messaging/v1/recipient-self-read\\\",\\\"recipientHandle\\\":\\\"d_PKfXNG5lmbfzHj2upkfaQA\\\",\\\"schema\\\":\\\"hodlxxi.social_messaging_device_request_candidate.v1\\\",\\\"sessionBinding\\\":\\\"4444444444444444444444444444444444444444444444444444444444444444\\\",\\\"subject\\\":\\\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\\\",\\\"version\\\":1}\",\"associationId\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"associationVersion\":1,\"authorityEpoch\":2,\"bindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"bindingVersion\":1,\"bodyDigest\":\"hodlxxi-social-device-request-body-v1-sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2\",\"challengeId\":\"5656565656565656565656565656565656565656565656565656565656565656\",\"challengeKind\":\"device-request-v1\",\"contextDigest\":\"hodlxxi-social-device-verification-context-v1-sha256:2f42a871279e158931c65e0333ee3e6aad4b71388931f0a268a1188b002f6396\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"fullProofId\":\"hodlxxi-full-entitlement-v1-sha256:abababababababababababababababababababababababababababababababab\",\"lockedDeadlineMs\":1788906659000,\"operation\":\"recipient-self-read\",\"recipientHandle\":\"d_PKfXNG5lmbfzHj2upkfaQA\",\"schema\":\"hodlxxi.social_device_request_recipient_self_read_effect.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+      "effectId": "fa60bd26a5e817cb76a9301c22318d866e0ac24acc80a25663fc5e207b9f5810",
+      "effectIdPreimage": "{\"approverFullProofId\":null,\"authorityEpoch\":2,\"challengeId\":\"5656565656565656565656565656565656565656565656565656565656565656\",\"challengeKind\":\"device-request-v1\",\"contextDigest\":\"hodlxxi-social-device-verification-context-v1-sha256:2f42a871279e158931c65e0333ee3e6aad4b71388931f0a268a1188b002f6396\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"fullProofId\":\"hodlxxi-full-entitlement-v1-sha256:abababababababababababababababababababababababababababababababab\",\"inputDigest\":\"hodlxxi-social-device-verification-input-v1-sha256:f9a1fd51a714aac09b1cc008f3b47120677d8b6467e05ebdaf0f27c8ebe3c388\",\"lockedDeadlineMs\":1788906659000,\"operation\":\"recipient-self-read\",\"schema\":\"hodlxxi.social_device_request_effect_id_preimage.v1\",\"statementAttemptId\":\"9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b\",\"statementTokenId\":\"c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+      "observedAt": 1788906600000,
+      "preparedProjection": {
+        "approverFullProofId": null,
+        "authorityEpoch": 2,
+        "challengeId": "5656565656565656565656565656565656565656565656565656565656565656",
+        "challengeKind": "device-request-v1",
+        "contextDigest": "hodlxxi-social-device-verification-context-v1-sha256:2f42a871279e158931c65e0333ee3e6aad4b71388931f0a268a1188b002f6396",
+        "deviceId": "2222222222222222222222222222222222222222222222222222222222222222",
+        "effectDigest": "a86ec7c8ff24d108f8e607f82374f811ab76b228da7bfb51aa159c2830006652",
+        "effectId": "fa60bd26a5e817cb76a9301c22318d866e0ac24acc80a25663fc5e207b9f5810",
+        "fullProofId": "hodlxxi-full-entitlement-v1-sha256:abababababababababababababababababababababababababababababababab",
+        "inputDigest": "hodlxxi-social-device-verification-input-v1-sha256:f9a1fd51a714aac09b1cc008f3b47120677d8b6467e05ebdaf0f27c8ebe3c388",
+        "lockedDeadlineMs": 1788906659000,
+        "operation": "recipient-self-read",
+        "promisedEffect": {
+          "actualRequestWire": "{\"audience\":\"https://social.example\",\"bindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"bindingVersion\":1,\"bodyDigest\":\"hodlxxi-social-device-request-body-v1-sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"method\":\"POST\",\"operation\":\"recipient-self-read\",\"path\":\"/messaging/v1/recipient-self-read\",\"recipientHandle\":\"d_PKfXNG5lmbfzHj2upkfaQA\",\"schema\":\"hodlxxi.social_messaging_device_request_candidate.v1\",\"sessionBinding\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+          "associationId": "8888888888888888888888888888888888888888888888888888888888888888",
+          "associationVersion": 1,
+          "authorityEpoch": 2,
+          "bindingId": "6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d",
+          "bindingVersion": 1,
+          "bodyDigest": "hodlxxi-social-device-request-body-v1-sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+          "challengeId": "5656565656565656565656565656565656565656565656565656565656565656",
+          "challengeKind": "device-request-v1",
+          "contextDigest": "hodlxxi-social-device-verification-context-v1-sha256:2f42a871279e158931c65e0333ee3e6aad4b71388931f0a268a1188b002f6396",
+          "deviceId": "2222222222222222222222222222222222222222222222222222222222222222",
+          "fullProofId": "hodlxxi-full-entitlement-v1-sha256:abababababababababababababababababababababababababababababababab",
+          "lockedDeadlineMs": 1788906659000,
+          "operation": "recipient-self-read",
+          "recipientHandle": "d_PKfXNG5lmbfzHj2upkfaQA",
+          "schema": "hodlxxi.social_device_request_recipient_self_read_effect.v1",
+          "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+          "version": 1
+        },
+        "receiptId": "88391eac3ef08bb2279a0824704889239d0edd04896c407f088ec8898f3fb03a",
+        "schema": "hodlxxi.social_device_request_prepared_effect.v1",
+        "statementAttemptId": "9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b",
+        "statementTokenId": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+        "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        "version": 1
+      },
+      "preparedProjectionWire": "{\"approverFullProofId\":null,\"authorityEpoch\":2,\"challengeId\":\"5656565656565656565656565656565656565656565656565656565656565656\",\"challengeKind\":\"device-request-v1\",\"contextDigest\":\"hodlxxi-social-device-verification-context-v1-sha256:2f42a871279e158931c65e0333ee3e6aad4b71388931f0a268a1188b002f6396\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"effectDigest\":\"a86ec7c8ff24d108f8e607f82374f811ab76b228da7bfb51aa159c2830006652\",\"effectId\":\"fa60bd26a5e817cb76a9301c22318d866e0ac24acc80a25663fc5e207b9f5810\",\"fullProofId\":\"hodlxxi-full-entitlement-v1-sha256:abababababababababababababababababababababababababababababababab\",\"inputDigest\":\"hodlxxi-social-device-verification-input-v1-sha256:f9a1fd51a714aac09b1cc008f3b47120677d8b6467e05ebdaf0f27c8ebe3c388\",\"lockedDeadlineMs\":1788906659000,\"operation\":\"recipient-self-read\",\"promisedEffect\":{\"actualRequestWire\":\"{\\\"audience\\\":\\\"https://social.example\\\",\\\"bindingId\\\":\\\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\\\",\\\"bindingVersion\\\":1,\\\"bodyDigest\\\":\\\"hodlxxi-social-device-request-body-v1-sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2\\\",\\\"deviceId\\\":\\\"2222222222222222222222222222222222222222222222222222222222222222\\\",\\\"method\\\":\\\"POST\\\",\\\"operation\\\":\\\"recipient-self-read\\\",\\\"path\\\":\\\"/messaging/v1/recipient-self-read\\\",\\\"recipientHandle\\\":\\\"d_PKfXNG5lmbfzHj2upkfaQA\\\",\\\"schema\\\":\\\"hodlxxi.social_messaging_device_request_candidate.v1\\\",\\\"sessionBinding\\\":\\\"4444444444444444444444444444444444444444444444444444444444444444\\\",\\\"subject\\\":\\\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\\\",\\\"version\\\":1}\",\"associationId\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"associationVersion\":1,\"authorityEpoch\":2,\"bindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"bindingVersion\":1,\"bodyDigest\":\"hodlxxi-social-device-request-body-v1-sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2\",\"challengeId\":\"5656565656565656565656565656565656565656565656565656565656565656\",\"challengeKind\":\"device-request-v1\",\"contextDigest\":\"hodlxxi-social-device-verification-context-v1-sha256:2f42a871279e158931c65e0333ee3e6aad4b71388931f0a268a1188b002f6396\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"fullProofId\":\"hodlxxi-full-entitlement-v1-sha256:abababababababababababababababababababababababababababababababab\",\"lockedDeadlineMs\":1788906659000,\"operation\":\"recipient-self-read\",\"recipientHandle\":\"d_PKfXNG5lmbfzHj2upkfaQA\",\"schema\":\"hodlxxi.social_device_request_recipient_self_read_effect.v1\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1},\"receiptId\":\"88391eac3ef08bb2279a0824704889239d0edd04896c407f088ec8898f3fb03a\",\"schema\":\"hodlxxi.social_device_request_prepared_effect.v1\",\"statementAttemptId\":\"9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b\",\"statementTokenId\":\"c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+      "receiptId": "88391eac3ef08bb2279a0824704889239d0edd04896c407f088ec8898f3fb03a",
+      "receiptIdPreimage": "{\"approverFullProofId\":null,\"authorityEpoch\":2,\"challengeId\":\"5656565656565656565656565656565656565656565656565656565656565656\",\"challengeKind\":\"device-request-v1\",\"contextDigest\":\"hodlxxi-social-device-verification-context-v1-sha256:2f42a871279e158931c65e0333ee3e6aad4b71388931f0a268a1188b002f6396\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"effectDigest\":\"a86ec7c8ff24d108f8e607f82374f811ab76b228da7bfb51aa159c2830006652\",\"effectId\":\"fa60bd26a5e817cb76a9301c22318d866e0ac24acc80a25663fc5e207b9f5810\",\"fullProofId\":\"hodlxxi-full-entitlement-v1-sha256:abababababababababababababababababababababababababababababababab\",\"inputDigest\":\"hodlxxi-social-device-verification-input-v1-sha256:f9a1fd51a714aac09b1cc008f3b47120677d8b6467e05ebdaf0f27c8ebe3c388\",\"lockedDeadlineMs\":1788906659000,\"operation\":\"recipient-self-read\",\"schema\":\"hodlxxi.social_device_request_receipt_id_preimage.v1\",\"statementAttemptId\":\"9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b\",\"statementTokenId\":\"c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+      "sourceVector": "recipientSelfRead",
+      "statementFacts": {
+        "attempt_id": "9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b",
+        "audience": "https://ubid.example/internal/v1/social/device-admission/consume",
+        "challenge_id": "5656565656565656565656565656565656565656565656565656565656565656",
+        "challenge_kind": "device-request-v1",
+        "client_id": "social-device-admission-client-v1",
+        "context_digest": "hodlxxi-social-device-verification-context-v1-sha256:2f42a871279e158931c65e0333ee3e6aad4b71388931f0a268a1188b002f6396",
+        "expires_at": 1788906609000,
+        "input_digest": "hodlxxi-social-device-verification-input-v1-sha256:f9a1fd51a714aac09b1cc008f3b47120677d8b6467e05ebdaf0f27c8ebe3c388",
+        "issued_at": 1788906600000,
+        "issuer": "https://social.example",
+        "key_fingerprint": "sha256:569df6a856bb51a38cabd7fca78160ad847ac3ba433af226a1810f1f351a9cce",
+        "key_id": "social-device-verifier-rs256-v1",
+        "purpose": "social_device_cryptographic_verification_v1",
+        "result": "strict-ed25519-valid",
+        "service_principal": "social-device-verifier-v1",
+        "token_id": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+      }
+    }
+  },
+  "version": 1
+}

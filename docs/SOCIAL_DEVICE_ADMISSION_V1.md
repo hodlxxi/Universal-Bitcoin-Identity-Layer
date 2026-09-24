@@ -5,13 +5,15 @@ challenge store, Ed25519 association store, transaction-bound current
 authority, pure enrollment transition-authority/effect-identity contract,
 transaction-bound enrollment transition-authority adapter, immutable enrollment
 receipt storage, narrow challenge-consumption primitive and enrollment-only
-atomic owner; final admission remains denied**. The source defines canonical bytes,
-ownership, state vocabulary, typed future ports and an explicitly injected,
-disabled-by-default public trust registration. The challenge store adds a
-model, SQL migration and transaction-bound database adapter. The Ed25519
-association store adds a separate model and additive migration. There is no route,
-blueprint, factory/config import, key provisioning, socket client, service
-credential or runtime activation. Migration source is not migration application.
+atomic owner, and pure device-request effect/receipt identity; final admission
+remains denied**. The source defines canonical bytes, ownership, state
+vocabulary, typed future ports and an explicitly injected, disabled-by-default
+public trust registration. The challenge store adds a model, SQL migration and
+transaction-bound database adapter. The Ed25519 association store adds a
+separate model and additive migration. Request effect/receipt identity remains
+pure and has no storage or execution owner. There is no route, blueprint,
+factory/config import, key provisioning, socket client, service credential or
+runtime activation. Migration source is not migration application.
 
 ## Architecture selection
 
@@ -272,6 +274,151 @@ already-current context and cannot be used as proof that the proposed
 successor epoch is current. The enrollment-specific authority instead records
 both locked `preEffectAuthorityEpoch` and lifecycle-derived
 `proposedAuthorityEpoch` without changing the existing type.
+
+## Device-request effect and receipt identity (pure prerequisite)
+
+`app/services/social_device_request_operation_effect.py` freezes the pure
+identity contract for the two exact `device-request-v1` operations:
+`ciphertext-submit` and `recipient-self-read`. It accepts only an exact parsed
+`VerificationInputV1`, the concrete
+`AuthenticatedSocialDeviceVerificationStatementV1` returned by the strict RSA
+verifier, the existing `CurrentAdmissionAuthorityV1`, and an explicit
+observation time used only for exclusive freshness checks. It reparses the
+existing admission wires and does not define an alternate request parser. The
+older generic `AuthenticatedVerificationStatementV1` Protocol placeholder and
+shape-inspection results are not accepted as authenticated authority.
+
+Success returns a closed, frozen
+`PreparedDeviceRequestOperationEffectV1`. Its common typed fields retain the
+exact challenge, operation, subject/device, X25519 binding generation, current
+Ed25519 association generation, context/input digests, authority epoch, locked
+deadline, current Full proof identity, null request approver proof, statement
+JTI and statement attempt. Its promised effect is one of two distinct concrete
+types, so submit routing facts cannot be substituted for self-read facts. A
+separate helper returns the existing three-field `PreparedAdmissionEffectV1`
+only as an interface projection; that generic shape does not supply or grant
+the request identity semantics.
+
+The exact one-shot operation identity preimage is compact sorted-key printable
+ASCII JSON with schema
+`hodlxxi.social_device_request_effect_id_preimage.v1`, version 1, and exactly:
+
+```text
+approverFullProofId = null
+authorityEpoch
+challengeId, challengeKind = device-request-v1
+contextDigest, deviceId, fullProofId, inputDigest, lockedDeadlineMs
+operation = ciphertext-submit | recipient-self-read
+statementAttemptId, statementTokenId, subject
+schema, version
+```
+
+The JTI is the authenticated statement identity, while the independently
+bound statement attempt, context and input prevent cross-attempt,
+cross-context and cross-input substitution. The context digest binds the exact
+current association and all other frozen context identities. The input digest
+binds the exact proof, actual request and operation-specific routing
+nullability. The identifier is lowercase hexadecimal:
+
+```text
+effect_id = SHA256(
+  ASCII("HODLXXI_SOCIAL_DEVICE_REQUEST_EFFECT_ID_V1")
+  || NUL
+  || ASCII(effectIdPreimage)
+)
+```
+
+The operation-effect digest is independently domain-separated and commits to
+the exact effect facts already available before execution. Both operation
+preimages contain the exact `actualRequestWire`, body digest, challenge,
+subject/device, X25519 binding generation, current Ed25519 association
+generation, context digest, authority epoch, locked deadline and current Full
+proof identity. They do not contain an observation or completion time.
+
+For `ciphertext-submit`, the preimage schema is
+`hodlxxi.social_device_request_ciphertext_submit_effect.v1`. It additionally
+contains the exact `routingRequestWire`, message ID, envelope digest, recipient
+package snapshot ID and complete sorted unique recipient-device-handle array.
+The actual request has a null recipient handle. These are request-time promises
+only: there is no routing decision, resolved destination, work ID, ciphertext
+storage or delivery claim.
+
+For `recipient-self-read`, the preimage schema is
+`hodlxxi.social_device_request_recipient_self_read_effect.v1`. It additionally
+contains the exact recipient handle from the actual request, and has no routing
+request fields. The handle remains related to the exact current request
+authority through the common subject/device, binding, association, context and
+epoch fields. It is not resolved here. No inbox item, cursor, page, message
+list, ownership inference or storage result is selected or invented.
+
+For either operation:
+
+```text
+effect_digest = SHA256(
+  ASCII("HODLXXI_SOCIAL_DEVICE_REQUEST_EFFECT_DIGEST_V1")
+  || NUL
+  || ASCII(operationSpecificEffectPreimage)
+)
+```
+
+Future durable routing or self-read owners must refine these promises with the
+real authoritative decision/effect evidence that is unavailable today. They
+must not reinterpret the prepared digest as proof that routing, resolution,
+storage, selection or delivery occurred.
+
+The future immutable request receipt identity has its own compact sorted-key
+ASCII preimage with schema
+`hodlxxi.social_device_request_receipt_id_preimage.v1`, version 1, and exactly:
+
+```text
+approverFullProofId = null
+authorityEpoch
+challengeId, challengeKind, contextDigest, deviceId
+effectDigest, effectId
+fullProofId, inputDigest, lockedDeadlineMs, operation
+statementAttemptId, statementTokenId, subject
+schema, version
+```
+
+Its lowercase hexadecimal identity is:
+
+```text
+receipt_id = SHA256(
+  ASCII("HODLXXI_SOCIAL_DEVICE_REQUEST_RECEIPT_ID_V1")
+  || NUL
+  || ASCII(receiptIdPreimage)
+)
+```
+
+`decidedAt` is deliberately absent, as are randomness, sequence numbers and
+mutable post-effect state. This helper does not construct the existing
+`AdmissionReceiptV1`, whose `status=committed` and `decidedAt` belong only to a
+future durable decision after the real effect and request atomicity invariants
+exist.
+
+All three request domains are distinct from one another and from the enrollment
+domains. An input digest, body digest, envelope digest, routing snapshot ID,
+challenge ID, statement JTI, effect ID, effect digest and receipt ID retain
+separate meanings and cannot be relabeled as one another. The canonical
+non-authoritative prepared projection uses schema
+`hodlxxi.social_device_request_prepared_effect.v1` and embeds the exact
+operation-specific promised-effect object.
+
+This module performs no I/O and has no database, Redis, network, socket,
+environment, credential, clock, route, factory, challenge creation/consumption,
+recipient resolution, routing execution, receipt insertion or final-admission
+capability. `CurrentAdmissionAuthorityV1` remains the pre-effect request
+authority; no request transition authority, epoch advancement or successor is
+introduced. Existing enrollment domains, bytes, fixtures and behavior are
+unchanged.
+
+Fixed valid, mutation, rejection, domain-separation and exact projection
+vectors are in
+`tests/fixtures/social_device_request_operation_effect_v1.json`. Durable
+request execution remains blocked. The next durable prerequisite requires a
+new additive migration for request effects, immutable request receipts,
+request-specific challenge consumption and deferred atomic completeness. The
+merged enrollment migration remains unchanged and no migration is added here.
 
 ## Enrollment transition authority and effect identity (pure prerequisite)
 
@@ -1044,6 +1191,12 @@ exact context/input bytes and digests, canonical protected header/payload,
 compact synthetic RS256 JWS, commands, responses and receipt shapes. It also
 contains negative canonical/boundary cases.
 
+`tests/fixtures/social_device_request_operation_effect_v1.json` separately
+freezes the pure request effect-ID, operation-effect-digest and future receipt-ID
+preimages and identities for both request operations. It also freezes exact
+prepared projections and adversarial field mutation/rejection cases while
+pinning the unchanged admission and Phase 3 routing fixture hashes.
+
 The synthetic 2,048-bit RSA key was generated offline in memory only to sign
 the fixed test bytes. No private key was serialized or retained. The fixture
 contains only its public JWK and SPKI PEM. The public SPKI fingerprint is:
@@ -1066,10 +1219,12 @@ fixed synthetic vectors remain unchanged and tests require no Social checkout.
 ## Activation blockers and non-claims
 
 Future work must separately provide and test active trust provisioning and
-invalidation, routing/request-effect ownership, internal
-routes, purpose-bound Unix-socket client, quotas, credentials and explicit
-factory composition. Migration application, credential provisioning, socket
-exposure, runtime activation and deployment require separate authorization.
+invalidation, durable routing/request-effect refinement and ownership, request
+receipt storage and atomic challenge consumption under a new additive
+migration, internal routes, purpose-bound Unix-socket client, quotas,
+credentials and explicit factory composition. Migration application,
+credential provisioning, socket exposure, runtime activation and deployment
+require separate authorization.
 
 There is no participant or device private-key custody in UBID or Social server
 storage. A future dedicated Social infrastructure statement-signing key is a
