@@ -4,8 +4,8 @@ Status: **dormant contracts, authenticated statement verifier, immutable
 challenge store, Ed25519 association store, transaction-bound current
 authority, pure enrollment transition-authority/effect-identity contract,
 transaction-bound enrollment transition-authority adapter, immutable enrollment
-receipt storage and narrow challenge-consumption primitive; final admission
-remains denied**. The source defines canonical bytes,
+receipt storage, narrow challenge-consumption primitive and enrollment-only
+atomic owner; final admission remains denied**. The source defines canonical bytes,
 ownership, state vocabulary, typed future ports and an explicitly injected,
 disabled-by-default public trust registration. The challenge store adds a
 model, SQL migration and transaction-bound database adapter. The Ed25519
@@ -22,8 +22,9 @@ admission. Immutable challenge persistence, provisional current-authority
 evaluation and locked pre-effect enrollment transition authority are
 implemented below. Durable receipt insertion and enrollment-only challenge
 consumption are separate transaction-bound primitives with commit-time database
-invariants. The high-level atomic owner, effect execution composition and final
-admission remain future work.
+invariants. The dormant high-level owner now composes those primitives for the
+exact `enrollment-activate` operation. Generic request-effect ownership,
+runtime activation and final admission remain future work.
 
 Social is the cryptographic attestor. It owns strict Ed25519
 verification and Enrollment V2 Ed25519 plus Nostr approval verification. The
@@ -82,6 +83,12 @@ atomic owner = ubid_selected_not_implemented
 No API accepts a caller-provided verification boolean. There is no generic
 admission method or reusable admission token. A receipt is immutable history
 and has neither bearer nor re-execution authority.
+
+This generic shape inspection remains unchanged because it covers all three
+admission operations and does not execute the enrollment owner. The
+enrollment-specific owner described below separately reports its dormant,
+caller-commit-required status; it does not upgrade this inspection or either
+device-request operation to implemented admission.
 
 ## Session binding prerequisite (pure source contract)
 
@@ -381,7 +388,7 @@ material or mutable post-effect database state. `PreparedAdmissionEffectV1`
 will contain operation `enrollment-activate` and these two values. Here,
 prepared means only that this exact effect is deterministically described and
 authorized against locked pre-effect state; it does not claim execution or
-commit. The future atomic owner must still compose operation mutation,
+commit. The enrollment atomic owner below composes operation mutation,
 immutable receipt and issued-to-consumed challenge transition in one
 caller-owned transaction. Fixed authority, ID, digest, mutation and rejection
 vectors are in
@@ -400,10 +407,11 @@ or replaces a transaction.
 The deterministic lock order is the exact challenge row first; the existing
 Current-Full/User, OAuth/browser/Session/Social issuance and X25519 order from
 the current-authority adapter next; and the Ed25519 pair advisory, chain and
-complete event-history order last. This permits a future consuming owner to
-retain the same first lock without reversing any existing authority-owner
-edge. Every locked owner is re-read and validated with the caller's explicit
-integer epoch-millisecond `observed_at`. PostgreSQL READ COMMITTED, physical
+complete event-history order last. This permits the enrollment consuming
+owner to retain the same first lock without reversing any existing
+authority-owner edge. Every locked owner is re-read and validated with the
+caller's explicit integer epoch-millisecond `observed_at`. PostgreSQL READ
+COMMITTED, physical
 transaction, connection and savepoint identity checks remain in force.
 
 The challenge must still be `issued`, byte-identical to the verification
@@ -469,7 +477,7 @@ Deferred constraint triggers on each newly inserted Ed25519 creation event,
 each receipt and each consumed challenge require the final transaction state
 to contain all three matching records. They compare the challenge/context,
 association generation, subject/device chain, predecessor, pre-effect epoch,
-effect identities and exact authority evidence. Thus the future owner can use
+effect identities and exact authority evidence. Thus the enrollment owner uses
 the established lock order and one caller-owned transaction in the logical
 order effect, receipt, consume, commit; an effect-only, receipt-only,
 consume-only or other incomplete subset cannot commit. Existing association
@@ -479,8 +487,73 @@ Both adapters require an already-active caller-owned PostgreSQL READ COMMITTED
 transaction. They have no session factory, URL or ambient clock and never
 begin, commit, roll back, close or replace the transaction. SQLite remains
 metadata compatibility only and grants no durable authority. These primitives
-are dormant: they do not compose the three mutations, execute an effect, add a
-route, wire runtime or grant final admission.
+remain independently dormant and do not themselves compose the three
+mutations. The enrollment-only owner below performs that composition without
+adding a route, wiring runtime or granting final admission.
+
+## Enrollment activation atomic owner
+
+`app/services/social_enrollment_atomic_owner.py` implements the single dormant
+PostgreSQL owner for the exact `enrollment-activate` operation. It accepts one
+already-active caller-owned READ COMMITTED SQLAlchemy transaction and the same
+server-resolved device issuance and desktop approver selectors required by the
+transition-authority adapter. Construction fails closed for SQLite, every
+other non-PostgreSQL path, a missing transaction, missing database guards or a
+replaced physical transaction, connection or savepoint.
+
+`execute_enrollment_activate()` is one-shot. It accepts the exact parsed
+verification input, authenticated Social statement, explicit authority
+observation time and a later explicit decision time. The decision time must be
+at least the authority observation and earlier than the locked authority
+deadline. The association adapter rechecks enrollment and statement deadlines
+at that later decision time; challenge consumption then resamples the same
+explicit decision time under its exclusive zero-skew rule.
+
+The owner preserves the established lock and mutation order:
+
+1. lock the exact issued challenge, then all non-Ed25519 and Ed25519 pre-effect
+   authority through
+   `SqlAlchemyTransactionBoundEnrollmentTransitionAuthority`;
+2. derive the existing deterministic `PreparedAdmissionEffectV1`;
+3. execute exactly one lifecycle method selected by the locked transition:
+   `establish_initial`, `rotate` with the exact predecessor and pre-effect
+   epoch, or `reenroll` with the exact revoked predecessor and epoch;
+4. compare the returned association's subject, device, key, ID, version,
+   predecessor, epoch and active state with every proposed authority field;
+5. insert the existing deterministic immutable enrollment receipt and compare
+   its effect and association evidence;
+6. transition that same challenge from `issued` to `consumed` through
+   `record_enrollment_consumed()`.
+
+There is no fourth transition and no duplicated receipt, effect, association
+or challenge identity implementation. Re-locking the already-held Ed25519 pair
+and challenge uses the same order and transaction; it introduces no reverse
+lock edge. The deferred migration constraints remain the final database check
+that effect, receipt and consumption are all present and byte-matched at the
+caller's commit.
+
+Success returns only frozen `ProvisionalEnrollmentActivationV1`, containing
+the exact typed authority, prepared effect, active association, stored receipt
+and consumed challenge. Its publication status is
+`provisional_until_caller_commit`; neither the receipt's historical
+`status=committed` wire nor the returned Python value claims that the caller
+has committed. Only caller commit makes the three mutations durable. Caller
+rollback removes all three, and commit-time invariant failure rejects the
+transaction.
+
+The owner never begins, commits, rolls back, closes or replaces a transaction.
+It has no session factory, connection URL, environment lookup or clock. Any
+authority, storage, returned-evidence, deadline, replay, uniqueness, deadlock
+or lock-timeout failure is mapped to one non-sensitive owner failure and
+poisons that one-shot instance. The caller must propagate the failure and roll
+back the entire transaction. Recovery reads remain non-bearer history and
+cannot authorize replay or re-execution.
+
+This source is enrollment-specific and dormant. It does not implement either
+device-request effect, generic device admission, final admission, an HTTP or
+Unix-socket route, Social verifier transport, factory composition, feature
+flags, migration application or deployment. The existing 2026-09-23 migration
+is sufficient; this owner adds no schema.
 
 ## Verification context
 
@@ -526,10 +599,11 @@ SHA256(
 
 `app/services/social_messaging_device_ed25519_association_lifecycle.py`
 defines a dormant, immutable event sequence for one exact `(subject, deviceId)`
-association chain. Events are candidate evidence: a future atomic owner must
-authenticate enrollment and load the complete locked history before replay or
-current-authority comparison. This source does not consume a challenge, store
-an association, admit a device or invalidate an outstanding challenge.
+association chain. Events are candidate evidence: the enrollment atomic owner
+must authenticate enrollment and load the complete locked history before
+replay or current-authority comparison. This source does not consume a
+challenge, store an association, admit a device or invalidate an outstanding
+challenge.
 
 `associationId` identifies one concrete Ed25519 association generation. It is
 the lowercase hexadecimal SHA-256 of ASCII
@@ -724,9 +798,9 @@ the exact protected-header `kid`; there is no fallback to another key.
 
 The verifier invokes the existing canonical statement/context/input inspector
 with exact configured expectations and caller-supplied epoch-millisecond time
-and deadlines. The future atomic owner must supply the expected wires and
-deadlines from authoritative state. Enrollment requires an approver-session
-deadline; device requests require none. All deadlines remain exclusive with
+and deadlines. The enrollment owner's authenticated caller must supply the
+expected wires and deadlines from authoritative state. Enrollment requires an
+approver-session deadline; device requests require none. All deadlines remain exclusive with
 zero skew. The statement must also fit inside the exact embedded challenge's
 issued-at/expiry interval, even if an injected challenge deadline is later.
 
@@ -846,10 +920,10 @@ has separate terminal methods: consumed transition recording requires an
 `AdmissionReceiptV1`, while cancelled/expired/invalidated terminal recording
 has no receipt parameter and cannot accept one.
 
-The future owner must deny and roll back the whole transaction on deadlock or
-lock timeout. A known rollback commits no effect, receipt or challenge
-consumption. Commit is the future durable publication point. An uncertain
-commit must be reconciled from immutable history and must never be treated as
+The enrollment owner denies on deadlock or lock timeout, and the caller must
+roll back the whole transaction. A known rollback commits no effect, receipt
+or challenge consumption. Caller commit is the durable publication point. An
+uncertain commit must be reconciled from immutable history and must never be treated as
 a known rollback or re-executed. Deadline checks are exclusive and must be
 sampled again after waits.
 
@@ -945,9 +1019,9 @@ catching a failure and attempting unrelated work.
 `FOR UPDATE` in the injected transaction, retaining the lock until the caller
 completes it. It reads current database columns even if an ORM object or an
 earlier read is cached. It returns any stored state, never skips locked rows,
-and is not a successful consumption capability. The future owner must require
-`issued`, resample exclusive deadlines after waits, authenticate the exact
-Social statement and recheck current authority. The enrollment-only method
+and is not a successful consumption capability. The enrollment owner requires
+`issued`, resamples exclusive deadlines after waits, authenticates the exact
+Social statement and rechecks current authority. The enrollment-only method
 then records consumption after the caller has provisionally executed the exact
 association effect and inserted its receipt in this same transaction. No
 second independent transaction is hidden behind either operation. The generic
@@ -992,8 +1066,7 @@ fixed synthetic vectors remain unchanged and tests require no Social checkout.
 ## Activation blockers and non-claims
 
 Future work must separately provide and test active trust provisioning and
-invalidation, atomic enrollment effect/receipt/consumption ownership,
-routing/effect ownership, internal
+invalidation, routing/request-effect ownership, internal
 routes, purpose-bound Unix-socket client, quotas, credentials and explicit
 factory composition. Migration application, credential provisioning, socket
 exposure, runtime activation and deployment require separate authorization.
