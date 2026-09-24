@@ -538,6 +538,7 @@ def test_no_io_at_import_no_runtime_dependency_no_admission_api():
         "sqlalchemy.sql.expression",
         "app.models",
         "app.services",
+        "app.services.social_messaging_device_proof_profile",
     }
     with (
         patch("socket.socket", side_effect=AssertionError("I/O forbidden")),
@@ -561,11 +562,17 @@ def test_no_io_at_import_no_runtime_dependency_no_admission_api():
     for path in ROOT.joinpath("app").rglob("*.py"):
         if path != Path(storage.__file__) and "social_device_challenge_store" in path.read_text():
             consumers.append(path.relative_to(ROOT).as_posix())
-    assert consumers == ["app/services/social_enrollment_transition_authority_storage.py"]
+    assert sorted(consumers) == [
+        "app/services/social_enrollment_receipt_storage.py",
+        "app/services/social_enrollment_transition_authority_storage.py",
+    ]
     assert storage.FINAL_ADMISSION == "denied"
-    assert storage.CHALLENGE_CONSUMPTION == storage.OPERATION_EFFECT == storage.RECEIPT_ISSUANCE == "not_implemented"
+    assert storage.CHALLENGE_CONSUMPTION == "transaction_bound_enrollment_only"
+    assert storage.OPERATION_EFFECT == "not_implemented"
+    assert storage.RECEIPT_ISSUANCE == "separate_transaction_bound_primitive"
     assert not any(name in source for name in ("authorized=True", "verified=True", "admitted=True"))
     methods = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    assert "record_enrollment_consumed" in methods
     assert not methods & {"consume", "admit", "issue_receipt", "record_consumed_challenge_transition"}
 
 

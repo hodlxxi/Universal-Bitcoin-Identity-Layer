@@ -2,8 +2,9 @@
 
 Status: **dormant contracts, authenticated statement verifier, immutable
 challenge store, Ed25519 association store, transaction-bound current
-authority, pure enrollment transition-authority/effect-identity contract, and
-transaction-bound enrollment transition-authority adapter; final admission
+authority, pure enrollment transition-authority/effect-identity contract,
+transaction-bound enrollment transition-authority adapter, immutable enrollment
+receipt storage and narrow challenge-consumption primitive; final admission
 remains denied**. The source defines canonical bytes,
 ownership, state vocabulary, typed future ports and an explicitly injected,
 disabled-by-default public trust registration. The challenge store adds a
@@ -19,8 +20,10 @@ atomic single-use consumption, Ed25519 association lifecycle,
 rotation/revocation invalidation, exact operation effects and final device
 admission. Immutable challenge persistence, provisional current-authority
 evaluation and locked pre-effect enrollment transition authority are
-implemented below; challenge consumption, effect execution and final admission
-remain future work.
+implemented below. Durable receipt insertion and enrollment-only challenge
+consumption are separate transaction-bound primitives with commit-time database
+invariants. The high-level atomic owner, effect execution composition and final
+admission remain future work.
 
 Social is the cryptographic attestor. It owns strict Ed25519
 verification and Enrollment V2 Ed25519 plus Nostr approval verification. The
@@ -419,6 +422,65 @@ adapter inserts no association event, changes no challenge state, creates no
 receipt and executes no effect. It rejects SQLite and other non-PostgreSQL
 backends. It adds no schema or migration, route, factory composition, socket
 surface or runtime activation. Final admission remains denied.
+
+## Enrollment receipt identity, storage and challenge consumption prerequisite
+
+`app/services/social_enrollment_receipt_storage.py` freezes the deterministic
+identity of a durable `enrollment-activate` receipt. Its compact sorted-key
+ASCII preimage has schema
+`hodlxxi.social_enrollment_receipt_id_preimage.v1`, version 1, and exactly
+`challengeId`, `effectDigest`, `effectId`, `operation`, `schema`, `version`.
+The lowercase hexadecimal identity is:
+
+```text
+receipt_id = SHA256(
+  ASCII("HODLXXI_SOCIAL_ENROLLMENT_RECEIPT_ID_V1")
+  || NUL
+  || ASCII(receiptIdPreimage)
+)
+```
+
+`decidedAt` is deliberately excluded. Recovery after an uncertain commit
+therefore derives the same identity from the authenticated operation instance
+and exact promised transition. There is no randomness, sequence, secret or
+mutable post-effect state. This enrollment-specific derivation does not change
+the existing generic `AdmissionReceiptV1` wire or its fixed public vectors.
+Independent receipt-identity vectors are in
+`tests/fixtures/social_enrollment_receipt_identity_v1.json`.
+
+The additive migration
+`migrations/2026-09-23_social_device_admission_receipt_consumption_v1.sql`
+creates one immutable receipt row per challenge, makes `effectId` single-use,
+and stores the exact canonical authority and receipt wires with indexed
+receipt, challenge, effect and proposed-association identities. Database
+guards recompute the frozen effect ID, effect digest, receipt ID and receipt
+wire. Update, deletion and truncation are denied. Reads return history with no
+bearer or re-execution authority.
+
+The same migration narrowly extends the existing challenge guard to permit
+only an enrollment `issued` to `consumed` transition without changing any
+challenge evidence. `record_enrollment_consumed()` re-locks the authoritative
+row, requires the exact typed transition authority and already-inserted
+matching receipt, resamples explicit exclusive zero-skew time, and compares
+the exact context, operation, challenge, proposed association and frozen
+digests. Other terminal semantics and all resurrection denials remain intact.
+
+Deferred constraint triggers on each newly inserted Ed25519 creation event,
+each receipt and each consumed challenge require the final transaction state
+to contain all three matching records. They compare the challenge/context,
+association generation, subject/device chain, predecessor, pre-effect epoch,
+effect identities and exact authority evidence. Thus the future owner can use
+the established lock order and one caller-owned transaction in the logical
+order effect, receipt, consume, commit; an effect-only, receipt-only,
+consume-only or other incomplete subset cannot commit. Existing association
+history predating this additive migration is retained without backfill.
+
+Both adapters require an already-active caller-owned PostgreSQL READ COMMITTED
+transaction. They have no session factory, URL or ambient clock and never
+begin, commit, roll back, close or replace the transaction. SQLite remains
+metadata compatibility only and grants no durable authority. These primitives
+are dormant: they do not compose the three mutations, execute an effect, add a
+route, wire runtime or grant final admission.
 
 ## Verification context
 
@@ -853,12 +915,12 @@ remain trusted infrastructure; arbitrary database-owner changes are not a
 cryptographic integrity boundary.
 
 Database triggers reject evidence replacement, deletion and truncation. Inserts
-must be `issued`. The schema permits only `issued` to `expired`, `invalidated`
-or `cancelled`, without any evidence change, and forbids terminal reopening.
-There is no adapter transition API. `consumed` is reserved vocabulary that the
-decoder can represent, but SQL insertion/transition to it is denied in this
-increment. A future atomic consumer must supply the receipt/effect integrity
-constraints and corresponding migration before enabling consumed transitions.
+must be `issued`. The original migration permits only `issued` to `expired`,
+`invalidated` or `cancelled`, without any evidence change, and forbids terminal
+reopening. Its bytes remain unchanged. The additive receipt/consumption
+migration replaces only the guard function semantics to add the narrow
+enrollment `issued` to `consumed` transition under the deferred receipt/effect
+invariant described above. No arbitrary state mutation is exposed.
 An expired challenge remains stored evidence; deadline inspection takes an
 explicit `now`, uses `issuedAt <= now < expiresAt` with zero skew and never
 changes timestamps or state. Creation/storage does not assert current validity.
@@ -885,11 +947,14 @@ completes it. It reads current database columns even if an ORM object or an
 earlier read is cached. It returns any stored state, never skips locked rows,
 and is not a successful consumption capability. The future owner must require
 `issued`, resample exclusive deadlines after waits, authenticate the exact
-Social statement, recheck current authority, and commit challenge transition,
-association/effect and receipt in this same transaction. No second independent
-transaction is hidden behind the read. The full future `ChallengeStorageOwner`
-protocol is intentionally not implemented because terminal recording remains
-absent. No network or Unix-socket attestation call occurs while holding a lock.
+Social statement and recheck current authority. The enrollment-only method
+then records consumption after the caller has provisionally executed the exact
+association effect and inserted its receipt in this same transaction. No
+second independent transaction is hidden behind either operation. The generic
+`ChallengeStorageOwner` protocol remains unimplemented because the adapter does
+not broaden consumption to other operations or add non-consumed terminal
+recording. No network or Unix-socket attestation call occurs while holding a
+lock.
 
 The guarded integration test accepts only an explicitly identified disposable
 PostgreSQL 16 target under a unique temporary directory, on a non-live loopback
@@ -927,8 +992,8 @@ fixed synthetic vectors remain unchanged and tests require no Social checkout.
 ## Activation blockers and non-claims
 
 Future work must separately provide and test active trust provisioning and
-invalidation, receipt schema and consumed-transition constraints, atomic
-enrollment effect/consumption ownership, routing/effect ownership, internal
+invalidation, atomic enrollment effect/receipt/consumption ownership,
+routing/effect ownership, internal
 routes, purpose-bound Unix-socket client, quotas, credentials and explicit
 factory composition. Migration application, credential provisioning, socket
 exposure, runtime activation and deployment require separate authorization.
