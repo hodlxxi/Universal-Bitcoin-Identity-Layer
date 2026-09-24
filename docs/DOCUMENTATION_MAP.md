@@ -119,9 +119,10 @@ These are useful for future development, staging, compatibility, and design inte
   Ed25519 association store, transaction-bound current-authority adapter and
   transaction-bound pre-effect enrollment transition-authority adapter,
   deterministic immutable enrollment receipt store, enrollment-only challenge
-  consumption primitive and deferred three-row commit invariant; UBID is
-  selected as the future atomic owner, but that owner, effect composition,
-  runtime wiring and final admission remain unimplemented
+  consumption primitive, deferred three-row commit invariant and dormant
+  transaction-bound UBID owner for the exact enrollment effect/receipt/consume
+  unit; generic request-effect ownership, runtime wiring and final admission
+  remain unimplemented
 - `docs/milestones/NIP17_SITE_LOCAL_MESSAGING_V0.md`
 - `docs/ops/NIP17_*.md`
 - `docs/ops/NIP59_*.md`
