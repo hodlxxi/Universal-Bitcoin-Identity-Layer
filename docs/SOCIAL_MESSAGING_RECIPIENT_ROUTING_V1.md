@@ -1,13 +1,16 @@
 # Social messaging recipient routing V1
 
-Status: dormant, source-only contract and PostgreSQL durability prerequisite.
-The additive source now includes a transaction-bound UBID repository adapter
-and migration for exact routing snapshots/routes, confidential pairwise-handle
-ownership and the message-ID decision ledger. The migration is not applied.
-There is no HTTP route, configuration, factory wiring, ciphertext persistence,
-self-read effect, request admission, receipt, challenge consumption,
-deployment or runtime activation. Social source and ciphertext formats are
-unchanged.
+Status: dormant, source-only contract and PostgreSQL durability prerequisites.
+The additive source includes a transaction-bound UBID repository adapter and
+migration for exact routing snapshots/routes, confidential pairwise-handle
+ownership and the message-ID decision ledger. A separate empty-by-default
+registry and transaction-bound read-only adapter can reconcile one explicitly
+ACTIVE alias namespace with the secret/version already loaded from trusted
+startup configuration. Neither migration is applied. There is no namespace
+provisioning or rotation owner, HTTP route, factory wiring, ciphertext
+persistence, self-read effect, request admission, receipt, challenge
+consumption, deployment or runtime activation. Social source and ciphertext
+formats are unchanged.
 
 ## Privacy and authority boundary
 
@@ -181,14 +184,67 @@ the durable adapter into that gate would not establish atomic current
 authority without changing the gate's semantics.
 
 The immutable handle-owner rows are historical routing evidence for exact
-snapshot and decision idempotence only. This adapter deliberately exposes no
-active namespace selection, current-handle resolution or self-read authority.
-Those operations remain blocked until a separate authoritative alias-namespace
-and lifecycle owner can require exactly one ACTIVE namespace/owner for the
-requested handle in the same caller-owned transaction. Rotation and an unknown
-namespace must deny. A future owner must not infer current state from the
-greatest alias version, snapshot expiry or other retained history, or
-unverified caller input.
+snapshot and decision idempotence only. They remain outside current namespace
+selection and cannot be queried as current-handle or self-read authority.
+
+`app/services/social_messaging_active_alias_namespace_storage.py` adds the
+narrow namespace reader. Its additive migration is
+`migrations/2026-09-24_social_messaging_active_alias_namespace_v1.sql`. The
+registry has no seed or backfill and stores only alias version, a
+domain-separated commitment to that version and secret, and the explicit
+`ACTIVE`/`RETIRED` lifecycle state. It never stores the alias secret. A partial
+unique index permits at most one `ACTIVE` row; the read requires exactly one.
+Rows can be inserted only as `ACTIVE`, can transition only once from `ACTIVE`
+to `RETIRED` without identity changes, and cannot be deleted or truncated.
+The source exposes no writer. Authorized provisioning and atomic rotation are
+still separate prerequisites.
+
+The exact commitment is a 112-character lowercase ASCII value:
+
+    "hodlxxi-social-active-alias-namespace-v1-sha256:" || lowercase_hex(
+      SHA256(
+        ASCII("HODLXXI_SOCIAL_ACTIVE_ALIAS_NAMESPACE_SECRET_COMMITMENT_V1") ||
+        0x00 || ASCII(canonical_decimal(alias_version)) || 0x00 ||
+        exact_alias_secret_file_bytes
+      )
+    )
+
+The configured version is an integer from 1 through 2,147,483,647. Secret
+bytes are 32 through 4,096 bytes and are not decoded, trimmed or otherwise
+normalized. The commitment is distinct from directory aliases, device handles,
+snapshot IDs and every request/effect/receipt digest.
+
+The privacy-directory runtime loads
+`PRIVACY_FULL_DIRECTORY_ALIAS_SECRET_FILE` and
+`PRIVACY_FULL_DIRECTORY_ALIAS_VERSION` once at startup. The recipient runtime
+reuses that exact privacy runtime and therefore the same secret object and
+version; it does not load an independent namespace. The reader receives that
+trusted configured pair at construction, immediately reduces the secret to
+the commitment, and retains no secret. In one caller-owned, already-active
+PostgreSQL READ COMMITTED transaction it executes `FOR UPDATE` over the
+explicitly `ACTIVE` set, requires exactly one returned row, and compares both
+the exact configured version and commitment. It pins the SQLAlchemy transaction,
+savepoint, physical connection and database transaction, requires autocommit
+off and the migration guards installed, and never begins, commits, rolls back,
+closes or replaces anything.
+
+This result is configuration/lifecycle reconciliation evidence valid only
+while that transaction retains the row lock. The column label is not authority
+by itself: a row is accepted only at the intersection of the guarded singleton
+registry and the independently loaded exact configuration. Missing, ambiguous,
+retired, stale-version, same-version/different-secret, malformed or replaced
+state denies through the one non-sensitive failure `social messaging active
+alias namespace unavailable`. Rotation waits behind an
+already locked reader; a reader waiting behind rotation re-evaluates the old
+row and denies rather than accepting stale configuration. No maximum version,
+snapshot age, historical owner row, caller-supplied version/secret or handle
+is a currentness selector.
+
+The reader deliberately exposes no provisioning, rotation, current-handle
+resolution or self-read authority. A future transaction owner must still
+compose this locked namespace evidence with a separately authoritative current
+binding/handle check for the requested handle. Rotation, an unknown namespace
+or a missing current owner must deny in that same transaction.
 
 This registry's decision proves only exact routing resolution against retained
 snapshot evidence. It is not ciphertext persistence, delivery, recipient read

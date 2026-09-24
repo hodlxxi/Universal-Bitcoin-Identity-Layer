@@ -5,8 +5,9 @@ challenge store, Ed25519 association store, transaction-bound current
 authority, pure enrollment transition-authority/effect-identity contract,
 transaction-bound enrollment transition-authority adapter, immutable enrollment
 receipt storage, narrow challenge-consumption primitive and enrollment-only
-atomic owner, and pure device-request effect/receipt identity; final admission
-remains denied**. The source defines canonical bytes, ownership, state
+atomic owner, pure device-request effect/receipt identity, and a read-only
+transaction-bound ACTIVE alias-namespace reconciliation prerequisite; final
+admission remains denied**. The source defines canonical bytes, ownership, state
 vocabulary, typed future ports and an explicitly injected, disabled-by-default
 public trust registration. The challenge store adds a model, SQL migration and
 transaction-bound database adapter. The Ed25519 association store adds a
@@ -424,9 +425,30 @@ not persist ciphertext, select a self-read page, refine either prepared request
 effect with real effect evidence, issue a request receipt or consume a request
 challenge. Its immutable handle owners retain historical snapshot/decision
 evidence only; they do not identify the active alias namespace or a current
-handle. Active namespace selection, current-handle resolution and self-read
-remain blocked until a separate authoritative lifecycle owner can require
-exactly one ACTIVE namespace/owner in the same caller-owned transaction.
+handle.
+
+The separate dormant
+`app/services/social_messaging_active_alias_namespace_storage.py` adapter and
+empty-by-default additive migration narrow that blocker without reinterpreting
+history. In a caller-owned PostgreSQL READ COMMITTED transaction the reader
+locks the explicitly `ACTIVE` namespace row, requires exactly one, and matches
+both its version and domain-separated secret commitment to the alias
+secret/version already loaded from trusted startup configuration. The
+recipient runtime reuses the privacy-directory runtime's exact configured
+secret and version; there is no second configuration source. The registry
+persists no secret, has no seed/backfill, and exposes no writer. A row is not
+authoritative merely because its state column says `ACTIVE`: only the guarded
+singleton row plus the independent exact configured pair can produce locked
+reconciliation evidence, valid while the transaction remains held. Missing,
+ambiguous, retired, stale-version, commitment-mismatched and post-rotation
+state deny. Highest version, row age, snapshot expiry, historical owner rows
+and caller input are never selectors.
+
+Provisioning and rotation still lack an authenticated lifecycle owner, and
+the reader does not resolve a requested handle to a current binding. Current-
+handle resolution and self-read therefore remain blocked until a future owner
+combines the locked namespace evidence with a separate authoritative current
+binding/handle check in the same transaction.
 The pure routing gate remains unwired because its authority ports are not the
 same locked transaction; a future request owner must supply that composition
 without network or Unix calls under database locks.
@@ -1238,10 +1260,11 @@ fixed synthetic vectors remain unchanged and tests require no Social checkout.
 ## Activation blockers and non-claims
 
 Future work must separately provide and test active trust provisioning and
-invalidation, transaction-bound ciphertext persistence, bounded self-read
-selection/effect ownership, durable request-effect refinement, request receipt
-storage and atomic challenge consumption under a new additive migration,
-internal routes, purpose-bound Unix-socket client, quotas,
+invalidation, authenticated alias-namespace provisioning/rotation, current
+binding/handle ownership, transaction-bound ciphertext persistence, bounded
+self-read selection/effect ownership, durable request-effect refinement,
+request receipt storage and atomic challenge consumption under a new additive
+migration, internal routes, purpose-bound Unix-socket client, quotas,
 credentials and explicit factory composition. Migration application,
 credential provisioning, socket exposure, runtime activation and deployment
 require separate authorization.
