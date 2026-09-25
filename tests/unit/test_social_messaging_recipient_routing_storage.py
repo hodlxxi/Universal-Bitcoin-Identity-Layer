@@ -362,6 +362,33 @@ def test_registry_exposes_no_current_handle_resolution():
     assert not hasattr(storage.SqlAlchemyRecipientRoutingRepository, "_read_handle_owner_for_current_authority")
 
 
+def test_locked_handle_owner_reader_returns_only_exact_immutable_history():
+    repo, session = repository()
+    snapshot = repo.retain_snapshot(valid_snapshot())
+    route = snapshot.routes[0]
+
+    owner = repo.lock_historical_handle_owner(route.device_handle)
+    assert owner == storage._RecipientHandleOwnerV1(
+        device_handle=route.device_handle,
+        viewer_subject=snapshot.viewer_subject,
+        recipient_subject=snapshot.recipient_subject,
+        alias_version=snapshot.alias_version,
+        device_id=route.device_id,
+        binding_id=route.binding_id,
+        binding_version=route.binding_version,
+    )
+    assert repo.lock_historical_handle_owner("d_" + "A" * 22) is None
+    owner_selects = [
+        statement
+        for statement, _parameters in session.statements
+        if isinstance(statement, Select)
+        and statement.get_final_froms()[0].name == storage.HANDLE_TABLE
+        and statement._for_update_arg is not None
+    ]
+    assert owner_selects
+    assert not hasattr(repo, "read_current_handle_owner")
+
+
 def test_unknown_snapshot_is_none_but_malformed_or_corrupt_history_denies():
     repo, session = repository()
     assert repo.read_snapshot("sha256:" + "ff" * 32) is None
