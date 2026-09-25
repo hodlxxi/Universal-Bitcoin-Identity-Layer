@@ -108,6 +108,13 @@ These are useful for future development, staging, compatibility, and design inte
   runtime/factory/internal-HTTP wiring for identity-authorized device-binding
   operations; kind 27236 is repository-local and never published; source
   presence is not runtime activation or deployment
+- `docs/SOCIAL_MESSAGING_RECIPIENT_ROUTING_V1.md` — dormant canonical
+  recipient-package routing plus a transaction-bound PostgreSQL snapshot,
+  complete route, confidential pairwise-handle owner and message-ID decision
+  registry; immutable handle owners are historical routing evidence only;
+  active namespace selection, current-handle resolution and self-read remain
+  blocked; no ciphertext persistence, request admission, receipt, challenge
+  consumption, factory wiring, migration application or activation
 - `docs/SOCIAL_MESSAGING_DEVICE_PROOF_PROFILE_V1.md` — dormant byte-identical
   Exact Messaging Device Proof Profile V1 and Enrollment V2 shape contracts;
   Social contains the current strict Ed25519 primitive, UBID never reports
@@ -122,10 +129,11 @@ These are useful for future development, staging, compatibility, and design inte
   consumption primitive, deferred three-row commit invariant and dormant
   transaction-bound UBID owner for the exact enrollment effect/receipt/consume
   unit; pure deterministic device-request effect ID, operation-effect digest
-  and future receipt identity are frozen for submit and self-read, while
-  durable request effect/receipt ownership, request consumption, the required
-  new additive migration, runtime wiring and final admission remain
-  unimplemented
+  and future receipt identity are frozen for submit and self-read; the separate
+  dormant routing registry now owns snapshots, confidential handle mappings
+  and message-ID decisions, while actual ciphertext/self-read effects, durable
+  request effect/receipt ownership, request consumption, its additive
+  migration, runtime wiring and final admission remain unimplemented
 - `docs/milestones/NIP17_SITE_LOCAL_MESSAGING_V0.md`
 - `docs/ops/NIP17_*.md`
 - `docs/ops/NIP59_*.md`
