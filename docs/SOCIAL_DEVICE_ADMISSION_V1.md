@@ -446,7 +446,11 @@ ambiguous, retired, stale-version, commitment-mismatched and post-rotation
 state deny. Highest version, row age, snapshot expiry, historical owner rows
 and caller input are never selectors.
 
-Provisioning and rotation still lack an authenticated lifecycle owner. The
+The dormant alias-lifecycle command module now verifies exact offline-signed
+UBID deployment commands with an explicitly pinned Ed25519 public key and
+key ID. It creates no signing key and cannot write the registry. Provisioning
+and rotation still lack a transaction-bound authenticated lifecycle writer,
+immutable event ledger, runtime composition and operational cutover. The
 dormant `social_messaging_current_handle_candidate.py` adapter now narrows the
 next boundary without granting it: it strictly parses the complete existing
 self-read verification input, establishes the real current admission authority
