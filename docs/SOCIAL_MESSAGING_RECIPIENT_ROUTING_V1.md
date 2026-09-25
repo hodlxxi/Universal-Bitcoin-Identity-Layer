@@ -11,17 +11,21 @@ exact self-read handle from a strictly parsed device-request input with that
 locked namespace, immutable handle history and the exact current device
 binding established by the real transaction-bound admission-authority
 producer. Its result is explicitly non-authorizing and returns no ciphertext.
-Neither migration is applied. There is no namespace provisioning or rotation
-owner, HTTP route, factory wiring, ciphertext persistence, self-read effect,
-request admission, receipt, challenge consumption, deployment or runtime
-activation. Social source and ciphertext formats are unchanged.
+An additional dormant transaction owner can provision an empty registry or
+rotate it from one exact locked predecessor only after authenticating the
+exact offline-signed command and configured successor secret commitment. None
+of the migrations is applied. There is no HTTP route, factory wiring, key
+provisioning, ciphertext persistence, self-read effect, request admission,
+receipt, challenge consumption, deployment or runtime activation. Social
+source and ciphertext formats are unchanged.
 
 The dormant `social_messaging_active_alias_namespace_lifecycle.py` module now
 defines the operator-approved **offline UBID deployment-key** command contract
 and verifies its signature against one explicitly injected pinned Ed25519
 public key and exact key ID. It does not load, create or keep the private key.
-No PostgreSQL lifecycle writer, event ledger, CLI, trust configuration,
-runtime import, migration application or authorized `ACTIVE` row exists yet.
+The separate transaction-bound storage owner and immutable event ledger remain
+dormant: there is no CLI, trust configuration, runtime import, migration
+application or authorized `ACTIVE` row.
 
 ## Privacy and authority boundary
 
@@ -207,8 +211,9 @@ domain-separated commitment to that version and secret, and the explicit
 unique index permits at most one `ACTIVE` row; the read requires exactly one.
 Rows can be inserted only as `ACTIVE`, can transition only once from `ACTIVE`
 to `RETIRED` without identity changes, and cannot be deleted or truncated.
-The source exposes no writer. Authorized provisioning and atomic rotation are
-still separate prerequisites.
+That original source exposes no writer. The separate additive lifecycle owner
+described below supplies the signed transaction-bound mutation path;
+activation and operational cutover remain separate prerequisites.
 
 The exact commitment is a 112-character lowercase ASCII value:
 
@@ -244,10 +249,55 @@ Provision starts at version 1; rotation increments by exactly one.
 The signed payload contains the commitment, never the alias secret. The
 deployed alias secret remains in its existing UBID startup file, separate from
 this infrastructure signing key and from every participant/device key.
-Signature validity alone cannot insert a row: a later separately reviewed
-transaction owner must reverify the command, atomically reconcile the
-configured secret and locked predecessor, consume its unique ID exactly once
-in an immutable event ledger and leave commit ownership to its caller.
+Signature validity alone cannot insert a row. The dormant
+`social_messaging_active_alias_namespace_lifecycle_storage.py` owner reverifies
+the raw canonical command and signature against its injected pinned public key
+and key ID, and independently reduces the configured successor secret/version
+to the existing domain-separated commitment. It verifies before locking,
+takes one dedicated transaction-scoped advisory lock before inspecting the
+`ACTIVE` set, then reverifies with the PostgreSQL database clock after the
+advisory wait and again after the row-lock wait. It never accepts a caller-made
+verified object and retains or stores no raw alias secret.
+
+The owner requires one caller-owned, already-active PostgreSQL READ COMMITTED
+SQLAlchemy transaction pinned to the same Session transaction/savepoint,
+connection and database transaction/savepoint. Provisioning requires the
+registry and event ledger both to be empty and can create only version 1.
+Rotation requires exactly one locked `ACTIVE` row byte-matching the signed
+expected version and commitment; the configured and signed successor must be
+exactly the predecessor version plus one. In one transaction it retires that
+row, inserts the `ACTIVE` successor and inserts the immutable exact command
+wire/signature event, then rereads and compares the affected state. It never
+begins, commits, rolls back or closes the caller transaction. A failure poisons
+the one-shot owner and requires caller rollback. No external or Unix call
+occurs while its locks are held.
+
+The event guard overwrites the ledger's `xid8` transaction field on insert
+with PostgreSQL's full top-level transaction ID. Retry and uncertain-commit
+classification compare only that server-stamped value with the current
+top-level transaction ID; caller input and a row's 32-bit `xmin` cannot declare
+an event committed. This also keeps an event inserted by a savepoint
+provisional until its outer transaction actually commits.
+
+The additive empty-by-default migration is
+`migrations/2026-09-25_social_messaging_active_alias_namespace_lifecycle_v1.sql`.
+It refuses to adopt a pre-existing unauthenticated registry. Deferred
+constraints require a contiguous version-1 provision/rotation sequence, one
+event per namespace row, exact predecessor/successor commitments, exactly one
+highest `ACTIVE` generation and retired history. Row-only, event-only and
+partial rotations cannot commit; commands/nonces/successors cannot replay;
+events and historical rows cannot be rewritten, deleted or truncated. These
+SQL guards establish structural atomicity only. PostgreSQL cannot authenticate
+the Ed25519 signer or grant or restrict database actor privileges; pinned
+signature verification and least-privilege database role configuration remain
+independent required boundaries.
+
+An exact fresh retry returns already-committed evidence without executing a
+second transition. The separate read-only uncertain-commit reconciliation
+path authenticates the same exact command/signature and classifies only
+durable matching evidence as committed, a truly untouched predecessor as
+absent, and denies partial or conflicting evidence. It does not execute an
+absent or expired command. Caller commit remains the sole publication point.
 Neither Social read tokens, OAuth, a configured secret file, historical
 handle owners nor an `ACTIVE` database label can replace that signature.
 Operational cutover still requires a reviewed fail-closed maintenance window
@@ -280,7 +330,8 @@ snapshot age, historical owner row, caller-supplied version/secret or handle
 is a currentness selector.
 
 The reader deliberately exposes no provisioning, rotation, current-handle
-resolution or self-read authority. The dormant
+resolution or self-read authority; mutation remains isolated in the separate
+signed owner. The dormant
 `app/services/social_messaging_current_handle_candidate.py` adapter performs
 only the next internal candidate comparison. It accepts the complete canonical
 `VerificationInputV1` wire, requires `recipient-self-read`, and obtains the

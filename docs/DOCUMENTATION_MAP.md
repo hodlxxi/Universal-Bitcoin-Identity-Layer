@@ -114,13 +114,16 @@ These are useful for future development, staging, compatibility, and design inte
   registry; immutable handle owners are historical routing evidence only; a
   separate empty-by-default transaction-bound reader reconciles one guarded
   ACTIVE alias namespace with the exact startup-configured secret/version but
-  supplies no writer or authorization; a separate dormant, offline-signed UBID
-  deployment-key command verifier supplies only pinned-signature evidence,
-  without a lifecycle writer, event ledger or runtime configuration; a dormant transaction-bound
-  internal candidate strictly compares one requested self-read handle with the
-  locked ACTIVE namespace, immutable history and authoritative current binding
-  without granting self-read or returning ciphertext; provisioning/rotation,
-  authorizing current-handle ownership and self-read effects remain blocked; no
+  supplies no authorization; a separate dormant, offline-signed UBID
+  deployment-key command verifier and caller-transaction lifecycle owner
+  authenticate empty version-1 provisioning or exact one-step rotation, stage
+  immutable event-backed history and leave commit ownership to the caller,
+  without key/config provisioning or runtime composition; a dormant
+  transaction-bound internal candidate strictly compares one requested
+  self-read handle with the locked ACTIVE namespace, immutable history and
+  authoritative current binding without granting self-read or returning
+  ciphertext; lifecycle operational cutover, authorizing current-handle
+  ownership and self-read effects remain blocked; no
   ciphertext persistence, request admission, receipt, challenge consumption,
   factory wiring, migration application or activation
 - `docs/SOCIAL_MESSAGING_DEVICE_PROOF_PROFILE_V1.md` — dormant byte-identical
@@ -142,8 +145,9 @@ These are useful for future development, staging, compatibility, and design inte
   alias-namespace reconciliation, and a dormant transaction-bound internal
   candidate compares one exact self-read handle with current admission/binding
   evidence while granting no authorization and returning no ciphertext;
-  signed namespace commands have no transaction-bound writer or runtime trust
-  configuration; namespace provisioning/rotation, authorizing current-handle ownership, actual
+  signed namespace commands have a dormant transaction-bound writer and
+  immutable event ledger but no runtime trust configuration or key provisioning;
+  namespace operational cutover, authorizing current-handle ownership, actual
   ciphertext/self-read effects, durable request effect/receipt ownership,
   request consumption, its additive migration, runtime wiring and final
   admission remain unimplemented
