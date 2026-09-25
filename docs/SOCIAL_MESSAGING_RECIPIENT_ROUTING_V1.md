@@ -16,6 +16,13 @@ owner, HTTP route, factory wiring, ciphertext persistence, self-read effect,
 request admission, receipt, challenge consumption, deployment or runtime
 activation. Social source and ciphertext formats are unchanged.
 
+The dormant `social_messaging_active_alias_namespace_lifecycle.py` module now
+defines the operator-approved **offline UBID deployment-key** command contract
+and verifies its signature against one explicitly injected pinned Ed25519
+public key and exact key ID. It does not load, create or keep the private key.
+No PostgreSQL lifecycle writer, event ledger, CLI, trust configuration,
+runtime import, migration application or authorized `ACTIVE` row exists yet.
+
 ## Privacy and authority boundary
 
 The outward recipient package remains privacy-minimized. It contains a
@@ -217,6 +224,34 @@ The configured version is an integer from 1 through 2,147,483,647. Secret
 bytes are 32 through 4,096 bytes and are not decoded, trimmed or otherwise
 normalized. The commitment is distinct from directory aliases, device handles,
 snapshot IDs and every request/effect/receipt digest.
+
+### Offline-signed lifecycle command prerequisite
+
+The separate command schema is
+`hodlxxi.social_active_alias_namespace_lifecycle_command.v1`, version 1,
+audience `hodlxxi.ubid.alias_namespace_lifecycle.v1`, algorithm `Ed25519`.
+Its strictly sorted, compact ASCII JSON binds the pinned `keyId`, action
+`provision`/`rotate`, exact old version and commitment (both null only for
+provision), exact next version and commitment, a canonical 32-byte nonce,
+Unix-millisecond issuance/expiry and a domain-separated SHA-256 command ID.
+The signature is separate canonical unpadded base64url over
+`HODLXXI_SOCIAL_ACTIVE_ALIAS_LIFECYCLE_SIGNATURE_V1 || NUL || command_wire`.
+The parser rejects changed bytes, duplicate fields and unknown vocabulary;
+the verifier requires the exact pinned key ID and public key, issuance not in
+the future and expiry not reached. Maximum command validity is 24 hours.
+Provision starts at version 1; rotation increments by exactly one.
+
+The signed payload contains the commitment, never the alias secret. The
+deployed alias secret remains in its existing UBID startup file, separate from
+this infrastructure signing key and from every participant/device key.
+Signature validity alone cannot insert a row: a later separately reviewed
+transaction owner must reverify the command, atomically reconcile the
+configured secret and locked predecessor, consume its unique ID exactly once
+in an immutable event ledger and leave commit ownership to its caller.
+Neither Social read tokens, OAuth, a configured secret file, historical
+handle owners nor an `ACTIVE` database label can replace that signature.
+Operational cutover still requires a reviewed fail-closed maintenance window
+or another explicit coordination protocol for already-running UBID processes.
 
 The privacy-directory runtime loads
 `PRIVACY_FULL_DIRECTORY_ALIAS_SECRET_FILE` and
