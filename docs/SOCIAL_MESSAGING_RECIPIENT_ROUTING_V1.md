@@ -6,11 +6,15 @@ migration for exact routing snapshots/routes, confidential pairwise-handle
 ownership and the message-ID decision ledger. A separate empty-by-default
 registry and transaction-bound read-only adapter can reconcile one explicitly
 ACTIVE alias namespace with the secret/version already loaded from trusted
-startup configuration. Neither migration is applied. There is no namespace
-provisioning or rotation owner, HTTP route, factory wiring, ciphertext
-persistence, self-read effect, request admission, receipt, challenge
-consumption, deployment or runtime activation. Social source and ciphertext
-formats are unchanged.
+startup configuration. A separate dormant internal adapter can compare the one
+exact self-read handle from a strictly parsed device-request input with that
+locked namespace, immutable handle history and the exact current device
+binding established by the real transaction-bound admission-authority
+producer. Its result is explicitly non-authorizing and returns no ciphertext.
+Neither migration is applied. There is no namespace provisioning or rotation
+owner, HTTP route, factory wiring, ciphertext persistence, self-read effect,
+request admission, receipt, challenge consumption, deployment or runtime
+activation. Social source and ciphertext formats are unchanged.
 
 ## Privacy and authority boundary
 
@@ -241,17 +245,47 @@ snapshot age, historical owner row, caller-supplied version/secret or handle
 is a currentness selector.
 
 The reader deliberately exposes no provisioning, rotation, current-handle
-resolution or self-read authority. A future transaction owner must still
-compose this locked namespace evidence with a separately authoritative current
-binding/handle check for the requested handle. Rotation, an unknown namespace
-or a missing current owner must deny in that same transaction.
+resolution or self-read authority. The dormant
+`app/services/social_messaging_current_handle_candidate.py` adapter performs
+only the next internal candidate comparison. It accepts the complete canonical
+`VerificationInputV1` wire, requires `recipient-self-read`, and obtains the
+single requested `d_` handle only by reparsing its exact `actualRequest`; it
+does not accept a separately supplied handle, subject or binding and never
+derives a handle with the recipient substituted as viewer.
+
+In the same pinned caller-owned PostgreSQL READ COMMITTED transaction, the
+adapter constructs and invokes the real
+`SqlAlchemyTransactionBoundAdmissionAuthority` from authenticated
+server-resolved issuance/client/issuer selectors. It does not accept a caller-
+constructed `CurrentAdmissionAuthorityV1`. Only after that complete existing
+Full/User, OAuth/session, current X25519 and Ed25519 lock order succeeds does it
+lock the configured ACTIVE namespace, acquire the routing registry's one exact
+historical-owner advisory/row lock, and recheck the ACTIVE namespace. It then
+re-reads the exact current binding row and compares its current subject, device
+ID, binding ID and binding version with the retained owner and locked alias
+version. Finally it repeats the real current-admission comparison and ACTIVE
+namespace read after those waits. Missing, ambiguous, inactive, expired,
+revoked, rotated, remapped, stale-version or mismatched state fails through
+the one message `social messaging current handle candidate unavailable`.
+
+The historical owner is used only as the immutable mapping half of that
+comparison. It never selects currentness. Highest alias version, snapshot age
+or expiry, key equality, caller fields, or either provisional authority result
+alone cannot produce a candidate. No network or Unix call occurs under the
+locks. Success returns only the requested handle, locked alias version and
+context digest plus fixed markers `authorization=not_granted`,
+`recipient_self_read=not_granted` and `ciphertext=not_returned`. This record is
+not accepted by any effect or admission port and remains unwired.
 
 This registry's decision proves only exact routing resolution against retained
-snapshot evidence. It is not ciphertext persistence, delivery, recipient read
-selection, a request operation effect, a committed receipt or final admission.
-Social still needs an independent transaction-bound ciphertext/message owner,
-and UBID still needs a bounded self-read selection/effect owner before request
-receipt storage or challenge consumption can truthfully be added.
+snapshot evidence, while the new candidate proves only that one exact request
+handle matched locked namespace, history and current admission/binding state at
+that provisional transaction point. Neither is ciphertext persistence,
+delivery, recipient read selection, a request operation effect, a committed
+receipt or final admission. Social still needs an independent transaction-
+bound ciphertext/message owner, and UBID still needs a bounded self-read
+selection/effect owner before request receipt storage or challenge consumption
+can truthfully be added.
 
 ## Accepted mobile evidence prerequisite
 

@@ -6,18 +6,20 @@ authority, pure enrollment transition-authority/effect-identity contract,
 transaction-bound enrollment transition-authority adapter, immutable enrollment
 receipt storage, narrow challenge-consumption primitive and enrollment-only
 atomic owner, pure device-request effect/receipt identity, and a read-only
-transaction-bound ACTIVE alias-namespace reconciliation prerequisite; final
-admission remains denied**. The source defines canonical bytes, ownership, state
-vocabulary, typed future ports and an explicitly injected, disabled-by-default
-public trust registration. The challenge store adds a model, SQL migration and
-transaction-bound database adapter. The Ed25519 association store adds a
-separate model and additive migration. Request effect/receipt identity remains
-pure and has no storage or execution owner. A separate dormant PostgreSQL
-recipient-routing registry now owns exact snapshots/routes, confidential
-pairwise-handle mappings and the message-ID decision ledger, but those records
-are not either request operation's real effect. There is no route, blueprint,
-factory/config import, key provisioning, socket client, service credential or
-runtime activation. Migration source is not migration application.
+transaction-bound ACTIVE alias-namespace reconciliation prerequisite plus one
+non-authorizing transaction-bound exact current-handle candidate comparison;
+final admission remains denied**. The source defines canonical bytes,
+ownership, state vocabulary, typed future ports and an explicitly injected,
+disabled-by-default public trust registration. The challenge store adds a
+model, SQL migration and transaction-bound database adapter. The Ed25519
+association store adds a separate model and additive migration. Request
+effect/receipt identity remains pure and has no storage or execution owner. A
+separate dormant PostgreSQL recipient-routing registry now owns exact
+snapshots/routes, confidential pairwise-handle mappings and the message-ID
+decision ledger, but those records and the new candidate are not either
+request operation's real effect. There is no route, blueprint, factory/config
+import, key provisioning, socket client, service credential or runtime
+activation. Migration source is not migration application.
 
 ## Architecture selection
 
@@ -444,14 +446,24 @@ ambiguous, retired, stale-version, commitment-mismatched and post-rotation
 state deny. Highest version, row age, snapshot expiry, historical owner rows
 and caller input are never selectors.
 
-Provisioning and rotation still lack an authenticated lifecycle owner, and
-the reader does not resolve a requested handle to a current binding. Current-
-handle resolution and self-read therefore remain blocked until a future owner
-combines the locked namespace evidence with a separate authoritative current
-binding/handle check in the same transaction.
-The pure routing gate remains unwired because its authority ports are not the
-same locked transaction; a future request owner must supply that composition
-without network or Unix calls under database locks.
+Provisioning and rotation still lack an authenticated lifecycle owner. The
+dormant `social_messaging_current_handle_candidate.py` adapter now narrows the
+next boundary without granting it: it strictly parses the complete existing
+self-read verification input, establishes the real current admission authority
+from server-resolved selectors, locks and rechecks the configured ACTIVE
+namespace, locks one exact immutable historical owner, and compares that owner
+with the re-read exact current binding subject/device/ID/version in the same
+caller transaction. It repeats current admission and namespace checks after
+waits. It accepts no detached authority dataclass or separately supplied
+identity and performs no handle derivation, network or Unix call.
+
+The returned candidate fixes authorization and recipient self-read to
+`not_granted` and ciphertext to `not_returned`. It is not an effect port,
+receipt, challenge consumer or final-admission result. The pure routing gate
+also remains unwired because its authority ports are not the same locked
+transaction. A future request owner still must supply bounded self-read
+selection/effect ownership and atomic request durability without reinterpreting
+this candidate as authority.
 
 Fixed valid, mutation, rejection, domain-separation and exact projection
 vectors are in
@@ -1260,14 +1272,14 @@ fixed synthetic vectors remain unchanged and tests require no Social checkout.
 ## Activation blockers and non-claims
 
 Future work must separately provide and test active trust provisioning and
-invalidation, authenticated alias-namespace provisioning/rotation, current
-binding/handle ownership, transaction-bound ciphertext persistence, bounded
-self-read selection/effect ownership, durable request-effect refinement,
-request receipt storage and atomic challenge consumption under a new additive
-migration, internal routes, purpose-bound Unix-socket client, quotas,
-credentials and explicit factory composition. Migration application,
-credential provisioning, socket exposure, runtime activation and deployment
-require separate authorization.
+invalidation, authenticated alias-namespace provisioning/rotation,
+authorizing current-handle/self-read effect ownership, transaction-bound
+ciphertext persistence, bounded self-read selection/effect ownership, durable
+request-effect refinement, request receipt storage and atomic challenge
+consumption under a new additive migration, internal routes, purpose-bound
+Unix-socket client, quotas, credentials and explicit factory composition.
+Migration application, credential provisioning, socket exposure, runtime
+activation and deployment require separate authorization.
 
 There is no participant or device private-key custody in UBID or Social server
 storage. A future dedicated Social infrastructure statement-signing key is a

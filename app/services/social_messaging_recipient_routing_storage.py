@@ -763,6 +763,19 @@ class SqlAlchemyRecipientRoutingRepository:
             _deny()
         return None if not rows else _parse_owner(cast(Mapping[str, object], rows[0]))
 
+    def lock_historical_handle_owner(self, device_handle: object) -> _RecipientHandleOwnerV1 | None:
+        """Lock one immutable owner row as history, never as current authority."""
+
+        try:
+            key = routing._canonical_token(device_handle, prefix="d_", characters=22, decoded=16)
+            self._advisory_lock(_HANDLE_LOCK_SEED, key)
+            owner = self._select_owner(key, lock=True)
+            self._check_transaction()
+            return owner
+        except Exception:
+            self._failed = True
+        _deny()
+
     def _load_snapshot(self, snapshot_id: str, *, lock: bool) -> routing.RecipientRoutingSnapshot | None:
         snapshot_table = RecipientRoutingSnapshotRow.__table__
         statement = (

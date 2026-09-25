@@ -114,10 +114,13 @@ These are useful for future development, staging, compatibility, and design inte
   registry; immutable handle owners are historical routing evidence only; a
   separate empty-by-default transaction-bound reader reconciles one guarded
   ACTIVE alias namespace with the exact startup-configured secret/version but
-  supplies no writer or authorization; provisioning/rotation, current-handle
-  resolution and self-read remain blocked; no ciphertext persistence, request
-  admission, receipt, challenge consumption, factory wiring, migration
-  application or activation
+  supplies no writer or authorization; a separate dormant transaction-bound
+  internal candidate strictly compares one requested self-read handle with the
+  locked ACTIVE namespace, immutable history and authoritative current binding
+  without granting self-read or returning ciphertext; provisioning/rotation,
+  authorizing current-handle ownership and self-read effects remain blocked; no
+  ciphertext persistence, request admission, receipt, challenge consumption,
+  factory wiring, migration application or activation
 - `docs/SOCIAL_MESSAGING_DEVICE_PROOF_PROFILE_V1.md` — dormant byte-identical
   Exact Messaging Device Proof Profile V1 and Enrollment V2 shape contracts;
   Social contains the current strict Ed25519 primitive, UBID never reports
@@ -134,10 +137,13 @@ These are useful for future development, staging, compatibility, and design inte
   unit; pure deterministic device-request effect ID, operation-effect digest
   and future receipt identity are frozen for submit and self-read; separate
   dormant registries own routing history and read-only configured ACTIVE
-  alias-namespace reconciliation, while namespace provisioning/rotation,
-  current-handle ownership, actual ciphertext/self-read effects, durable
-  request effect/receipt ownership, request consumption, its additive migration,
-  runtime wiring and final admission remain unimplemented
+  alias-namespace reconciliation, and a dormant transaction-bound internal
+  candidate compares one exact self-read handle with current admission/binding
+  evidence while granting no authorization and returning no ciphertext;
+  namespace provisioning/rotation, authorizing current-handle ownership, actual
+  ciphertext/self-read effects, durable request effect/receipt ownership,
+  request consumption, its additive migration, runtime wiring and final
+  admission remain unimplemented
 - `docs/milestones/NIP17_SITE_LOCAL_MESSAGING_V0.md`
 - `docs/ops/NIP17_*.md`
 - `docs/ops/NIP59_*.md`

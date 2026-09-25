@@ -673,7 +673,7 @@ class SqlAlchemyTransactionBoundSocialMessagingDeviceStorage:
             SocialMessagingDeviceBindingRow.binding_id == identifier
         )
         if lock:
-            statement = statement.with_for_update()
+            statement = statement.with_for_update().execution_options(populate_existing=True)
         row = self._session.execute(statement.limit(2)).scalars().all()
         if len(row) > 1:
             raise MessagingDeviceAuthorityUnavailable()
