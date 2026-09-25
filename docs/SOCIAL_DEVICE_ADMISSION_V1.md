@@ -6,7 +6,8 @@ authority, pure enrollment transition-authority/effect-identity contract,
 transaction-bound enrollment transition-authority adapter, immutable enrollment
 receipt storage, narrow challenge-consumption primitive and enrollment-only
 atomic owner, pure device-request effect/receipt identity, and a read-only
-transaction-bound ACTIVE alias-namespace reconciliation prerequisite plus one
+transaction-bound ACTIVE alias-namespace reconciliation prerequisite, a
+dormant offline-signed transaction-bound namespace lifecycle owner, plus one
 non-authorizing transaction-bound exact current-handle candidate comparison;
 final admission remains denied**. The source defines canonical bytes,
 ownership, state vocabulary, typed future ports and an explicitly injected,
@@ -446,11 +447,18 @@ ambiguous, retired, stale-version, commitment-mismatched and post-rotation
 state deny. Highest version, row age, snapshot expiry, historical owner rows
 and caller input are never selectors.
 
-The dormant alias-lifecycle command module now verifies exact offline-signed
-UBID deployment commands with an explicitly pinned Ed25519 public key and
-key ID. It creates no signing key and cannot write the registry. Provisioning
-and rotation still lack a transaction-bound authenticated lifecycle writer,
-immutable event ledger, runtime composition and operational cutover. The
+The dormant alias-lifecycle command module verifies exact offline-signed UBID
+deployment commands with an explicitly pinned Ed25519 public key and key ID.
+It creates no signing key. A separate dormant transaction owner now reverifies
+the raw command, freshness, key pin and configured successor commitment before
+and after lock waits; serializes writers with a dedicated transaction advisory
+lock; and atomically stages empty version-1 provisioning or an exact locked
+one-step rotation with its immutable signed event. It owns no commit and
+retains no raw secret. Deferred migration guards reject row-only, event-only,
+partial, nonsequential, replayed or rewritten history at commit. Those guards
+are structural: they neither authenticate the Ed25519 signer nor establish
+database actor privileges. Runtime trust configuration, key provisioning,
+migration application and operational cutover remain absent. The
 dormant `social_messaging_current_handle_candidate.py` adapter now narrows the
 next boundary without granting it: it strictly parses the complete existing
 self-read verification input, establishes the real current admission authority
@@ -1276,7 +1284,8 @@ fixed synthetic vectors remain unchanged and tests require no Social checkout.
 ## Activation blockers and non-claims
 
 Future work must separately provide and test active trust provisioning and
-invalidation, authenticated alias-namespace provisioning/rotation,
+invalidation, lifecycle signing-key/configuration provisioning and coordinated
+alias-namespace operational cutover,
 authorizing current-handle/self-read effect ownership, transaction-bound
 ciphertext persistence, bounded self-read selection/effect ownership, durable
 request-effect refinement, request receipt storage and atomic challenge
