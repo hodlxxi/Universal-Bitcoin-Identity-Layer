@@ -14,8 +14,9 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from app.services import social_messaging_active_alias_namespace_lifecycle as lifecycle
 
 VECTORS = json.loads(
-    (Path(__file__).resolve().parents[1] / "fixtures/social_messaging_active_alias_namespace_lifecycle_v1.json")
-    .read_text(encoding="ascii")
+    (
+        Path(__file__).resolve().parents[1] / "fixtures/social_messaging_active_alias_namespace_lifecycle_v1.json"
+    ).read_text(encoding="ascii")
 )
 PUBLIC = bytes.fromhex(VECTORS["publicKey"])
 KEY_ID = VECTORS["keyId"]
@@ -42,9 +43,9 @@ def signed_mutation(change):
     data.pop("commandId")
     change(data)
     wire = lifecycle.canonical_alias_lifecycle_command_v1(data)
-    signature = base64.urlsafe_b64encode(
-        private.sign(lifecycle.SIGNATURE_DOMAIN + b"\x00" + wire)
-    ).decode("ascii").rstrip("=")
+    signature = (
+        base64.urlsafe_b64encode(private.sign(lifecycle.SIGNATURE_DOMAIN + b"\x00" + wire)).decode("ascii").rstrip("=")
+    )
     return verifier(public), wire, signature
 
 
@@ -81,18 +82,16 @@ class SignedAliasLifecycleContractTests(unittest.TestCase):
         ):
             self.assertEqual(
                 json.loads(VECTORS[name]["commandWire"])["successorCommitment"],
-                storage.active_alias_namespace_secret_commitment(
-                    alias_secret=secret, alias_version=version
-                ),
+                storage.active_alias_namespace_secret_commitment(alias_secret=secret, alias_version=version),
             )
 
     def test_signature_domain_and_key_id_are_both_bound(self):
         wire, signature = vector("provision")
-        self.assert_denied(lambda: verifier(key_id="other-offline-key").verify(
-            wire, signature, now_ms=FIXED_NOW
-        ))
-        other = Ed25519PrivateKey.generate().public_key().public_bytes(
-            encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
+        self.assert_denied(lambda: verifier(key_id="other-offline-key").verify(wire, signature, now_ms=FIXED_NOW))
+        other = (
+            Ed25519PrivateKey.generate()
+            .public_key()
+            .public_bytes(encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw)
         )
         self.assert_denied(lambda: verifier(other).verify(wire, signature, now_ms=FIXED_NOW))
         self.assert_denied(lambda: verifier().verify(wire, signature[:-1] + "A", now_ms=FIXED_NOW))
@@ -104,9 +103,7 @@ class SignedAliasLifecycleContractTests(unittest.TestCase):
         for now in (1_799_999_999_999, 1_800_000_060_000, True, None):
             with self.subTest(now=now):
                 self.assert_denied(lambda: verifier().verify(wire, signature, now_ms=now))
-        self.assertEqual(verifier().verify(
-            wire, signature, now_ms=1_800_000_000_000
-        ).inspected.action, "rotate")
+        self.assertEqual(verifier().verify(wire, signature, now_ms=1_800_000_000_000).inspected.action, "rotate")
 
     def test_every_field_and_exact_canonical_bytes_are_signed(self):
         wire, signature = vector("rotate")
@@ -126,12 +123,14 @@ class SignedAliasLifecycleContractTests(unittest.TestCase):
             change(altered)
             candidate = json.dumps(altered, sort_keys=True, separators=(",", ":")).encode("ascii")
             self.assert_denied(lambda: verifier().verify(candidate, signature, now_ms=FIXED_NOW))
-        self.assert_denied(lambda: verifier().verify(
-            wire.replace(b'"rotate"', b'"rot\\u0061te"'), signature, now_ms=FIXED_NOW
-        ))
-        self.assert_denied(lambda: verifier().verify(
-            wire.replace(b'"version":1', b'"version":1,"version":1'), signature, now_ms=FIXED_NOW
-        ))
+        self.assert_denied(
+            lambda: verifier().verify(wire.replace(b'"rotate"', b'"rot\\u0061te"'), signature, now_ms=FIXED_NOW)
+        )
+        self.assert_denied(
+            lambda: verifier().verify(
+                wire.replace(b'"version":1', b'"version":1,"version":1'), signature, now_ms=FIXED_NOW
+            )
+        )
         self.assert_denied(lambda: verifier().verify(wire + b" ", signature, now_ms=FIXED_NOW))
         self.assert_denied(lambda: verifier().verify(b"\xff" + wire, signature, now_ms=FIXED_NOW))
 
@@ -157,15 +156,15 @@ class SignedAliasLifecycleContractTests(unittest.TestCase):
         self.assert_denied(lambda: lifecycle.VerifiedAliasLifecycleCommandV1(True, {}, wire, signature))
         self.assert_denied(lambda: lifecycle.VerifiedAliasLifecycleCommandV1({}, {}, wire, signature))
         with self.assertRaises(lifecycle.AliasLifecycleCommandUnavailable):
+
             class InvalidSubclass(lifecycle.VerifiedAliasLifecycleCommandV1):
                 pass
+
         self.assert_denied(lambda: verifier().verify({"authorized": True}, signature, now_ms=FIXED_NOW))
         self.assert_denied(lambda: verifier(public=b"short"))
 
     def test_fresh_synthetic_signature_verifies_only_the_exact_successor(self):
-        instance, wire, signature = signed_mutation(
-            lambda value: value.update(expiresAtMs=1_800_000_070_000)
-        )
+        instance, wire, signature = signed_mutation(lambda value: value.update(expiresAtMs=1_800_000_070_000))
         self.assertEqual(instance.verify(wire, signature, now_ms=FIXED_NOW).inspected.successor_version, 2)
         altered = wire.replace(b'"successorVersion":2', b'"successorVersion":3')
         self.assert_denied(lambda: instance.verify(altered, signature, now_ms=FIXED_NOW))

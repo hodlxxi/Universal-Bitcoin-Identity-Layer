@@ -37,9 +37,20 @@ _NONCE = re.compile(r"[A-Za-z0-9_-]{43}\Z").fullmatch
 _SIGNATURE = re.compile(r"[A-Za-z0-9_-]{86}\Z").fullmatch
 _FIELDS = frozenset(
     (
-        "action", "algorithm", "audience", "commandId", "expectedCommitment",
-        "expectedVersion", "expiresAtMs", "issuedAtMs", "keyId", "nonce",
-        "schema", "successorCommitment", "successorVersion", "version",
+        "action",
+        "algorithm",
+        "audience",
+        "commandId",
+        "expectedCommitment",
+        "expectedVersion",
+        "expiresAtMs",
+        "issuedAtMs",
+        "keyId",
+        "nonce",
+        "schema",
+        "successorCommitment",
+        "successorVersion",
+        "version",
     )
 )
 _VERIFIED_TOKEN = object()
@@ -70,15 +81,11 @@ def _decoded(value: object, pattern: Callable[[str], re.Match[str] | None], leng
 
 
 def _command_id(command_without_id: dict[str, object]) -> str:
-    return COMMAND_ID_PREFIX + hashlib.sha256(
-        COMMAND_ID_DOMAIN + b"\x00" + _canonical(command_without_id)
-    ).hexdigest()
+    return COMMAND_ID_PREFIX + hashlib.sha256(COMMAND_ID_DOMAIN + b"\x00" + _canonical(command_without_id)).hexdigest()
 
 
 def _validated(command: object) -> dict[str, object]:
-    if type(command) is not dict or set(command) != _FIELDS or any(
-        type(key) is not str for key in command
-    ):
+    if type(command) is not dict or set(command) != _FIELDS or any(type(key) is not str for key in command):
         _deny()
     value = dict(command)
     if (
@@ -106,10 +113,7 @@ def _validated(command: object) -> dict[str, object]:
             _deny()
     if not 0 < value["expiresAtMs"] - value["issuedAtMs"] <= MAX_COMMAND_LIFETIME_MS:
         _deny()
-    if (
-        type(value["successorVersion"]) is not int
-        or not 1 <= value["successorVersion"] <= MAX_ALIAS_VERSION
-    ):
+    if type(value["successorVersion"]) is not int or not 1 <= value["successorVersion"] <= MAX_ALIAS_VERSION:
         _deny()
     if value["action"] == "provision":
         if (
@@ -198,8 +202,9 @@ class VerifiedAliasLifecycleCommandV1:
             _deny()
         return super().__new__(cls)
 
-    def __init__(self, token: object, inspected: InspectedAliasLifecycleCommandV1,
-                 command_wire: bytes, signature: str) -> None:
+    def __init__(
+        self, token: object, inspected: InspectedAliasLifecycleCommandV1, command_wire: bytes, signature: str
+    ) -> None:
         object.__setattr__(self, "_inspected", inspected)
         object.__setattr__(self, "_command_wire", command_wire)
         object.__setattr__(self, "_signature", signature)
@@ -230,8 +235,10 @@ class PinnedOfflineAliasLifecycleVerifierV1:
 
     def __init__(self, *, public_key: bytes, key_id: str) -> None:
         try:
-            if type(public_key) is not bytes or len(public_key) != 32 or (
-                type(key_id) is not str or _KEY_ID(key_id) is None
+            if (
+                type(public_key) is not bytes
+                or len(public_key) != 32
+                or (type(key_id) is not str or _KEY_ID(key_id) is None)
             ):
                 _deny()
             self._public_key = Ed25519PublicKey.from_public_bytes(public_key)
