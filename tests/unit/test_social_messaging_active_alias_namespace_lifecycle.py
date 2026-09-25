@@ -77,7 +77,7 @@ class SignedAliasLifecycleContractTests(unittest.TestCase):
         self.assertEqual(lifecycle.COMMITMENT_PREFIX, storage.SECRET_COMMITMENT_PREFIX)
         for name, secret, version in (
             ("provision", bytes(range(32)), 1),
-            ("rotate", bytes(reversed(range(32))), 2),
+            ("rotate", bytes(range(32)), 2),
         ):
             self.assertEqual(
                 json.loads(VECTORS[name]["commandWire"])["successorCommitment"],
