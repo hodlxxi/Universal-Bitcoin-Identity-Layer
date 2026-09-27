@@ -85,6 +85,10 @@ Many historical checkpoint documents now include a standard status note at the t
 
 These are useful for future development, staging, compatibility, and design intent, but should not be presented as current production readiness evidence unless a current smoke/runbook says so:
 
+- `docs/SOCIAL_PREACCEPTANCE_ED25519_HANDOFF_V2.md` — dormant deterministic
+  `register + initial` preacceptance-through-candidate-association-link contract
+  and reviewed public vector; serializers grant no acceptance/persistence
+  authority; no runtime wiring, session continuation, or activation
 - `docs/NIP17_RUNTIME_PLAN.md`
 - `docs/SOCIAL_SESSION_ISSUANCE_V1.md` — dormant PostgreSQL one-shot phone
   authority, original OAuth-generation provenance, canonical viewer credential,
