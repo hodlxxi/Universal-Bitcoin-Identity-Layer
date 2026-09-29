@@ -88,7 +88,13 @@ These are useful for future development, staging, compatibility, and design inte
 - `docs/SOCIAL_PREACCEPTANCE_ED25519_HANDOFF_V2.md` — dormant deterministic
   `register + initial` preacceptance-through-candidate-association-link contract
   and reviewed public vector; serializers grant no acceptance/persistence
-  authority; no runtime wiring, session continuation, or activation
+  authority; linked dedicated V2 statement authentication is separately
+  documented below; no runtime wiring, session continuation, or activation
+- `docs/SOCIAL_PREACCEPTED_ENROLLMENT_VERIFICATION_STATEMENT_V2.md` — dormant
+  additive canonical V2-only RS256 statement bytes, dedicated empty-by-default
+  public trust registration and strict pure authenticated consumer for one exact
+  preaccepted-enrollment input; no Social producer, durable acceptance,
+  challenge consumption, association mutation, route or runtime activation
 - `docs/NIP17_RUNTIME_PLAN.md`
 - `docs/SOCIAL_SESSION_ISSUANCE_V1.md` — dormant PostgreSQL one-shot phone
   authority, original OAuth-generation provenance, canonical viewer credential,
