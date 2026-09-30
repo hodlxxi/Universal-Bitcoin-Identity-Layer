@@ -17,6 +17,12 @@ Verifier-run identifiers do not yet define a stable retry identity, and
 phone proof, stable identity, issuer evidence, lifetime, or lost-response
 behavior is canonicalized here.
 
+The additive dormant V2-only authenticated verification-statement bytes and
+strict pure UBID RS256 consumer are frozen separately in
+[the V2 statement contract](SOCIAL_PREACCEPTED_ENROLLMENT_VERIFICATION_STATEMENT_V2.md).
+That contract adds no Social producer, acceptance owner, route or runtime
+wiring and does not change any wire in this document.
+
 ## Authority separation
 
 The phone creates two distinct keys before proposal construction:
@@ -326,10 +332,12 @@ validity, a committed acceptance root, live sessions, Current-Full, current
 binding or association state, or permission to activate or persist an
 association.
 
-A future owner MUST authenticate the purpose-bound Social V2 verification
-statement and lock/recheck the stored acceptance, enrollment challenge, and
-authoritative session, Full, subject, binding, and association owners in the
-transaction. This phase adds no caller boolean and invents no substitute
+A future owner MUST consume the purpose-bound Social V2 verification statement
+only through the linked strict authenticated consumer and lock/recheck the
+stored acceptance, enrollment challenge, and authoritative session, Full,
+subject, binding, and association owners in the transaction. The authenticated
+statement is still non-bearer evidence and supplies no durable acceptance or
+current authority. This phase adds no caller boolean and invents no substitute
 "verified" authority. A future persistence owner must also enforce immutable
 unique and foreign-key relationships; this pure module creates no row or
 transaction.
@@ -376,5 +384,7 @@ profile, and device-admission fixture hashes. No existing fixture is modified.
 - No Enrollment V2, phone-proof, association-creation, or V1 authorization
   bytes are redefined.
 - No Ed25519 verifier is added to UBID runtime authority.
+- The separate V2 statement consumer remains source-only, disabled by default
+  and without a Social producer or signer.
 - No runtime acceptance, challenge creation, association mutation, session
   issuance, or final admission is implemented.
