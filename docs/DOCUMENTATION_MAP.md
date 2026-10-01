@@ -95,6 +95,14 @@ These are useful for future development, staging, compatibility, and design inte
   public trust registration and strict pure authenticated consumer for one exact
   preaccepted-enrollment input; no Social producer, durable acceptance,
   challenge consumption, association mutation, route or runtime activation
+- `docs/SOCIAL_MESSAGING_DEVICE_VERIFICATION_DEADLINE_EVIDENCE_V1.md` —
+  dormant UBID-owned canonical four-authority deadline evidence, dedicated
+  empty-by-default RS256 public trust lifecycle and strict pure consumer; no
+  private key, signer, reservation adapter, route or runtime activation
+- `docs/SOCIAL_PREACCEPTED_ENROLLMENT_V2_ATOMIC_ACCEPTANCE_AND_CAS_V1.md` —
+  dormant UBID-owned pure pending-reservation, final locked-recheck/CAS,
+  effect, immutable-receipt and exact-retry state contract; no table,
+  migration, repository, transaction implementation, route or activation
 - `docs/NIP17_RUNTIME_PLAN.md`
 - `docs/SOCIAL_SESSION_ISSUANCE_V1.md` — dormant PostgreSQL one-shot phone
   authority, original OAuth-generation provenance, canonical viewer credential,

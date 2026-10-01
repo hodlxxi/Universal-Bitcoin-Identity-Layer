@@ -208,6 +208,15 @@ admission or a receipt. A future atomic owner must independently lock and
 recheck every applicable authority and lifecycle owner after waits and before
 any mutation.
 
+That future UBID boundary is now frozen, but remains dormant, by the dedicated
+[`MessagingDeviceVerificationDeadlineEvidenceV1`](SOCIAL_MESSAGING_DEVICE_VERIFICATION_DEADLINE_EVIDENCE_V1.md)
+and
+[`SocialPreacceptedEnrollmentV2AtomicAcceptanceAndCASV1`](SOCIAL_PREACCEPTED_ENROLLMENT_V2_ATOMIC_ACCEPTANCE_AND_CAS_V1.md)
+contracts. The existing four integer arguments remain non-authoritative; a
+future caller must obtain them from authenticated deadline evidence and must
+still perform the exact transaction-bound recheck. No statement byte or
+consumer behavior in this document is changed.
+
 ## Public vector and preservation gate
 
 The fixed public vector is
