@@ -23,6 +23,15 @@ strict pure UBID RS256 consumer are frozen separately in
 That contract adds no Social producer, acceptance owner, route or runtime
 wiring and does not change any wire in this document.
 
+The UBID-owned deadline-evidence and final acceptance/CAS contracts are now
+frozen separately in
+[`SOCIAL_MESSAGING_DEVICE_VERIFICATION_DEADLINE_EVIDENCE_V1.md`](SOCIAL_MESSAGING_DEVICE_VERIFICATION_DEADLINE_EVIDENCE_V1.md)
+and
+[`SOCIAL_PREACCEPTED_ENROLLMENT_V2_ATOMIC_ACCEPTANCE_AND_CAS_V1.md`](SOCIAL_PREACCEPTED_ENROLLMENT_V2_ATOMIC_ACCEPTANCE_AND_CAS_V1.md).
+They preserve every byte in this document. Their pure values do not prove the
+future locked reservation or finalization transactions, and they do not make
+the four legacy caller deadline arguments authoritative.
+
 ## Authority separation
 
 The phone creates two distinct keys before proposal construction:
