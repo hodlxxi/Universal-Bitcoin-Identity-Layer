@@ -341,15 +341,26 @@ validity, a committed acceptance root, live sessions, Current-Full, current
 binding or association state, or permission to activate or persist an
 association.
 
-A future owner MUST consume the purpose-bound Social V2 verification statement
-only through the linked strict authenticated consumer and lock/recheck the
-stored acceptance, enrollment challenge, and authoritative session, Full,
-subject, binding, and association owners in the transaction. The authenticated
-statement is still non-bearer evidence and supplies no durable acceptance or
-current authority. This phase adds no caller boolean and invents no substitute
-"verified" authority. A future persistence owner must also enforce immutable
-unique and foreign-key relationships; this pure module creates no row or
-transaction.
+A future orchestrator MUST consume the purpose-bound Social V2 verification
+statement only through the linked strict authenticated consumer and
+lock/recheck the stored reservation, enrollment challenge, and authoritative
+session, Full, subject, binding, and association owners in the transaction.
+The authenticated statement is still non-bearer evidence and supplies no
+current authority. The linked atomic-acceptance phase now provides dormant
+PostgreSQL reservation/decision durability, immutable uniqueness and CAS, but
+its row and caller observation do not replace those current locks. Durable
+accepted history is reparsed only after both the existing authenticated
+deadline-evidence consumer and the existing Social V2 statement consumer
+authenticate the exact stored compact JWS bytes with server-owned trust. The
+historical decision instant, challenge revision, complete canonical authority
+snapshot and every reservation/effect/receipt identity must agree; a decoded
+payload or caller-created digest is never provenance. The explicitly mapped
+`public` relation, associated TOAST object and complete relation/function/trigger
+definitions and identities are independently attested under a distinct
+restricted runtime role rather than ambient `search_path` or stable object OIDs
+alone. This pure handoff module still
+creates no row or transaction and adds no caller boolean or substitute
+"verified" authority.
 
 ## Reviewed public vector
 
@@ -386,8 +397,10 @@ profile, and device-admission fixture hashes. No existing fixture is modified.
 
 ## Explicit non-changes
 
-- No model, migration, repository, durable adapter, route, factory, runtime
-  entrypoint, configuration, flag, dependency, or deployment is changed.
+- This handoff module adds no model, migration, repository, route, factory,
+  runtime entrypoint, configuration, flag, dependency, or deployment. Its
+  separately linked dormant atomic-acceptance storage phase owns the additive
+  durability/CAS artifacts.
 - No database, Redis, HTTP service, Unix socket, signer provider, or network
   application is contacted by this contract.
 - No Enrollment V2, phone-proof, association-creation, or V1 authorization
