@@ -588,6 +588,13 @@ def _authority_expected(claims: deadline.DeadlineEvidenceClaimsV1, observed_at: 
     }
 
 
+def _authority_wire_from_authenticated_claims(
+    claims: deadline.DeadlineEvidenceClaimsV1,
+    observed_at: int,
+) -> str:
+    return _canonical(_authority_expected(claims, observed_at))
+
+
 @_sanitize_public_failure
 def parse_current_authority_snapshot_v1(source: object) -> Mapping[str, object]:
     """Validate shape only; the returned mapping is never current authority."""
@@ -738,6 +745,52 @@ def parse_finalization_observation_v1(source: object) -> FinalizationObservation
         _deny()
 
 
+@_sanitize_public_failure
+def parse_evidence_bound_finalization_observation_v1(
+    source: object,
+    *,
+    authenticated_evidence: object,
+    expected_reservation_id: object,
+    expected_reservation_revision: object,
+    expected_challenge_id: object,
+    expected_challenge_revision: object,
+    expected_observed_at: object,
+) -> FinalizationObservationV1:
+    """Bind one canonical observation to signed evidence and accepted history."""
+
+    try:
+        projection = deadline.project_authenticated_messaging_device_verification_deadline_evidence_v1(
+            authenticated_evidence
+        )
+        claims = projection["claims"]
+        if type(claims) is not deadline.DeadlineEvidenceClaimsV1:
+            raise ValueError
+        reservation_id = _hex64(expected_reservation_id)
+        reservation_revision = _integer(expected_reservation_revision, positive=True)
+        challenge_id = _hex64(expected_challenge_id)
+        challenge_revision = _integer(expected_challenge_revision, positive=True)
+        observed_at = _integer(expected_observed_at)
+        observation = parse_finalization_observation_v1(source)
+        expected_authority_wire = _authority_wire_from_authenticated_claims(
+            claims,
+            observed_at,
+        )
+        expected_authority_digest = current_authority_snapshot_digest_v1(expected_authority_wire)
+        if (
+            observation.reservation_id != reservation_id
+            or observation.reservation_revision != reservation_revision
+            or observation.challenge_id != challenge_id
+            or observation.challenge_revision != challenge_revision
+            or observation.observed_at != observed_at
+            or observation.authority_snapshot_wire != expected_authority_wire
+            or observation.authority_snapshot_digest != expected_authority_digest
+        ):
+            raise ValueError
+        return observation
+    except Exception:
+        _deny()
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class AtomicAcceptanceReceiptV1:
     wire: str
@@ -754,6 +807,114 @@ class AtomicAcceptanceReceiptV1:
     effect_digest: str
     finalization_request_digest: str
     decided_at: int
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AtomicAcceptanceEffectV1:
+    wire: str
+    effect_id: str
+    effect_digest: str
+    reservation_id: str
+    reservation_revision: int
+    acceptance_id: str
+    association_id: str
+    challenge_id: str
+    finalization_request_digest: str
+
+
+@_sanitize_public_failure
+def parse_atomic_acceptance_effect_v1(
+    source: object,
+    *,
+    finalization_observation_wire: object,
+    authenticated_evidence: object,
+    expected_reservation_id: object,
+    expected_reservation_revision: object,
+    expected_acceptance_id: object,
+    expected_association_id: object,
+    expected_challenge_id: object,
+    expected_challenge_revision: object,
+    expected_observed_at: object,
+    expected_finalization_request_digest: object,
+) -> AtomicAcceptanceEffectV1:
+    """Parse an effect only through authenticated, expected accepted history."""
+
+    value = _closed_json(source, _EFFECT_FIELDS, MAX_EFFECT_BYTES)
+    try:
+        reservation_id = _hex64(expected_reservation_id)
+        reservation_revision = _integer(expected_reservation_revision, positive=True)
+        acceptance_id = _hex64(expected_acceptance_id)
+        association_id = _hex64(expected_association_id)
+        challenge_id = _hex64(expected_challenge_id)
+        finalization_request_digest = _matching(
+            expected_finalization_request_digest,
+            _FINALIZATION_REQUEST_DIGEST,
+        )
+        observation = parse_evidence_bound_finalization_observation_v1(
+            finalization_observation_wire,
+            authenticated_evidence=authenticated_evidence,
+            expected_reservation_id=reservation_id,
+            expected_reservation_revision=reservation_revision,
+            expected_challenge_id=challenge_id,
+            expected_challenge_revision=expected_challenge_revision,
+            expected_observed_at=expected_observed_at,
+        )
+        if (
+            value["schema"] != EFFECT_SCHEMA
+            or type(value["version"]) is not int
+            or value["version"] != VERSION
+            or type(value["reservationRevision"]) is not int
+            or value["reservationRevision"] != VERSION
+            or value["operation"] != "preaccepted-enrollment-v2-accept"
+            or type(value["associationVersion"]) is not int
+            or value["associationVersion"] != VERSION
+            or type(value["authorityEpoch"]) is not int
+            or value["authorityEpoch"] != VERSION
+        ):
+            raise ValueError
+        if (
+            _hex64(value["reservationId"]) != reservation_id
+            or value["reservationRevision"] != reservation_revision
+            or _hex64(value["acceptanceId"]) != acceptance_id
+            or _hex64(value["associationId"]) != association_id
+            or _hex64(value["challengeId"]) != challenge_id
+            or _matching(value["finalizationRequestDigest"], _FINALIZATION_REQUEST_DIGEST)
+            != finalization_request_digest
+        ):
+            raise ValueError
+        authority_digest = observation.authority_snapshot_digest
+        preimage = _canonical(
+            {
+                "acceptanceId": acceptance_id,
+                "associationId": association_id,
+                "authoritySnapshotDigest": authority_digest,
+                "challengeId": challenge_id,
+                "finalizationRequestDigest": finalization_request_digest,
+                "reservationId": reservation_id,
+                "reservationRevision": VERSION,
+                "schema": EFFECT_ID_PREIMAGE_SCHEMA,
+                "version": VERSION,
+            }
+        )
+        expected_effect_id = hashlib.sha256(
+            EFFECT_ID_DOMAIN.encode("ascii") + b"\0" + preimage.encode("ascii")
+        ).hexdigest()
+        if value["effectId"] != expected_effect_id:
+            raise ValueError
+        wire = cast(str, source)
+        return AtomicAcceptanceEffectV1(
+            wire=wire,
+            effect_id=expected_effect_id,
+            effect_digest=_digest(EFFECT_DIGEST_PREFIX, EFFECT_DIGEST_DOMAIN, wire),
+            reservation_id=reservation_id,
+            reservation_revision=VERSION,
+            acceptance_id=acceptance_id,
+            association_id=association_id,
+            challenge_id=challenge_id,
+            finalization_request_digest=finalization_request_digest,
+        )
+    except Exception:
+        _deny()
 
 
 @_sanitize_public_failure
@@ -860,6 +1021,8 @@ def _effect(
     reservation: AtomicAcceptanceReservationV1,
     observation: FinalizationObservationV1,
     finalization_request_digest: str,
+    *,
+    authenticated_evidence: object,
 ) -> tuple[str, str, str]:
     preimage_values = {
         "acceptanceId": reservation.acceptance_id,
@@ -894,8 +1057,20 @@ def _effect(
     if set(effect_values) != _EFFECT_FIELDS:
         _deny()
     effect_wire = _canonical(effect_values)
-    effect_digest = _digest(EFFECT_DIGEST_PREFIX, EFFECT_DIGEST_DOMAIN, effect_wire)
-    return effect_wire, effect_id, effect_digest
+    parsed = parse_atomic_acceptance_effect_v1(
+        effect_wire,
+        finalization_observation_wire=observation.wire,
+        authenticated_evidence=authenticated_evidence,
+        expected_reservation_id=reservation.reservation_id,
+        expected_reservation_revision=reservation.reservation_revision,
+        expected_acceptance_id=reservation.acceptance_id,
+        expected_association_id=reservation.association_id,
+        expected_challenge_id=reservation.challenge_id,
+        expected_challenge_revision=reservation.challenge_revision,
+        expected_observed_at=observation.observed_at,
+        expected_finalization_request_digest=finalization_request_digest,
+    )
+    return parsed.wire, parsed.effect_id, parsed.effect_digest
 
 
 def _receipt(
@@ -1002,6 +1177,15 @@ def model_atomic_acceptance_and_cas_v1(
         claims = evidence_projection["claims"]
         if type(claims) is not deadline.DeadlineEvidenceClaimsV1:
             raise ValueError
+        observation = parse_evidence_bound_finalization_observation_v1(
+            finalization_observation_wire,
+            authenticated_evidence=authenticated_evidence,
+            expected_reservation_id=reservation.reservation_id,
+            expected_reservation_revision=reservation.reservation_revision,
+            expected_challenge_id=reservation.challenge_id,
+            expected_challenge_revision=reservation.challenge_revision,
+            expected_observed_at=decided,
+        )
         authenticated_statement = verification.verify_social_preaccepted_enrollment_verification_statement_v2(
             statement_compact_jws,
             config=statement_config,
@@ -1058,9 +1242,6 @@ def model_atomic_acceptance_and_cas_v1(
             or not claims.observed_at <= decided < claims.expires_at
         ):
             raise ValueError
-        authority = parse_current_authority_snapshot_v1(observation.authority_snapshot_wire)
-        if authority != _authority_expected(claims, decided):
-            raise ValueError
         finalization_request_digest = _finalization_request_digest(
             reservation,
             statement_digest=statement_digest,
@@ -1069,6 +1250,7 @@ def model_atomic_acceptance_and_cas_v1(
             reservation,
             observation,
             finalization_request_digest,
+            authenticated_evidence=authenticated_evidence,
         )
         receipt = _receipt(
             reservation,
@@ -1231,6 +1413,32 @@ def _reservation_matches_exact_retry_evidence(
 
 
 @_sanitize_public_failure
+def validate_reservation_historical_identity_v1(
+    reservation_wire: object,
+    *,
+    expected_input_wire: object,
+    evidence_compact_jws: object,
+) -> AtomicAcceptanceReservationV1:
+    """Validate exact stored identity without asserting present authority."""
+
+    try:
+        reservation = parse_atomic_acceptance_reservation_v1(reservation_wire)
+        claims = _strict_non_authoritative_historical_evidence_claims_v1(
+            evidence_compact_jws,
+            expected_input_wire=expected_input_wire,
+        )
+        if type(evidence_compact_jws) is not str or not _reservation_matches_exact_retry_evidence(
+            reservation,
+            claims,
+            evidence_compact_jws,
+        ):
+            raise ValueError
+        return reservation
+    except Exception:
+        _deny()
+
+
+@_sanitize_public_failure
 def reservation_retry_disposition_v1(
     reservation_wire: object,
     *,
@@ -1243,18 +1451,12 @@ def reservation_retry_disposition_v1(
     """Resolve only exact-byte retry; changed or terminal reuse always denies."""
 
     try:
-        reservation = parse_atomic_acceptance_reservation_v1(reservation_wire)
-        claims = _strict_non_authoritative_historical_evidence_claims_v1(
-            evidence_compact_jws,
+        reservation = validate_reservation_historical_identity_v1(
+            reservation_wire,
             expected_input_wire=expected_input_wire,
+            evidence_compact_jws=evidence_compact_jws,
         )
         current = _integer(now)
-        if type(evidence_compact_jws) is not str or not _reservation_matches_exact_retry_evidence(
-            reservation,
-            claims,
-            evidence_compact_jws,
-        ):
-            raise ValueError
         if reservation.state == "pending":
             if (
                 statement_compact_jws is not None
@@ -1324,6 +1526,7 @@ def terminal_device_id_reuse_semantics_v1(reservation_wire: object) -> str:
 
 __all__ = [
     "AUTHORITY_SNAPSHOT_SCHEMA",
+    "AtomicAcceptanceEffectV1",
     "AtomicAcceptanceReceiptV1",
     "AtomicAcceptanceReservationV1",
     "COMMIT",
@@ -1347,11 +1550,14 @@ __all__ = [
     "deadline_evidence_payload_digest_v1",
     "model_atomic_acceptance_and_cas_v1",
     "parse_atomic_acceptance_receipt_v1",
+    "parse_atomic_acceptance_effect_v1",
     "parse_atomic_acceptance_reservation_v1",
     "parse_current_authority_snapshot_v1",
+    "parse_evidence_bound_finalization_observation_v1",
     "parse_finalization_observation_v1",
     "reservation_retry_disposition_v1",
     "terminal_device_id_reuse_semantics_v1",
     "transition_pending_reservation_terminal_v1_bytes",
+    "validate_reservation_historical_identity_v1",
     "verification_statement_digest_v1",
 ]

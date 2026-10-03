@@ -212,10 +212,23 @@ That future UBID boundary is now frozen, but remains dormant, by the dedicated
 [`MessagingDeviceVerificationDeadlineEvidenceV1`](SOCIAL_MESSAGING_DEVICE_VERIFICATION_DEADLINE_EVIDENCE_V1.md)
 and
 [`SocialPreacceptedEnrollmentV2AtomicAcceptanceAndCASV1`](SOCIAL_PREACCEPTED_ENROLLMENT_V2_ATOMIC_ACCEPTANCE_AND_CAS_V1.md)
-contracts. The existing four integer arguments remain non-authoritative; a
-future caller must obtain them from authenticated deadline evidence and must
-still perform the exact transaction-bound recheck. No statement byte or
-consumer behavior in this document is changed.
+contracts. The latter now includes a dormant caller-transaction PostgreSQL
+durability/CAS owner, but that storage row and every caller observation remain
+non-authoritative. Its accepted-history reparser requires an explicit
+server-owned `SocialPreacceptedEnrollmentVerificationStatementV2Config` and
+invokes this canonical verifier over the exact stored compact JWS, exact
+embedded context/input, evidence-derived four deadlines and stored historical
+decision instant. It independently authenticates the stored deadline-evidence
+JWS, derives the canonical authority snapshot from those signed claims, and
+requires the statement, reservation, finalization request, effect and receipt
+identity chains to agree exactly. A decoded payload, self-consistent digest or
+database row cannot substitute for either authenticated result. These
+historical bindings still grant no current authority. The existing four
+integer arguments remain
+non-authoritative; a future orchestrator must obtain them from authenticated
+deadline evidence and must still perform the exact transaction-bound current
+authority recheck before acceptance. No statement byte or consumer behavior in
+this document is changed.
 
 ## Public vector and preservation gate
 
@@ -248,9 +261,9 @@ behavior remain unchanged.
 
 ## Explicitly deferred
 
-This slice adds no Social producer or signer, Ed25519 verifier in UBID, caller
-`verified`/`accepted`/`current` boolean, durable acceptance or rejection,
-challenge issuance or consumption, association mutation, current session or
-Full authority, model, repository, migration, replay table, route, socket,
-HTTP/BFF/browser surface, factory/configuration/feature-flag wiring, service
-restart or deployment.
+This statement slice adds no Social producer or signer, Ed25519 verifier in
+UBID, caller `verified`/`accepted`/`current` boolean, challenge issuance or
+consumption, association mutation, current session or Full authority, route,
+socket, HTTP/BFF/browser surface, factory/configuration/feature-flag wiring,
+service restart or deployment. The linked atomic-acceptance document owns the
+separate dormant durability/CAS phase and its explicit non-authority boundary.

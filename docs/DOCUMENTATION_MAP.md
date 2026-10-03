@@ -100,9 +100,16 @@ These are useful for future development, staging, compatibility, and design inte
   empty-by-default RS256 public trust lifecycle and strict pure consumer; no
   private key, signer, reservation adapter, route or runtime activation
 - `docs/SOCIAL_PREACCEPTED_ENROLLMENT_V2_ATOMIC_ACCEPTANCE_AND_CAS_V1.md` —
-  dormant UBID-owned pure pending-reservation, final locked-recheck/CAS,
-  effect, immutable-receipt and exact-retry state contract; no table,
-  migration, repository, transaction implementation, route or activation
+  dormant UBID-owned pure pending-reservation and final locked-recheck contract
+  plus a caller-transaction PostgreSQL durability/CAS owner, immutable
+  evidence-bound effect/receipt history and exact retry; accepted durable
+  reparse authenticates both the dedicated signed deadline evidence and Social
+  verification statement with server-owned trust, while the explicitly mapped
+  `public` relation, associated TOAST object and complete relation/function/trigger
+  definitions and object identities are attested on every operation under a
+  distinct least-privilege runtime role; storage is not
+  current authority and the external authority-locking orchestrator remains
+  deferred; no route, runtime wiring, migration application or activation
 - `docs/NIP17_RUNTIME_PLAN.md`
 - `docs/SOCIAL_SESSION_ISSUANCE_V1.md` — dormant PostgreSQL one-shot phone
   authority, original OAuth-generation provenance, canonical viewer credential,
