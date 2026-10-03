@@ -11,11 +11,12 @@ from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
-from sqlalchemy import CheckConstraint, UniqueConstraint, create_engine
+from sqlalchemy import CheckConstraint, UniqueConstraint, create_engine, inspect
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateTable
 
+from app.models import Base
 from app.services import social_messaging_device_verification_deadline_evidence_v1 as deadline
 from app.services import social_preaccepted_enrollment_v2_atomic_acceptance_contract as contract
 from app.services import social_preaccepted_enrollment_v2_atomic_acceptance_storage as storage
@@ -620,10 +621,30 @@ def test_catalog_options_are_sorted_and_preserve_null_versus_empty():
         denied(lambda invalid=invalid: storage._canonical_catalog_options(invalid))
 
 
+def test_dormant_public_model_is_isolated_from_shared_sqlite_metadata():
+    table = storage.SocialPreacceptedEnrollmentV2AtomicAcceptanceRow.__table__
+    assert table.metadata is not Base.metadata
+    assert table.schema == storage.SCHEMA == "public"
+    assert table.key not in Base.metadata.tables
+    assert f"{storage.SCHEMA}.{storage.TABLE}" in str(CreateTable(table).compile(dialect=postgresql.dialect()))
+
+    engine = create_engine("sqlite:///:memory:")
+    try:
+        Base.metadata.create_all(engine)
+        assert storage.TABLE not in inspect(engine).get_table_names()
+        Base.metadata.drop_all(engine)
+        assert inspect(engine).get_table_names() == []
+    finally:
+        engine.dispose()
+
+
 def test_migration_and_source_freeze_transaction_cas_and_no_authority_surface():
     source = SOURCE.read_text(encoding="ascii")
     migration = MIGRATION.read_text(encoding="ascii")
     normalized_migration = re.sub(r"\s+", "", migration)
+    assert hashlib.sha256(MIGRATION.read_bytes()).hexdigest() == (
+        "227d1c064ca143b2e6add17ab1d2f86a6c056cc7c05950f99cc3ae4d1c42e26f"
+    )
     ast.parse(source)
     assert storage.RUNTIME_ENABLED is False
     assert storage.SCHEMA == "public"

@@ -34,11 +34,11 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.engine import Connection, NestedTransaction, RootTransaction
 from sqlalchemy.ext.compiler import compiles
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import DeclarativeBase, Session
 from sqlalchemy.sql import quoted_name
 from sqlalchemy.sql.expression import ColumnElement
 
-from app.models import Base, _CanonicalLowerHex
+from app.models import _CanonicalLowerHex
 from app.services import social_messaging_device_verification_deadline_evidence_v1 as deadline
 from app.services import social_messaging_mobile_pre_enrollment_v2 as preacceptance
 from app.services import social_preaccepted_enrollment_v2_atomic_acceptance_contract as contract
@@ -60,6 +60,10 @@ UNAVAILABLE_MESSAGE = "social preaccepted enrollment v2 atomic acceptance storag
 _HEX64 = re.compile(r"[0-9a-f]{64}\Z").fullmatch
 _SCHEMA_IDENTIFIER = re.compile(r"[a-z][a-z0-9_]{0,62}\Z").fullmatch
 _TERMINAL_STATES = frozenset(("rejected", "expired", "cancelled"))
+
+
+class _AtomicAcceptanceBase(DeclarativeBase):
+    pass
 
 
 class SocialPreacceptedEnrollmentV2AtomicAcceptanceStorageUnavailable(ValueError):
@@ -309,7 +313,7 @@ def _compile_sqlite_atomic_acceptance_check(_element, _compiler, **_kwargs):
     return "1"
 
 
-class SocialPreacceptedEnrollmentV2AtomicAcceptanceRow(Base):
+class SocialPreacceptedEnrollmentV2AtomicAcceptanceRow(_AtomicAcceptanceBase):
     """One immutable identity root with a single pending-to-terminal CAS."""
 
     __tablename__ = TABLE
@@ -436,16 +440,17 @@ class SocialPreacceptedEnrollmentV2AtomicAcceptanceRow(Base):
     )
 
 
-def _qualified_table(schema: object):
+def _qualified_table(schema: object) -> Table:
     trusted_schema = _schema_identifier(schema)
-    return SocialPreacceptedEnrollmentV2AtomicAcceptanceRow.__table__.to_metadata(
+    source_table = cast(Table, SocialPreacceptedEnrollmentV2AtomicAcceptanceRow.__table__)
+    return source_table.to_metadata(
         MetaData(),
         name=quoted_name(TABLE, quote=True),
         schema=quoted_name(trusted_schema, quote=True),
     )
 
 
-def _test_only_qualified_table(schema: object):
+def _test_only_qualified_table(schema: object) -> Table:
     """Expose a strictly validated alternate schema only to isolated tests."""
 
     return _qualified_table(schema)
