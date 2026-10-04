@@ -41,43 +41,20 @@ def _derive_coturn_rest_credential(turn_secret: str, username: str) -> str:
 
 @admin_bp.route("/health", methods=["GET"])
 def health():
-    """
-    Liveness/readiness-ish health endpoint.
+    """Process liveness only; dependency readiness has its own endpoint."""
+    import datetime
 
-    TESTING behavior (pytest):
-      - always 200
-      - always status="healthy"
-      - does NOT require Bitcoin Core RPC creds
-    """
-    from flask import current_app
-
-    rpc_ok = True
-    rpc_error = None
-
-    if not current_app.config.get("TESTING"):
-        try:
-            rpc = get_rpc_connection()
-            rpc.getblockchaininfo()
-        except Exception:
-            rpc_ok = False
-            rpc_error = "Internal server error"
-            logger.warning("Bitcoin RPC health check failed", exc_info=True)
-
-    # In tests, force "healthy" because suite expects it even without RPC configured
-    status = "healthy" if current_app.config.get("TESTING") else ("healthy" if rpc_ok else "unhealthy")
-
-    payload = {
-        "timestamp": __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat().replace("+00:00", "Z"),
-        "status": status,
-        "version": (current_app.config.get("APP_VERSION") or __import__("os").environ.get("APP_VERSION") or "dev"),
-        "ok": (status == "healthy"),
-        "rpc_ok": rpc_ok,
-    }
-    if rpc_error:
-        payload["rpc_error"] = rpc_error
-
-    code = 200 if status == "healthy" else 503
-    return jsonify(payload), code
+    return (
+        jsonify(
+            {
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
+                "status": "healthy",
+                "version": current_app.config.get("APP_VERSION") or "dev",
+                "ok": True,
+            }
+        ),
+        200,
+    )
 
 
 @admin_bp.route("/health/live")

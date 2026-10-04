@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Mapping, Optional
+import uuid
+from typing import Any, Mapping
 
 import redis
 from flask import Flask
@@ -23,6 +24,10 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for tests
 logger = logging.getLogger(__name__)
 
 REDIS_BACKED_RATE_LIMIT_SCHEMES = ("redis://", "rediss://", "unix://")
+RATE_LIMIT_REDIS_REQUIRED_ENVIRONMENTS = {"production", "staging"}
+_LIMITER_INITIALIZED_EXTENSION = "hodlxxi_rate_limiter_initialized"
+_LIVENESS_PATHS = frozenset({"/health", "/health/live"})
+_PUBLIC_STATUS_PATH = "/api/public/status"
 
 
 def _is_redis_backed_storage_uri(storage_uri: object) -> bool:
@@ -58,7 +63,7 @@ def _redact_uri_for_log(uri: str | None) -> str:
         return raw
 
 
-limiter = Limiter(key_func=get_remote_address, storage_uri="memory://")
+limiter = Limiter(key_func=get_remote_address)
 
 
 def _as_bool(value: Any, default: bool = False) -> bool:
@@ -70,24 +75,55 @@ def _as_bool(value: Any, default: bool = False) -> bool:
 
 
 def _build_redis_uri(cfg: Mapping[str, Any]) -> str:
-    if cfg.get("REDIS_URL"):
-        return str(cfg["REDIS_URL"])
+    configured_url = cfg.get("REDIS_URL") or cfg.get("REDIS_DSN") or os.getenv("REDIS_URL") or os.getenv("REDIS_DSN")
+    if configured_url:
+        return str(configured_url)
 
-    host = cfg.get("REDIS_HOST", "127.0.0.1")
-    port = cfg.get("REDIS_PORT", 6379)
-    db = cfg.get("REDIS_DB", 0)
-    password = cfg.get("REDIS_PASSWORD")
+    host = cfg.get("REDIS_HOST") or os.getenv("REDIS_HOST") or "127.0.0.1"
+    port = cfg.get("REDIS_PORT") or os.getenv("REDIS_PORT") or 6379
+    db = cfg.get("REDIS_DB") if cfg.get("REDIS_DB") is not None else os.getenv("REDIS_DB", 0)
+    password = cfg.get("REDIS_PASSWORD") or os.getenv("REDIS_PASSWORD")
     if password:
         return f"redis://:{password}@{host}:{port}/{db}"
     return f"redis://{host}:{port}/{db}"
 
 
+def _runtime_environment(cfg: Mapping[str, Any]) -> str:
+    return str(cfg.get("FLASK_ENV") or cfg.get("ENV") or os.getenv("FLASK_ENV") or "development").strip().lower()
+
+
+def _rate_limit_redis_required(cfg: Mapping[str, Any]) -> bool:
+    return redis_required(cfg) or _runtime_environment(cfg) in RATE_LIMIT_REDIS_REQUIRED_ENVIRONMENTS
+
+
+def _rate_limit_testing(cfg: Mapping[str, Any]) -> bool:
+    return _as_bool(cfg.get("TESTING"), False) or _runtime_environment(cfg) in {"test", "testing"}
+
+
+def _configured_rate_limit_storage(cfg: Mapping[str, Any]) -> str:
+    configured_uri = (
+        cfg.get("RATELIMIT_STORAGE_URI")
+        or cfg.get("RATE_LIMIT_STORAGE_URI")
+        or os.getenv("RATELIMIT_STORAGE_URL")
+        or os.getenv("REDIS_URL")
+        or os.getenv("REDIS_DSN")
+        or cfg.get("REDIS_URL")
+        or cfg.get("REDIS_DSN")
+    )
+    if configured_uri:
+        return str(configured_uri)
+    if os.getenv("REDIS_HOST") or cfg.get("REDIS_HOST_EXPLICIT"):
+        return _build_redis_uri(cfg)
+    return "memory://"
+
+
 def _validate_rate_limit_storage(storage_uri: str, cfg: Mapping[str, Any]) -> str:
     """Return a safe rate-limit storage URI or fail closed in production."""
 
+    if _rate_limit_redis_required(cfg) and not _is_redis_backed_storage_uri(storage_uri):
+        raise RuntimeError("Redis-backed rate limiting is required in staging and production")
+
     if storage_uri == "memory://":
-        if redis_required(cfg):
-            raise RuntimeError("Redis-backed rate limiting is required in production")
         log_memory_fallback_warning("rate_limit", "missing_storage_uri")
         return storage_uri
 
@@ -97,20 +133,16 @@ def _validate_rate_limit_storage(storage_uri: str, cfg: Mapping[str, Any]) -> st
             client.ping()
             client.close()
         except Exception as exc:
-            if redis_required(cfg):
-                raise RuntimeError(
-                    "Redis-backed rate limiting is required in production but Redis ping failed"
-                ) from exc
+            if _rate_limit_redis_required(cfg):
+                raise RuntimeError("Redis-backed rate limiting is required but Redis ping failed") from exc
             log_memory_fallback_warning("rate_limit", exc.__class__.__name__)
             return "memory://"
 
     return storage_uri
 
 
-def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
+def init_security(app: Flask, cfg: Mapping[str, Any]) -> Limiter:
     """Initialise standard security middleware and rate limiting."""
-    global limiter
-
     # Respect reverse proxy headers for TLS detection and client IP extraction.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)  # type: ignore[assignment]
 
@@ -158,51 +190,7 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
     else:
         logger.warning("flask-talisman not installed; skipping security headers setup")
 
-    limit_default = cfg.get("RATELIMIT_DEFAULT") or cfg.get("RATE_LIMIT_DEFAULT") or "100/hour"
-    if not limit_default:
-        limit_default = "100/hour"
-
-    if cfg.get("RATE_LIMIT_ENABLED") is False:
-        # limiter configured via init_rate_limiter()
-        storage_uri = os.getenv("RATELIMIT_STORAGE_URL") or os.getenv("REDIS_URL") or "memory://"
-        logger.info("Rate limiting disabled")
-    else:
-        # Validate storage before binding Flask-Limiter so production cannot
-        # silently downgrade to in-memory rate-limit state.
-        try:
-            storage_uri = os.getenv("RATELIMIT_STORAGE_URL") or os.getenv("REDIS_URL") or "memory://"
-            storage_uri = _validate_rate_limit_storage(storage_uri, cfg)
-            app.config["RATELIMIT_STORAGE_URI"] = storage_uri
-            app.config["RATE_LIMIT_STORAGE_URI"] = storage_uri
-            app.config["RATELIMIT_DEFAULT"] = limit_default
-            app.config["RATE_LIMIT_DEFAULT"] = limit_default
-            limiter.init_app(
-                app,
-                default_limits=[limit_default],
-                storage_uri=storage_uri,
-                strategy="fixed-window",
-            )
-        except TypeError as exc:
-            # Flask-Limiter 2.x accepted init_app(app) only.  The retry is
-            # safe in production only after Redis-backed storage has been
-            # validated and written into both legacy and current config keys.
-            configured_storage = (
-                app.config.get("RATELIMIT_STORAGE_URI") or app.config.get("RATE_LIMIT_STORAGE_URI") or ""
-            )
-            if redis_required(cfg) and not _is_redis_backed_storage_uri(configured_storage):
-                raise RuntimeError("Rate limiter initialization failed in production") from exc
-            limiter.init_app(app)
-        # HODLXXI_EXEMPT_STATUS_V2
-        # Screensaver polls /api/public/status; exempt it from Flask-Limiter defaults.
-        try:
-            vf = app.view_functions.get("api_public_status")
-            if vf is not None and hasattr(limiter, "exempt"):
-                limiter.exempt(vf)
-                logger.info("✅ Exempted /api/public/status from Flask-Limiter defaults")
-        except Exception:
-            pass
-
-    logger.info(f"Rate limiter initialized with {_redact_uri_for_log(storage_uri)} storage (limit: {limit_default})")
+    init_rate_limiter(app, cfg)
 
     log_level = str(cfg.get("LOG_LEVEL", "INFO")).upper()
     level = getattr(logging, log_level, logging.INFO)
@@ -220,80 +208,69 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Optional[Limiter]:
     return limiter
 
 
-def init_rate_limiter(app):
-    # CI/TESTING: isolate rate limit counters per app instance (prevents /oauth/register 429 in CI)
-    try:
-        import os
-        import uuid
+def init_rate_limiter(app: Flask, cfg: Mapping[str, Any] | None = None) -> Limiter:
+    """Configure Flask-Limiter once, before calling its 4.1 ``init_app(app)`` API."""
 
-        if (
-            os.environ.get("TESTING") == "1"
-            or "PYTEST_CURRENT_TEST" in os.environ
-            or app.config.get("TESTING")
-            or getattr(app, "testing", False)
-        ):
-            app.config.setdefault("RATELIMIT_STORAGE_URI", "memory://")
-            app.config.setdefault("RATELIMIT_KEY_PREFIX", f"test-{uuid.uuid4()}")
-    except Exception:
-        pass
+    if app.extensions.get(_LIMITER_INITIALIZED_EXTENSION) is not None:
+        raise RuntimeError("Rate limiter is already initialized for this application")
 
-    """Initialize Flask-Limiter using the module-level limiter instance."""
-    enabled = app.config.get("RATE_LIMIT_ENABLED", True)
-    storage_uri = (
-        app.config.get("RATE_LIMIT_STORAGE_URI")
-        or os.getenv("RATELIMIT_STORAGE_URL")
-        or os.getenv("REDIS_URL")
-        or "memory://"
-    )
-    storage_uri = _validate_rate_limit_storage(storage_uri, app.config)
-    default_limit = app.config.get("RATE_LIMIT_DEFAULT") or "100/hour"
+    runtime_cfg: Mapping[str, Any] = cfg or app.config
+    enabled = _as_bool(runtime_cfg.get("RATE_LIMIT_ENABLED", runtime_cfg.get("RATELIMIT_ENABLED")), True)
+    default_limit = str(runtime_cfg.get("RATELIMIT_DEFAULT") or runtime_cfg.get("RATE_LIMIT_DEFAULT") or "100/hour")
 
+    if _rate_limit_testing(runtime_cfg):
+        storage_uri = "memory://"
+        app.config["RATELIMIT_KEY_PREFIX"] = f"test-{uuid.uuid4()}"
+    else:
+        storage_uri = _configured_rate_limit_storage(runtime_cfg)
+        if enabled:
+            storage_uri = _validate_rate_limit_storage(storage_uri, runtime_cfg)
+
+    app.config["RATELIMIT_ENABLED"] = enabled
     app.config["RATELIMIT_STORAGE_URI"] = storage_uri
-    app.config["RATE_LIMIT_STORAGE_URI"] = storage_uri
     app.config["RATELIMIT_DEFAULT"] = default_limit
-    app.config["RATE_LIMIT_DEFAULT"] = default_limit
+    app.config["RATELIMIT_STRATEGY"] = "fixed-window"
+    app.config["RATELIMIT_IN_MEMORY_FALLBACK_ENABLED"] = False
 
-    # Even when disabled, keep limiter object valid for decorators.
-    try:
-        limiter.init_app(
-            app,
-            storage_uri=storage_uri,
-            default_limits=[default_limit],
-            enabled=enabled,
-        )
-    except TypeError as exc:
-        # older signatures: init_app(app) only; production can use this only
-        # after validated Redis storage has been committed to app.config.
-        configured_storage = app.config.get("RATELIMIT_STORAGE_URI") or app.config.get("RATE_LIMIT_STORAGE_URI") or ""
-        if redis_required(app.config) and not _is_redis_backed_storage_uri(configured_storage):
-            raise RuntimeError("Rate limiter initialization failed in production") from exc
-        limiter.init_app(app)
+    # Flask-Limiter 4.1 accepts only the application here. All policy is in
+    # app.config before this one initialization call.
+    limiter.init_app(app)
+    app.extensions[_LIMITER_INITIALIZED_EXTENSION] = limiter
 
-    try:
-        app.logger.info(
-            f"Rate limiter initialized with {_redact_uri_for_log(storage_uri)} storage (limit: {default_limit}), enabled={enabled}"
-        )
-    except Exception:
-        pass
+    logger.info(
+        "Rate limiter initialized with %s storage (limit: %s), enabled=%s",
+        _redact_uri_for_log(storage_uri),
+        default_limit,
+        enabled,
+    )
+    return limiter
 
 
-# ============================================================
-# FINAL SAFETY: ensure limiter is never None (decorators bind at import time)
-# ============================================================
-try:
-    from flask_limiter import Limiter
-    from flask_limiter.util import get_remote_address
+def exempt_liveness_endpoints(app: Flask) -> dict[str, str]:
+    """Exempt uniquely owned liveness routes after registration."""
 
-    if globals().get("limiter", None) is None:
-        limiter = Limiter(key_func=get_remote_address, storage_uri="memory://")
-except Exception:
-    # absolute fallback to avoid import-time crashes
-    class _NoopLimiter:
-        def limit(self, *_a, **_k):
-            def _decorator(fn):
-                return fn
+    owners: dict[str, list[str]] = {path: [] for path in _LIVENESS_PATHS}
+    for rule in app.url_map.iter_rules():
+        if rule.rule in owners and "GET" in rule.methods:
+            owners[rule.rule].append(rule.endpoint)
 
-            return _decorator
+    invalid = {path: endpoints for path, endpoints in owners.items() if len(endpoints) != 1}
+    if invalid:
+        raise RuntimeError(f"Liveness route ownership must be unique: {invalid}")
 
-    if globals().get("limiter", None) is None:
-        limiter = _NoopLimiter()
+    resolved: dict[str, str] = {}
+    for path, endpoints in owners.items():
+        endpoint = endpoints[0]
+        limiter.exempt(app.view_functions[endpoint])
+        resolved[path] = endpoint
+
+    # Preserve the existing screensaver/public-status polling policy, but do
+    # it only after route registration rather than during security bootstrap.
+    status_owners = [
+        rule.endpoint for rule in app.url_map.iter_rules() if rule.rule == _PUBLIC_STATUS_PATH and "GET" in rule.methods
+    ]
+    if len(status_owners) > 1:
+        raise RuntimeError(f"Public status route ownership must be unique: {status_owners}")
+    if status_owners:
+        limiter.exempt(app.view_functions[status_owners[0]])
+    return resolved

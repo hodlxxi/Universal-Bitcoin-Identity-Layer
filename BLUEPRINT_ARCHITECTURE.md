@@ -304,7 +304,7 @@ app = create_app()
 5. **Test thoroughly:**
    ```bash
    pytest tests/test_admin.py -v
-   curl http://localhost:5000/health
+   curl http://localhost:5000/health/live
    ```
 
 6. **Repeat** for remaining routes
