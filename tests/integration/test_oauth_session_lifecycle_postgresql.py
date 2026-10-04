@@ -1010,7 +1010,6 @@ def logout_dispatch_app(state, monkeypatch, registration):
         routes.register_browser_routes(
             app,
             generate_challenge=lambda: "synthetic",
-            get_rpc_connection=lambda: None,
             logger=app.logger,
             render_template_string_func=render_template_string,
             special_names={},

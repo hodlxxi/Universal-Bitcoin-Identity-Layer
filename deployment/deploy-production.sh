@@ -299,21 +299,21 @@ echo "Testing Endpoints:"
 echo "----------------------------------------"
 
 # Test local health endpoint
-if curl -s http://127.0.0.1:5000/health | grep -q "ok"; then
+if curl -s http://127.0.0.1:5000/health/live | grep -q "alive"; then
     echo -e "  Local HTTP:   ${GREEN}✓ Working${NC}"
 else
     echo -e "  Local HTTP:   ${RED}✗ Failed${NC}"
 fi
 
 # Test through Nginx (HTTP)
-if curl -s http://127.0.0.1/health | grep -q "ok"; then
+if curl -s http://127.0.0.1/health/live | grep -q "alive"; then
     echo -e "  Nginx HTTP:   ${GREEN}✓ Working${NC}"
 else
     echo -e "  Nginx HTTP:   ${YELLOW}⚠ Redirecting to HTTPS${NC}"
 fi
 
 # Test through Nginx (HTTPS)
-if curl -sk https://127.0.0.1/health | grep -q "ok"; then
+if curl -sk https://127.0.0.1/health/live | grep -q "alive"; then
     echo -e "  Nginx HTTPS:  ${GREEN}✓ Working${NC}"
 else
     echo -e "  Nginx HTTPS:  ${RED}✗ Failed${NC}"
@@ -340,7 +340,7 @@ echo "  ✅ Service hardening with systemd"
 echo ""
 echo "URLs:"
 echo "  🌐 Production: https://$DOMAIN"
-echo "  🏥 Health:     https://$DOMAIN/health"
+echo "  🏥 Liveness:   https://$DOMAIN/health/live"
 echo "  📊 Status:     https://$DOMAIN/oauthx/status"
 echo "  📖 Docs:       https://$DOMAIN/oauthx/docs"
 echo ""

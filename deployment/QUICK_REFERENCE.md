@@ -5,7 +5,7 @@ Use this card during on-call rotations or maintenance windows.  Commands assume 
 ## Pre-Deployment Checks
 
 - [ ] DNS records resolve to the host you are deploying
-- [ ] App passes the local health check (`curl http://127.0.0.1:5000/health`)
+- [ ] App passes the local process-liveness check (`curl http://127.0.0.1:5000/health/live`)
 - [ ] PostgreSQL and Redis are reachable
 - [ ] Port 80 is reachable for ACME/Let’s Encrypt issuance
 
@@ -84,8 +84,8 @@ sudo -u postgres psql -c "\\l+ hodlxxi"
 ## HTTP Smoke Tests
 
 ```bash
-# Health
-curl https://<your-domain>/health
+# Process liveness
+curl https://<your-domain>/health/live
 
 # OIDC configuration
 curl https://<your-domain>/.well-known/openid-configuration | jq

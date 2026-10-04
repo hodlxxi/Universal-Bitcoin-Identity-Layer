@@ -231,7 +231,7 @@ fi
 section "10. App-specific HTTP Checks"
 
 subsection "10.1 Health/check endpoints (if present)"
-for path in "/healthz" "/oauthx/status" "/oauthx/docs" "/api/pof/stats" "/playground" "/dashboard"; do
+for path in "/health/live" "/oauthx/status" "/oauthx/docs" "/api/pof/stats" "/playground" "/dashboard"; do
   echo "GET https://$DOMAIN$path"
   curl -sS -o /tmp/hodlxxi_tmp.html -w "HTTP %{http_code}\n" "https://$DOMAIN$path" || true
   head -n 3 /tmp/hodlxxi_tmp.html || true

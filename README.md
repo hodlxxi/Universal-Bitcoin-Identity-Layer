@@ -70,7 +70,7 @@ For third-party login setup, see [Sign in with HODLXXI Integration Guide](docs/O
 - `/agent/skills`, `/agent/marketplace/listing`, `/agent/reputation`, `/agent/attestations`
 - `/lnurl/auth` LNURL challenge endpoints
 - `/metrics/prometheus` for Prometheus scrapers
-- `/health` basic liveness probe
+- `/health/live` canonical process-liveness probe (`/health` is a compatibility alias)
 
 ### Docker Compose quick start
 

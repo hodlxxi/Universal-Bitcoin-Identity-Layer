@@ -94,8 +94,8 @@ grep "rate_limit_exceeded" /srv/app/logs/audit.log | jq .
 ### Health Checks
 
 ```bash
-# App health
-curl http://localhost:5000/health | jq .
+# Dependency-free process liveness
+curl http://localhost:5000/health/live | jq .
 
 # OAuth status
 curl http://localhost:5000/oauthx/status | jq .
@@ -461,4 +461,3 @@ ps aux | grep gunicorn | wc -l
 ---
 
 **Quick validation:** `python3 validate_production.py`
-

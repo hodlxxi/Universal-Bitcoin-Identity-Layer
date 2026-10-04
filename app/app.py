@@ -1,11 +1,11 @@
 import hashlib
-import threading
 import json
-import redis
-import redis
 import logging
 import os
 import re
+import threading
+
+import redis
 
 
 def _mask_pubkey_tail(pk: str, tail: int = 4) -> str:
@@ -36,11 +36,8 @@ def _mask_clickable_pubkeys_in_html(html: str) -> str:
     return pat.sub(repl, html)
 
 
-from flask import session, request, request
-from flask import render_template_string
 import secrets
 import time
-from flask import jsonify, render_template
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -50,39 +47,56 @@ from io import BytesIO
 from logging.handlers import RotatingFileHandler
 from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urlsplit
+
 import base58
+
+# === Added for production hardening ===
+import jwt
 import qrcode
+import redis as redis_client
 import requests
 from bech32 import bech32_decode, bech32_encode, convertbits
 from bitcoinrpc.authproxy import AuthServiceProxy
-from flask import render_template, send_from_directory
+from cryptography.hazmat.primitives import serialization
+
+# from app.playground_routes import playground_bp   # <-- ADD THIS
 from flask import (
     Flask,
     Response,
     abort,
+    flash,
     g,
     jsonify,
+    make_response,
     redirect,
     render_template,
+    render_template_string,
     request,
     send_file,
+    send_from_directory,
     session,
     url_for,
-    flash,
 )
 from flask_socketio import SocketIO, emit
-from werkzeug.exceptions import HTTPException
-
-# === Added for production hardening ===
-import jwt
-import redis as redis_client
-from cryptography.hazmat.primitives import serialization
 from prometheus_client import CollectorRegistry, Counter, generate_latest
+from werkzeug.exceptions import HTTPException
 
 # Active challenges (in-memory; ephemeral)
 from app.audit_logger import get_audit_logger, init_audit_logger
+from app.billing_clients import check_client_invoice, create_client_invoice, require_paid_client
+from app.blueprints.agent import agent_bp
+from app.browser_compat import (
+    redirect_explorer,
+    redirect_onboard,
+    redirect_oneword,
+    render_account_page,
+    render_upgrade_page,
+)
+from app.browser_routes import get_browser_route_handler, register_browser_routes
 from app.config import get_config
-from app.database import close_all, init_all, get_session as get_db_session
+from app.database import close_all
+from app.database import get_session as get_db_session
+from app.database import init_all
 from app.db_storage import (
     create_user,
     delete_oauth_code,
@@ -95,38 +109,24 @@ from app.db_storage import (
     get_session,
     get_user_by_id,
     get_user_by_pubkey,
+    revoke_oauth_token_by_refresh,
     store_lnurl_challenge,
     store_oauth_client,
     store_oauth_code,
     store_oauth_token,
     store_session,
-    revoke_oauth_token_by_refresh,
 )
-from app.billing_clients import check_client_invoice, create_client_invoice, require_paid_client
+from app.dev_routes import dev_bp
 from app.jwks import load_signing_material
 from app.oauth_utils import require_oauth_token
-from app.utils import get_rpc_connection
 from app.oidc import oidc_bp, validate_pkce
-from app.security import init_security, limiter
-from app.tokens import issue_rs256_jwt
-from app.pof_routes import pof_bp, pof_api_bp
-from app.dev_routes import dev_bp
-from app.blueprints.agent import agent_bp
-from app.browser_routes import get_browser_route_handler, register_browser_routes
+from app.pof_routes import pof_api_bp, pof_bp
+from app.request_context import get_or_create_request_id
+from app.security import exempt_liveness_endpoints, init_security, limiter
 from app.socket_handlers import register_socket_handlers
 from app.socket_state import ACTIVE_SOCKETS, CHAT_HISTORY, ONLINE_META, ONLINE_USER_META, ONLINE_USERS
-from app.request_context import get_or_create_request_id
-from app.browser_compat import (
-    redirect_explorer,
-    redirect_oneword,
-    redirect_onboard,
-    render_account_page,
-    render_upgrade_page,
-)
-
-# from app.playground_routes import playground_bp   # <-- ADD THIS
-from flask import make_response
-
+from app.tokens import issue_rs256_jwt
+from app.utils import get_rpc_connection
 
 from .ubid_membership import (
     UbidUser,
@@ -670,35 +670,35 @@ def _hodl_visit_log(resp):
     try:
         path = request.path or ""
         # avoid noise
-        if path.startswith("/static") or path in ("/favicon.ico",):
+        if path.startswith("/static") or path == "/favicon.ico":
             return resp
+        if path not in ("/health", "/health/live"):
+            # real client ip if nginx forwards it; else remote_addr
+            ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
 
-        # real client ip if nginx forwards it; else remote_addr
-        ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+            pub = session.get("logged_in_pubkey")
+            lvl = session.get("access_level")
+            lm = session.get("login_method")
+            gl = session.get("guest_label")
 
-        pub = session.get("logged_in_pubkey")
-        lvl = session.get("access_level")
-        lm = session.get("login_method")
-        gl = session.get("guest_label")
+            kind = "anon"
+            if pub:
+                pub_s = str(pub)
+                kind = "guest" if pub_s.startswith("guest-") or gl or (lm in ("guest", "pin")) else "key"
+            tail = str(pub)[-8:] if pub else ""
 
-        kind = "anon"
-        if pub:
-            pub_s = str(pub)
-            kind = "guest" if pub_s.startswith("guest-") or gl or (lm in ("guest", "pin")) else "key"
-        tail = str(pub)[-8:] if pub else ""
-
-        app.logger.info(
-            "VISIT request_id=%s ip=%s kind=%s lvl=%s lm=%s pub_tail=%s %s %s -> %s",
-            getattr(g, "request_id", None),
-            ip,
-            kind,
-            lvl,
-            lm,
-            tail,
-            request.method,
-            path,
-            resp.status_code,
-        )
+            app.logger.info(
+                "VISIT request_id=%s ip=%s kind=%s lvl=%s lm=%s pub_tail=%s %s %s -> %s",
+                getattr(g, "request_id", None),
+                ip,
+                kind,
+                lvl,
+                lm,
+                tail,
+                request.method,
+                path,
+                resp.status_code,
+            )
     except Exception:
         pass
     try:
@@ -760,7 +760,9 @@ def screensaver():
 # PUBLIC_STATUS_EXT_V3: extended public status for screensaver (public-safe, cached)
 @app.route("/api/public/status")
 def api_public_status():
-    import time, os, subprocess
+    import os
+    import subprocess
+    import time
 
     now = int(time.time())
     iso = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(now))
@@ -929,7 +931,11 @@ def _resolve_lnd_status_cli_config():
 # LND_STATUS_API_V1: wallet/channel stats (login + full only)
 @app.route("/api/lnd/status", methods=["GET"])
 def api_lnd_status():
-    import os, time, json, subprocess
+    import json
+    import os
+    import subprocess
+    import time
+
     from flask import jsonify, session
 
     if not (session.get("logged_in_pubkey") or "").strip():
@@ -1088,34 +1094,32 @@ def default_error_handler(e):
 
 @app.route("/health")
 def health():
-    """Comprehensive health check endpoint used by monitoring and tests."""
-    try:
-        health_status = {
-            "status": "healthy",
-            "timestamp": time.time(),
-            "pid": os.getpid(),
-            "process_start_time": PROCESS_START_TIME,
-            "service": "HODLXXI",
-            "version": "1.0.0-beta",
-            "active_sockets": len(ACTIVE_SOCKETS),
-            "online_users": len(ONLINE_USERS),
-            "chat_history_size": len(CHAT_HISTORY),
-        }
+    """Process liveness only; dependency readiness is intentionally separate."""
+    return (
+        jsonify(
+            {
+                "status": "healthy",
+                "timestamp": time.time(),
+                "pid": os.getpid(),
+                "process_start_time": PROCESS_START_TIME,
+                "service": "HODLXXI",
+                "version": "1.0.0-beta",
+                "active_sockets": len(ACTIVE_SOCKETS),
+                "online_users": len(ONLINE_USERS),
+                "chat_history_size": len(CHAT_HISTORY),
+            }
+        ),
+        200,
+    )
 
-        # Try to ping RPC (optional in test environments)
-        try:
-            rpc = get_rpc_connection()
-            rpc.getblockchaininfo()
-            health_status["rpc"] = "connected"
-        except Exception:  # pragma: no cover - network dependent
-            health_status["rpc"] = "error"
-            health_status["rpc_error"] = "Internal server error"
-            logger.warning("RPC health check failed", exc_info=True)
 
-        return jsonify(health_status), 200
-    except Exception:  # pragma: no cover - defensive
-        logger.error("Health check failed", exc_info=True)
-        return jsonify({"status": "unhealthy", "error": "Internal server error"}), 500
+@app.route("/health/live")
+def liveness():
+    """Legacy-entrypoint process liveness alias."""
+    return jsonify({"status": "alive"}), 200
+
+
+app.config["LIVENESS_ROUTE_OWNERS"] = exempt_liveness_endpoints(app)
 
 
 # --- Dev dashboard hard block (must run before any login redirect gates) ---
@@ -1377,7 +1381,7 @@ def _turn_rate_limit_ok(key: str):
 @app.route("/turn_credentials")
 def turn_credentials():
     # Require a logged-in session to prevent TURN credential scraping/abuse
-    from flask import session, request
+    from flask import request, session
 
     if not (session.get("logged_in_pubkey") or "").strip():
         return jsonify({"error": "Not logged in"}), 401
@@ -1680,7 +1684,7 @@ def check_auth():
     from flask import request as _req
 
     p = _req.path or ""
-    if p.startswith("/api/internal/agent/invoice"):
+    if p in {"/health", "/health/live"} or p.startswith("/api/internal/agent/invoice"):
         return None
     # PUBLIC PREVIEW ROUTES (no login required)
     from flask import request as flask_request
@@ -1729,7 +1733,14 @@ def check_auth():
     endpoint_base = endpoint.rsplit(".", 1)[-1]  # handle blueprint endpoints
 
     # 0) Always allow preflight + simple assets
-    if m == "OPTIONS" or p in ("/favicon.ico", "/robots.txt", "/health", "/metrics", "/metrics/prometheus"):
+    if m == "OPTIONS" or p in (
+        "/favicon.ico",
+        "/robots.txt",
+        "/health",
+        "/health/live",
+        "/metrics",
+        "/metrics/prometheus",
+    ):
         return None
 
     # 1) Always bypass session login for token/OAuth routes & Socket.IO
@@ -2038,10 +2049,11 @@ def verify_signature():
 def guest_login():
     """PIN guest login (stable identity) + random guest fallback."""
     import hashlib
-    import secrets
     import os
     import re as _re
-    from flask import request, jsonify, session
+    import secrets
+
+    from flask import jsonify, request, session
 
     # already logged in
     if session.get("logged_in_pubkey"):
@@ -4004,8 +4016,8 @@ class ClientType(Enum):
 
 
 from dataclasses import dataclass, field
-from typing import List, Set, Optional
 from datetime import datetime
+from typing import List, Optional, Set
 
 
 @dataclass
@@ -5072,8 +5084,9 @@ def new_signup_preview():
 @app.route("/oauth/register", methods=["POST"])
 def oauth_register():
     # --- ownership + stricter anon throttling ---
-    from flask import session, request
     import time
+
+    from flask import request, session
 
     my_pubkey = session.get("logged_in_pubkey") or ""
     level = session.get("access_level") or ""
@@ -5269,7 +5282,7 @@ def metrics_prometheus():
         # --- base prometheus content from existing registry (if available) ---
         base_text = ""
         try:
-            from prometheus_client import generate_latest, CONTENT_TYPE_LATEST  # type: ignore
+            from prometheus_client import CONTENT_TYPE_LATEST, generate_latest  # type: ignore
 
             base_text = generate_latest().decode("utf-8", errors="ignore")
         except Exception:
@@ -5446,7 +5459,7 @@ def metrics_prometheus():
         # --- base prometheus content from existing registry (if available) ---
         base_text = ""
         try:
-            from prometheus_client import generate_latest, CONTENT_TYPE_LATEST  # type: ignore
+            from prometheus_client import CONTENT_TYPE_LATEST, generate_latest  # type: ignore
 
             base_text = generate_latest().decode("utf-8", errors="ignore")
         except Exception:
@@ -5742,6 +5755,7 @@ def oauthx_status():
 @app.get("/docs2")
 def docs_viewer_v2():
     import os
+
     from flask import render_template
 
     docs_dir = os.path.join(app.static_folder, "docs", "docs")
@@ -5936,8 +5950,11 @@ def cleanup_expired_data():
     for sid in expired_sessions:
         del LNURL_SESSION_STORE[sid]
 
-    # Schedule next cleanup
-    threading.Timer(60.0, cleanup_expired_data).start()
+    # Schedule next cleanup without preventing a worker or test process from
+    # shutting down after request handling has stopped.
+    cleanup_timer = threading.Timer(60.0, cleanup_expired_data)
+    cleanup_timer.daemon = True
+    cleanup_timer.start()
 
 
 # Start cleanup thread
@@ -5953,7 +5970,7 @@ def _run_cleanup_once():
     from flask import request as _req
 
     p = _req.path or ""
-    if p.startswith("/api/internal/agent/invoice"):
+    if p in {"/health", "/health/live"} or p.startswith("/api/internal/agent/invoice"):
         return None
     # PAYG_BILLING_AGENT_BYPASS_ALL_V1: never block billing-agent bearer endpoints with session gates
     from flask import request as _req
@@ -5991,9 +6008,12 @@ def _deferred_cleanup_expired_data():
 
 @app.route("/oauth/clients", methods=["GET"])
 def list_clients():
-    from flask import jsonify, session
-    import os, json, time
+    import json
+    import os
+    import time
+
     import psycopg
+    from flask import jsonify, session
 
     pubkey = session.get("logged_in_pubkey", "")
     level = session.get("access_level")
@@ -6103,9 +6123,11 @@ def oauth_client_detail(client_id):
     - 404 not found
     - 403 if not owner (owner_pubkey), and not admin for NULL-owned
     """
-    from flask import jsonify, session
-    import os, json
+    import json
+    import os
+
     import psycopg
+    from flask import jsonify, session
 
     pubkey = session.get("logged_in_pubkey") or ""
     level = session.get("access_level") or ""
@@ -6204,9 +6226,11 @@ def oauth_client_rotate_secret(client_id):
     ADMIN-ONLY (pubkey in OAUTH_CLIENTS_ADMIN_PUBKEYS + full)
     Returns new client_secret.
     """
-    from flask import jsonify, session
-    import os, secrets
+    import os
+    import secrets
+
     import psycopg
+    from flask import jsonify, session
 
     pubkey = session.get("logged_in_pubkey") or ""
     level = session.get("access_level") or ""
@@ -6259,7 +6283,6 @@ def oauth_client_rotate_secret(client_id):
 register_browser_routes(
     app,
     generate_challenge=generate_challenge,
-    get_rpc_connection=get_rpc_connection,
     logger=logger,
     render_template_string_func=render_template_string,
     special_names=SPECIAL_NAMES,
@@ -6313,7 +6336,8 @@ def api_pof_verify_psbt():
     """
     import base64
     import time
-    from flask import request, jsonify, session
+
+    from flask import jsonify, request, session
 
     data = request.get_json() or {}
     cid = (data.get("challenge_id") or "").strip()
@@ -6600,7 +6624,7 @@ def _fix_accaunt_typo_before_auth_v3():
     if (_req.path or "").startswith("/api/billing/agent/"):
         return None
 
-    from flask import request, redirect
+    from flask import redirect, request
 
     if request.path == "/accaunt":
         return redirect("/account", code=301)
