@@ -12,7 +12,7 @@ This reference lists major API surfaces that are currently implemented in this r
 
 - `GET /health/live` (Implemented; canonical dependency-free process liveness)
 - `GET /health` (Implemented; dependency-free liveness compatibility alias)
-- `GET /health/ready` (Implemented; separate database readiness)
+- `GET /health/ready` (Implemented; bounded readiness for the configured application database only; limiter-exempt)
 - `GET /metrics` and `GET /metrics/prometheus` (Implemented)
 
 ## OAuth2/OIDC endpoints

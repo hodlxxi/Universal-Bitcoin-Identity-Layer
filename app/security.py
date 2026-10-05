@@ -274,3 +274,15 @@ def exempt_liveness_endpoints(app: Flask) -> dict[str, str]:
     if status_owners:
         limiter.exempt(app.view_functions[status_owners[0]])
     return resolved
+
+
+def exempt_readiness_endpoint(app: Flask) -> str:
+    """Exempt the uniquely owned readiness route from limiter storage."""
+    owners = [
+        rule.endpoint for rule in app.url_map.iter_rules() if rule.rule == "/health/ready" and "GET" in rule.methods
+    ]
+    if len(owners) != 1:
+        raise RuntimeError(f"Readiness route ownership must be unique: {owners}")
+    endpoint = owners[0]
+    limiter.exempt(app.view_functions[endpoint])
+    return endpoint
