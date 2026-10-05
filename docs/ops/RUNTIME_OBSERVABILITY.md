@@ -27,9 +27,12 @@ Shape:
 ```
 
 ### `GET /health/ready`
-- `200` when ready.
+- `200` only after the configured application database answers a minimal read-only probe.
 - `503` when not ready.
 - Must not return `500` for routine dependency outage checks.
+- Connection acquisition and statement execution are bounded. The probe always releases its transaction, result, and connection.
+- Missing, malformed, or implicit fallback database state fails closed.
+- The route is limiter-exempt and does not probe Redis, Bitcoin RPC, or the legacy SQLite file.
 
 Shape:
 ```json

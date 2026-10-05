@@ -77,15 +77,14 @@ def readiness():
         200 if ready, 503 if not ready
     """
     try:
-        # Check critical dependencies
-        from app.database import get_db
+        from app.database import check_configured_database_readiness
 
-        db = get_db()
-        db.execute("SELECT 1")
-        return jsonify({"status": "ready"}), 200
-    except Exception as e:
-        logger.warning(f"Readiness check failed: {e}")
-        return jsonify({"status": "not_ready", "error": "Internal server error"}), 503
+        if check_configured_database_readiness():
+            return jsonify({"status": "ready"}), 200
+    except Exception:
+        pass
+    logger.warning("Configured database readiness check failed")
+    return jsonify({"status": "not_ready", "error": "Internal server error"}), 503
 
 
 @admin_bp.route("/metrics", methods=["GET"])

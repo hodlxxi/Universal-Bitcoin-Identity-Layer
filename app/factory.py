@@ -24,7 +24,7 @@ from app.database import close_all, init_all
 from app.feature_flags import production_closed_flag
 from app.jwks import load_signing_material
 from app.request_context import get_or_create_request_id
-from app.security import exempt_liveness_endpoints, init_security
+from app.security import exempt_liveness_endpoints, exempt_readiness_endpoint, init_security
 from app.socket_handlers import register_socket_handlers
 from app.socket_state import CHAT_HISTORY, ONLINE_USERS
 from app.structured_logging import log_event
@@ -151,6 +151,7 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     # application initialization itself occurs exactly once in init_security.
     register_blueprints(app)
     app.config["LIVENESS_ROUTE_OWNERS"] = exempt_liveness_endpoints(app)
+    app.config["READINESS_ROUTE_OWNER"] = exempt_readiness_endpoint(app)
     register_runtime_handlers()
 
     # Register error handlers

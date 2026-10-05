@@ -40,6 +40,12 @@ def _fail_on_dependency_calls(monkeypatch, *, include_limiter=True):
     monkeypatch.setattr(utils, "get_rpc_connection", fail("utils_bitcoin_rpc"))
     monkeypatch.setattr(database, "get_db", fail("database_get_db"))
     monkeypatch.setattr(database, "get_session", fail("database_get_session"))
+    monkeypatch.setattr(database, "get_redis", fail("database_get_redis"))
+    monkeypatch.setattr(
+        database,
+        "check_configured_database_readiness",
+        fail("configured_database_readiness"),
+    )
     monkeypatch.setattr(database.sqlite3, "connect", fail("sqlite_connect"))
     monkeypatch.setattr(builtins, "open", fail("filesystem_open"))
     monkeypatch.setattr(os, "open", fail("filesystem_os_open"))
@@ -79,6 +85,7 @@ def test_single_worker_queue_precondition_removed_from_factory_liveness(client, 
         "/health": "admin.health",
         "/health/live": "admin.liveness",
     }
+    assert app.config["READINESS_ROUTE_OWNER"] == "admin.readiness"
 
     calls = _fail_on_dependency_calls(monkeypatch, include_limiter=False)
     monkeypatch.setattr(SecureCookieSession, "get", lambda *_a, **_k: calls.append("session_get"))
@@ -172,6 +179,7 @@ def test_liveness_exemption_bypasses_enabled_limiter_storage(monkeypatch):
 
     app.add_url_rule("/health", "health", lambda: jsonify(status="healthy"))
     app.add_url_rule("/health/live", "liveness", lambda: jsonify(status="alive"))
+    app.add_url_rule("/health/ready", "readiness", lambda: jsonify(status="ready"))
     app.add_url_rule(
         "/api/public/status",
         "api_public_status",
@@ -181,6 +189,7 @@ def test_liveness_exemption_bypasses_enabled_limiter_storage(monkeypatch):
         "/health": "health",
         "/health/live": "liveness",
     }
+    assert security.exempt_readiness_endpoint(app) == "readiness"
 
     calls = []
 
@@ -196,6 +205,7 @@ def test_liveness_exemption_bypasses_enabled_limiter_storage(monkeypatch):
     client = app.test_client()
     assert [client.get("/health").status_code for _ in range(3)] == [200, 200, 200]
     assert [client.get("/health/live").status_code for _ in range(3)] == [200, 200, 200]
+    assert [client.get("/health/ready").status_code for _ in range(3)] == [200, 200, 200]
     assert [client.get("/api/public/status").status_code for _ in range(3)] == [200, 200, 200]
     assert calls == []
 
@@ -323,27 +333,27 @@ def test_login_renders_challenge_and_security_contract_without_rpc(client, monke
 
 
 def test_readiness_keeps_database_check_without_rpc(client, monkeypatch):
-    queries = []
-
-    class Database:
-        def execute(self, query):
-            queries.append(query)
-
-    monkeypatch.setattr(database, "get_db", lambda: Database())
-    monkeypatch.setattr(admin, "get_rpc_connection", lambda: (_ for _ in ()).throw(AssertionError("RPC called")))
+    calls = _fail_on_dependency_calls(monkeypatch)
+    probes = []
+    monkeypatch.setattr(
+        database,
+        "check_configured_database_readiness",
+        lambda: probes.append("configured_database") or True,
+    )
 
     response = client.get("/health/ready")
 
     assert response.status_code == 200
     assert response.get_json() == {"status": "ready"}
-    assert queries == ["SELECT 1"]
+    assert probes == ["configured_database"]
+    assert calls == []
 
 
 def test_readiness_failure_remains_sanitized(client, monkeypatch):
     def unavailable_database():
-        raise RuntimeError("synthetic-sensitive-database-detail")
+        raise RuntimeError("postgresql://user:password@private.example/internal " "/srv/ubid/ubid.db SELECT 1 psycopg")
 
-    monkeypatch.setattr(database, "get_db", unavailable_database)
+    monkeypatch.setattr(database, "check_configured_database_readiness", unavailable_database)
     response = client.get("/health/ready")
 
     assert response.status_code == 503
@@ -351,7 +361,20 @@ def test_readiness_failure_remains_sanitized(client, monkeypatch):
         "status": "not_ready",
         "error": "Internal server error",
     }
-    assert b"synthetic-sensitive-database-detail" not in response.data
+    for marker in (b"password", b"private.example", b"/srv/ubid/ubid.db", b"SELECT", b"psycopg"):
+        assert marker not in response.data
+
+
+def test_readiness_missing_configured_database_fails_closed(client, monkeypatch):
+    monkeypatch.setattr(database, "check_configured_database_readiness", lambda: False)
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.get_json() == {
+        "status": "not_ready",
+        "error": "Internal server error",
+    }
 
 
 def test_legacy_entrypoint_liveness_and_login_ownership(monkeypatch):
@@ -454,6 +477,7 @@ def test_repository_owned_liveness_monitors_use_health_live():
         "deployment/deploy-production.sh": "127.0.0.1:5000/health/live",
         "docs/DEV_ONBOARDING_CHECKLIST.md": "localhost:5000/health/live",
         "docs/ops/RUNTIME_OBSERVABILITY.md": "GET /health/live",
+        "DEPLOY_DATABASE.md": "/health/live",
         "scripts/hodlxxi_diagnostics.sh": '"/health/live"',
     }
     for name, marker in expected.items():
@@ -461,5 +485,8 @@ def test_repository_owned_liveness_monitors_use_health_live():
 
     dockerfile = Path("Dockerfile").read_text()
     deployment = Path("deployment/deploy-production.sh").read_text()
+    database_deployment = Path("DEPLOY_DATABASE.md").read_text()
     assert "localhost:5000/health ||" not in dockerfile
     assert "127.0.0.1:5000/health |" not in deployment
+    assert '`/health` endpoint returns `"database"' not in database_deployment
+    assert "/health/ready" in database_deployment

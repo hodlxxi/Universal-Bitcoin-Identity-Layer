@@ -23,13 +23,9 @@ def production_client(monkeypatch):
     import app.database as database
     import app.factory as factory
 
-    class _DummyDB:
-        def execute(self, *_args, **_kwargs):
-            return None
-
     monkeypatch.setattr(factory, "init_all", lambda: None)
     monkeypatch.setattr(factory, "init_audit_logger", lambda: None)
-    monkeypatch.setattr(database, "get_db", lambda: _DummyDB())
+    monkeypatch.setattr(database, "check_configured_database_readiness", lambda: True)
 
     app = factory.create_app()
     app.config.update(TESTING=True)

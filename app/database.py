@@ -7,7 +7,7 @@ Production-grade PostgreSQL and Redis connections with pooling.
 import logging
 import sqlite3  # or your actual DB engine
 from contextlib import contextmanager
-from typing import Generator, Optional
+from typing import Any, Generator, Mapping, Optional
 
 import redis
 from flask import g
@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 _engine = None
 _SessionFactory = None
 _redis_client = None
+_database_configuration_explicit = False
+
+DATABASE_CONNECT_TIMEOUT_SECONDS = 3
+DATABASE_POOL_TIMEOUT_SECONDS = 3
+DATABASE_STATEMENT_TIMEOUT_MS = 3000
 
 
 def get_db():
@@ -40,7 +45,11 @@ def get_database_url() -> str:
     Returns:
         Database connection URL
     """
-    config = get_config()
+    return _database_url_from_config(get_config())
+
+
+def _database_url_from_config(config: Mapping[str, Any]) -> str:
+    """Resolve the application's existing database configuration."""
     db_url = config.get("DATABASE_URL")
 
     if not db_url:
@@ -56,6 +65,39 @@ def get_database_url() -> str:
     return db_url
 
 
+def _has_explicit_database_configuration(config: Mapping[str, Any]) -> bool:
+    database_url = config.get("DATABASE_URL")
+    if isinstance(database_url, str) and bool(database_url.strip()):
+        return True
+    return all(
+        config.get(name) not in (None, "") for name in ("DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME")
+    )
+
+
+def _database_engine_kwargs(*, echo: bool, is_sqlite: bool) -> dict[str, Any]:
+    engine_kwargs: dict[str, Any] = {
+        "echo": echo,
+        "pool_pre_ping": True,
+        "pool_reset_on_return": None,  # EVENTLET_POOLRESET_V2
+    }
+    if is_sqlite:
+        engine_kwargs["connect_args"] = {"check_same_thread": False}
+    else:
+        engine_kwargs.update(
+            {
+                "pool_size": 10,
+                "max_overflow": 20,
+                "pool_recycle": 3600,
+                "pool_timeout": DATABASE_POOL_TIMEOUT_SECONDS,
+                "connect_args": {
+                    "connect_timeout": DATABASE_CONNECT_TIMEOUT_SECONDS,
+                    "options": ("-c timezone=utc " f"-c statement_timeout={DATABASE_STATEMENT_TIMEOUT_MS}"),
+                },
+            }
+        )
+    return engine_kwargs
+
+
 def init_database(echo: bool = False, create_tables: bool = False) -> None:
     """
     Initialize database engine and session factory.
@@ -64,35 +106,19 @@ def init_database(echo: bool = False, create_tables: bool = False) -> None:
         echo: If True, log all SQL statements
         create_tables: If True, create all tables (not recommended for production - use migrations)
     """
-    global _engine, _SessionFactory
+    global _database_configuration_explicit, _engine, _SessionFactory
 
     if _engine is not None:
         logger.warning("Database already initialized")
         return
 
-    db_url = get_database_url()
-
-    engine_kwargs = {
-        "echo": echo,
-        "pool_pre_ping": True,
-    }
-
-    if db_url.startswith("sqlite"):
-        # SQLite (especially in-memory) doesn't support the same pooling args
-        # as PostgreSQL. Use a simple engine configuration suitable for tests.
-        engine_kwargs["connect_args"] = {"check_same_thread": False}
-    else:
-        engine_kwargs.update(
-            {
-                "pool_size": 10,
-                "max_overflow": 20,
-                "pool_recycle": 3600,
-                "connect_args": {"connect_timeout": 10, "options": "-c timezone=utc"},
-            }
-        )
+    config = get_config()
+    db_url = _database_url_from_config(config)
+    engine_kwargs = _database_engine_kwargs(echo=echo, is_sqlite=db_url.startswith("sqlite"))
 
     # Create engine with appropriate configuration for the backend
-    _engine = create_engine(db_url, **engine_kwargs, pool_reset_on_return=None)  # EVENTLET_POOLRESET_V2
+    _engine = create_engine(db_url, **engine_kwargs)
+    _database_configuration_explicit = _has_explicit_database_configuration(config)
 
     # Add connection pool listeners for better error handling
     @event.listens_for(Pool, "connect")
@@ -168,7 +194,7 @@ def close_database() -> None:
     """
     Close database connections and clean up.
     """
-    global _engine, _SessionFactory
+    global _database_configuration_explicit, _engine, _SessionFactory
 
     if _SessionFactory:
         _SessionFactory.remove()
@@ -177,6 +203,8 @@ def close_database() -> None:
     if _engine:
         _engine.dispose()
         _engine = None
+
+    _database_configuration_explicit = False
 
     logger.info("Database connections closed")
 
@@ -197,6 +225,47 @@ def check_database_health() -> dict:
     except Exception:
         logger.error("Database health check failed", exc_info=True)
         return {"status": "unhealthy", "database": "postgresql", "connected": False, "error": "Internal server error"}
+
+
+def check_configured_database_readiness() -> bool:
+    """Probe only the initialized configured engine with bounded SQL."""
+    engine = _engine
+    if engine is None or not _database_configuration_explicit:
+        return False
+
+    try:
+        dialect_name = engine.dialect.name
+    except Exception:
+        return False
+    if dialect_name not in {"postgresql", "sqlite"}:
+        return False
+    if dialect_name == "sqlite":
+        try:
+            if engine.url.database != ":memory:":
+                return False
+        except Exception:
+            return False
+
+    try:
+        with engine.connect() as connection:
+            with connection.begin():
+                if dialect_name == "postgresql":
+                    timeout_result = connection.exec_driver_sql(
+                        f"SET LOCAL statement_timeout = {DATABASE_STATEMENT_TIMEOUT_MS}"
+                    )
+                    try:
+                        pass
+                    finally:
+                        timeout_result.close()
+
+                result = connection.exec_driver_sql("SELECT 1")
+                try:
+                    return result.scalar_one() == 1
+                finally:
+                    result.close()
+    except Exception:
+        logger.warning("Configured database readiness probe failed")
+        return False
 
 
 # ============================================================================
