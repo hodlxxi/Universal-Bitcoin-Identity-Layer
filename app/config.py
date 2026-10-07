@@ -212,7 +212,7 @@ def get_config() -> AppConfig:
         ),
         # Logging
         "LOG_LEVEL": os.getenv("LOG_LEVEL", "INFO"),
-        "LOG_FILE": os.getenv("LOG_FILE", "logs/app.log"),
+        "LOG_FILE": os.getenv("LOG_FILE", ""),
         # Database Configuration (REQUIRED for production)
         "DATABASE_URL": os.getenv("DATABASE_URL"),
         "DB_HOST": os.getenv("DB_HOST", "localhost"),
