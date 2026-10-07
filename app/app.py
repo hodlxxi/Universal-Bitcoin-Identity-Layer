@@ -44,7 +44,6 @@ from decimal import Decimal
 from functools import wraps
 from hashlib import sha256
 from io import BytesIO
-from logging.handlers import RotatingFileHandler
 from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urlsplit
 
@@ -118,6 +117,7 @@ from app.db_storage import (
 )
 from app.dev_routes import dev_bp
 from app.jwks import load_signing_material
+from app.logging_config import configure_legacy_file_logging
 from app.oauth_utils import require_oauth_token
 from app.oidc import oidc_bp, validate_pkce
 from app.pof_routes import pof_api_bp, pof_bp
@@ -298,17 +298,8 @@ def get_storage():
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# Add file handler for production
-if not os.path.exists("logs"):
-    os.makedirs("logs")
-
-file_handler = RotatingFileHandler("logs/app.log", maxBytes=10485760, backupCount=10)  # 10MB
-file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]"))
-file_handler.setLevel(logging.INFO)
-logger.addHandler(file_handler)
-
-
 CFG = get_config()
+configure_legacy_file_logging(logger, CFG["LOG_FILE"])
 
 
 def _as_bool(v, default=False):

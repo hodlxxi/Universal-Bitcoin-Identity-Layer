@@ -2,6 +2,17 @@
 
 This document defines the runtime-observability contract for production/staging health surfaces used by operators, smoke checks, and integrators.
 
+## Legacy logging destination
+
+Legacy application logging uses the console by default, including when the
+factory imports legacy authentication helpers on the first verification request.
+Unset or empty `LOG_FILE` does not create a log directory or file. For an optional
+rotating file, explicitly set `LOG_FILE` to a writable destination outside an
+immutable source checkout. Relative paths remain supported for writable local
+checkouts. An explicitly configured destination that cannot be opened raises an
+error; it does not silently fall back to another file. Rotation remains 10 MiB
+with ten backups. Service logging can be collected from the systemd journal.
+
 ## Canonical health/status endpoints
 
 - `GET /health/live`
