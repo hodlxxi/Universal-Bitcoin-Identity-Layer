@@ -30,7 +30,7 @@ The standalone runtime resolver above is intentionally detached: its active-user
 lookup and evidence lookup own their sessions and cannot authorize a later write
 atomically. It must not be injected into an authorization-storage transaction.
 The source-only `SqlAlchemyTransactionBoundCurrentFullVerifier` instead accepts
-an already-active caller-owned PostgreSQL session and exposes only
+an already-active caller-owned PostgreSQL session and exposes
 `verify_in_transaction(subject, now=...)`. It never begins, commits, rolls back,
 or closes that transaction. A verifier exposing only detached `verify(...)` does
 not satisfy the Social legacy-adoption atomic port.
@@ -57,6 +57,48 @@ inactive user, missing or malformed evidence, Limited, future, expired, revoked,
 subject-mismatched, or superseded Full evidence. SQLite is used only for
 unrelated offline storage semantics and is not accepted by this atomic verifier;
 PostgreSQL concurrency remains a separate disposable rehearsal.
+
+### Internal provenance observation
+
+The source-only additive internal method
+`verify_with_evidence_in_transaction(subject: str, *, now: datetime)` returns
+the frozen `VerifiedCurrentFullEvidenceV1`. Its `verified_entitlement` field is
+the existing typed `VerifiedCurrentFullEntitlement`; `evidence_id`,
+`evidence_version`, and `source_evidence_sha256` come from the same immutable
+converted and validated latest evidence record used to produce that proof.
+Both methods share one locked evaluation. There is no second evidence lookup
+or digest decoding, and provenance is never copied from the mutable ORM row
+after proof validation. The legacy method's accepted session contract and proof
+bytes remain unchanged.
+
+The new method requires an already-active caller-owned PostgreSQL READ COMMITTED
+transaction, an active clean session, non-autocommit physical connection, and
+stable active session and connection root/nested transactions. It pins these
+identities for the operation and rechecks after each locked read and before
+returning. The subject advisory lock executes directly on that guarded
+connection; it does not use Session statement routing. User and evidence reads
+explicitly bind to the same connection and use `populate_existing=True`, so
+already-loaded clean ORM objects are refreshed from the locked query result.
+A clean session can still contain stale loaded objects; row locking alone does
+not refresh the ORM identity map. Entity-specific session binds cannot redirect
+these reads under the standard Session bind contract. These refresh and lock
+binding requirements apply to the new method; the legacy method is unchanged.
+An existing active
+savepoint is allowed but cannot change during
+the operation. The verifier never begins, commits, rolls back, or closes the
+caller transaction. Failure uses the existing non-sensitive storage exception.
+
+`now` is an explicit caller clock at the exact-second boundary. Persisted
+fractions are floored by the existing proof producer and expiry is exclusive;
+provenance does not extend the deadline. Callers remain responsible for clock
+freshness and final authority rechecks. These checks do not establish a fresh
+wall clock after a lock wait or acceptance if expiry passes during a wait.
+Offline doubles and SQLite storage tests do not prove PostgreSQL concurrency.
+
+This result is an internal transaction-scoped observation, not a bearer,
+independent authority, grant of Full, signed deadline evidence, device admission,
+or permission to send. It does not complete V2 finalization or provide a detached
+current-authority assertion; no route or runtime composition is added.
 
 ## Canonical Current-Full proof content identity
 

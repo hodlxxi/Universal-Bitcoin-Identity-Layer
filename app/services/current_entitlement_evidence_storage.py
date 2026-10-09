@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from datetime import timezone
+from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.models import CurrentEntitlementEvidence, User
 from app.services.action_authorization import IdentityClass
@@ -14,6 +14,7 @@ from app.services.current_entitlement_evidence import CurrentEntitlementEvidence
 from app.services.current_full_entitlement_proof import (
     CurrentFullEntitlementProofState,
     CurrentFullEntitlementProofUnavailable,
+    VerifiedCurrentFullEntitlement,
     produce_verified_current_full_entitlement,
 )
 
@@ -25,6 +26,83 @@ class CurrentEntitlementEvidenceStorageError(RuntimeError):
 
     def __init__(self):
         super().__init__("current entitlement evidence storage unavailable")
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedCurrentFullEvidenceV1:
+    """Internal observation from one locked evaluation, not detached authority."""
+
+    verified_entitlement: VerifiedCurrentFullEntitlement
+    evidence_id: str
+    evidence_version: str
+    source_evidence_sha256: str
+
+
+class _CurrentFullTransactionGuard:
+    """Pin caller transaction, savepoints and physical connection for one read."""
+
+    def __init__(self, session):
+        self.session = session
+        self.transaction = session.get_transaction()
+        self.nested = session.get_nested_transaction()
+        self._check_session()
+        self.connection = session.connection()
+        self.database_transaction = self.connection.get_transaction()
+        self.database_nested = self.connection.get_nested_transaction()
+        self.dbapi_connection = self.connection.connection.dbapi_connection
+        self.check()
+
+    def _check_session(self):
+        session = self.session
+        if (
+            self.transaction is None
+            or not self.transaction.is_active
+            or session.get_transaction() is not self.transaction
+            or session.get_nested_transaction() is not self.nested
+            or (self.nested is not None and not self.nested.is_active)
+            or session.in_transaction() is not True
+            or not session.is_active
+            or session.new
+            or session.dirty
+            or session.deleted
+            or session.get_bind().dialect.name != "postgresql"
+        ):
+            raise ValueError
+
+    def _check_identity(self):
+        self._check_session()
+        connection = self.session.connection()
+        if (
+            connection is not self.connection
+            or connection.closed
+            or connection.invalidated
+            or connection.in_transaction() is not True
+            or self.database_transaction is None
+            or connection.get_transaction() is not self.database_transaction
+            or not self.database_transaction.is_active
+            or connection.get_nested_transaction() is not self.database_nested
+            or (self.database_nested is not None and not self.database_nested.is_active)
+            or connection.connection.dbapi_connection is not self.dbapi_connection
+            or getattr(self.dbapi_connection, "autocommit", None) is not False
+        ):
+            raise ValueError
+
+    def check(self):
+        self._check_identity()
+        if self.connection.execute(text("SHOW transaction_isolation")).scalar_one() != "read committed":
+            raise ValueError
+        self._check_identity()
+
+    def lock_subject(self, subject: str):
+        first, second = _subject_lock_keys(subject)
+        self.connection.execute(select(func.pg_advisory_xact_lock(first, second)))
+
+    def execute(self, statement):
+        # Refresh cached ORM identities from the locked database result, and
+        # keep entity-specific Session binds on the subject-lock connection.
+        return self.session.execute(
+            statement.execution_options(populate_existing=True), bind_arguments={"bind": self.connection}
+        )
 
 
 @dataclass(frozen=True)
@@ -110,7 +188,26 @@ class SqlAlchemyTransactionBoundCurrentFullVerifier:
             raise ValueError("invalid transaction-bound current-Full session")
         self._session = session
 
-    def verify_in_transaction(self, subject: str, *, now):
+    def verify_in_transaction(self, subject: str, *, now) -> VerifiedCurrentFullEntitlement:
+        return self._evaluate(subject, now=now)[0]
+
+    def verify_with_evidence_in_transaction(self, subject: str, *, now: datetime) -> VerifiedCurrentFullEvidenceV1:
+        try:
+            guard = _CurrentFullTransactionGuard(self._session)
+            proof, latest = self._evaluate(subject, now=now, guard=guard)
+            guard.check()
+            return VerifiedCurrentFullEvidenceV1(
+                verified_entitlement=proof,
+                evidence_id=latest.evidence_id,
+                evidence_version=latest.evidence_version,
+                source_evidence_sha256=latest.source_evidence_sha256,
+            )
+        except Exception:
+            raise CurrentEntitlementEvidenceStorageError() from None
+
+    def _evaluate(
+        self, subject: str, *, now, guard: _CurrentFullTransactionGuard | None = None
+    ) -> tuple[VerifiedCurrentFullEntitlement, CurrentEntitlementEvidenceRecord]:
         try:
             bind = self._session.get_bind()
             if getattr(getattr(bind, "dialect", None), "name", None) != "postgresql":
@@ -118,12 +215,15 @@ class SqlAlchemyTransactionBoundCurrentFullVerifier:
             if self._session.in_transaction() is not True:
                 raise ValueError
 
-            _lock_subject_for_evidence_change(self._session, subject)
-            users = (
-                self._session.execute(select(User).where(User.pubkey == subject).limit(2).with_for_update())
-                .scalars()
-                .all()
-            )
+            if guard is None:
+                _lock_subject_for_evidence_change(self._session, subject)
+            else:
+                guard.lock_subject(subject)
+                guard.check()
+            execute = self._session.execute if guard is None else guard.execute
+            users = execute(select(User).where(User.pubkey == subject).limit(2).with_for_update()).scalars().all()
+            if guard is not None:
+                guard.check()
             if len(users) != 1:
                 raise ValueError
             user = users[0]
@@ -131,7 +231,7 @@ class SqlAlchemyTransactionBoundCurrentFullVerifier:
                 raise ValueError
 
             rows = (
-                self._session.execute(
+                execute(
                     select(CurrentEntitlementEvidence)
                     .where(CurrentEntitlementEvidence.subject_pubkey == subject)
                     .order_by(
@@ -145,6 +245,8 @@ class SqlAlchemyTransactionBoundCurrentFullVerifier:
                 .scalars()
                 .all()
             )
+            if guard is not None:
+                guard.check()
             if not rows:
                 raise ValueError
             latest = _record(rows[0])
@@ -154,7 +256,7 @@ class SqlAlchemyTransactionBoundCurrentFullVerifier:
                 and rows[1].created_at == rows[0].created_at
             ):
                 raise ValueError
-            return produce_verified_current_full_entitlement(
+            proof = produce_verified_current_full_entitlement(
                 CurrentFullEntitlementProofState(
                     user_id=user.id,
                     user_subject=user.pubkey,
@@ -163,6 +265,7 @@ class SqlAlchemyTransactionBoundCurrentFullVerifier:
                 ),
                 now=now,
             )
+            return proof, latest
         except CurrentFullEntitlementProofUnavailable:
             raise CurrentEntitlementEvidenceStorageError() from None
         except Exception:
