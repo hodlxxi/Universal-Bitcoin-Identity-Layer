@@ -1,4 +1,4 @@
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -12,6 +12,7 @@ from app.services.current_entitlement_evidence_storage import (
     CurrentEntitlementEvidenceStorageError,
     SqlAlchemyCurrentEntitlementEvidenceRepository,
     SqlAlchemyTransactionBoundCurrentFullVerifier,
+    VerifiedCurrentFullEvidenceV1,
     _subject_lock_keys,
 )
 from app.services.current_full_entitlement_proof import (
@@ -275,6 +276,316 @@ class TransactionSession:
 
     def close(self):
         pytest.fail("transaction-bound verifier closed caller session")
+
+
+class GuardedTransactionSession(TransactionSession):
+    """Offline native-transaction seam; SQL still uses real model statements."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.transaction = SimpleNamespace(is_active=True)
+        self.nested = None
+        self.is_active = True
+        self.new, self.dirty, self.deleted = (), (), ()
+        self.connection_value = GuardedConnection()
+        self.connection_value.on_subject_lock = self._execute_connection_lock
+        self.bound_reads = []
+        self.mutate = lambda: None
+        self.mutate_at = None
+
+    def get_transaction(self):
+        return self.transaction
+
+    def get_nested_transaction(self):
+        return self.nested
+
+    def connection(self):
+        return self.connection_value
+
+    def execute(self, statement, **kwargs):
+        if kwargs:
+            assert kwargs == {"bind_arguments": {"bind": self.connection_value}}
+            self.bound_reads.append(self.connection_value)
+        result = super().execute(statement)
+        if len(self.statements) == self.mutate_at:
+            self.mutate()
+        return result
+
+    def _execute_connection_lock(self, statement):
+        result = TransactionSession.execute(self, statement)
+        if len(self.statements) == self.mutate_at:
+            self.mutate()
+        return result
+
+    def begin(self):
+        pytest.fail("verifier began caller transaction")
+
+
+class GuardedConnection:
+    def __init__(self):
+        self.transaction = SimpleNamespace(is_active=True)
+        self.nested = None
+        self.closed = False
+        self.invalidated = False
+        self.active = True
+        self.connection = SimpleNamespace(dbapi_connection=SimpleNamespace(autocommit=False))
+        self.isolation = "read committed"
+        self.statements = []
+        self.on_subject_lock = lambda statement: Result()
+
+    def in_transaction(self):
+        return self.active
+
+    def get_transaction(self):
+        return self.transaction
+
+    def get_nested_transaction(self):
+        return self.nested
+
+    def execute(self, statement):
+        self.statements.append(str(statement))
+        if "pg_advisory_xact_lock" in str(statement):
+            return self.on_subject_lock(statement)
+        return SimpleNamespace(scalar_one=lambda: self.isolation)
+
+
+def test_provenance_subject_lock_uses_guarded_connection():
+    class RoutingSession(GuardedTransactionSession):
+        def __init__(self):
+            super().__init__()
+            self.routed_subject_locks = []
+
+        def execute(self, statement, **kwargs):
+            if "pg_advisory_xact_lock" in str(statement):
+                self.routed_subject_locks.append(statement)
+            return super().execute(statement, **kwargs)
+
+    session = RoutingSession()
+    result = SqlAlchemyTransactionBoundCurrentFullVerifier(session).verify_with_evidence_in_transaction(
+        SUBJECT, now=NOW
+    )
+    assert result.verified_entitlement == produce_verified_current_full_entitlement(state(), now=NOW)
+    assert not session.routed_subject_locks, "CURRENT_FULL_REVIEW_REGRESSION_LOCK_CONNECTION"
+    assert sum("pg_advisory_xact_lock" in sql for sql in session.connection_value.statements) == 1
+    assert session.bound_reads == [session.connection_value, session.connection_value]
+
+
+@pytest.mark.parametrize("fractional", [False, True])
+def test_provenance_is_exact_frozen_and_equivalent_to_legacy(fractional):
+    record = evidence()
+    if fractional:
+        record = replace(
+            record,
+            observed_at=record.observed_at.replace(microsecond=123456),
+            valid_until=record.valid_until.replace(microsecond=123456),
+            created_at=record.created_at.replace(microsecond=654321),
+        )
+    session = GuardedTransactionSession(rows=(orm_evidence(record),))
+    result = SqlAlchemyTransactionBoundCurrentFullVerifier(session).verify_with_evidence_in_transaction(
+        SUBJECT, now=NOW
+    )
+    old = SqlAlchemyTransactionBoundCurrentFullVerifier(
+        TransactionSession(rows=(orm_evidence(record),))
+    ).verify_in_transaction(SUBJECT, now=NOW)
+    assert type(result) is VerifiedCurrentFullEvidenceV1
+    assert (
+        result.verified_entitlement == old == produce_verified_current_full_entitlement(state(evidence=record), now=NOW)
+    )
+    assert (result.evidence_id, result.evidence_version, result.source_evidence_sha256) == (
+        record.evidence_id,
+        record.evidence_version,
+        record.source_evidence_sha256,
+    )
+    assert old.expires_at == record.valid_until.replace(microsecond=0)
+    assert len(session.statements) == 3
+    assert session.bound_reads == [session.connection_value, session.connection_value]
+    assert "pg_advisory_xact_lock" in _postgresql(session.statements[0])
+    assert "users" in _postgresql(session.statements[1]) and "FOR UPDATE" in _postgresql(session.statements[1])
+    assert "current_entitlement_evidence" in _postgresql(session.statements[2])
+    assert "FOR UPDATE" in _postgresql(session.statements[2])
+    session.rows[0].evidence_version = "mutated"
+    assert result.evidence_version == record.evidence_version
+    with pytest.raises(FrozenInstanceError):
+        result.evidence_version = "mutated"
+    with pytest.raises(FrozenInstanceError):
+        result.verified_entitlement.expires_at = NOW
+
+
+def test_provenance_snapshots_validated_record_before_mutable_orm_changes(monkeypatch):
+    import app.services.current_entitlement_evidence_storage as storage
+
+    row = orm_evidence()
+    producer = storage.produce_verified_current_full_entitlement
+
+    def produce_and_mutate(current, *, now):
+        proof = producer(current, now=now)
+        row.evidence_id = "changed"
+        row.evidence_version = "changed"
+        row.source_evidence_sha256 = "changed"
+        return proof
+
+    monkeypatch.setattr(storage, "produce_verified_current_full_entitlement", produce_and_mutate)
+    result = storage.SqlAlchemyTransactionBoundCurrentFullVerifier(
+        GuardedTransactionSession(rows=(row,))
+    ).verify_with_evidence_in_transaction(SUBJECT, now=NOW)
+    assert result == VerifiedCurrentFullEvidenceV1(producer(state(), now=NOW), evidence().evidence_id, "v1", "b" * 64)
+
+
+@pytest.mark.parametrize("method", ["verify_in_transaction", "verify_with_evidence_in_transaction"])
+@pytest.mark.parametrize("negative", ["limited", "revoked", "expired", "future", "tied", "malformed", "mismatched"])
+def test_shared_evaluator_never_falls_back_to_older_full(method, negative):
+    latest = orm_evidence(evidence(observed_at=NOW, created_at=NOW))
+    older = orm_evidence()
+    if negative == "limited":
+        latest.identity_class, latest.current_full_relation_satisfied = "limited", False
+    elif negative == "revoked":
+        latest.revoked_at = NOW
+    elif negative == "expired":
+        latest.valid_until = NOW
+    elif negative == "future":
+        latest.observed_at = latest.created_at = NOW + timedelta(seconds=1)
+    elif negative == "tied":
+        latest.observed_at = older.observed_at
+    elif negative == "malformed":
+        latest.source_evidence_sha256 = "invalid"
+    else:
+        latest.subject_pubkey = OTHER_SUBJECT
+    session = GuardedTransactionSession(rows=(latest, older))
+    with pytest.raises(
+        CurrentEntitlementEvidenceStorageError, match="^current entitlement evidence storage unavailable$"
+    ):
+        getattr(SqlAlchemyTransactionBoundCurrentFullVerifier(session), method)(SUBJECT, now=NOW)
+
+
+@pytest.mark.parametrize("read", [1, 2, 3])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "session_root",
+        "session_inactive",
+        "session_savepoint",
+        "inactive_savepoint",
+        "connection",
+        "database_root",
+        "database_inactive",
+        "database_savepoint",
+        "physical_connection",
+        "closed",
+        "invalidated",
+        "autocommit",
+        "isolation",
+    ],
+)
+def test_provenance_rejects_transaction_changes_during_each_locked_read(read, change):
+    session = GuardedTransactionSession()
+    connection = session.connection_value
+    session.mutate_at = read
+
+    def mutate():
+        if change == "session_root":
+            session.transaction = SimpleNamespace(is_active=True)
+        elif change == "session_inactive":
+            session.transaction.is_active = False
+        elif change == "session_savepoint":
+            session.nested = SimpleNamespace(is_active=True)
+        elif change == "inactive_savepoint":
+            session.nested.is_active = False
+        elif change == "connection":
+            session.connection_value = GuardedConnection()
+        elif change == "database_root":
+            connection.transaction = SimpleNamespace(is_active=True)
+        elif change == "database_inactive":
+            connection.transaction.is_active = False
+        elif change == "database_savepoint":
+            connection.nested = SimpleNamespace(is_active=True)
+        elif change == "physical_connection":
+            connection.connection.dbapi_connection = SimpleNamespace(autocommit=False)
+        elif change == "autocommit":
+            connection.connection.dbapi_connection.autocommit = True
+        elif change == "isolation":
+            connection.isolation = "repeatable read"
+        else:
+            setattr(connection, change, True)
+
+    if change == "inactive_savepoint":
+        session.nested = SimpleNamespace(is_active=True)
+    session.mutate = mutate
+    with pytest.raises(CurrentEntitlementEvidenceStorageError):
+        SqlAlchemyTransactionBoundCurrentFullVerifier(session).verify_with_evidence_in_transaction(SUBJECT, now=NOW)
+    assert len(session.statements) == read
+
+
+@pytest.mark.parametrize("invalid", ["no_root", "inactive", "dirty", "autocommit", "isolation"])
+def test_provenance_rejects_invalid_initial_transaction_without_authority_reads(invalid):
+    session = GuardedTransactionSession()
+    if invalid == "no_root":
+        session.transaction = None
+    elif invalid == "inactive":
+        session.active = False
+    elif invalid == "dirty":
+        session.dirty = (object(),)
+    elif invalid == "autocommit":
+        session.connection_value.connection.dbapi_connection.autocommit = True
+    else:
+        session.connection_value.isolation = "serializable"
+    with pytest.raises(CurrentEntitlementEvidenceStorageError):
+        SqlAlchemyTransactionBoundCurrentFullVerifier(session).verify_with_evidence_in_transaction(SUBJECT, now=NOW)
+    assert not session.statements
+
+
+@pytest.mark.parametrize("method", ["verify_in_transaction", "verify_with_evidence_in_transaction"])
+@pytest.mark.parametrize("user_state", ["missing", "duplicate", "inactive", "mismatched"])
+def test_shared_evaluator_rejects_invalid_users(method, user_state):
+    class InvalidUserSession(GuardedTransactionSession):
+        def execute(self, statement, **kwargs):
+            result = super().execute(statement, **kwargs)
+            if len(self.statements) == 2:
+                if user_state == "missing":
+                    return Result()
+                if user_state == "duplicate":
+                    return Result((self.user, self.user))
+            return result
+
+    session = InvalidUserSession()
+    if user_state == "inactive":
+        session.user.is_active = False
+    elif user_state == "mismatched":
+        session.user.pubkey = OTHER_SUBJECT
+    with pytest.raises(CurrentEntitlementEvidenceStorageError):
+        getattr(SqlAlchemyTransactionBoundCurrentFullVerifier(session), method)(SUBJECT, now=NOW)
+    assert len(session.statements) == 2
+
+
+@pytest.mark.parametrize("method", ["verify_in_transaction", "verify_with_evidence_in_transaction"])
+@pytest.mark.parametrize("boundary", ["expiry", "future_fraction", "floored_expiry", "fractional_now", "missing"])
+def test_shared_evaluator_preserves_exact_time_boundaries(method, boundary):
+    record = evidence()
+    clock = NOW
+    if boundary == "expiry":
+        record = replace(record, valid_until=NOW)
+    elif boundary == "future_fraction":
+        future = NOW + timedelta(microseconds=1)
+        record = replace(record, observed_at=future, created_at=future)
+    elif boundary == "floored_expiry":
+        record = replace(record, valid_until=NOW + timedelta(microseconds=999999))
+    elif boundary == "fractional_now":
+        clock += timedelta(microseconds=1)
+    session = GuardedTransactionSession(rows=() if boundary == "missing" else (orm_evidence(record),))
+    with pytest.raises(CurrentEntitlementEvidenceStorageError):
+        getattr(SqlAlchemyTransactionBoundCurrentFullVerifier(session), method)(SUBJECT, now=clock)
+
+
+def test_provenance_preserves_existing_active_savepoints_and_caller_ownership():
+    session = GuardedTransactionSession()
+    session.nested = SimpleNamespace(is_active=True)
+    session.connection_value.nested = SimpleNamespace(is_active=True)
+    root, nested = session.transaction, session.nested
+    database_root, database_nested = session.connection_value.transaction, session.connection_value.nested
+    SqlAlchemyTransactionBoundCurrentFullVerifier(session).verify_with_evidence_in_transaction(SUBJECT, now=NOW)
+    assert session.transaction is root and root.is_active
+    assert session.nested is nested and nested.is_active
+    assert session.connection_value.transaction is database_root and database_root.is_active
+    assert session.connection_value.nested is database_nested and database_nested.is_active
 
 
 def _postgresql(statement):
