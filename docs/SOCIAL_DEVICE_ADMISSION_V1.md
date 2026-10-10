@@ -24,6 +24,13 @@ activation. Migration source is not migration application.
 
 ## Architecture selection
 
+Native first-issuance challenge revision provenance is a separate dormant
+[source-only prerequisite](SOCIAL_DEVICE_CHALLENGE_REVISION_V1.md). It preserves
+the five-column V1 store and wire bytes, adds an unapplied immutable companion
+producer, and supplies only transaction-scoped enrollment history. Bounded
+native verification passed on disposable PostgreSQL 16; other supported majors,
+lock-wait acceptance and runtime orchestration remain unverified.
+
 UBID is the selected future owner of challenge creation and persistence,
 atomic single-use consumption, Ed25519 association lifecycle,
 rotation/revocation invalidation, exact operation effects and final device

@@ -85,6 +85,12 @@ Many historical checkpoint documents now include a standard status note at the t
 
 These are useful for future development, staging, compatibility, and design intent, but should not be presented as current production readiness evidence unless a current smoke/runbook says so:
 
+- `docs/SOCIAL_DEVICE_CHALLENGE_REVISION_V1.md` — canonical dormant native
+  immutable first-issuance challenge generation, additive unapplied companion
+  source and caller-transaction enrollment reader; unchanged legacy store and
+  wires; bounded disposable PostgreSQL 16 verification completed, lock-wait
+  acceptance unverified, no runtime activation
+
 - `docs/SOCIAL_PREACCEPTANCE_ED25519_HANDOFF_V2.md` — dormant deterministic
   `register + initial` preacceptance-through-candidate-association-link contract
   and reviewed public vector; serializers grant no acceptance/persistence
