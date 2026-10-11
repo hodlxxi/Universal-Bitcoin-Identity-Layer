@@ -11,6 +11,7 @@ import re
 
 from sqlalchemy import BigInteger, Column, String, Text, select, text
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.sql.elements import quoted_name
 
 from app.services.social_session_issuance_v2_contract import V2IssuanceUnavailable
 
@@ -116,8 +117,16 @@ class TransactionGuard:
     """
 
     def __init__(self, session):
+        # Only the repository's exact internal port participates in a shared
+        # observation. Arbitrary session wrappers retain the ordinary checks.
+        from app.services.social_session_issuance_v2_authority import BoundSession
+
         self.session = session
         self.poisoned = False
+        self.parent_guard = session.guard if type(session) is BoundSession else None
+        self.bound_session_type = BoundSession
+        if self.parent_guard is not None and type(self.parent_guard) is not TransactionGuard:
+            raise V2IssuanceUnavailable()
         self.root = session.get_transaction()
         self.nested = session.get_nested_transaction()
         self.connection = session.connection()
@@ -127,64 +136,90 @@ class TransactionGuard:
         self.xid = None
         self.check()
 
-    def check(self):
-        try:
-            s, c = self.session, self.connection
+    def _check_objects(self):
+        chain, seen = [], set()
+        item = self
+        while item is not None:
+            if type(item) is not TransactionGuard or item in seen or len(chain) >= 16:
+                raise ValueError
+            seen.add(item)
+            chain.append(item)
+            s, c, parent = item.session, item.connection, item.parent_guard
             if (
-                self.poisoned
-                or self.root is None
-                or not self.root.is_active
-                or s.get_transaction() is not self.root
-                or s.get_nested_transaction() is not self.nested
-                or self.nested is not None
-                and not self.nested.is_active
+                item.poisoned
+                or item.root is None
+                or not item.root.is_active
+                or s.get_transaction() is not item.root
+                or s.get_nested_transaction() is not item.nested
+                or item.nested is not None
+                and not item.nested.is_active
                 or s.in_transaction() is not True
                 or not s.is_active
                 or s.new
                 or s.dirty
                 or s.deleted
                 or s.get_bind().dialect.name != "postgresql"
-                or s.connection() is not c
+                or c is not self.connection
                 or c.closed
                 or c.invalidated
                 or c.in_transaction() is not True
-                or self.connection_root is None
-                or not self.connection_root.is_active
-                or c.get_transaction() is not self.connection_root
-                or c.get_nested_transaction() is not self.connection_nested
-                or self.connection_nested is not None
-                and not self.connection_nested.is_active
-                or c.connection.dbapi_connection is not self.physical
-                or getattr(self.physical, "autocommit", None) is not False
+                or item.connection_root is None
+                or not item.connection_root.is_active
+                or c.get_transaction() is not item.connection_root
+                or c.get_nested_transaction() is not item.connection_nested
+                or item.connection_nested is not None
+                and not item.connection_nested.is_active
+                or c.connection.dbapi_connection is not item.physical
+                or getattr(item.physical, "autocommit", None) is not False
             ):
                 raise ValueError
-            if c.execute(text("SHOW transaction_isolation")).scalar_one() != "read committed":
+            if parent is None:
+                connected = s.connection()
+            else:
+                if (
+                    type(s) is not item.bound_session_type
+                    or s.guard is not parent
+                    or "connection" in vars(s)
+                    or type(parent) is not TransactionGuard
+                ):
+                    raise ValueError
+                connected = parent.connection
+            if connected is not c:
                 raise ValueError
-            version = c.execute(text("SHOW server_version_num")).scalar_one()
+            item = parent
+        return tuple(chain)
+
+    def check(self):
+        chain = ()
+        try:
+            chain = self._check_objects()
+            # One fresh statement authenticates the same physical backend for
+            # every exact internal BoundSession layer. No result is reused by
+            # another check; catalog reads and before/after boundaries remain.
+            isolation, version, xid = self.connection.execute(
+                text(
+                    "SELECT pg_catalog.current_setting('transaction_isolation'), "
+                    "pg_catalog.current_setting('server_version_num'), "
+                    "pg_catalog.pg_current_xact_id()::text"
+                )
+            ).one()
+            if type(isolation) is not str or isolation != "read committed":
+                raise ValueError
             if type(version) is not str or not version.isdecimal() or not 160000 <= int(version) < 170000:
                 raise ValueError
-            xid = c.execute(text("SELECT pg_catalog.pg_current_xact_id()::text")).scalar_one()
             if type(xid) is not str or re.fullmatch(r"[1-9][0-9]{0,19}", xid) is None or int(xid) >= 2**64:
                 raise ValueError
-            if self.xid is None:
-                self.xid = xid
-            elif xid != self.xid:
-                raise ValueError
-            # Recheck object continuity after the backend observations, too.
-            if (
-                s.connection() is not c
-                or s.get_transaction() is not self.root
-                or s.get_nested_transaction() is not self.nested
-                or not self.root.is_active
-                or c.get_transaction() is not self.connection_root
-                or c.get_nested_transaction() is not self.connection_nested
-                or c.connection.dbapi_connection is not self.physical
-                or c.closed
-                or c.invalidated
-            ):
+            for item in chain:
+                if item.xid is None:
+                    item.xid = xid
+                elif item.xid != xid:
+                    raise ValueError
+            if self._check_objects() != chain:
                 raise ValueError
         except Exception:
             self.poisoned = True
+            for item in chain:
+                item.poisoned = True
             raise V2IssuanceUnavailable() from None
 
     def execute(self, statement):
@@ -464,17 +499,295 @@ FUNCTION_CONFIGS = {
 }
 
 
+# Native OID values decode as integers on direct SELECT but as JSON strings.
+# Cast only the closed identity fields to bigint before JSON serialization.
+_CATALOG_SELECTS = {
+    "role": (
+        "SELECT r.rolsuper,r.rolcreaterole,r.rolcreatedb,r.rolreplication,r.rolbypassrls,\n        (SELECT count(*) FROM pg_catalog.pg_auth_members WHERE member = r.oid),\n        ARRAY(SELECT candidate.rolname::text FROM pg_catalog.pg_roles AS candidate\n            WHERE candidate.oid <> r.oid AND pg_catalog.pg_has_role(r.oid,candidate.oid,'MEMBER')\n            ORDER BY candidate.rolname) AS member_roles,\n        ARRAY(SELECT candidate.oid::bigint FROM pg_catalog.pg_roles AS candidate\n            WHERE candidate.oid <> r.oid AND pg_catalog.pg_has_role(r.oid,candidate.oid,'MEMBER')\n            ORDER BY candidate.rolname) AS member_role_oids,\n        r.oid::bigint,r.rolinherit,r.rolcanlogin,\n        EXISTS(SELECT 1 FROM pg_catalog.pg_auth_members WHERE member = r.oid AND admin_option)\n        FROM pg_catalog.pg_roles r WHERE rolname = current_user",
+        "SELECT pg_catalog.to_jsonb(ROW(r.rolsuper,r.rolcreaterole,r.rolcreatedb,r.rolreplication,r.rolbypassrls,\n        (SELECT count(*) FROM pg_catalog.pg_auth_members WHERE member = r.oid),\n        ARRAY(SELECT candidate.rolname::text FROM pg_catalog.pg_roles AS candidate\n            WHERE candidate.oid <> r.oid AND pg_catalog.pg_has_role(r.oid,candidate.oid,'MEMBER')\n            ORDER BY candidate.rolname),\n        ARRAY(SELECT candidate.oid::bigint FROM pg_catalog.pg_roles AS candidate\n            WHERE candidate.oid <> r.oid AND pg_catalog.pg_has_role(r.oid,candidate.oid,'MEMBER')\n            ORDER BY candidate.rolname),\n        r.oid::bigint,r.rolinherit,r.rolcanlogin,\n        EXISTS(SELECT 1 FROM pg_catalog.pg_auth_members WHERE member = r.oid AND admin_option))) AS row_values, NULL::text AS row_order FROM pg_catalog.pg_roles r WHERE rolname = current_user",
+        12,
+    ),
+    "schema": (
+        "SELECT oid,nspowner,\n        current_user = session_user AND pg_catalog.current_setting('session_replication_role') = 'origin'\n        AND pg_catalog.has_schema_privilege(current_user,'public','USAGE')\n        AND NOT pg_catalog.has_schema_privilege(current_user,'public','CREATE')\n        AND NOT pg_catalog.pg_has_role(current_user,nspowner,'MEMBER')\n        FROM pg_catalog.pg_namespace WHERE nspname='public'",
+        "SELECT pg_catalog.to_jsonb(ROW(oid::bigint,nspowner::bigint,current_user = session_user AND pg_catalog.current_setting('session_replication_role') = 'origin'\n        AND pg_catalog.has_schema_privilege(current_user,'public','USAGE')\n        AND NOT pg_catalog.has_schema_privilege(current_user,'public','CREATE')\n        AND NOT pg_catalog.pg_has_role(current_user,nspowner,'MEMBER'))) AS row_values, NULL::text AS row_order FROM pg_catalog.pg_namespace WHERE nspname='public'",
+        3,
+    ),
+    "triggers": (
+        "SELECT t.oid,t.tgfoid,t.tgname,p.proname,t.tgtype,t.tgdeferrable,t.tginitdeferred,\n        t.tgenabled,t.tgnargs,t.tgattr::text,t.tgqual,t.tgargs,t.tgoldtable,t.tgnewtable,t.tgparentid,\n        n.nspname FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_proc p ON p.oid=t.tgfoid\n        JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace\n        WHERE t.tgrelid=:oid AND NOT t.tgisinternal ORDER BY t.tgname",
+        "SELECT pg_catalog.to_jsonb(ROW(t.oid::bigint,t.tgfoid::bigint,t.tgname,p.proname,t.tgtype,t.tgdeferrable,t.tginitdeferred,t.tgenabled,t.tgnargs,t.tgattr::text,t.tgqual,t.tgargs,t.tgoldtable,t.tgnewtable,t.tgparentid::bigint,n.nspname)) AS row_values, t.tgname AS row_order FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_proc p ON p.oid=t.tgfoid\n        JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace\n        WHERE t.tgrelid=:oid AND NOT t.tgisinternal ORDER BY t.tgname",
+        16,
+    ),
+    "constraints": (
+        "SELECT k.oid,k.conname,k.contype,pg_get_constraintdef(k.oid,false),k.conkey,\n        k.convalidated,k.condeferrable,k.condeferred,k.conislocal,k.coninhcount,k.conparentid,\n        k.confrelid,k.conindid,k.conbin::text FROM pg_catalog.pg_constraint k\n        WHERE k.conrelid=:oid ORDER BY k.conname",
+        "SELECT pg_catalog.to_jsonb(ROW(k.oid::bigint,k.conname,k.contype,pg_get_constraintdef(k.oid,false),k.conkey,k.convalidated,k.condeferrable,k.condeferred,k.conislocal,k.coninhcount,k.conparentid::bigint,k.confrelid::bigint,k.conindid::bigint,k.conbin::text)) AS row_values, k.conname AS row_order FROM pg_catalog.pg_constraint k\n        WHERE k.conrelid=:oid ORDER BY k.conname",
+        14,
+    ),
+    "function": (
+        "SELECT p.oid,p.proowner,p.prosrc,p.prosecdef,p.proconfig,p.provolatile,\n            p.prorettype = 'pg_catalog.trigger'::regtype,p.pronargs,p.prokind,l.lanname,\n            pg_catalog.pg_has_role(current_user,p.proowner,'MEMBER'),\n            pg_catalog.has_function_privilege(current_user,p.oid,'EXECUTE')\n            FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace\n            JOIN pg_catalog.pg_language l ON l.oid=p.prolang\n            WHERE n.nspname='public' AND p.proname=:name",
+        "SELECT pg_catalog.to_jsonb(ROW(p.oid::bigint,p.proowner::bigint,p.prosrc,p.prosecdef,p.proconfig,p.provolatile,p.prorettype = 'pg_catalog.trigger'::regtype,p.pronargs,p.prokind,l.lanname,pg_catalog.pg_has_role(current_user,p.proowner,'MEMBER'),pg_catalog.has_function_privilege(current_user,p.oid,'EXECUTE'))) AS row_values, NULL::text AS row_order FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace\n            JOIN pg_catalog.pg_language l ON l.oid=p.prolang\n            WHERE n.nspname='public' AND p.proname=:name",
+        12,
+    ),
+    "table": (
+        "SELECT c.oid,c.relowner,c.reltype,c.reltoastrelid,c.relkind,c.relrowsecurity,c.relforcerowsecurity,\n            pg_catalog.pg_has_role(current_user,c.relowner,'MEMBER'),\n            pg_catalog.has_table_privilege(current_user,c.oid,'SELECT'),\n            pg_catalog.has_table_privilege(current_user,c.oid,'INSERT'),\n            pg_catalog.has_any_column_privilege(current_user,c.oid,'UPDATE'),\n            pg_catalog.has_table_privilege(current_user,c.oid,'DELETE'),\n            pg_catalog.has_table_privilege(current_user,c.oid,'TRUNCATE'),\n            pg_catalog.has_table_privilege(current_user,c.oid,'TRIGGER')\n            FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace\n            WHERE n.nspname='public' AND c.relname=:name",
+        "SELECT pg_catalog.to_jsonb(ROW(c.oid::bigint,c.relowner::bigint,c.reltype::bigint,c.reltoastrelid::bigint,c.relkind,c.relrowsecurity,c.relforcerowsecurity,pg_catalog.pg_has_role(current_user,c.relowner,'MEMBER'),pg_catalog.has_table_privilege(current_user,c.oid,'SELECT'),pg_catalog.has_table_privilege(current_user,c.oid,'INSERT'),pg_catalog.has_any_column_privilege(current_user,c.oid,'UPDATE'),pg_catalog.has_table_privilege(current_user,c.oid,'DELETE'),pg_catalog.has_table_privilege(current_user,c.oid,'TRUNCATE'),pg_catalog.has_table_privilege(current_user,c.oid,'TRIGGER'))) AS row_values, NULL::text AS row_order FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace\n            WHERE n.nspname='public' AND c.relname=:name",
+        14,
+    ),
+    "columns": (
+        "SELECT a.attname,pg_catalog.format_type(a.atttypid,a.atttypmod),a.attnotnull\n            FROM pg_catalog.pg_attribute a WHERE a.attrelid=:oid AND a.attnum>0 AND NOT a.attisdropped\n            ORDER BY a.attnum",
+        "SELECT pg_catalog.to_jsonb(ROW(a.attname,pg_catalog.format_type(a.atttypid,a.atttypmod),a.attnotnull)) AS row_values, a.attnum AS row_order FROM pg_catalog.pg_attribute a WHERE a.attrelid=:oid AND a.attnum>0 AND NOT a.attisdropped\n            ORDER BY a.attnum",
+        3,
+    ),
+    "toast": (
+        "SELECT pg_has_role(current_user,relowner,'MEMBER') FROM pg_catalog.pg_class\n            WHERE oid = :oid",
+        "SELECT pg_catalog.to_jsonb(ROW(pg_has_role(current_user,relowner,'MEMBER'))) AS row_values, NULL::text AS row_order FROM pg_catalog.pg_class\n            WHERE oid = :oid",
+        1,
+    ),
+    "legacy_function": (
+        "SELECT p.oid,p.proowner,p.prosrc,p.prosecdef,p.proconfig,p.provolatile,\n            p.prorettype='pg_catalog.trigger'::regtype,p.pronargs,p.prokind,l.lanname,\n            pg_has_role(current_user,p.proowner,'MEMBER')\n            FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace\n            JOIN pg_catalog.pg_language l ON l.oid=p.prolang\n            WHERE n.nspname='public' AND p.proname=:name",
+        "SELECT pg_catalog.to_jsonb(ROW(p.oid::bigint,p.proowner::bigint,p.prosrc,p.prosecdef,p.proconfig,p.provolatile,p.prorettype='pg_catalog.trigger'::regtype,p.pronargs,p.prokind,l.lanname,pg_has_role(current_user,p.proowner,'MEMBER'))) AS row_values, NULL::text AS row_order FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace\n            JOIN pg_catalog.pg_language l ON l.oid=p.prolang\n            WHERE n.nspname='public' AND p.proname=:name",
+        11,
+    ),
+    "legacy_table": (
+        "SELECT c.oid,c.relowner,\n            to_regclass(:name)::oid = c.oid, pg_has_role(current_user,c.relowner,'MEMBER')\n            FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace\n            WHERE n.nspname='public' AND c.relname=:name",
+        "SELECT pg_catalog.to_jsonb(ROW(c.oid::bigint,c.relowner::bigint,to_regclass(:name)::oid = c.oid,pg_has_role(current_user,c.relowner,'MEMBER'))) AS row_values, NULL::text AS row_order FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace\n            WHERE n.nspname='public' AND c.relname=:name",
+        4,
+    ),
+    "column_privileges": (
+        "SELECT has_any_column_privilege(current_user,:oid,'REFERENCES') OR\n            (has_any_column_privilege(current_user,:oid,'INSERT') AND :readonly)",
+        "SELECT pg_catalog.to_jsonb(ROW(has_any_column_privilege(current_user,:oid,'REFERENCES') OR\n            (has_any_column_privilege(current_user,:oid,'INSERT') AND :readonly))) AS row_values, NULL::text AS row_order ",
+        1,
+    ),
+    "target": (
+        "SELECT to_regclass(:target)::oid",
+        "SELECT pg_catalog.to_jsonb(ROW(to_regclass(:target)::oid::bigint)) AS row_values, NULL::text AS row_order ",
+        1,
+    ),
+    "index": (
+        "SELECT indisvalid,indisready,indislive,indisunique,indexprs,indpred,\n                am.amname FROM pg_catalog.pg_index i JOIN pg_catalog.pg_class c ON c.oid=i.indexrelid\n                JOIN pg_catalog.pg_am am ON am.oid=c.relam WHERE i.indexrelid=:oid",
+        "SELECT pg_catalog.to_jsonb(ROW(indisvalid,indisready,indislive,indisunique,indexprs,indpred,\n                am.amname)) AS row_values, NULL::text AS row_order FROM pg_catalog.pg_index i JOIN pg_catalog.pg_class c ON c.oid=i.indexrelid\n                JOIN pg_catalog.pg_am am ON am.oid=c.relam WHERE i.indexrelid=:oid",
+        7,
+    ),
+}
+
+
+def _catalog_key(statement, values=None):
+    values = values or {}
+    if type(statement) is not str or type(values) is not dict:
+        raise V2IssuanceUnavailable()
+    # SQLAlchemy's own metadata uses this exact str subtype for table names.
+    # Normalize only that known type; arbitrary subclasses remain rejected.
+    values = {k: str(v) if type(v) is quoted_name else v for k, v in values.items()}
+    if any(type(k) is not str or type(v) not in (str, int, bool) for k, v in values.items()):
+        raise V2IssuanceUnavailable()
+    return statement, tuple((k, type(v), v) for k, v in sorted(values.items()))
+
+
+def _catalog_freeze(value):
+    if type(value) is list:
+        return tuple(_catalog_freeze(v) for v in value)
+    if type(value) not in (str, int, bool, bytes, type(None)):
+        raise V2IssuanceUnavailable()
+    return value
+
+
+def _catalog_copy(value):
+    return [_catalog_copy(v) for v in value] if type(value) is tuple else value
+
+
+class _CatalogRows:
+    def __init__(self, rows):
+        self._rows = tuple(tuple(_catalog_freeze(v) for v in row) for row in rows)
+
+    def all(self):
+        return [tuple(_catalog_copy(v) for v in row) for row in self._rows]
+
+    def one(self):
+        rows = self.all()
+        if len(rows) != 1:
+            raise V2IssuanceUnavailable()
+        return rows[0]
+
+    def scalar_one(self):
+        row = self.one()
+        if len(row) != 1:
+            raise V2IssuanceUnavailable()
+        return row[0]
+
+
+class _CatalogObservation:
+    """Three fresh bounded catalog batches, private to ONE attestation."""
+
+    def __init__(self, guard):
+        self.guard = guard
+        self._rows = {}
+        self._chain = guard._check_objects()
+        first = [("role", {}), ("schema", {})]
+        first += [("function", {"name": name}) for name in FUNCTIONS]
+        first += [("legacy_function", {"name": name}) for name in LEGACY_FUNCTION_HASHES]
+        first += [("table", {"name": table.name}) for table in V2Base.metadata.sorted_tables]
+        first += [("legacy_table", {"name": name}) for name in OWNER_TRIGGERS]
+        targets = sorted({c[4][0] for rows in CONSTRAINTS.values() for c in rows if c[4] is not None})
+        first += [("target", {"target": "public." + name}) for name in targets]
+        self._fetch(first)
+        second = []
+        for table in V2Base.metadata.sorted_tables:
+            row = self.sql(_CATALOG_SELECTS["table"][0], {"name": table.name}).one()
+            if len(row) != 14 or type(row[0]) is not int or type(row[3]) is not int:
+                raise V2IssuanceUnavailable()
+            insert_allowed = table.name not in (
+                V2Invalidation.__tablename__,
+                V2BindingBirth.__tablename__,
+                V2TokenBirth.__tablename__,
+            )
+            second += [(tag, {"oid": row[0]}) for tag in ("columns", "constraints", "triggers")]
+            second += [
+                ("toast", {"oid": row[3]}),
+                ("column_privileges", {"oid": row[0], "readonly": not insert_allowed}),
+            ]
+        for name in OWNER_TRIGGERS:
+            row = self.sql(_CATALOG_SELECTS["legacy_table"][0], {"name": name}).one()
+            if len(row) != 4 or type(row[0]) is not int:
+                raise V2IssuanceUnavailable()
+            second.append(("triggers", {"oid": row[0]}))
+        self._fetch(second)
+        indices = set()
+        for table in V2Base.metadata.sorted_tables:
+            oid = self.sql(_CATALOG_SELECTS["table"][0], {"name": table.name}).one()[0]
+            for row in self.sql(_CATALOG_SELECTS["constraints"][0], {"oid": oid}).all():
+                if len(row) != 14:
+                    raise V2IssuanceUnavailable()
+                if row[2] in ("p", "u", "f"):
+                    if type(row[12]) is not int or row[12] <= 0:
+                        raise V2IssuanceUnavailable()
+                    indices.add(row[12])
+        self._fetch([("index", {"oid": oid}) for oid in sorted(indices)])
+
+    def _objects(self):
+        if self.guard._check_objects() != self._chain:
+            raise V2IssuanceUnavailable()
+
+    def _fetch(self, specifications):
+        # Several tables legitimately share the absent-TOAST OID zero. Merge
+        # identical fixed selectors inside this invocation, never across calls.
+        specifications = list(
+            {_catalog_key(_CATALOG_SELECTS[tag][0], values): (tag, values) for tag, values in specifications}.values()
+        )
+        if not specifications:
+            return
+        if not 1 <= len(specifications) <= 96:
+            raise V2IssuanceUnavailable()
+        terms, parameters, expected = [], {}, []
+        for i, (tag, values) in enumerate(specifications):
+            source, query, width = _CATALOG_SELECTS[tag]
+            key = _catalog_key(source, values)
+            if key in self._rows or any(item[0] == key for item in expected):
+                raise V2IssuanceUnavailable()
+            names = set(re.findall(r"(?<!:):([a-z_]+)", query))
+            if names != set(values):
+                raise V2IssuanceUnavailable()
+            query = re.sub(r"(?<!:):([a-z_]+)", lambda m: ":catalog_" + str(i) + "_" + m[1], query)
+            parameters.update({"catalog_" + str(i) + "_" + name: value for name, value in values.items()})
+            terms.append(
+                "(SELECT COALESCE(pg_catalog.jsonb_agg(catalog_rows.row_values "
+                "ORDER BY catalog_rows.row_order), '[]'::jsonb) "
+                "FROM (" + query + ") AS catalog_rows)"
+            )
+            expected.append((key, tag, width))
+        self._objects()
+        observed = self.guard.sql(
+            "SELECT pg_catalog.jsonb_build_array(" + ",".join(terms) + ")", parameters
+        ).scalar_one()
+        self._objects()
+        if type(observed) is not list or len(observed) != len(expected):
+            raise V2IssuanceUnavailable()
+        for (key, tag, width), raw_rows in zip(expected, observed):
+            if type(raw_rows) is not list or len(raw_rows) > 2048:
+                raise V2IssuanceUnavailable()
+            rows = []
+            fields = {"f" + str(i) for i in range(1, width + 1)}
+            for raw in raw_rows:
+                if type(raw) is not dict or set(raw) != fields:
+                    raise V2IssuanceUnavailable()
+                row = [raw["f" + str(i)] for i in range(1, width + 1)]
+                if tag == "triggers":
+                    value = row[11]
+                    if type(value) is not str or re.fullmatch(r"\\x(?:[0-9a-f]{2})*", value) is None:
+                        raise V2IssuanceUnavailable()
+                    row[11] = bytes.fromhex(value[2:])
+                rows.append(tuple(row))
+            self._rows[key] = _CatalogRows(rows)
+
+    def sql(self, statement, values=None):
+        self._objects()
+        key = _catalog_key(statement, values)
+        if key not in self._rows:
+            raise V2IssuanceUnavailable()
+        result = self._rows[key]
+        self._objects()
+        return result
+
+    def check(self):
+        self._objects()
+        self.guard.check()
+        self._objects()
+
+
 def attest(guard):
+    try:
+        return _attest_catalog(_CatalogObservation(guard))
+    except Exception:
+        guard.poisoned = True
+        raise V2IssuanceUnavailable() from None
+
+
+def _runtime_role_identity(guard):
+    """Two closed profiles; direct/effective memberships and identity are pinned."""
+    role = guard.sql("""SELECT r.rolsuper,r.rolcreaterole,r.rolcreatedb,r.rolreplication,r.rolbypassrls,
+        (SELECT count(*) FROM pg_catalog.pg_auth_members WHERE member = r.oid),
+        ARRAY(SELECT candidate.rolname::text FROM pg_catalog.pg_roles AS candidate
+            WHERE candidate.oid <> r.oid AND pg_catalog.pg_has_role(r.oid,candidate.oid,'MEMBER')
+            ORDER BY candidate.rolname) AS member_roles,
+        ARRAY(SELECT candidate.oid::bigint FROM pg_catalog.pg_roles AS candidate
+            WHERE candidate.oid <> r.oid AND pg_catalog.pg_has_role(r.oid,candidate.oid,'MEMBER')
+            ORDER BY candidate.rolname) AS member_role_oids,
+        r.oid::bigint,r.rolinherit,r.rolcanlogin,
+        EXISTS(SELECT 1 FROM pg_catalog.pg_auth_members WHERE member = r.oid AND admin_option)
+        FROM pg_catalog.pg_roles r WHERE rolname = current_user""").one()
+    if len(role) != 12 or any(value is not False for value in role[:5]):
+        raise V2IssuanceUnavailable()
+    if (
+        type(role[5]) is not int
+        or type(role[6]) not in (list, tuple)
+        or type(role[7]) not in (list, tuple)
+        or type(role[8]) is not int
+        or role[8] <= 0
+        or type(role[9]) is not bool
+        or role[10] is not True
+        or role[11] is not False
+    ):
+        raise V2IssuanceUnavailable()
+    names, oids = tuple(role[6]), tuple(role[7])
+    standalone = role[5] == 0 and names == () and oids == ()
+    composed = (
+        role[5] == 1
+        and names == ("pg_read_all_settings",)
+        and len(oids) == 1
+        and type(oids[0]) is int
+        and oids[0] > 0
+        and role[9] is True
+    )
+    if not (standalone or composed):
+        raise V2IssuanceUnavailable()
+    return (role[8], role[9], role[10], role[5], names, oids)
+
+
+def _attest_catalog(guard):
     """Exact source/body/trigger and least-privilege checks, never name counts.
 
     DDL owners are trusted administrative principals. Runtime receives INSERT
     only on offers/parents/acceptances/issuances, SELECT on all seven, no UPDATE.
     """
-    role = guard.sql("""SELECT rolsuper,rolcreaterole,rolcreatedb,rolreplication,rolbypassrls,
-        (SELECT count(*) FROM pg_catalog.pg_auth_members WHERE member = r.oid)
-        FROM pg_catalog.pg_roles r WHERE rolname = current_user""").one()
-    if tuple(role) != (False, False, False, False, False, 0):
-        raise V2IssuanceUnavailable()
+    role_identity = _runtime_role_identity(guard)
     secure_role = guard.sql("""SELECT oid,nspowner,
         current_user = session_user AND pg_catalog.current_setting('session_replication_role') = 'origin'
         AND pg_catalog.has_schema_privilege(current_user,'public','USAGE')
@@ -484,7 +797,7 @@ def attest(guard):
     if secure_role[2] is not True:
         raise V2IssuanceUnavailable()
     # Pin the independently checked schema identity/owner across every recheck.
-    identities = [tuple(secure_role[:2])]
+    identities = [tuple(secure_role[:2]), role_identity]
     for name, body in FUNCTIONS.items():
         row = guard.sql(
             """SELECT p.oid,p.proowner,p.prosrc,p.prosecdef,p.proconfig,p.provolatile,

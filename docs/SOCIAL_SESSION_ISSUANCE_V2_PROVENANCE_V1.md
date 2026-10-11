@@ -23,8 +23,9 @@ configured client, backend and service principal. It does not discover keys,
 read environment configuration, register clients or generate a browser login.
 It invokes the existing canonical OAuth signer with that owner's injected
 configuration. This signer signs only the basic OAuth credential. It cannot
-replace the separately deferred dedicated UBID deadline-evidence signer or
-Social verification-statement signer.
+replace the dedicated UBID deadline-evidence signer documented in the
+[dormant reservation contract](SOCIAL_ENROLLMENT_V2_RESERVATION_V1.md), or the
+separately deferred Social verification-statement signer.
 
 `create_offer(raw_authorization_wire, desktop_bearer=...)` reparses exact raw V2
 bytes, authenticates the canonical desktop bearer, selects its exact stored
@@ -51,8 +52,10 @@ canonical V2 acceptance, original HMAC bytes, binding identity and the Full
 provenance from that same locked evaluation. The native immutable acceptance
 and actual digest-only OAuth token plus issuance persist atomically. Ed25519
 phone-proof verification, Ed25519 association creation, challenge consumption,
-reservation, final admission and Send permission remain separate future
-Social/UBID finalization decisions. UBID claims no Ed25519 verification.
+final admission and Send permission remain separate future Social/UBID
+finalization decisions. Pending-only reservation has its own
+[dormant owner](SOCIAL_ENROLLMENT_V2_RESERVATION_V1.md); it grants no admission.
+UBID claims no Ed25519 verification.
 
 ## Relations, causal creation and retained history
 
@@ -110,7 +113,7 @@ pass this output through the actual frozen deadline-evidence payload consumer.
 
 ## Locking, transaction continuity and composition
 
-The order is future reservation (if present) -> V2 operation advisory lock ->
+The order is reservation (if present) -> V2 operation advisory lock ->
 immutable offer/parent/acceptance observations -> shared request advisory lock
 -> Current-Full subject advisory/User -> device and global/sorted public-key
 mutation locks -> OAuth client -> issuer -> original browser -> parent token
@@ -131,8 +134,9 @@ grant. A bounded native first-writer test observes two distinct backends
 waiting for locks, then requires one acceptance/issuance and identical
 results and recovery. Its test-only lock/statement budgets permit the
 intended completed wait; application timeout policy is unchanged. General
-Current-Full concurrency, reserve/finalize acceptance after waits and
-runtime orchestration remain separate verification obligations.
+Current-Full concurrency, finalization after waits and runtime orchestration
+remain separate verification obligations. Bounded reservation wait coverage is
+documented in its [own contract](SOCIAL_ENROLLMENT_V2_RESERVATION_V1.md).
 
 `NativeV2AuthorityReader` requires a caller-owned PostgreSQL READ COMMITTED
 transaction. It begins, commits, closes and rolls back nothing. All ORM reads
@@ -146,6 +150,21 @@ exported evidence deny. Failure poisons the reader and requires caller rollback.
 The caller must exclusively use SQLAlchemy transaction APIs; raw driver/SQL
 savepoint control and concurrent/reentrant Session use are unsupported. Native
 XID is private and authenticates the root, never an individual savepoint.
+
+Each transaction guard check reads isolation level, supported server major and
+native root XID together in one PostgreSQL statement. The observation is fresh
+on every check and uses the same pinned physical connection. Session/connection
+root and savepoint objects and physical identity are still checked before and
+after that statement, and before and after guarded lock/read/write work.
+Exact internal `BoundSession` layers on that same pinned connection share only
+this invocation's backend observation. Each layer's own objects, poison state,
+port/parent identity and original XID are independently checked; another check
+always issues a new observation. Arbitrary wrappers receive no shared-observation
+shortcut. A failed established chain is poisoned and requires caller rollback.
+Batching these three observations reduces database round trips; it caches no
+transaction or catalog authority and changes no clock, deadline, expiry or
+rollback obligation. Malformed observations, backend errors, changed XID and
+continuity changes still poison the guard and require caller rollback.
 
 The returned `LockedV2Authority` has no caller-writable fact fields. Exact
 identity registration ties it to one internal immutable tuple and reader.
@@ -161,8 +180,9 @@ one locked evaluation. Its Full deadline is retained independently.
 An optional raw verification input is reparsed through the real V2 parser and
 must match that original stored approval/acceptance and current time bounds.
 Its exact phone-proof bytes are preserved, and its digest is a canonical input
-identity, not Ed25519 validity or acceptance of the future enrollment. Future
-reserve/finalize owners must consume the record in this same transaction,
+identity, not Ed25519 validity or acceptance of the future enrollment. The
+[dormant reservation owner](SOCIAL_ENROLLMENT_V2_RESERVATION_V1.md) and future
+finalization owners must consume the record in this same transaction,
 then lock the exact native challenge and association owners in the established
 order and authenticate dedicated evidence/statement artifacts. They must
 recheck after waits and before effects. Results remain explicitly
@@ -233,6 +253,20 @@ pg_temp explicitly LAST prevent caller-path and temporary shadow substitution;
 arbitrary path order or extra configuration denies. PUBLIC privileges are
 revoked. Trusted DDL rewrite is outside this administrative boundary.
 
+Native catalog attestation accepts two closed membership profiles: the original
+standalone login with no direct or effective role memberships, and the composed
+reservation login with exactly one direct membership and exactly one effective
+membership, `pg_read_all_settings`. The composed login must inherit that role;
+neither profile may administer a membership or have administrative powers.
+The composed profile grants no business-table access through its permitted
+membership. All independently checked schema, owner, function and table
+privilege restrictions remain mandatory. Extra direct or inherited memberships
+deny. Runtime role OID, inheritance/login flags, direct count and effective
+membership names/OIDs enter the catalog identity; changing them during a bound
+reader operation denies. This supports the canonical pending owner's required
+read-settings membership on the same physical connection and transaction;
+it does not permit switching roles or using a second connection.
+
 The reader pins new relation/row-type/TOAST, function, trigger, constraint and
 supporting index identities, authenticates exact source-pinned new bodies and
 legacy owner guard source hashes, checks closed trigger bindings and constraint
@@ -261,8 +295,44 @@ OAuth generation guard; Python None in its JSON type is JSON null.
 Local offline tests separately exercise real implementation decisions,
 canonical consumers, cache refresh and transaction/time failures using
 in-memory SQLite and constrained doubles only. These bounded V2 cases do
-not establish general Current-Full PostgreSQL concurrency or future
-reserve/finalize effects after lock waits.
+not establish general Current-Full PostgreSQL concurrency or finalization
+effects after lock waits. Reservation has separate bounded native verification
+under its [own contract](SOCIAL_ENROLLMENT_V2_RESERVATION_V1.md).
 
-Finalization, dedicated signer custody, transport, activation and deployment
+Finalization, operational signer custody, transport, activation and deployment
 remain separately deferred. **DEPLOYMENT_READY=NO**.
+
+
+### Fresh bounded native catalog transport
+
+Every native catalog attestation performs three fresh SELECT batches on the
+already guarded physical Connection. Each batch contains the same closed source
+SELECT observations and bound parameters; no business rows are read. The
+closed OID fields are explicitly cast to bigint before JSON encoding so their
+original integer types survive transport. Only SQLAlchemy's exact quoted-name
+metadata is normalized; arbitrary string subclasses and numeric strings do not
+gain acceptance. Function,
+schema, role, table, column, trigger, constraint, FK-target and backing-index
+checks retain their exact validators and original identity ordering. A private
+per-invocation result adapter preserves row cardinality, SQL NULL, booleans,
+integers, arrays and trigger bytea. Identical fixed selectors within one batch
+are merged; unknown queries,
+malformed result shape and inconsistent object continuity deny.
+
+Before and after each database batch, a fresh backend observation verifies
+READ COMMITTED, PG16 and the original root XID for all exact internal layers.
+Each local result access still checks Session/Connection roots, savepoints,
+physical backend, clean ORM state and poison flags. The final attestation makes
+another fresh backend check. The three batches are READ COMMITTED observations,
+not a stronger snapshot-isolation claim. Results exist only during one
+attestation; no role, catalog fingerprint or authority result is cached across
+rechecks. Every later attestation captures the catalogs again.
+
+This changes transport, not accepted role/schema/trigger/constraint profiles,
+proof bytes, lock order, caller transaction ownership or exclusive expiry. The
+reservation evidence interval remains at most 10,000 milliseconds. Bounded
+disposable PostgreSQL verification checks every closed OID field's integer type
+and equal original/batched/original fingerprints on the same real transaction,
+role and physical Connection. Reservation tests additionally cover completed
+waits. Offline tests alone establish none of these native properties; a new
+runtime target still requires its own schema, role and behavior verification.

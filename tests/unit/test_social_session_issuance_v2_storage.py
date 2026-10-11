@@ -64,6 +64,9 @@ class Result:
     def scalar_one(self):
         return self.value
 
+    def one(self):
+        return self.value
+
 
 class ConnectionDouble:
     def __init__(self, graph, connection):
@@ -85,6 +88,9 @@ class ConnectionDouble:
 
     def execute(self, statement, values=None):
         sql = str(statement)
+        if "current_setting('transaction_isolation')" in sql:
+            assert "current_setting('server_version_num')" in sql and "pg_current_xact_id" in sql
+            return Result(("read committed", "160010", self.xid))
         if sql == "SHOW transaction_isolation":
             return Result("read committed")
         if sql == "SHOW server_version_num":
@@ -392,7 +398,7 @@ def test_attestation_pins_exact_function_configuration_and_public_schema_owner(m
 
         def sql(self, sql, values=None):
             if "FROM pg_catalog.pg_roles" in sql:
-                return CatalogResult([(False, False, False, False, False, 0)])
+                return CatalogResult([(False, False, False, False, False, 0, [], [], 44, True, True, False)])
             if "FROM pg_catalog.pg_namespace WHERE nspname='public'" in sql:
                 assert "NOT pg_catalog.has_schema_privilege(current_user,'public','CREATE')" in sql
                 assert "pg_catalog.has_schema_privilege(current_user,'public','USAGE')" in sql
@@ -413,12 +419,12 @@ def test_attestation_pins_exact_function_configuration_and_public_schema_owner(m
     monkeypatch.setattr(storage, "_attest_legacy", lambda _guard: [])
     monkeypatch.setattr(storage, "V2Base", SimpleNamespace(metadata=SimpleNamespace(sorted_tables=[])))
     catalog = Catalog()
-    original = storage.attest(catalog)
+    original = storage._attest_catalog(catalog)
     catalog.schema_owner = 101
-    assert storage.attest(catalog) != original
+    assert storage._attest_catalog(catalog) != original
     catalog.secure_schema = False
     with pytest.raises(V2IssuanceUnavailable):
-        storage.attest(catalog)
+        storage._attest_catalog(catalog)
     catalog.secure_schema = True
     for name, expected in FUNCTION_CONFIGS.items():
         for wrong in (
@@ -435,9 +441,9 @@ def test_attestation_pins_exact_function_configuration_and_public_schema_owner(m
         ):
             catalog.configs[name] = wrong
             with pytest.raises(V2IssuanceUnavailable):
-                storage.attest(catalog)
+                storage._attest_catalog(catalog)
         catalog.configs[name] = list(expected)
-    assert storage.attest(catalog)
+    assert storage._attest_catalog(catalog)
 
 
 def test_guard_pins_real_objects_and_denies_backend_restart(graph):
@@ -557,3 +563,745 @@ def test_closed_trigger_validator_rejects_changed_binding_condition_or_extra_hoo
     guarded.sql = lambda *_args: Rows([valid, valid])
     with pytest.raises(V2IssuanceUnavailable):
         _attest_triggers(guarded, 1, expected)
+
+
+@pytest.fixture
+def runtime_profile_catalog(monkeypatch):
+    from app.services import social_session_issuance_v2_storage as storage
+
+    class Result:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def one(self):
+            assert len(self.rows) == 1
+            return self.rows[0]
+
+        def all(self):
+            return self.rows
+
+    class Catalog:
+        role = (False, False, False, False, False, 0, [], [], 44, True, True, False)
+
+        def sql(self, sql, values=None):
+            if "FROM pg_catalog.pg_roles" in sql:
+                # Exercise the unchanged rejection before the correction too.
+                return Result([self.role if " AS member_roles" in sql else self.role[:6]])
+            if "FROM pg_catalog.pg_namespace WHERE nspname='public'" in sql:
+                return Result([(2200, 100, True)])
+            name = values["name"]
+            return Result(
+                [
+                    (
+                        200,
+                        100,
+                        FUNCTIONS[name],
+                        True,
+                        list(FUNCTION_CONFIGS[name]),
+                        "v",
+                        True,
+                        0,
+                        "f",
+                        "plpgsql",
+                        False,
+                        False,
+                    )
+                ]
+            )
+
+        def check(self):
+            pass
+
+    # This double isolates role/function checks. The opt-in native tests use
+    # the complete real catalog and unpatched authority on PostgreSQL 16.
+    monkeypatch.setattr(storage, "_attest_legacy", lambda _guard: [])
+    monkeypatch.setattr(storage, "V2Base", SimpleNamespace(metadata=SimpleNamespace(sorted_tables=[])))
+    return storage, Catalog()
+
+
+@pytest.mark.parametrize(
+    "members,names,oids,inherit",
+    [(0, [], [], False), (0, [], [], True), (1, ["pg_read_all_settings"], [3500], True)],
+    ids=["original-noinherit", "original-inherit", "composed"],
+)
+def test_runtime_role_profiles_accept_exact_memberships(runtime_profile_catalog, members, names, oids, inherit):
+    storage, catalog = runtime_profile_catalog
+    catalog.role = (False, False, False, False, False, members, names, oids, 44, inherit, True, False)
+    assert storage._attest_catalog(catalog)
+
+
+@pytest.mark.parametrize(
+    "members,names,oids,inherit,login,admin",
+    [
+        (0, ["pg_read_all_settings"], [3500], True, True, False),
+        (1, [], [], True, True, False),
+        (2, ["pg_read_all_settings"], [3500], True, True, False),
+        (1, ["pg_read_all_data"], [3500], True, True, False),
+        (2, ["pg_read_all_settings", "unexpected_owner"], [3500, 9000], True, True, False),
+        (1, ["pg_read_all_settings", "inherited_owner"], [3500, 9000], True, True, False),
+        (1, ["pg_read_all_settings"], [3500], False, True, False),
+        (1, ["pg_read_all_settings"], [3500], True, False, False),
+        (1, ["pg_read_all_settings"], [3500], True, True, True),
+        (1, ["pg_read_all_settings"], [], True, True, False),
+        (1, ["pg_read_all_settings"], [0], True, True, False),
+        (1, ["pg_read_all_settings"], [3500, 9000], True, True, False),
+        (0, [], [], True, False, False),
+    ],
+)
+def test_runtime_role_profiles_reject_extra_or_ineffective_memberships(
+    runtime_profile_catalog, members, names, oids, inherit, login, admin
+):
+    storage, catalog = runtime_profile_catalog
+    catalog.role = (False, False, False, False, False, members, names, oids, 44, inherit, login, admin)
+    with pytest.raises(V2IssuanceUnavailable):
+        storage._attest_catalog(catalog)
+
+
+@pytest.mark.parametrize("composed", [False, True])
+@pytest.mark.parametrize("power", range(5))
+def test_runtime_role_profiles_reject_administrative_power(runtime_profile_catalog, composed, power):
+    storage, catalog = runtime_profile_catalog
+    role = list(catalog.role)
+    if composed:
+        role[5:8] = [1, ["pg_read_all_settings"], [3500]]
+    role[power] = True
+    catalog.role = tuple(role)
+    with pytest.raises(V2IssuanceUnavailable):
+        storage._attest_catalog(catalog)
+
+
+def test_runtime_role_identity_pins_profile_login_and_membership_oids(runtime_profile_catalog):
+    storage, catalog = runtime_profile_catalog
+    original = storage._attest_catalog(catalog)
+    catalog.role = (False, False, False, False, False, 1, ["pg_read_all_settings"], [3500], 44, True, True, False)
+    composed = storage._attest_catalog(catalog)
+    assert original != composed
+    changed_role = list(catalog.role)
+    changed_role[8] = 45
+    catalog.role = tuple(changed_role)
+    assert storage._attest_catalog(catalog) != composed
+    changed_role[8], changed_role[7] = 44, [3501]
+    catalog.role = tuple(changed_role)
+    assert storage._attest_catalog(catalog) != composed
+
+
+def test_transaction_guard_uses_one_backend_observation_per_check(graph, monkeypatch):
+    with SessionDouble(graph) as s, s.begin():
+        c = s.connection()
+        observed = []
+        execute = c.execute
+
+        def capture(statement, values=None):
+            observed.append(str(statement))
+            return execute(statement, values)
+
+        monkeypatch.setattr(c, "execute", capture)
+        guard = TransactionGuard(s)
+        assert len(observed) == 1
+        assert all(
+            name in observed[0] for name in ("transaction_isolation", "server_version_num", "pg_current_xact_id")
+        )
+        observed.clear()
+        guard.check()
+        assert len(observed) == 1
+        assert guard.xid == "42" and guard.poisoned is False
+
+
+@pytest.mark.parametrize(
+    "observation",
+    [
+        ("repeatable read", "160010", "42"),
+        (None, "160010", "42"),
+        ("read committed", 160010, "42"),
+        ("read committed", "150015", "42"),
+        ("read committed", "170000", "42"),
+        ("read committed", "160x", "42"),
+        ("read committed", "-160001", "42"),
+        ("read committed", "160010", None),
+        ("read committed", "160010", 42),
+        ("read committed", "160010", "0"),
+        ("read committed", "160010", "-1"),
+        ("read committed", "160010", "+42"),
+        ("read committed", "160010", " 42"),
+        ("read committed", "160010", "42 "),
+        ("read committed", "160010", "00"),
+        ("read committed", "160010", "18446744073709551616"),
+        ("read committed", "160010", "43"),
+        ("read committed", "160010"),
+        ("read committed", "160010", "42", "extra"),
+    ],
+)
+def test_transaction_guard_batched_observation_rejects_invalid_state_and_stays_poisoned(
+    graph, monkeypatch, observation
+):
+    with SessionDouble(graph) as s, s.begin():
+        c = s.connection()
+        guard = TransactionGuard(s)
+        calls = []
+
+        def invalid(statement, values=None):
+            calls.append(str(statement))
+            return Result(observation)
+
+        monkeypatch.setattr(c, "execute", invalid)
+        with pytest.raises(V2IssuanceUnavailable):
+            guard.check()
+        assert guard.poisoned and len(calls) == 1
+        monkeypatch.setattr(c, "execute", lambda *_args: Result(("read committed", "160010", "42")))
+        with pytest.raises(V2IssuanceUnavailable):
+            guard.check()
+
+
+@pytest.mark.parametrize("change", ["physical", "connection", "root", "savepoint"])
+def test_transaction_guard_batched_observation_checks_continuity_after_query(graph, monkeypatch, change):
+    with SessionDouble(graph) as s, s.begin():
+        c = s.connection()
+        guard = TransactionGuard(s)
+        execute = c.execute
+
+        def changed(statement, values=None):
+            result = execute(statement, values)
+            if change == "physical":
+                c.connection.dbapi_connection = SimpleNamespace(autocommit=False)
+            elif change == "connection":
+                s.pinned = ConnectionDouble(graph, c.actual)
+            elif change == "root":
+                monkeypatch.setattr(s, "get_transaction", lambda: SimpleNamespace(is_active=True))
+            else:
+                c.actual.begin_nested()
+            return result
+
+        monkeypatch.setattr(c, "execute", changed)
+        with pytest.raises(V2IssuanceUnavailable):
+            guard.check()
+        assert guard.poisoned
+        if change == "savepoint":
+            c.actual.get_nested_transaction().rollback()
+
+
+def test_transaction_guard_batched_observation_error_poisons_without_query_fallback(graph, monkeypatch):
+    with SessionDouble(graph) as s, s.begin():
+        c = s.connection()
+        guard = TransactionGuard(s)
+        calls = []
+
+        def broken(statement, values=None):
+            calls.append(str(statement))
+            raise RuntimeError("synthetic backend observation unavailable")
+
+        monkeypatch.setattr(c, "execute", broken)
+        with pytest.raises(V2IssuanceUnavailable):
+            guard.check()
+        assert guard.poisoned and len(calls) == 1
+
+
+@pytest.mark.parametrize("depth", [1, 2, 3])
+def test_transaction_guard_internal_layers_share_one_fresh_backend_observation(graph, monkeypatch, depth):
+    from app.services.social_session_issuance_v2_authority import BoundSession
+
+    with SessionDouble(graph) as s, s.begin():
+        guards = [TransactionGuard(s)]
+        for _ in range(depth):
+            guards.append(TransactionGuard(BoundSession(guards[-1])))
+        c = s.connection()
+        execute = c.execute
+        calls = []
+
+        def capture(statement, values=None):
+            calls.append(str(statement))
+            return execute(statement, values)
+
+        monkeypatch.setattr(c, "execute", capture)
+        guards[-1].check()
+        assert len(calls) == 1
+        assert all(g.xid == "42" and not g.poisoned for g in guards)
+        guards[-1].check()
+        assert len(calls) == 2  # A new invocation must observe the backend again.
+        c.xid = "43"
+        with pytest.raises(V2IssuanceUnavailable):
+            guards[-1].check()
+        assert len(calls) == 3 and all(g.poisoned for g in guards)
+
+
+@pytest.mark.parametrize("phase", ["before", "after"])
+@pytest.mark.parametrize(
+    "change", ["parent_xid", "parent_poison", "parent_physical", "parent_root", "port_guard", "port_connection"]
+)
+def test_transaction_guard_internal_layer_continuity_is_not_skipped(graph, monkeypatch, phase, change):
+    from app.services.social_session_issuance_v2_authority import BoundSession
+
+    with SessionDouble(graph) as s, s.begin():
+        parent = TransactionGuard(s)
+        port = BoundSession(parent)
+        child = TransactionGuard(port)
+        replacement_parent = TransactionGuard(s)
+        c = s.connection()
+        execute = c.execute
+
+        def alter():
+            if change == "parent_xid":
+                parent.xid = "43"
+            elif change == "parent_poison":
+                parent.poisoned = True
+            elif change == "parent_physical":
+                parent.physical = SimpleNamespace(autocommit=False)
+            elif change == "parent_root":
+                parent.root = SimpleNamespace(is_active=True)
+            elif change == "port_guard":
+                port.guard = replacement_parent
+            else:
+                monkeypatch.setattr(port, "connection", lambda: c)
+
+        if phase == "before":
+            alter()
+        else:
+
+            def changed(statement, values=None):
+                row = execute(statement, values)
+                alter()
+                return row
+
+            monkeypatch.setattr(c, "execute", changed)
+        with pytest.raises(V2IssuanceUnavailable):
+            child.check()
+        assert child.poisoned
+
+
+@pytest.fixture
+def catalog_batch_graph(monkeypatch):
+    from app.services import social_session_issuance_v2_storage as storage
+
+    # OID is a PostgreSQL nonnumeric JSON category. Native JSONB uses a string
+    # unless this fixed field is explicitly cast to bigint; direct SQL uses int.
+    oid_fields = {
+        "schema": {0: "oid", 1: "nspowner"},
+        "triggers": {0: "t.oid", 1: "t.tgfoid", 14: "t.tgparentid"},
+        "constraints": {0: "k.oid", 10: "k.conparentid", 11: "k.confrelid", 12: "k.conindid"},
+        "function": {0: "p.oid", 1: "p.proowner"},
+        "table": {0: "c.oid", 1: "c.relowner", 2: "c.reltype", 3: "c.reltoastrelid"},
+        "legacy_function": {0: "p.oid", 1: "p.proowner"},
+        "legacy_table": {0: "c.oid", 1: "c.relowner"},
+        "target": {0: "to_regclass(:target)::oid"},
+    }
+
+    # Real native table/constraint/function inventories; legacy validator tests
+    # remain separate and disposable PostgreSQL verifies the full composition.
+    monkeypatch.setattr(storage, "LEGACY_FUNCTION_HASHES", {})
+    monkeypatch.setattr(storage, "OWNER_TRIGGERS", {})
+    names = sorted(
+        {t.name for t in V2Base.metadata.sorted_tables}
+        | {c[4][0] for rows in storage.CONSTRAINTS.values() for c in rows if c[4]}
+    )
+    oids = {name: 1000 + i for i, name in enumerate(names)}
+    by_oid = {oid: name for name, oid in oids.items()}
+    tables = {t.name: t for t in V2Base.metadata.sorted_tables}
+
+    class Rows:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def all(self):
+            return self.rows
+
+        def one(self):
+            assert len(self.rows) == 1
+            return self.rows[0]
+
+        def scalar_one(self):
+            row = self.one()
+            assert len(row) == 1
+            return row[0]
+
+    class Catalog:
+        poisoned = False
+        changed = False
+        mutate = None
+        fail_objects = False
+
+        def __init__(self):
+            self.statements = []
+            self.checks = 0
+
+        def _check_objects(self):
+            if self.poisoned or self.fail_objects:
+                raise V2IssuanceUnavailable()
+            return (self,)
+
+        def check(self):
+            self.checks += 1
+            self._check_objects()
+
+        def answer(self, tag, values):
+            if tag == "role":
+                return [(False, False, False, False, False, 0, [], [], 44, True, True, False)]
+            if tag == "schema":
+                return [(2200, 100 + self.changed, True)]
+            if tag == "function":
+                name = values["name"]
+                return [
+                    (
+                        200 + list(FUNCTIONS).index(name),
+                        100,
+                        FUNCTIONS[name],
+                        True,
+                        list(FUNCTION_CONFIGS[name]),
+                        "v",
+                        True,
+                        0,
+                        "f",
+                        "plpgsql",
+                        False,
+                        False,
+                    )
+                ]
+            if tag == "target":
+                return [(oids[values["target"].removeprefix("public.")],)]
+            if tag == "table":
+                name = values["name"]
+                allowed = name not in (
+                    storage.V2Invalidation.__tablename__,
+                    V2BindingBirth.__tablename__,
+                    V2TokenBirth.__tablename__,
+                )
+                return [
+                    (
+                        oids[name],
+                        100,
+                        oids[name] + 100,
+                        0,
+                        "r",
+                        False,
+                        False,
+                        False,
+                        True,
+                        allowed,
+                        False,
+                        False,
+                        False,
+                        False,
+                    )
+                ]
+            if tag == "toast":
+                return []
+            if tag == "column_privileges":
+                return [(False,)]
+            if tag == "index":
+                return [(True, True, True, True, None, None, "btree")]
+            name = by_oid[values["oid"]]
+            if tag == "columns":
+                return [
+                    (
+                        c.name,
+                        (
+                            "bigint"
+                            if isinstance(c.type, storage.BigInteger)
+                            else "text" if isinstance(c.type, storage.Text) else f"character varying({c.type.length})"
+                        ),
+                        not c.nullable,
+                    )
+                    for c in tables[name].columns
+                ]
+            if tag == "constraints":
+                rows = []
+                for i, c in enumerate(storage.CONSTRAINTS[name]):
+                    target = oids[c[4][0]] if c[4] else 0
+                    index = 10000 + values["oid"] * 100 + i if c[1] in ("p", "u", "f") else 0
+                    rows.append(
+                        (
+                            20000 + values["oid"] * 100 + i,
+                            c[0],
+                            c[1],
+                            c[2],
+                            c[3],
+                            True,
+                            False,
+                            False,
+                            True,
+                            0,
+                            0,
+                            target,
+                            index,
+                            "synthetic-expression",
+                        )
+                    )
+                if name == V2Offer.__tablename__:
+                    rows.append(
+                        (30000, "v2_complete", "t", "synthetic-trigger", None, True, True, True, True, 0, 0, 0, 0, None)
+                    )
+                return sorted(rows, key=lambda row: row[1])
+            if tag == "triggers":
+                expected = {
+                    "v2_immutable": ("social_session_v2_immutable", 27, False, False),
+                    "v2_no_truncate": ("social_session_v2_immutable", 34, False, False),
+                }
+                if name not in (
+                    storage.V2Invalidation.__tablename__,
+                    V2BindingBirth.__tablename__,
+                    V2TokenBirth.__tablename__,
+                ):
+                    expected["v2_insert"] = ("social_session_v2_guard", 7, False, False)
+                if name == V2Offer.__tablename__:
+                    expected["v2_complete"] = ("social_session_v2_complete", 5, True, True)
+                return [
+                    (
+                        40000 + i,
+                        200 + list(FUNCTIONS).index(v[0]),
+                        k,
+                        *v,
+                        "O",
+                        0,
+                        "",
+                        None,
+                        b"",
+                        None,
+                        None,
+                        0,
+                        "public",
+                    )
+                    for i, (k, v) in enumerate(sorted(expected.items()))
+                ]
+            raise AssertionError("unexpected catalog selector")
+
+        def sql(self, sql, values=None):
+            values = values or {}
+            self.statements.append(sql)
+            self.check()
+            if not sql.startswith("SELECT pg_catalog.jsonb_build_array("):
+                # Old unbatched attestation, for a real regression-before run.
+                tag = classify_catalog_select(sql)
+                result = Rows(self.answer(tag, values))
+            else:
+                matches = []
+                for tag, (_, query, width) in storage._CATALOG_SELECTS.items():
+                    pattern = re.escape(query)
+                    for name in set(re.findall(r"(?<!:):([a-z_]+)", query)):
+                        pattern = pattern.replace(re.escape(":" + name), ":catalog_[0-9]+_" + name)
+                    for hit in re.finditer(pattern, sql):
+                        parameters = re.findall(r":catalog_([0-9]+)_([a-z_]+)", hit[0])
+                        assert len({i for i, _ in parameters}) <= 1
+                        bound = {name: values["catalog_" + i + "_" + name] for i, name in parameters}
+                        raw = []
+                        for row in self.answer(tag, bound):
+                            assert len(row) == width
+                            row = list(row)
+                            for index, expression in oid_fields.get(tag, {}).items():
+                                value = row[index]
+                                if value is not None and expression + "::bigint" not in query:
+                                    row[index] = str(value)
+                            raw.append(
+                                {
+                                    "f" + str(i + 1): "\\x" + v.hex() if type(v) is bytes else v
+                                    for i, v in enumerate(row)
+                                }
+                            )
+                        matches.append((hit.start(), tag, raw))
+                matches.sort(key=lambda item: item[0])
+                # PostgreSQL JSONB decoding returns native JSON scalar types;
+                # ORM metadata's quoted_name subtype must not leak from this double.
+                observed = json.loads(json.dumps([row for _, _, row in matches]))
+                if self.mutate:
+                    observed = self.mutate(observed)
+                result = Rows([(observed,)])
+            self.check()
+            return result
+
+    return storage, Catalog()
+
+
+def classify_catalog_select(sql):
+    # Exact phase labels for the OLD source's real SQL expressions. The new
+    # batch budget test does not hide missing batch support behind a fake port.
+    if " AS member_roles" in sql:
+        return "role"
+    if "FROM pg_catalog.pg_namespace WHERE" in sql:
+        return "schema"
+    if "FROM pg_catalog.pg_proc p" in sql:
+        return "function"
+    if "SELECT c.oid,c.relowner,c.reltype" in sql:
+        return "table"
+    if "FROM pg_catalog.pg_attribute" in sql:
+        return "columns"
+    if "SELECT pg_has_role" in sql:
+        return "toast"
+    if "SELECT has_any_column_privilege" in sql:
+        return "column_privileges"
+    if "FROM pg_catalog.pg_trigger" in sql:
+        return "triggers"
+    if "FROM pg_catalog.pg_constraint" in sql:
+        return "constraints"
+    if "SELECT to_regclass" in sql:
+        return "target"
+    if "SELECT indisvalid" in sql:
+        return "index"
+    raise AssertionError("unknown catalog SQL")
+
+
+def test_attestation_uses_three_fresh_catalog_batches(catalog_batch_graph):
+    storage, catalog = catalog_batch_graph
+    assert storage.attest(catalog)
+    assert len(catalog.statements) == 3
+
+
+def test_batched_catalog_preserves_exact_unbatched_fingerprint(catalog_batch_graph):
+    storage, catalog = catalog_batch_graph
+    original = storage._attest_catalog(catalog)
+    catalog.statements.clear()
+    assert storage.attest(catalog) == original
+    assert len(catalog.statements) == 3
+    assert catalog.checks > 0
+
+
+def test_catalog_observations_are_fresh_each_attestation(catalog_batch_graph):
+    storage, catalog = catalog_batch_graph
+    first = storage.attest(catalog)
+    catalog.changed = True
+    assert storage.attest(catalog) != first
+    assert len(catalog.statements) == 6
+
+
+@pytest.mark.parametrize("wrong", [None, {}, [], [[]], [None] * 100])
+def test_catalog_batch_malformed_envelope_denies_and_poisons(catalog_batch_graph, wrong):
+    storage, catalog = catalog_batch_graph
+    catalog.mutate = lambda _rows: wrong
+    with pytest.raises(V2IssuanceUnavailable):
+        storage.attest(catalog)
+    assert catalog.poisoned
+
+
+@pytest.mark.parametrize("wrong", [[], {"f1": 1}, {"f1": 1, "f2": 2}, {"f" + str(i): None for i in range(1, 14)}])
+def test_catalog_batch_malformed_row_denies(catalog_batch_graph, wrong):
+    storage, catalog = catalog_batch_graph
+
+    def mutate(rows):
+        rows[0] = [wrong]
+        return rows
+
+    catalog.mutate = mutate
+    with pytest.raises(V2IssuanceUnavailable):
+        storage.attest(catalog)
+    assert catalog.poisoned
+
+
+@pytest.mark.parametrize("wrong", [True, 1, "yes", None])
+def test_catalog_batch_rejects_changed_privileged_role(catalog_batch_graph, wrong):
+    storage, catalog = catalog_batch_graph
+
+    def mutate(rows):
+        rows[0][0]["f1"] = wrong
+        return rows
+
+    catalog.mutate = mutate
+    with pytest.raises(V2IssuanceUnavailable):
+        storage.attest(catalog)
+    assert catalog.poisoned
+
+
+def test_catalog_batch_preserves_cardinality(catalog_batch_graph):
+    storage, catalog = catalog_batch_graph
+
+    def mutate(rows):
+        rows[1].append(dict(rows[1][0]))
+        return rows
+
+    catalog.mutate = mutate
+    with pytest.raises(V2IssuanceUnavailable):
+        storage.attest(catalog)
+    assert catalog.poisoned
+
+
+def test_catalog_snapshot_rejects_unknown_selector_and_object_change(catalog_batch_graph):
+    storage, catalog = catalog_batch_graph
+    observation = storage._CatalogObservation(catalog)
+    with pytest.raises(V2IssuanceUnavailable):
+        observation.sql("SELECT 1")
+    catalog.fail_objects = True
+    with pytest.raises(V2IssuanceUnavailable):
+        observation.sql(storage._CATALOG_SELECTS["role"][0])
+
+
+def test_catalog_rows_preserve_null_arrays_bytes_and_isolate_mutation():
+    from app.services.social_session_issuance_v2_storage import _CatalogRows
+
+    rows = _CatalogRows([(None, True, 1, "1", [1, None, [True]], b"\x00")])
+    first = rows.one()
+    first[4].append("changed")
+    assert rows.one() == (None, True, 1, "1", [1, None, [True]], b"\x00")
+    with pytest.raises(V2IssuanceUnavailable):
+        rows.scalar_one()
+
+
+@pytest.mark.parametrize("quote", [None, False, True])
+def test_catalog_keys_normalize_real_sqlalchemy_metadata_names(quote):
+    from sqlalchemy.sql.elements import quoted_name
+
+    from app.services import social_session_issuance_v2_storage as storage
+
+    name = quoted_name("social_session_v2_offers", quote)
+    assert type(name) is quoted_name
+    sql = storage._CATALOG_SELECTS["table"][0]
+    assert storage._catalog_key(sql, {"name": name}) == storage._catalog_key(sql, {"name": str(name)})
+    # Verify the actual mappings, independently of a handcrafted plain-string port.
+    for table in V2Base.metadata.sorted_tables:
+        assert type(table.name) is quoted_name
+        assert storage._catalog_key(sql, {"name": table.name}) == storage._catalog_key(sql, {"name": str(table.name)})
+
+
+def test_catalog_keys_reject_unrecognized_string_subclasses():
+    from app.services import social_session_issuance_v2_storage as storage
+
+    class UnrecognizedName(str):
+        pass
+
+    with pytest.raises(V2IssuanceUnavailable):
+        storage._catalog_key(
+            storage._CATALOG_SELECTS["table"][0], {"name": UnrecognizedName("social_session_v2_offers")}
+        )
+
+
+def test_catalog_metadata_normalization_does_not_authorize_unknown_selector(catalog_batch_graph):
+    from sqlalchemy.sql.elements import quoted_name
+
+    storage, catalog = catalog_batch_graph
+    observation = storage._CatalogObservation(catalog)
+    with pytest.raises(V2IssuanceUnavailable):
+        observation.sql(storage._CATALOG_SELECTS["table"][0], {"name": quoted_name("unregistered_table", True)})
+
+
+@pytest.mark.parametrize(
+    "tag", ["schema", "triggers", "constraints", "function", "table", "legacy_function", "legacy_table", "target"]
+)
+def test_catalog_json_identity_fields_use_explicit_numeric_transport(tag):
+    from app.services import social_session_issuance_v2_storage as storage
+
+    # Closed positions from the original SELECT types, including absent OID 0.
+    expected = {
+        "schema": {0: "oid", 1: "nspowner"},
+        "triggers": {0: "t.oid", 1: "t.tgfoid", 14: "t.tgparentid"},
+        "constraints": {0: "k.oid", 10: "k.conparentid", 11: "k.confrelid", 12: "k.conindid"},
+        "function": {0: "p.oid", 1: "p.proowner"},
+        "table": {0: "c.oid", 1: "c.relowner", 2: "c.reltype", 3: "c.reltoastrelid"},
+        "legacy_function": {0: "p.oid", 1: "p.proowner"},
+        "legacy_table": {0: "c.oid", 1: "c.relowner"},
+        "target": {0: "to_regclass(:target)::oid"},
+    }
+    source, json_query, width = storage._CATALOG_SELECTS[tag]
+    for position, expression in expected[tag].items():
+        assert position < width
+        assert expression + "::bigint" not in source
+        assert json_query.count(expression + "::bigint") == 1
+
+
+def test_catalog_batch_rejects_numeric_string_oid_instead_of_coercing(catalog_batch_graph):
+    storage, catalog = catalog_batch_graph
+
+    def mutate(rows):
+        # First table-shaped result in the first batch. Keep its exact shape,
+        # but return the wrong native scalar type, as the previous JSON did.
+        table = next(group[0] for group in rows if group and len(group[0]) == 14)
+        table["f1"] = str(table["f1"])
+        return rows
+
+    catalog.mutate = mutate
+    with pytest.raises(V2IssuanceUnavailable):
+        storage.attest(catalog)
+    assert catalog.poisoned
