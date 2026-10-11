@@ -85,6 +85,14 @@ Many historical checkpoint documents now include a standard status note at the t
 
 These are useful for future development, staging, compatibility, and design intent, but should not be presented as current production readiness evidence unless a current smoke/runbook says so:
 
+- `docs/SOCIAL_SESSION_ISSUANCE_V2_PROVENANCE_V1.md` — dormant additive native
+  first-onboarding V2 offer/acceptance/binding/basic OAuth producer, immutable
+  issuance provenance and caller-transaction locked reader; separate metadata,
+  additive migration and opt-in synthetic PostgreSQL 16 verification; bounded
+  issuance/recovery and reader wait/concurrency evidence; general Current-Full
+  concurrency and finalization waits remain separate; no dedicated signers,
+  finalization, live migration, runtime wiring or activation
+
 - `docs/SOCIAL_DEVICE_CHALLENGE_REVISION_V1.md` — canonical dormant native
   immutable first-issuance challenge generation, additive unapplied companion
   source and caller-transaction enrollment reader; unchanged legacy store and
