@@ -1,7 +1,13 @@
 # Social messaging-device verification deadline evidence V1
 
-Status: **dormant pure byte and public-trust contract; no signer, reservation
-adapter, route, runtime wiring, or authority activation**.
+Status: **dormant pure byte and public-trust contract, with separate dormant
+reservation/signer source; no route, runtime wiring, or authority activation**.
+
+The source-only native reservation owner and dedicated injected signer are
+documented in [Enrollment V2 reservation V1](SOCIAL_ENROLLMENT_V2_RESERVATION_V1.md).
+That owner reuses this exact byte/consumer contract and canonical pending
+storage. It has offline verification only; native rehearsal and operational
+key provisioning remain deferred.
 
 The implementation is
 `app/services/social_messaging_device_verification_deadline_evidence_v1.py`.
@@ -117,10 +123,11 @@ are unique, exact selection is mandatory, and another key cannot rescue a
 missing, replaced, rotated, revoked or mismatched selected key. A non-null
 revocation disables that record. The empty configuration is disabled.
 
-The key is a new purpose-specific asymmetric UBID authority. A later
-operational contract must provision custody and freeze issuance, overlap,
-rotation, revocation, rollback and retirement. This source provisions none of
-those things.
+The key is a new purpose-specific asymmetric UBID authority. The linked
+[reservation policy](SOCIAL_ENROLLMENT_V2_RESERVATION_V1.md#dedicated-trust-operational-policy)
+freezes custody, issuance selection, overlap, rotation, revocation, rollback
+and retirement requirements. Operational provisioning remains separate; this
+source provisions none of those things.
 
 Every failure is the same non-sensitive message:
 

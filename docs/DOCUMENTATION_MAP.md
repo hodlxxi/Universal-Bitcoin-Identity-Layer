@@ -90,8 +90,9 @@ These are useful for future development, staging, compatibility, and design inte
   issuance provenance and caller-transaction locked reader; separate metadata,
   additive migration and opt-in synthetic PostgreSQL 16 verification; bounded
   issuance/recovery and reader wait/concurrency evidence; general Current-Full
-  concurrency and finalization waits remain separate; no dedicated signers,
-  finalization, live migration, runtime wiring or activation
+  concurrency and finalization waits remain separate; dedicated reservation
+  signing source is linked below; no finalization, live migration, runtime wiring
+  or activation
 
 - `docs/SOCIAL_DEVICE_CHALLENGE_REVISION_V1.md` — canonical dormant native
   immutable first-issuance challenge generation, additive unapplied companion
@@ -111,8 +112,16 @@ These are useful for future development, staging, compatibility, and design inte
   challenge consumption, association mutation, route or runtime activation
 - `docs/SOCIAL_MESSAGING_DEVICE_VERIFICATION_DEADLINE_EVIDENCE_V1.md` —
   dormant UBID-owned canonical four-authority deadline evidence, dedicated
-  empty-by-default RS256 public trust lifecycle and strict pure consumer; no
-  private key, signer, reservation adapter, route or runtime activation
+  empty-by-default RS256 public trust lifecycle and strict pure consumer;
+  separate dormant reservation/signer source is linked below; no operational
+  private key, route or runtime activation
+- `docs/SOCIAL_ENROLLMENT_V2_RESERVATION_V1.md` — dormant native reservation
+  owner, purpose-specific injected RS256 signer, canonical pending storage and
+  discovery-before-signing exact pending retry; caller-owned guarded transaction,
+  table serialization and native authority/revision/history composition;
+  offline and bounded disposable PostgreSQL verification, including catalog
+  composition, collision/retry and completed waits; no finalization, key
+  provisioning, route, runtime wiring, transport or deployment
 - `docs/SOCIAL_PREACCEPTED_ENROLLMENT_V2_ATOMIC_ACCEPTANCE_AND_CAS_V1.md` —
   dormant UBID-owned pure pending-reservation and final locked-recheck contract
   plus a caller-transaction PostgreSQL durability/CAS owner, immutable
@@ -122,8 +131,9 @@ These are useful for future development, staging, compatibility, and design inte
   `public` relation, associated TOAST object and complete relation/function/trigger
   definitions and object identities are attested on every operation under a
   distinct least-privilege runtime role; storage is not
-  current authority and the external authority-locking orchestrator remains
-  deferred; no route, runtime wiring, migration application or activation
+  current authority; the separate dormant reservation owner is linked above,
+  while finalization authority orchestration remains deferred; no route, runtime
+  wiring, migration application or activation
 - `docs/NIP17_RUNTIME_PLAN.md`
 - `docs/SOCIAL_SESSION_ISSUANCE_V1.md` — dormant PostgreSQL one-shot phone
   authority, original OAuth-generation provenance, canonical viewer credential,

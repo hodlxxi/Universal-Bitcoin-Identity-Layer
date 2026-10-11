@@ -1,8 +1,15 @@
 # Social preaccepted-enrollment V2 atomic acceptance and CAS V1
 
 Status: **dormant reservation/finalization byte contract and caller-transaction
-PostgreSQL durability/CAS owner; no authority orchestration, route, runtime
-wiring, migration application, or activation**.
+PostgreSQL durability/CAS owner, with separate dormant reservation authority
+source; no finalization orchestration, route, runtime wiring, migration
+application, or activation**.
+
+The source-only [Enrollment V2 reservation owner](SOCIAL_ENROLLMENT_V2_RESERVATION_V1.md)
+now composes native issuance/current authority, issued revision, absent history,
+dedicated evidence signing and this canonical pending store. Its exact retry
+discovers and authenticates stored bytes before signing. Offline verification
+does not establish native PostgreSQL concurrency or finalization authority.
 
 The implementation is
 `app/services/social_preaccepted_enrollment_v2_atomic_acceptance_contract.py`.
@@ -318,9 +325,11 @@ receipt publication, commit, or runtime activation.
 
 ## Explicitly deferred
 
-This phase adds the dormant model/table, unapplied migration and injected
-caller-transaction durability/CAS adapter only. It adds no external authority
-reader/orchestrator, association mutation, challenge consumption, route, BFF,
+This durability phase adds the dormant model/table, unapplied migration and
+injected caller-transaction durability/CAS adapter only. The separately linked
+reservation source composes external authority readers and a dedicated signer;
+finalization orchestration remains deferred. The durability phase adds no
+association mutation, challenge consumption, route, BFF,
 HTTP/socket transport, network call, background process, runtime/factory
 composition, signer, key loader, provisioning/rotation command, configuration,
 feature flag, service restart or deployment. The remaining prerequisites for
