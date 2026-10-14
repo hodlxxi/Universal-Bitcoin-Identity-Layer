@@ -19,6 +19,7 @@ from functools import wraps
 from types import MappingProxyType
 from typing import Callable, Mapping, NoReturn, ParamSpec, TypeVar, cast
 
+from app.services import social_enrollment_v2_freshness_policy as freshness_policy
 from app.services import social_messaging_device_verification_deadline_evidence_v1 as deadline
 from app.services import social_messaging_mobile_pre_enrollment_v2 as preacceptance
 from app.services import social_preaccepted_enrollment_verification_statement_v2 as verification
@@ -318,9 +319,11 @@ def deadline_evidence_digest_v1(source: object) -> str:
 
 
 @_sanitize_public_failure
-def deadline_evidence_payload_digest_v1(source: object) -> str:
+def deadline_evidence_payload_digest_v1(source: object, *, freshness_profile=freshness_policy.LEGACY_10S) -> str:
     try:
-        deadline.parse_messaging_device_verification_deadline_evidence_payload_v1(source)
+        deadline.parse_messaging_device_verification_deadline_evidence_payload_v1(
+            source, freshness_profile=freshness_profile
+        )
         return _digest(EVIDENCE_PAYLOAD_DIGEST_PREFIX, EVIDENCE_PAYLOAD_DIGEST_DOMAIN, cast(str, source))
     except Exception:
         _deny()
@@ -531,7 +534,9 @@ def canonical_pending_atomic_acceptance_reservation_v1_bytes(
             raise ValueError
         revision = _integer(challenge_revision, positive=True)
         evidence_digest = deadline_evidence_digest_v1(evidence_compact_jws)
-        payload_digest = deadline_evidence_payload_digest_v1(claims.payload_wire)
+        payload_digest = deadline_evidence_payload_digest_v1(
+            claims.payload_wire, freshness_profile=evidence_config.freshness_profile
+        )
         wire = _canonical(
             _reservation_values_from_claims(
                 claims,
@@ -1160,6 +1165,8 @@ def model_atomic_acceptance_and_cas_v1(
     """Model exact checks and output bytes; perform no lock, write, or commit."""
 
     try:
+        if evidence_config.freshness_profile != statement_config.freshness_profile:
+            raise ValueError
         reservation = parse_atomic_acceptance_reservation_v1(reservation_wire)
         if reservation.state != "pending":
             raise ValueError
@@ -1204,7 +1211,9 @@ def model_atomic_acceptance_and_cas_v1(
         )
         parsed_input = preacceptance.parse_preaccepted_enrollment_verification_input_v2(expected_input_wire)
         evidence_digest = deadline_evidence_digest_v1(evidence_compact_jws)
-        payload_digest = deadline_evidence_payload_digest_v1(claims.payload_wire)
+        payload_digest = deadline_evidence_payload_digest_v1(
+            claims.payload_wire, freshness_profile=evidence_config.freshness_profile
+        )
         statement_digest = verification_statement_digest_v1(statement_compact_jws)
         if (
             reservation.reservation_id != claims.reservation_id
@@ -1355,6 +1364,7 @@ def _strict_non_authoritative_historical_evidence_claims_v1(
     evidence_compact_jws: object,
     *,
     expected_input_wire: object,
+    freshness_profile=freshness_policy.LEGACY_10S,
 ) -> deadline.DeadlineEvidenceClaimsV1:
     """Extract exact stored bytes without asserting current key trust or authority."""
 
@@ -1375,12 +1385,14 @@ def _strict_non_authoritative_historical_evidence_claims_v1(
         signing_input = deadline.messaging_device_verification_deadline_evidence_signing_input_v1(
             protected_header_wire=protected_wire,
             payload_wire=payload_wire,
+            freshness_profile=freshness_profile,
         )
         if signing_input != (protected_segment + "." + payload_segment).encode("ascii"):
             raise ValueError
         return deadline.parse_messaging_device_verification_deadline_evidence_payload_v1(
             payload_wire,
             expected_input_wire=expected_input_wire,
+            freshness_profile=freshness_profile,
         )
     except Exception:
         pass
@@ -1391,6 +1403,8 @@ def _reservation_matches_exact_retry_evidence(
     reservation: AtomicAcceptanceReservationV1,
     claims: deadline.DeadlineEvidenceClaimsV1,
     evidence_compact_jws: str,
+    *,
+    freshness_profile=freshness_policy.LEGACY_10S,
 ) -> bool:
     return (
         reservation.reservation_id == claims.reservation_id
@@ -1406,7 +1420,8 @@ def _reservation_matches_exact_retry_evidence(
         and reservation.input_payload_digest == claims.input_payload_digest
         and reservation.evidence_token_id == claims.token_id
         and reservation.evidence_digest == deadline_evidence_digest_v1(evidence_compact_jws)
-        and reservation.evidence_payload_digest == deadline_evidence_payload_digest_v1(claims.payload_wire)
+        and reservation.evidence_payload_digest
+        == deadline_evidence_payload_digest_v1(claims.payload_wire, freshness_profile=freshness_profile)
         and reservation.created_at == claims.observed_at
         and reservation.expires_at == claims.expires_at
     )
@@ -1418,6 +1433,7 @@ def validate_reservation_historical_identity_v1(
     *,
     expected_input_wire: object,
     evidence_compact_jws: object,
+    freshness_profile=freshness_policy.LEGACY_10S,
 ) -> AtomicAcceptanceReservationV1:
     """Validate exact stored identity without asserting present authority."""
 
@@ -1426,11 +1442,13 @@ def validate_reservation_historical_identity_v1(
         claims = _strict_non_authoritative_historical_evidence_claims_v1(
             evidence_compact_jws,
             expected_input_wire=expected_input_wire,
+            freshness_profile=freshness_profile,
         )
         if type(evidence_compact_jws) is not str or not _reservation_matches_exact_retry_evidence(
             reservation,
             claims,
             evidence_compact_jws,
+            freshness_profile=freshness_profile,
         ):
             raise ValueError
         return reservation
@@ -1447,6 +1465,7 @@ def reservation_retry_disposition_v1(
     now: object,
     statement_compact_jws: object | None = None,
     receipt_wire: object | None = None,
+    freshness_profile=freshness_policy.LEGACY_10S,
 ) -> ReservationRetryDispositionV1:
     """Resolve only exact-byte retry; changed or terminal reuse always denies."""
 
@@ -1454,6 +1473,7 @@ def reservation_retry_disposition_v1(
         reservation = validate_reservation_historical_identity_v1(
             reservation_wire,
             expected_input_wire=expected_input_wire,
+            freshness_profile=freshness_profile,
             evidence_compact_jws=evidence_compact_jws,
         )
         current = _integer(now)

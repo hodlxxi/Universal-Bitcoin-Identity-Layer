@@ -28,6 +28,7 @@ from sqlalchemy.pool import NullPool
 
 from app.services import social_admission_session_binding as bindings
 from app.services import social_device_challenge_store as challenges
+from app.services import social_enrollment_v2_freshness_policy as freshness_policy
 from app.services import social_messaging_device_ed25519_association_lifecycle as association
 from app.services import social_messaging_device_proof_profile as profile
 from app.services import social_messaging_device_verification_deadline_evidence_v1 as evidence
@@ -149,7 +150,7 @@ def native_target():
 
 
 @pytest.fixture
-def reservation_native(native_graph):
+def reservation_native(native_graph, request):
     ddl, runtime, issuer, operation, proofs, parent = native_graph
     delivered = issuer.issue(operation, **proofs)
     issuance_id = delivered["receipt"]["issuanceId"]
@@ -229,6 +230,7 @@ def reservation_native(native_graph):
         client_id=f.client_id,
         service_principal=f.service_principal,
         trust_records=(trust,),
+        freshness_profile=getattr(request.module, "NATIVE_FRESHNESS_PROFILE", freshness_policy.LEGACY_10S),
     )
     config = ReservationConfig(
         enabled=True,

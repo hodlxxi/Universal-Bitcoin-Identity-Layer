@@ -778,3 +778,157 @@ def test_migration_and_source_freeze_transaction_cas_and_no_authority_surface():
     assert expected_definition_digest == storage.GUARD_DEFINITION_SHA256
     sqlite_ddl = str(CreateTable(table).compile(dialect=sqlite.dialect()))
     assert not any(token in sqlite_ddl for token in ("!~", "octet_length"))
+
+
+def test_native_finalization_profile_is_additive_and_original_digest_is_unchanged():
+    from app.services.social_enrollment_v2_finalization_storage import CAS_CATALOG_FIELDS
+
+    source = SOURCE.read_text()
+    assert storage.GUARD_DEFINITION_SHA256 == "f27dd60f6ef9548129a1e0175a4af1e7985f76080bf6a7a51890a273e5b30ca1"
+    assert "validate_cas_profile(connection, rows, full_schema=finalization_schema)" in source
+    assert "self._schema_profile != profile" in source
+    assert {
+        "trigger_function_oid",
+        "trigger_constraint_oid",
+        "function_sql_body",
+        "relation_column_count",
+    } <= CAS_CATALOG_FIELDS
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        [],
+        ["unknown"] * 3,
+        [storage.GUARD_TRIGGER, storage.NO_TRUNCATE_TRIGGER],
+        [storage.GUARD_TRIGGER, storage.NO_TRUNCATE_TRIGGER, "unexpected", "extra"],
+    ],
+)
+def test_unenumerated_finalization_catalog_profile_denies(names):
+    from app.services.social_enrollment_v2_finalization_contract import FinalizationDenied
+    from app.services.social_enrollment_v2_finalization_storage import validate_cas_profile
+
+    with pytest.raises(FinalizationDenied):
+        validate_cas_profile(None, [{"trigger_name": name} for name in names])
+
+
+def _boundary_accepted_arguments():
+    row = accepted_row()
+    return dict(
+        reservation_id=row["reservation_id"],
+        finalization_observation_wire=row["finalization_observation_wire"],
+        expected_input_wire=row["input_wire"],
+        expected_context_wire=json.loads(row["input_wire"])["context"],
+        evidence_compact_jws=row["evidence_compact_jws"],
+        evidence_config=vectors.evidence_config(),
+        statement_compact_jws=row["statement_compact_jws"],
+        statement_config=vectors.statement_config(),
+        decided_at=row["decided_at"],
+    )
+
+
+def test_boundary_accepted_retry_checks_full_schema_on_both_sides_of_read(monkeypatch):
+    instance = object.__new__(storage.SqlAlchemyTransactionBoundAtomicAcceptanceStorage)
+    instance._failed = False
+    checks = []
+    monkeypatch.setattr(instance, "_check_transaction", lambda **kw: checks.append(kw))
+    monkeypatch.setattr(instance, "_lock_one", lambda key: accepted_row())
+    result = instance.finalize_accepted(**_boundary_accepted_arguments())
+    assert result.reservation.state == "accepted"
+    assert result.final_admission == "denied"
+    assert checks == [{"finalization_schema": True}, {"finalization_schema": True}]
+
+
+@pytest.mark.parametrize("fail_at", (1, 2))
+def test_boundary_accepted_retry_schema_failure_poisoned_without_publication(monkeypatch, fail_at):
+    instance = object.__new__(storage.SqlAlchemyTransactionBoundAtomicAcceptanceStorage)
+    instance._failed = False
+    checks = []
+    locks = []
+
+    def _boundary_check(**kw):
+        checks.append(kw)
+        if len(checks) == fail_at:
+            raise RuntimeError("synthetic schema changed")
+
+    def _boundary_lock(key):
+        locks.append(key)
+        return accepted_row()
+
+    monkeypatch.setattr(instance, "_check_transaction", _boundary_check)
+    monkeypatch.setattr(instance, "_lock_one", _boundary_lock)
+    with pytest.raises(storage.SocialPreacceptedEnrollmentV2AtomicAcceptanceStorageUnavailable):
+        instance.finalize_accepted(**_boundary_accepted_arguments())
+    assert checks == [{"finalization_schema": True}] * fail_at
+    assert len(locks) == fail_at - 1
+    assert instance._failed is True
+
+
+@pytest.mark.parametrize("drift", (None, "before_read", "after_read", "after_update"))
+def test_boundary_pending_update_catalog_failure_requires_caller_rollback(monkeypatch, drift):
+    # SQLite exercises the actual UPDATE/RETURNING and caller rollback, not
+    # PostgreSQL catalogs, triggers, row locks or native effects authority.
+    engine = create_engine("sqlite:///:memory:")
+    original = storage.SocialPreacceptedEnrollmentV2AtomicAcceptanceRow.__table__
+    table = storage.Table(
+        "boundary_pending",
+        storage.MetaData(),
+        *(storage.Column(column.name, column.type) for column in original.columns),
+    )
+    try:
+        with engine.connect() as connection:
+            table.create(connection)
+            connection.execute(table.insert().values(**pending_row()))
+            connection.commit()
+            transaction = connection.begin()
+            instance = object.__new__(storage.SqlAlchemyTransactionBoundAtomicAcceptanceStorage)
+            instance._failed = False
+            instance._session = object()
+            instance._table = table
+            catalog_valid = drift != "before_read"
+            events = []
+            execute = connection.execute
+
+            def _boundary_check(**kwargs):
+                if kwargs.get("finalization_schema") and not catalog_valid:
+                    raise RuntimeError("synthetic catalog drift")
+                return connection
+
+            def _boundary_lock(key):
+                nonlocal catalog_valid
+                row = execute(storage.select(table).where(table.c.reservation_id == key)).mappings().one()
+                events.append("read")
+                if drift == "after_read":
+                    catalog_valid = False
+                return row
+
+            def _boundary_execute(statement, *args, **kwargs):
+                nonlocal catalog_valid
+                result = execute(statement, *args, **kwargs)
+                if statement.is_update:
+                    events.append("update")
+                    if drift == "after_update":
+                        catalog_valid = False
+                return result
+
+            monkeypatch.setattr(instance, "_check_transaction", _boundary_check)
+            monkeypatch.setattr(instance, "_lock_one", _boundary_lock)
+            monkeypatch.setattr(connection, "execute", _boundary_execute)
+            if drift is None:
+                result = instance.finalize_accepted(**_boundary_accepted_arguments())
+                assert result.reservation.state == "accepted"
+                assert result.publication_status == "provisional_until_caller_commit"
+                assert result.final_admission == "denied"
+                assert instance._failed is False
+            else:
+                denied(lambda: instance.finalize_accepted(**_boundary_accepted_arguments()))
+                assert instance._failed is True
+                denied(lambda: storage.SqlAlchemyTransactionBoundAtomicAcceptanceStorage._check_transaction(instance))
+            updated = drift in (None, "after_update")
+            assert events == ([] if drift == "before_read" else ["read", "update"] if updated else ["read"])
+            assert execute(storage.select(table.c.state)).scalar_one() == ("accepted" if updated else "pending")
+            assert transaction.is_active
+            transaction.rollback()
+            assert execute(storage.select(table.c.state)).scalar_one() == "pending"
+    finally:
+        engine.dispose()

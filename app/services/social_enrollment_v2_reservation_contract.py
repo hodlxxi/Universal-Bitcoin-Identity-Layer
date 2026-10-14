@@ -156,6 +156,7 @@ def _freeze_config(value):
         service_principal=ec.service_principal,
         purpose=ec.purpose,
         trust_records=tuple(records),
+        freshness_profile=ec.freshness_profile,
     )
     return ReservationConfig(
         enabled=value.enabled,

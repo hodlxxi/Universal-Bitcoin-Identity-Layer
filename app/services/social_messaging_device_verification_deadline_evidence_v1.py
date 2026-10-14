@@ -24,6 +24,7 @@ from typing import Callable, Mapping, NamedTuple, NoReturn, ParamSpec, TypeVar, 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
+from app.services import social_enrollment_v2_freshness_policy as freshness_policy
 from app.services import social_messaging_mobile_pre_enrollment_v2 as preacceptance
 
 VERSION = 1
@@ -420,8 +421,11 @@ class MessagingDeviceVerificationDeadlineEvidenceV1Config:
     purpose: str = EVIDENCE_PURPOSE
     trust_records: tuple[DeadlineEvidenceTrustRecordV1, ...] = field(default=(), repr=False)
 
+    freshness_profile: str = freshness_policy.LEGACY_10S
+
     def __post_init__(self) -> None:
         try:
+            freshness_policy.max_lifetime_ms(self.freshness_profile)
             if type(self.enabled) is not bool or type(self.trust_records) is not tuple:
                 raise ValueError
             if self.purpose != EVIDENCE_PURPOSE or type(self.purpose) is not str:
@@ -536,7 +540,10 @@ def _jti_from_values(value: Mapping[str, object]) -> str:
     return hashlib.sha256(EVIDENCE_JTI_DOMAIN.encode("ascii") + b"\0" + _canonical(value).encode("ascii")).hexdigest()
 
 
-def _parse_payload_values(value: Mapping[str, object], source: str) -> DeadlineEvidenceClaimsV1:
+def _parse_payload_values(
+    value: Mapping[str, object], source: str, *, freshness_profile=freshness_policy.LEGACY_10S
+) -> DeadlineEvidenceClaimsV1:
+    freshness_policy.validate_payload_marker(value, freshness_profile)
     if (
         value["schema"] != EVIDENCE_SCHEMA
         or type(value["version"]) is not int
@@ -548,7 +555,9 @@ def _parse_payload_values(value: Mapping[str, object], source: str) -> DeadlineE
         or value["operation"] != "register"
     ):
         _deny()
-    without_jti = {name: value[name] for name in _PAYLOAD_WITHOUT_JTI_FIELDS}
+    without_jti = {
+        name: value[name] for name in freshness_policy.payload_fields(_PAYLOAD_WITHOUT_JTI_FIELDS, freshness_profile)
+    }
     if _hex64(value["jti"]) != _jti_from_values(without_jti):
         _deny()
     observed = _integer(value["observedAt"])
@@ -561,7 +570,7 @@ def _parse_payload_values(value: Mapping[str, object], source: str) -> DeadlineE
     )
     if (
         observed >= expires
-        or expires - observed > MAX_EVIDENCE_LIFETIME_MS
+        or expires - observed > freshness_policy.max_lifetime_ms(freshness_profile)
         or expires > min(deadlines)
         or _hex64(value["reservationId"]) != _reservation_id_from_values(value)
     ):
@@ -622,13 +631,16 @@ def _parse_payload_values(value: Mapping[str, object], source: str) -> DeadlineE
 def parse_messaging_device_verification_deadline_evidence_payload_v1(
     source: object,
     *,
+    freshness_profile=freshness_policy.LEGACY_10S,
     expected_input_wire: object | None = None,
 ) -> DeadlineEvidenceClaimsV1:
     """Strictly parse claims; parsing alone never authenticates authority."""
 
     try:
-        value = _closed_json(source, _PAYLOAD_FIELDS, MAX_PAYLOAD_BYTES)
-        claims = _parse_payload_values(value, cast(str, source))
+        value = _closed_json(
+            source, freshness_policy.payload_fields(_PAYLOAD_FIELDS, freshness_profile), MAX_PAYLOAD_BYTES
+        )
+        claims = _parse_payload_values(value, cast(str, source), freshness_profile=freshness_profile)
         if expected_input_wire is not None:
             parsed = preacceptance.parse_preaccepted_enrollment_verification_input_v2(expected_input_wire)
             envelope = parsed.approval.envelope
@@ -686,7 +698,7 @@ def _parse_protected_header(source: object) -> dict[str, object]:
 
 @_sanitize_public_failure
 def messaging_device_verification_deadline_evidence_signing_input_v1(
-    *, protected_header_wire: object, payload_wire: object
+    *, protected_header_wire: object, payload_wire: object, freshness_profile=freshness_policy.LEGACY_10S
 ) -> bytes:
     """Return the exact compact-JWS signing input; no signing capability exists."""
 
@@ -694,7 +706,9 @@ def messaging_device_verification_deadline_evidence_signing_input_v1(
         if type(protected_header_wire) is not str or type(payload_wire) is not str:
             raise ValueError
         _parse_protected_header(protected_header_wire)
-        parse_messaging_device_verification_deadline_evidence_payload_v1(payload_wire)
+        parse_messaging_device_verification_deadline_evidence_payload_v1(
+            payload_wire, freshness_profile=freshness_profile
+        )
         return (
             _base64url_encode(protected_header_wire.encode("ascii"))
             + "."
@@ -706,7 +720,11 @@ def messaging_device_verification_deadline_evidence_signing_input_v1(
 
 @_sanitize_public_failure
 def compact_messaging_device_verification_deadline_evidence_v1(
-    *, protected_header_wire: object, payload_wire: object, signature: object
+    *,
+    protected_header_wire: object,
+    payload_wire: object,
+    signature: object,
+    freshness_profile=freshness_policy.LEGACY_10S,
 ) -> str:
     try:
         if type(signature) is not bytes or not signature:
@@ -714,6 +732,7 @@ def compact_messaging_device_verification_deadline_evidence_v1(
         signing_input = messaging_device_verification_deadline_evidence_signing_input_v1(
             protected_header_wire=protected_header_wire,
             payload_wire=payload_wire,
+            freshness_profile=freshness_profile,
         )
         evidence = signing_input.decode("ascii") + "." + _base64url_encode(signature)
         if len(evidence.encode("ascii")) > MAX_EVIDENCE_BYTES:
@@ -874,6 +893,7 @@ def verify_messaging_device_verification_deadline_evidence_v1(
         claims = parse_messaging_device_verification_deadline_evidence_payload_v1(
             payload_wire,
             expected_input_wire=expected_input_wire,
+            freshness_profile=config.freshness_profile,
         )
         current = _integer(now)
         if (

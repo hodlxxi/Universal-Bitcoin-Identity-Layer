@@ -1066,35 +1066,48 @@ def catalog_batch_graph(monkeypatch):
             values = values or {}
             self.statements.append(sql)
             self.check()
-            if not sql.startswith("SELECT pg_catalog.jsonb_build_array("):
+            marker = re.search(r"/\* UBID_CATALOG_FAMILIES ([a-z0-9_=,;]+) \*/", sql)
+            if not sql.startswith("SELECT pg_catalog.jsonb_build_array(") and marker is None:
                 # Old unbatched attestation, for a real regression-before run.
                 tag = classify_catalog_select(sql)
                 result = Rows(self.answer(tag, values))
             else:
-                matches = []
-                for tag, (_, query, width) in storage._CATALOG_SELECTS.items():
-                    pattern = re.escape(query)
-                    for name in set(re.findall(r"(?<!:):([a-z_]+)", query)):
-                        pattern = pattern.replace(re.escape(":" + name), ":catalog_[0-9]+_" + name)
-                    for hit in re.finditer(pattern, sql):
-                        parameters = re.findall(r":catalog_([0-9]+)_([a-z_]+)", hit[0])
-                        assert len({i for i, _ in parameters}) <= 1
-                        bound = {name: values["catalog_" + i + "_" + name] for i, name in parameters}
-                        raw = []
-                        for row in self.answer(tag, bound):
-                            assert len(row) == width
-                            row = list(row)
-                            for index, expression in oid_fields.get(tag, {}).items():
-                                value = row[index]
-                                if value is not None and expression + "::bigint" not in query:
-                                    row[index] = str(value)
-                            raw.append(
-                                {
-                                    "f" + str(i + 1): "\\x" + v.hex() if type(v) is bytes else v
-                                    for i, v in enumerate(row)
-                                }
-                            )
-                        matches.append((hit.start(), tag, raw))
+                matches, selections = [], []
+                if marker is not None:
+                    # The fixed transport groups a scan once for each family.
+                    # All original row/type/cardinality assertions below remain.
+                    for family in marker[1].split(";"):
+                        tag, indexes = family.split("=")
+                        query = storage._CATALOG_SELECTS[tag][1]
+                        names = set(re.findall(r"(?<!:):([a-z_]+)", query))
+                        for index in indexes.split(","):
+                            bound = {name: values["catalog_" + index + "_" + name] for name in names}
+                            selections.append((int(index), tag, query, bound))
+                else:
+                    # Retain the previous transport for regression comparison.
+                    for tag, (_, query, width) in storage._CATALOG_SELECTS.items():
+                        pattern = re.escape(query)
+                        for name in set(re.findall(r"(?<!:):([a-z_]+)", query)):
+                            pattern = pattern.replace(re.escape(":" + name), ":catalog_[0-9]+_" + name)
+                        for hit in re.finditer(pattern, sql):
+                            parameters = re.findall(r":catalog_([0-9]+)_([a-z_]+)", hit[0])
+                            assert len({i for i, _ in parameters}) <= 1
+                            bound = {name: values["catalog_" + i + "_" + name] for i, name in parameters}
+                            selections.append((hit.start(), tag, query, bound))
+                for position, tag, query, bound in selections:
+                    width = storage._CATALOG_SELECTS[tag][2]
+                    raw = []
+                    for row in self.answer(tag, bound):
+                        assert len(row) == width
+                        row = list(row)
+                        for index, expression in oid_fields.get(tag, {}).items():
+                            value = row[index]
+                            if value is not None and expression + "::bigint" not in query:
+                                row[index] = str(value)
+                        raw.append(
+                            {"f" + str(i + 1): "\\x" + v.hex() if type(v) is bytes else v for i, v in enumerate(row)}
+                        )
+                    matches.append((position, tag, raw))
                 matches.sort(key=lambda item: item[0])
                 # PostgreSQL JSONB decoding returns native JSON scalar types;
                 # ORM metadata's quoted_name subtype must not leak from this double.
@@ -1305,3 +1318,143 @@ def test_catalog_batch_rejects_numeric_string_oid_instead_of_coercing(catalog_ba
     with pytest.raises(V2IssuanceUnavailable):
         storage.attest(catalog)
     assert catalog.poisoned
+
+
+@pytest.mark.parametrize("depth", [1, 2, 3])
+def test_catalog_plan_nested_execute_has_two_fresh_guard_checks(graph, monkeypatch, depth):
+    from app.services.social_session_issuance_v2_authority import BoundSession
+
+    with SessionDouble(graph) as session, session.begin():
+        guards = [TransactionGuard(session)]
+        for _ in range(depth):
+            guards.append(TransactionGuard(BoundSession(guards[-1])))
+        connection = session.connection()
+        execute = connection.execute
+        calls = []
+
+        def capture(statement, values=None):
+            calls.append(str(statement))
+            return execute(statement, values)
+
+        monkeypatch.setattr(connection, "execute", capture)
+        rows = guards[-1].execute(select(User).where(User.id == USER_ID)).scalars().all()
+        assert len(rows) == 1 and rows[0].id == USER_ID
+        assert len(calls) == 2
+        assert all("pg_current_xact_id" in sql for sql in calls)
+        assert all(guard.xid == "42" and not guard.poisoned for guard in guards)
+
+
+@pytest.mark.parametrize("change", ["xid", "physical", "root", "savepoint", "parent_poison"])
+def test_catalog_plan_leaf_execute_still_rejects_changes_during_data_read(graph, monkeypatch, change):
+    from app.services.social_session_issuance_v2_authority import BoundSession
+
+    with SessionDouble(graph) as session, session.begin():
+        parent = TransactionGuard(session)
+        child = TransactionGuard(BoundSession(parent))
+        connection = session.connection()
+        execute = session.execute
+
+        def changed(statement, *, bind_arguments=None):
+            result = execute(statement, bind_arguments=bind_arguments)
+            if change == "xid":
+                connection.xid = "43"
+            elif change == "physical":
+                connection.connection.dbapi_connection = SimpleNamespace(autocommit=False)
+            elif change == "root":
+                monkeypatch.setattr(session, "get_transaction", lambda: SimpleNamespace(is_active=True))
+            elif change == "savepoint":
+                connection.actual.begin_nested()
+            else:
+                parent.poisoned = True
+            return result
+
+        monkeypatch.setattr(session, "execute", changed)
+        with pytest.raises(V2IssuanceUnavailable):
+            child.execute(select(User).where(User.id == USER_ID))
+        assert child.poisoned
+        if change == "savepoint":
+            connection.actual.get_nested_transaction().rollback()
+
+
+def test_catalog_plan_scans_each_catalog_family_once_and_keeps_every_selector(catalog_batch_graph):
+    storage, catalog = catalog_batch_graph
+    original = storage._attest_catalog(catalog)
+    catalog.statements.clear()
+    assert storage.attest(catalog) == original
+    assert len(catalog.statements) == 3
+    for sql in catalog.statements:
+        marker = re.search(r"/\* UBID_CATALOG_FAMILIES ([a-z0-9_=,;]+) \*/", sql)
+        assert marker is not None
+        groups = [part.split("=") for part in marker[1].split(";")]
+        indexes = [int(index) for _, items in groups for index in items.split(",")]
+        assert sorted(indexes) == list(range(len(indexes)))
+        for family, (tag, _) in enumerate(groups):
+            assert sql.count("catalog_family_" + str(family) + " AS MATERIALIZED (") == 1
+            if tag in (
+                "function",
+                "legacy_function",
+                "table",
+                "legacy_table",
+                "columns",
+                "constraints",
+                "triggers",
+                "toast",
+                "index",
+            ):
+                assert sql.count("catalog_scan_" + str(family) + " AS MATERIALIZED (") == 1
+
+
+@pytest.mark.parametrize(
+    "specifications", [[], [("table", {"name": "x"}), ("table", {"name": "x"})], [("table", {"unexpected": "x"})]]
+)
+def test_catalog_plan_rejects_missing_duplicate_or_unknown_selectors(specifications):
+    from app.services import social_session_issuance_v2_storage as storage
+
+    with pytest.raises(V2IssuanceUnavailable):
+        storage._catalog_fetch_plan(specifications)
+
+
+def test_catalog_plan_keeps_legacy_name_resolution_and_numeric_oid_projection():
+    from app.services import social_session_issuance_v2_storage as storage
+
+    sql, parameters, expected = storage._catalog_fetch_plan(
+        [("legacy_table", {"name": "oauth_tokens"}), ("legacy_table", {"name": "users"}), ("triggers", {"oid": 17})]
+    )
+    assert "to_regclass(c.relname)::oid = c.oid" in sql
+    assert "t.oid::bigint" in sql and "t.tgfoid::bigint" in sql and "t.tgparentid::bigint" in sql
+    assert parameters["catalog_family_0_selectors"] == ["oauth_tokens", "users"]
+    assert parameters["catalog_family_1_selectors"] == [17]
+    assert len(expected) == 3
+
+
+def test_completion_original_json_carrier_keeps_typed_fingerprint(catalog_batch_graph):
+    storage, catalog = catalog_batch_graph
+    expected = storage._attest_catalog(catalog)
+    catalog.statements.clear()
+    assert storage.attest(catalog) == expected
+    assert len(catalog.statements) == 3
+    for sql in catalog.statements:
+        assert "pg_catalog.json_build_array(" in sql
+        assert "pg_catalog.json_agg(" in sql
+        assert "pg_catalog.row_to_json(ROW(" in sql
+        assert "pg_catalog.to_jsonb(ROW(" not in sql
+
+
+def test_completion_plan_cache_contains_no_selectors_or_observations():
+    from app.services import social_session_issuance_v2_storage as storage
+
+    storage._completion_catalog_plans.clear()
+    sql, first, expected = storage._catalog_fetch_plan([("table", {"name": "first"}), ("columns", {"oid": 17})])
+    assert len(storage._completion_catalog_plans) == 1
+    again, second, next_expected = storage._catalog_fetch_plan(
+        [("table", {"name": "second"}), ("columns", {"oid": 29})]
+    )
+    assert again is sql
+    assert first["catalog_family_0_selectors"] == ["first"]
+    assert second["catalog_family_0_selectors"] == ["second"]
+    assert second["catalog_family_1_selectors"] == [29]
+    assert expected != next_expected
+    second["catalog_family_0_selectors"].append("mutation")
+    assert first["catalog_family_0_selectors"] == ["first"]
+    stored = next(iter(storage._completion_catalog_plans.values()))
+    assert stored == (sql, (("catalog_family_0_selectors", 0, "name"), ("catalog_family_1_selectors", 1, "oid")))
