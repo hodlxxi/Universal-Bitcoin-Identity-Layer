@@ -2266,7 +2266,7 @@ def test_synthetic_user_not_null_profile_is_rejected():
 
 
 class OriginalIssuanceCatalogPort:
-    """Native-shape observation adapter for the real frozen batched attestor."""
+    """Native-shape observation adapter for the real grouped catalog attestor."""
 
     poisoned = False
 
@@ -2427,42 +2427,36 @@ class OriginalIssuanceCatalogPort:
         from app.services.social_session_issuance_v2_storage import _CATALOG_SELECTS
 
         self.calls.append(sql)
-        assert sql.startswith("SELECT pg_catalog.jsonb_build_array(")
+        assert sql.startswith("WITH ") and "SELECT pg_catalog.json_build_array(" in sql
+        markers = re.findall(r"/\* UBID_CATALOG_FAMILIES ([a-z0-9_=,;]+) \*/", sql)
+        assert len(markers) == 1
         values = values or {}
-        oid_fields = {
-            "schema": {0: "oid", 1: "nspowner"},
-            "triggers": {0: "t.oid", 1: "t.tgfoid", 14: "t.tgparentid"},
-            "constraints": {0: "k.oid", 10: "k.conparentid", 11: "k.confrelid", 12: "k.conindid"},
-            "function": {0: "p.oid", 1: "p.proowner"},
-            "legacy_function": {0: "p.oid", 1: "p.proowner"},
-            "table": {0: "c.oid", 1: "c.relowner", 2: "c.reltype", 3: "c.reltoastrelid"},
-            "legacy_table": {0: "c.oid", 1: "c.relowner"},
-            "target": {0: "to_regclass(:target)::oid"},
-        }
-        matches = []
-        for tag, (_, query, width) in _CATALOG_SELECTS.items():
-            pattern = re.escape(query)
-            for name in set(re.findall(r"(?<!:):([a-z_]+)", query)):
-                pattern = pattern.replace(re.escape(":" + name), ":catalog_[0-9]+_" + name)
-            for hit in re.finditer(pattern, sql):
-                parameters = re.findall(r":catalog_([0-9]+)_([a-z_]+)", hit[0])
-                bound = {name: values["catalog_" + i + "_" + name] for i, name in parameters}
-                raw = []
+        observed = {}
+        for group in markers[0].split(";"):
+            tag, indexes = group.split("=")
+            assert tag in _CATALOG_SELECTS
+            width = _CATALOG_SELECTS[tag][2]
+            for encoded in indexes.split(","):
+                index = int(encoded)
+                assert index not in observed
+                prefix = "catalog_" + str(index) + "_"
+                bound = {name.removeprefix(prefix): value for name, value in values.items() if name.startswith(prefix)}
+                rows = []
                 for answer in self.answer(tag, bound):
                     assert len(answer) == width
-                    row = list(answer)
-                    for index, expression in oid_fields.get(tag, {}).items():
-                        if row[index] is not None and expression + "::bigint" not in query:
-                            row[index] = str(row[index])
-                    raw.append(
+                    rows.append(
                         {
                             "f" + str(i + 1): "\\x" + value.hex() if type(value) is bytes else value
-                            for i, value in enumerate(row)
+                            for i, value in enumerate(answer)
                         }
                     )
-                matches.append((hit.start(), raw))
-        matches.sort(key=lambda row: row[0])
-        return CatalogResult([json.loads(json.dumps([raw for _, raw in matches]))])
+                observed[index] = rows
+        assert observed and sorted(observed) == list(range(len(observed)))
+        # Native row_to_json preserves explicit bigint OIDs as JSON numbers.
+        # Re-encode solely to emulate driver-owned JSON arrays/objects; never
+        # reuse an observed answer across attestations or read selector arrays
+        # in place of each independently bound ordinal selector.
+        return CatalogResult([json.loads(json.dumps([observed[i] for i in range(len(observed))]))])
 
 
 # Independent PG16 rendering of core models plus the pinned migrations.
@@ -5193,3 +5187,44 @@ def test_completion_named_capture_consumes_each_name_once_and_rechecks_live():
     assert second["constraint"]["convalidated"] is False
     assert 99 not in second["constraint"]["conkey"]
     assert connection.queries[-1][0] == source
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        ("social_session_v2_offers", "social_session_v2_parents"),
+        ("social_session_v2_parents", "social_session_v2_offers"),
+    ],
+    ids=["offers-first", "parents-first"],
+)
+def test_original_issuance_catalog_port_current_grouped_transport(names):
+    from app.services import social_session_issuance_v2_storage as original
+
+    connection = CompleteCatalogConnection()
+    port = OriginalIssuanceCatalogPort(connection)
+    specifications = [("table", {"name": name}) for name in names]
+    specifications += [("role", {}), ("triggers", {"oid": connection.relations[names[0]]["oid"]})]
+    sql, values, expected = original._catalog_fetch_plan(specifications)
+    observed = port.sql(sql, values).scalar_one()
+    assert len(observed) == len(expected) == 4
+    for index, name in enumerate(names):
+        assert type(observed[index][0]["f1"]) is int
+        assert observed[index][0]["f1"] == connection.relations[name]["oid"]
+        assert set(observed[index][0]) == {"f" + str(i) for i in range(1, 15)}
+    assert observed[2][0]["f1"] is False
+    assert all(row["f12"] == "\\x" for row in observed[3])
+    assert port.sql(sql, values).scalar_one() == observed
+    observed[0][0]["f1"] = -1
+    assert port.sql(sql, values).scalar_one()[0][0]["f1"] == connection.relations[names[0]]["oid"]
+
+
+def test_original_issuance_catalog_port_current_transport_reads_fresh_function_body():
+    from app.services import social_session_issuance_v2_storage as original
+
+    connection = CompleteCatalogConnection()
+    port = OriginalIssuanceCatalogPort(connection)
+    original.attest(port)
+    connection.functions["social_session_v2_guard"]["function"]["prosrc"] = "BEGIN RETURN NEW; END;"
+    with pytest.raises(original.V2IssuanceUnavailable):
+        original.attest(port)
+    assert port.poisoned
