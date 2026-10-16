@@ -1,8 +1,12 @@
 # Social preaccepted-enrollment V2 atomic acceptance and CAS V1
 
+
+Freshness policy: [server-selected signed freshness profiles](SOCIAL_ENROLLMENT_V2_FINALIZATION_V1.md#server-selected-signed-freshness-profiles). Legacy closed payload field sets and fixed
+vectors remain exact; the separately selected new contract requires its signed
+marker. Default configuration remains disabled and legacy ten seconds.
 Status: **dormant reservation/finalization byte contract and caller-transaction
-PostgreSQL durability/CAS owner, with separate dormant reservation authority
-source; no finalization orchestration, route, runtime wiring, migration
+PostgreSQL durability/CAS owner, with separate dormant reservation and
+finalization authority sources; no route, runtime wiring, migration
 application, or activation**.
 
 The source-only [Enrollment V2 reservation owner](SOCIAL_ENROLLMENT_V2_RESERVATION_V1.md)
@@ -10,6 +14,14 @@ now composes native issuance/current authority, issued revision, absent history,
 dedicated evidence signing and this canonical pending store. Its exact retry
 discovers and authenticates stored bytes before signing. Offline verification
 does not establish native PostgreSQL concurrency or finalization authority.
+
+The separate [Enrollment V2 finalization source](SOCIAL_ENROLLMENT_V2_FINALIZATION_V1.md)
+now composes locked native authority with real shared association, immutable
+V2-native receipt/effect, challenge consumption and accepted CAS. It remains
+default-off/source-only; its migrations are unapplied to live systems. Isolated
+PostgreSQL verification covers full commit, rollback, causal completeness,
+concurrent exact retry and completed waits; it does not activate the service.
+This original CAS row and its caller observation remain non-authoritative.
 
 The implementation is
 `app/services/social_preaccepted_enrollment_v2_atomic_acceptance_contract.py`.
@@ -328,12 +340,48 @@ receipt publication, commit, or runtime activation.
 This durability phase adds the dormant model/table, unapplied migration and
 injected caller-transaction durability/CAS adapter only. The separately linked
 reservation source composes external authority readers and a dedicated signer;
-finalization orchestration remains deferred. The durability phase adds no
+the separate finalization source is linked above. The original durability phase adds no
 association mutation, challenge consumption, route, BFF,
 HTTP/socket transport, network call, background process, runtime/factory
 composition, signer, key loader, provisioning/rotation command, configuration,
 feature flag, service restart or deployment. The remaining prerequisites for
 Phase 1 include the Social-owned
 `InfrastructureMessagingDeviceVerificationSignerProcessV1` custody/lifecycle
-contract and a separately authorized UBID transaction orchestrator that locks
-and rechecks all current authorities and composes every acceptance effect.
+contract and separately authorized provisioning/activation of the linked
+UBID finalization owner before runtime composition or service publication.
+Source publication does not authorize any of those live operations.
+
+## Native V2 finalization validation boundaries
+
+The original two-trigger profile and original guard-definition digest are unchanged.
+For the enumerated three-trigger profile, ordinary transaction checks freshly
+validate the additional decision trigger and exact function along with the original
+pending relation, runtime role and transaction checks. This local profile establishes
+storage continuity only; it supplies no current/device/finalization authority.
+
+On the extended profile, the accepted CAS requires a fresh full finalization-schema
+attestation before its locked read, immediately before an accepted UPDATE, and
+after parsing its returned row. Exact accepted recovery repeats the full
+attestation after its locked read.
+Local trigger and complete-schema fingerprints are independently pinned. A changed
+identity or any failed check poisons storage and requires caller rollback. The full
+native effects writer continues its own unchanged before/after stage checks.
+Direct CAS calls receive these same checks, including denial after a provisional
+UPDATE if the post-write schema check fails. The caller must roll back that write.
+The original two-trigger profile keeps its original validation contract and gains
+no native effects authority. Raw history reconciliation remains non-authoritative;
+native receipt recovery separately verifies the complete effects history.
+These validation-boundary refinements introduce no shared attestation cache,
+clock skew or renewal of signed bytes. The separately selected signed native
+freshness profile below governs the maximum for new marked artifacts.
+This remains dormant source, with `final_admission=denied` and features default off.
+Runtime composition requires separate authorization; no migration or deployment
+is performed by these checks.
+
+
+The separately selected signed sixty-second native profile requires the
+[additive SQL freshness profile](SOCIAL_ENROLLMENT_V2_FINALIZATION_V1.md#additive-sql-freshness-profile).
+The original definition/digest remains exact. The second pinned definition is
+recognized only with the native finalization trigger profile and remains subject
+to retained, fresh same-transaction definition comparison. SQL format recognition
+does not replace either RSA verification or current-authority checks.

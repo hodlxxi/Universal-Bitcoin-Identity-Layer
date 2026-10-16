@@ -11,6 +11,7 @@ from typing import NamedTuple
 from sqlalchemy import or_, select, text
 
 from app.services import social_admission_session_binding as bindings
+from app.services import social_enrollment_v2_freshness_policy as freshness_policy
 from app.services import social_messaging_device_verification_deadline_evidence_v1 as evidence
 from app.services import social_messaging_mobile_pre_enrollment_v2 as v2
 from app.services import social_preaccepted_enrollment_v2_atomic_acceptance_contract as pending
@@ -178,10 +179,13 @@ def _payload(p, f, config, observed, expires):
         inputDigest=f.input_digest,
         inputPayloadDigest=evidence.deadline_evidence_input_payload_digest_v1(p.wire),
     )
+    values.update(freshness_policy.payload_marker(ec.freshness_profile))
     values["reservationId"] = evidence._reservation_id_from_values(values)
     values["jti"] = evidence._jti_from_values(values)
     wire = evidence._canonical(values)
-    evidence.parse_messaging_device_verification_deadline_evidence_payload_v1(wire, expected_input_wire=p.wire)
+    evidence.parse_messaging_device_verification_deadline_evidence_payload_v1(
+        wire, expected_input_wire=p.wire, freshness_profile=ec.freshness_profile
+    )
     return wire
 
 
@@ -428,7 +432,7 @@ class NativeReservationAuthority:
         trust = self.config.selected_trust()
         observed = self.now()  # after ALL lock waits; one immutable observation
         expires = min(
-            observed + evidence.MAX_EVIDENCE_LIFETIME_MS,
+            observed + freshness_policy.max_lifetime_ms(self.config.evidence_config.freshness_profile),
             f.phone_expires_at_ms,
             f.approver_expires_at_ms,
             f.full_expires_at_ms,

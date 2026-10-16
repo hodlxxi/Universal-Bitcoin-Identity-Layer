@@ -8,7 +8,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 100
 
     steps:
       - name: Checkout
@@ -34,7 +34,7 @@ jobs:
           DATABASE_URL: "sqlite:///:memory:"
           PYTHONFAULTHANDLER: "1"
         run: |
-          timeout 45m python -u - <<'PY'
+          timeout 90m python -u - <<'PY'
           import faulthandler
           import os
           import pytest

@@ -109,7 +109,8 @@ These are useful for future development, staging, compatibility, and design inte
   additive canonical V2-only RS256 statement bytes, dedicated empty-by-default
   public trust registration and strict pure authenticated consumer for one exact
   preaccepted-enrollment input; no Social producer, durable acceptance,
-  challenge consumption, association mutation, route or runtime activation
+  challenge consumption, association mutation, route or runtime activation in
+  this pure consumer; separate dormant finalization source is linked below
 - `docs/SOCIAL_MESSAGING_DEVICE_VERIFICATION_DEADLINE_EVIDENCE_V1.md` —
   dormant UBID-owned canonical four-authority deadline evidence, dedicated
   empty-by-default RS256 public trust lifecycle and strict pure consumer;
@@ -132,8 +133,16 @@ These are useful for future development, staging, compatibility, and design inte
   definitions and object identities are attested on every operation under a
   distinct least-privilege runtime role; storage is not
   current authority; the separate dormant reservation owner is linked above,
-  while finalization authority orchestration remains deferred; no route, runtime
+  while separate dormant finalization source is linked below; no route, runtime
   wiring, migration application or activation
+- `docs/SOCIAL_ENROLLMENT_V2_FINALIZATION_V1.md` — dormant default-off locked
+  V2 finalization owner and distinct native shared association/effect/receipt/
+  consumption seam, immutable causal evidence and accepted historical recovery;
+  additive unapplied migration and separately activated composed CAS profile;
+  offline and isolated PostgreSQL verification of catalog/role/completeness,
+  rollback, concurrent retry and completed waits; separate signed native
+  freshness profile and additive SQL guard; no Social signer, V2 challenge producer,
+  operational key, route, runtime activation, deployment or DM transport
 - `docs/NIP17_RUNTIME_PLAN.md`
 - `docs/SOCIAL_SESSION_ISSUANCE_V1.md` — dormant PostgreSQL one-shot phone
   authority, original OAuth-generation provenance, canonical viewer credential,
@@ -236,3 +245,6 @@ Do not delete them in this PR. Use `docs/ARCHIVE_CANDIDATES.md` and a future foc
 - Public smoke does not prove paid job completion unless the paid receipt runbook is executed.
 - Public smoke does not require or print secrets or invoice strings.
 - Static/conceptual docs may discuss broader vision; current runtime docs and smoke tests are the implementation truth.
+
+Enrollment V2 freshness policy is canonical in
+[server-selected signed freshness profiles](SOCIAL_ENROLLMENT_V2_FINALIZATION_V1.md#server-selected-signed-freshness-profiles). This is a separate opt-in signed profile; legacy defaults and vectors remain unchanged.

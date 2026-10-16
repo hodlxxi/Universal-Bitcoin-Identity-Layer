@@ -224,7 +224,12 @@ class TransactionGuard:
 
     def execute(self, statement):
         self.check()
-        result = self.session.execute(
+        # The exact internal BoundSession chain is already checked in full by
+        # this guard on both sides of execution. Execute on its checked leaf,
+        # so parent.execute does not recursively repeat the same SQL checks.
+        # User wrappers retain the ordinary path and explicit Connection bind.
+        session = self._check_objects()[-1].session if self.parent_guard is not None else self.session
+        result = session.execute(
             statement.execution_options(populate_existing=True), bind_arguments={"bind": self.connection}
         )
         self.check()
@@ -614,6 +619,118 @@ class _CatalogRows:
         return row[0]
 
 
+_completion_catalog_plans = {}
+
+
+def _catalog_fetch_plan(specifications):
+    """Scan each fixed catalog family once within one fresh observation.
+
+    This changes transport only. Original projections, ordering, cardinality,
+    typed JSON fields and the complete validator remain authoritative. The
+    materialized scans never survive this statement or its attestation.
+    """
+    selectors = {
+        "function": ("name", "p.proname", "text"),
+        "legacy_function": ("name", "p.proname", "text"),
+        "table": ("name", "c.relname", "text"),
+        "legacy_table": ("name", "c.relname", "text"),
+        "columns": ("oid", "a.attrelid", "oid"),
+        "constraints": ("oid", "k.conrelid", "oid"),
+        "triggers": ("oid", "t.tgrelid", "oid"),
+        "toast": ("oid", "oid", "oid"),
+        "index": ("oid", "i.indexrelid", "oid"),
+    }
+    families, parameters, expected = {}, {}, []
+    for i, (tag, values) in enumerate(specifications):
+        source, query, width = _CATALOG_SELECTS[tag]
+        key = _catalog_key(source, values)
+        if any(item[0] == key for item in expected):
+            raise V2IssuanceUnavailable()
+        values = {name: value for name, _, value in key[1]}
+        if set(re.findall(r"(?<!:):([a-z_]+)", query)) != set(values):
+            raise V2IssuanceUnavailable()
+        parameters.update({"catalog_" + str(i) + "_" + name: value for name, value in values.items()})
+        families.setdefault(tag, []).append((i, values))
+        expected.append((key, tag, width))
+    # Plans contain immutable SQL/parameter locations only. Each observation
+    # still supplies newly validated selectors and freshly returned rows.
+    shape = tuple((tag, tuple(name for name, _, _ in key[1]), _CATALOG_SELECTS[tag]) for key, tag, _ in expected)
+    cached = _completion_catalog_plans.get(shape)
+    if cached is not None:
+        statement, locations = cached
+        for parameter, family, bind in locations:
+            members = tuple(families.values())[family]
+            parameters[parameter] = [values[bind] for _, values in members]
+        return statement, parameters, expected
+    locations = []
+    scans, terms = [], [None] * len(expected)
+    for family, (tag, members) in enumerate(families.items()):
+        source, query, _ = _CATALOG_SELECTS[tag]
+        query = query.replace("pg_catalog.to_jsonb(ROW(", "pg_catalog.row_to_json(ROW(")
+        name = "catalog_family_" + str(family)
+        selector = selectors.get(tag)
+        if selector is not None:
+            bind, column, sql_type = selector
+            if any(set(values) != {bind} for _, values in members) or not query.startswith("SELECT "):
+                raise V2IssuanceUnavailable()
+            predicate = column + "=:" + bind
+            if query.count(predicate) != 1:
+                # The fixed TOAST projection has intentionally spaced SQL.
+                predicate = column + " = :" + bind
+                if query.count(predicate) != 1:
+                    raise V2IssuanceUnavailable()
+            parameter = "catalog_family_" + str(family) + "_selectors"
+            parameters[parameter] = [values[bind] for _, values in members]
+            locations.append((parameter, family, bind))
+            captured = query.replace(predicate, column + "=ANY(CAST(:" + parameter + " AS " + sql_type + "[]))")
+            # Legacy visibility compares the unqualified requested name too;
+            # retain that expression for each corresponding catalog row.
+            captured = re.sub(r"(?<!:):" + bind + r"\b", column, captured)
+            if re.search(r"(?<!:):[a-z_]+", captured.replace(":" + parameter, "")):
+                raise V2IssuanceUnavailable()
+            captured = "SELECT " + column + " AS catalog_selector," + captured.removeprefix("SELECT ")
+            scan = "catalog_scan_" + str(family)
+            scans.append(scan + " AS MATERIALIZED (" + captured + ")")
+            selected = ",".join(
+                "(" + str(i) + ",CAST(:catalog_" + str(i) + "_" + bind + " AS " + sql_type + "))" for i, _ in members
+            )
+            family_query = (
+                "SELECT selected.catalog_index,captured.row_values,captured.row_order FROM (VALUES "
+                + selected
+                + ") AS selected(catalog_index,catalog_selector) JOIN "
+                + scan
+                + " AS captured ON captured.catalog_selector=selected.catalog_selector"
+            )
+        else:
+            # Three fixed scalar families (role/schema/target) and the small
+            # column-privilege family retain their exact expressions. They do
+            # not rescan pg_proc/pg_attribute once per relation or function.
+            rows = []
+            for i, values in members:
+                expression = re.sub(r"(?<!:):([a-z_]+)", lambda match: ":catalog_" + str(i) + "_" + match[1], query)
+                rows.append("SELECT " + str(i) + " AS catalog_index,captured.* FROM (" + expression + ") captured")
+            family_query = " UNION ALL ".join(rows)
+        scans.append(name + " AS MATERIALIZED (" + family_query + ")")
+        for i, _ in members:
+            terms[i] = (
+                "(SELECT COALESCE(pg_catalog.json_agg(catalog_rows.row_values ORDER BY catalog_rows.row_order),"
+                "'[]'::json) FROM " + name + " catalog_rows WHERE catalog_rows.catalog_index=" + str(i) + ")"
+            )
+    if not terms or any(term is None for term in terms):
+        raise V2IssuanceUnavailable()
+    # Fixed family/index markers permit transparent synthetic transport tests;
+    # neither caller values nor alternate SQL can enter this closed plan.
+    marker = ";".join(tag + "=" + ",".join(str(i) for i, _ in members) for tag, members in families.items())
+    statement = (
+        "WITH " + ",".join(scans) + " SELECT pg_catalog.json_build_array(" + ",".join(terms) + ") "
+        "/* UBID_CATALOG_FAMILIES " + marker + " */"
+    )
+    if len(_completion_catalog_plans) >= 32:
+        _completion_catalog_plans.clear()
+    _completion_catalog_plans[shape] = (statement, tuple(locations))
+    return statement, parameters, expected
+
+
 class _CatalogObservation:
     """Three fresh bounded catalog batches, private to ONE attestation."""
 
@@ -676,27 +793,11 @@ class _CatalogObservation:
             return
         if not 1 <= len(specifications) <= 96:
             raise V2IssuanceUnavailable()
-        terms, parameters, expected = [], {}, []
-        for i, (tag, values) in enumerate(specifications):
-            source, query, width = _CATALOG_SELECTS[tag]
-            key = _catalog_key(source, values)
-            if key in self._rows or any(item[0] == key for item in expected):
-                raise V2IssuanceUnavailable()
-            names = set(re.findall(r"(?<!:):([a-z_]+)", query))
-            if names != set(values):
-                raise V2IssuanceUnavailable()
-            query = re.sub(r"(?<!:):([a-z_]+)", lambda m: ":catalog_" + str(i) + "_" + m[1], query)
-            parameters.update({"catalog_" + str(i) + "_" + name: value for name, value in values.items()})
-            terms.append(
-                "(SELECT COALESCE(pg_catalog.jsonb_agg(catalog_rows.row_values "
-                "ORDER BY catalog_rows.row_order), '[]'::jsonb) "
-                "FROM (" + query + ") AS catalog_rows)"
-            )
-            expected.append((key, tag, width))
+        statement, parameters, expected = _catalog_fetch_plan(specifications)
+        if any(key in self._rows for key, _, _ in expected):
+            raise V2IssuanceUnavailable()
         self._objects()
-        observed = self.guard.sql(
-            "SELECT pg_catalog.jsonb_build_array(" + ",".join(terms) + ")", parameters
-        ).scalar_one()
+        observed = self.guard.sql(statement, parameters).scalar_one()
         self._objects()
         if type(observed) is not list or len(observed) != len(expected):
             raise V2IssuanceUnavailable()

@@ -51,11 +51,16 @@ class DedicatedRS256EvidenceSigner:
                 kid=self._trust.key_id
             ).decode("ascii")
             signing_input = evidence.messaging_device_verification_deadline_evidence_signing_input_v1(
-                protected_header_wire=header, payload_wire=record.payload_wire
+                protected_header_wire=header,
+                payload_wire=record.payload_wire,
+                freshness_profile=self._config.evidence_config.freshness_profile,
             )
             signature = self._key.sign(signing_input, padding.PKCS1v15(), hashes.SHA256())
             compact = evidence.compact_messaging_device_verification_deadline_evidence_v1(
-                protected_header_wire=header, payload_wire=record.payload_wire, signature=signature
+                protected_header_wire=header,
+                payload_wire=record.payload_wire,
+                signature=signature,
+                freshness_profile=self._config.evidence_config.freshness_profile,
             )
             owner._signed(candidate)
             evidence.verify_messaging_device_verification_deadline_evidence_v1(

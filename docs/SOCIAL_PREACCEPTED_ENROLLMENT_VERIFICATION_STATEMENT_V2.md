@@ -1,5 +1,9 @@
 # Social preaccepted-enrollment verification statement V2
 
+
+Freshness policy: [server-selected signed freshness profiles](SOCIAL_ENROLLMENT_V2_FINALIZATION_V1.md#server-selected-signed-freshness-profiles). Legacy closed payload field sets and fixed
+vectors remain exact; the separately selected new contract requires its signed
+marker. Default configuration remains disabled and legacy ten seconds.
 Status: **dormant canonical byte contract and pure authenticated consumer; no
 producer, route, runtime wiring or authority activation**.
 
@@ -7,6 +11,12 @@ The implementation is
 `app/services/social_preaccepted_enrollment_verification_statement_v2.py`.
 UBID owns and freezes these bytes. Social production and signing are a later
 separate change. `RUNTIME_ENABLED` is `false`.
+
+The separate [Enrollment V2 finalization source](SOCIAL_ENROLLMENT_V2_FINALIZATION_V1.md)
+uses this unchanged strict consumer with locked native authority and distinct
+V2-native shared association/receipt/consumption effects. That owner remains
+default-off/source-only, with an unapplied migration and native rehearsal pending.
+This pure statement consumer still grants no acceptance or current authority.
 
 ## Architecture boundary
 
@@ -116,7 +126,7 @@ requires:
 
 ```text
 enrollment.issuedAt <= statement.issuedAt <= now < statement.expiresAt
-0 < statement.expiresAt - statement.issuedAt <= 10000
+0 < statement.expiresAt - statement.issuedAt <= configuredProfileMaximum
 ```
 
 The consumer strictly reparses the V2 input and invokes its existing V2 time

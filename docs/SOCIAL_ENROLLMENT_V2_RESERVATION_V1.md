@@ -1,5 +1,9 @@
 # UBID Enrollment V2 reservation V1
 
+
+Freshness policy: [server-selected signed freshness profiles](SOCIAL_ENROLLMENT_V2_FINALIZATION_V1.md#server-selected-signed-freshness-profiles). Legacy closed payload field sets and fixed
+vectors remain exact; the separately selected new contract requires its signed
+marker. Default configuration remains disabled and legacy ten seconds.
 Status: **dormant source-only reservation owner and dedicated evidence signer**.
 `RUNTIME_ENABLED` remains false; default configuration is disabled. Offline
 verification uses synthetic in-memory SQLite and catalog doubles. Bounded
@@ -147,13 +151,13 @@ is accepted as authority.
 
 The owner reuses the existing evidence serializer, domain-separated reservation
 ID/input payload digest/JTI, protected header/signing input/compact constructor,
-strict verifier and canonical pending constructor. It introduces no new wire,
-preimage, digest domain, fixed vector or alternative RS256 header.
+strict verifier and canonical pending constructor. Legacy bytes, preimages, digest domains, fixed vectors and RS256 headers remain
+unchanged. The opt-in profile adds only its explicit signed payload marker.
 
 One trusted UTC integer-millisecond observation is sampled after all relevant
 lock waits. Fractional time floors conservatively using the existing exact
 integer helper. Evidence expiry is positive, exclusive and at most observation
-plus 10,000 ms, all four independent native deadlines, exact enrollment and
+plus the explicitly configured profile maximum, all four independent native deadlines, exact enrollment and
 pre-enrollment expiry and selected signing trust's exclusive notAfter. The
 binding deadline equals the signed V1 binding tuple. The four evidence deadlines
 retain their independent native values. No formatting, wait, retry or clock

@@ -50,6 +50,8 @@ GUARD_FUNCTION = "guard_social_preaccepted_v2_acceptance_v1"
 GUARD_TRIGGER = "trg_social_preaccepted_v2_acceptance_guard"
 NO_TRUNCATE_TRIGGER = "trg_social_preaccepted_v2_acceptance_no_truncate"
 GUARD_DEFINITION_SHA256 = "f27dd60f6ef9548129a1e0175a4af1e7985f76080bf6a7a51890a273e5b30ca1"
+FRESHNESS_GUARD_DEFINITION_SHA256 = "94ecade6ef29ac641f425b928daa7cf73a9779a41c003425b5ea22e5a341b78f"
+FRESHNESS_GUARD_SOURCE_SHA256 = "2a0b84e9bb68d822cde2a7d0a908b5a3443b707046f0571f8303e2416b0fd601"
 RUNTIME_ENABLED = False
 TRANSACTION_OWNER = "caller_owned_postgresql_read_committed"
 CURRENT_AUTHORITY = "not_established_by_storage"
@@ -75,6 +77,19 @@ class SocialPreacceptedEnrollmentV2AtomicAcceptanceStorageUnavailable(ValueError
 
 def _deny() -> NoReturn:
     raise SocialPreacceptedEnrollmentV2AtomicAcceptanceStorageUnavailable() from None
+
+
+def _freshness_guard_definition_allowed(definition_sha256, schema_profile):
+    """Recognize two pinned definitions; the new one requires native triggers.
+
+    The caller still retains and compares its observed definition on every
+    transaction check. This supplies no current or detached authority.
+    """
+    if type(definition_sha256) is not str or type(schema_profile) is not str:
+        return False
+    if definition_sha256 == GUARD_DEFINITION_SHA256:
+        return schema_profile in ("original", "native_v2_finalization")
+    return schema_profile == "native_v2_finalization" and definition_sha256 == FRESHNESS_GUARD_DEFINITION_SHA256
 
 
 def _hex64(value: object) -> str:
@@ -615,6 +630,7 @@ def parse_stored_atomic_acceptance_v1(
             value["reservation_wire"],
             expected_input_wire=value["input_wire"],
             evidence_compact_jws=value["evidence_compact_jws"],
+            freshness_profile=evidence_config.freshness_profile,
         )
         authenticated_evidence = deadline.verify_messaging_device_verification_deadline_evidence_v1(
             value["evidence_compact_jws"],
@@ -687,6 +703,8 @@ def parse_stored_atomic_acceptance_v1(
             or type(statement_config) is not verification.SocialPreacceptedEnrollmentVerificationStatementV2Config
         ):
             raise ValueError
+        if statement_config.freshness_profile != evidence_config.freshness_profile:
+            raise ValueError
         parsed_input = preacceptance.parse_preaccepted_enrollment_verification_input_v2(value["input_wire"])
         authenticated_statement = verification.verify_social_preaccepted_enrollment_verification_statement_v2(
             statement_wire,
@@ -734,6 +752,7 @@ def parse_stored_atomic_acceptance_v1(
             statement_compact_jws=statement_wire,
             receipt_wire=receipt_wire,
             now=reservation.decided_at,
+            freshness_profile=evidence_config.freshness_profile,
         )
         if (
             observation.reservation_id != reservation.reservation_id
@@ -878,6 +897,9 @@ class SqlAlchemyTransactionBoundAtomicAcceptanceStorage:
         self._toast_relation_owner_oid: int | None = None
         self._trigger_function_owner_oid: int | None = None
         self._guard_definition_sha256: str | None = None
+        self._finalization_profile_identity: object = None
+        self._finalization_schema_identity: object = None
+        self._schema_profile: str | None = None
         try:
             self._schema = _schema_identifier(schema)
             self._table = _qualified_table(self._schema)
@@ -889,8 +911,10 @@ class SqlAlchemyTransactionBoundAtomicAcceptanceStorage:
             self._failed = True
         _deny()
 
-    def _check_transaction(self) -> Connection:
+    def _check_transaction(self, *, finalization_schema: bool = False) -> Connection:
         try:
+            if type(finalization_schema) is not bool:
+                _deny()
             session = self._session
             if (
                 self._failed
@@ -1057,6 +1081,30 @@ class SqlAlchemyTransactionBoundAtomicAcceptanceStorage:
                 .all()
             )
             rows = [cast(Mapping[str, object], row) for row in catalog_rows]
+            profile = "native_v2_finalization" if len(rows) == 3 else "original"
+            if self._schema_profile is None:
+                self._schema_profile = profile
+            elif self._schema_profile != profile:
+                _deny()
+            if len(rows) == 3:
+                from app.services.social_enrollment_v2_finalization_storage import validate_cas_profile
+
+                profile_identity = validate_cas_profile(connection, rows, full_schema=finalization_schema)
+                trigger_identity = profile_identity[:2]
+                if self._finalization_profile_identity is None:
+                    self._finalization_profile_identity = trigger_identity
+                elif self._finalization_profile_identity != trigger_identity:
+                    _deny()
+                if finalization_schema:
+                    if profile_identity[2] is None:
+                        _deny()
+                    if self._finalization_schema_identity is None:
+                        self._finalization_schema_identity = profile_identity[2]
+                    elif self._finalization_schema_identity != profile_identity[2]:
+                        _deny()
+                rows = [row for row in rows if row["trigger_name"] in (GUARD_TRIGGER, NO_TRUNCATE_TRIGGER)]
+            elif self._finalization_profile_identity is not None:
+                _deny()
             if len(rows) != 2:
                 _deny()
             first = rows[0]
@@ -1147,7 +1195,7 @@ class SqlAlchemyTransactionBoundAtomicAcceptanceStorage:
                 or toast_relation_oid <= 0
                 or toast_relation_owner_oid != relation_owner_oid
                 or any(trigger_oid <= 0 for _name, trigger_oid in trigger_oids)
-                or definition_sha256 != GUARD_DEFINITION_SHA256
+                or not _freshness_guard_definition_allowed(definition_sha256, self._schema_profile)
             ):
                 _deny()
             if self._relation_oid is None:
@@ -1264,6 +1312,7 @@ class SqlAlchemyTransactionBoundAtomicAcceptanceStorage:
                 expected_input_wire=input_wire,
                 evidence_compact_jws=evidence_wire,
                 now=current,
+                freshness_profile=evidence_config.freshness_profile,
             )
             if disposition.outcome != "return_existing_pending_evidence_without_resigning":
                 _deny()
@@ -1304,6 +1353,7 @@ class SqlAlchemyTransactionBoundAtomicAcceptanceStorage:
                 statement_compact_jws=statement_compact_jws,
                 receipt_wire=receipt_wire,
                 now=current,
+                freshness_profile=evidence_config.freshness_profile,
             )
             if stored.reservation.state == "pending":
                 if disposition.outcome != "return_existing_pending_evidence_without_resigning":
@@ -1337,6 +1387,7 @@ class SqlAlchemyTransactionBoundAtomicAcceptanceStorage:
         try:
             key = _hex64(reservation_id)
             decided = _integer(decided_at)
+            self._check_transaction(finalization_schema=True)
             row = self._lock_one(key)
             stored = parse_stored_atomic_acceptance_v1(
                 row,
@@ -1359,7 +1410,9 @@ class SqlAlchemyTransactionBoundAtomicAcceptanceStorage:
                     statement_compact_jws=statement_compact_jws,
                     receipt_wire=stored.receipt.wire if stored.receipt is not None else None,
                     now=decided,
+                    freshness_profile=evidence_config.freshness_profile,
                 )
+                self._check_transaction(finalization_schema=True)
                 return stored
             if stored.reservation.state != "pending":
                 _deny()
@@ -1378,7 +1431,7 @@ class SqlAlchemyTransactionBoundAtomicAcceptanceStorage:
             table = self._table
             if table is None:
                 _deny()
-            connection = self._check_transaction()
+            connection = self._check_transaction(finalization_schema=True)
             changed = (
                 connection.execute(
                     update(table)
@@ -1409,11 +1462,13 @@ class SqlAlchemyTransactionBoundAtomicAcceptanceStorage:
             )
             if len(changed) != 1:
                 _deny()
-            return parse_stored_atomic_acceptance_v1(
+            accepted_stored = parse_stored_atomic_acceptance_v1(
                 cast(Mapping[str, object], changed[0]),
                 evidence_config=evidence_config,
                 statement_config=statement_config,
             )
+            self._check_transaction(finalization_schema=True)
+            return accepted_stored
         except Exception:
             self._failed = True
         _deny()

@@ -20,6 +20,7 @@ from typing import Mapping, NamedTuple, NoReturn, cast
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
+from app.services import social_enrollment_v2_freshness_policy as freshness_policy
 from app.services import social_messaging_mobile_pre_enrollment_v2 as preacceptance
 
 VERSION = 2
@@ -263,8 +264,11 @@ class SocialPreacceptedEnrollmentVerificationStatementV2Config:
     trusted_jwks: tuple[Mapping[str, object], ...] = field(default=(), repr=False)
     _keys: tuple[_TrustedRSAKeyV2, ...] = field(default=(), init=False, repr=False, compare=False)
 
+    freshness_profile: str = freshness_policy.LEGACY_10S
+
     def __post_init__(self) -> None:
         try:
+            freshness_policy.max_lifetime_ms(self.freshness_profile)
             if type(self.enabled) is not bool or type(self.trusted_jwks) is not tuple:
                 raise ValueError
             if type(self.purpose) is not str or self.purpose != STATEMENT_PURPOSE:
@@ -350,6 +354,7 @@ def _payload_without_jti_values(
     expected_input_wire: object,
     issued_at: object,
     expires_at: object,
+    freshness_profile=freshness_policy.LEGACY_10S,
 ) -> dict[str, object]:
     bindings = _expected_bindings(expected_context_wire, expected_input_wire)
     normalized_issuer = _https_origin(issuer)
@@ -358,7 +363,7 @@ def _payload_without_jti_values(
     if (
         normalized_issuer != bindings.issuer
         or expires <= issued
-        or expires - issued > MAX_STATEMENT_LIFETIME_MS
+        or expires - issued > freshness_policy.max_lifetime_ms(freshness_profile)
         or issued < bindings.enrollment_issued_at
         or expires
         > min(
@@ -369,6 +374,7 @@ def _payload_without_jti_values(
     ):
         _deny()
     return {
+        **freshness_policy.payload_marker(freshness_profile),
         "acceptanceId": bindings.acceptance_id,
         "associationId": bindings.association_id,
         "aud": _statement_audience(audience),
@@ -411,6 +417,7 @@ def canonical_preaccepted_enrollment_verification_statement_payload_without_jti_
     expected_input_wire: object,
     issued_at: object,
     expires_at: object,
+    freshness_profile=freshness_policy.LEGACY_10S,
 ) -> bytes:
     try:
         values = _payload_without_jti_values(
@@ -422,19 +429,28 @@ def canonical_preaccepted_enrollment_verification_statement_payload_without_jti_
             expected_input_wire=expected_input_wire,
             issued_at=issued_at,
             expires_at=expires_at,
+            freshness_profile=freshness_profile,
         )
         source = _canonical(values)
-        _closed_json(source, _PAYLOAD_WITHOUT_JTI_FIELDS, MAX_PAYLOAD_BYTES)
+        _closed_json(
+            source, freshness_policy.payload_fields(_PAYLOAD_WITHOUT_JTI_FIELDS, freshness_profile), MAX_PAYLOAD_BYTES
+        )
         return source.encode("ascii")
     except Exception:
         pass
     _deny()
 
 
-def preaccepted_enrollment_verification_statement_jti_v2(payload_without_jti_wire: object) -> str:
+def preaccepted_enrollment_verification_statement_jti_v2(
+    payload_without_jti_wire: object, *, freshness_profile=freshness_policy.LEGACY_10S
+) -> str:
     try:
-        value = _closed_json(payload_without_jti_wire, _PAYLOAD_WITHOUT_JTI_FIELDS, MAX_PAYLOAD_BYTES)
-        _parse_payload_without_jti(value)
+        value = _closed_json(
+            payload_without_jti_wire,
+            freshness_policy.payload_fields(_PAYLOAD_WITHOUT_JTI_FIELDS, freshness_profile),
+            MAX_PAYLOAD_BYTES,
+        )
+        _parse_payload_without_jti(value, freshness_profile=freshness_profile)
         return _jti_from_values(value)
     except Exception:
         pass
@@ -451,6 +467,7 @@ def canonical_preaccepted_enrollment_verification_statement_payload_v2_bytes(
     expected_input_wire: object,
     issued_at: object,
     expires_at: object,
+    freshness_profile=freshness_policy.LEGACY_10S,
 ) -> bytes:
     try:
         without_jti = canonical_preaccepted_enrollment_verification_statement_payload_without_jti_v2_bytes(
@@ -462,10 +479,20 @@ def canonical_preaccepted_enrollment_verification_statement_payload_v2_bytes(
             expected_input_wire=expected_input_wire,
             issued_at=issued_at,
             expires_at=expires_at,
+            freshness_profile=freshness_profile,
         ).decode("ascii")
-        values = _closed_json(without_jti, _PAYLOAD_WITHOUT_JTI_FIELDS, MAX_PAYLOAD_BYTES)
+        values = _closed_json(
+            without_jti,
+            freshness_policy.payload_fields(_PAYLOAD_WITHOUT_JTI_FIELDS, freshness_profile),
+            MAX_PAYLOAD_BYTES,
+        )
         source = _canonical({**values, "jti": _jti_from_values(values)})
-        _parse_payload(_closed_json(source, _PAYLOAD_FIELDS, MAX_PAYLOAD_BYTES))
+        _parse_payload(
+            _closed_json(
+                source, freshness_policy.payload_fields(_PAYLOAD_FIELDS, freshness_profile), MAX_PAYLOAD_BYTES
+            ),
+            freshness_profile=freshness_profile,
+        )
         return source.encode("ascii")
     except Exception:
         pass
@@ -473,7 +500,11 @@ def canonical_preaccepted_enrollment_verification_statement_payload_v2_bytes(
 
 
 def compact_preaccepted_enrollment_verification_statement_v2(
-    *, protected_header_wire: object, payload_wire: object, signature: object
+    *,
+    protected_header_wire: object,
+    payload_wire: object,
+    signature: object,
+    freshness_profile=freshness_policy.LEGACY_10S,
 ) -> str:
     try:
         if type(protected_header_wire) is not str or type(payload_wire) is not str or type(signature) is not bytes:
@@ -481,7 +512,12 @@ def compact_preaccepted_enrollment_verification_statement_v2(
         if not signature:
             raise ValueError
         _parse_protected_header(protected_header_wire)
-        _parse_payload(_closed_json(payload_wire, _PAYLOAD_FIELDS, MAX_PAYLOAD_BYTES))
+        _parse_payload(
+            _closed_json(
+                payload_wire, freshness_policy.payload_fields(_PAYLOAD_FIELDS, freshness_profile), MAX_PAYLOAD_BYTES
+            ),
+            freshness_profile=freshness_profile,
+        )
         statement = ".".join(
             (
                 _base64url_encode(protected_header_wire.encode("ascii")),
@@ -508,7 +544,8 @@ def _parse_protected_header(source: object) -> dict[str, object]:
     return value
 
 
-def _parse_payload_without_jti(value: Mapping[str, object]) -> None:
+def _parse_payload_without_jti(value: Mapping[str, object], *, freshness_profile=freshness_policy.LEGACY_10S) -> None:
+    freshness_policy.validate_payload_marker(value, freshness_profile)
     if (
         value["schema"] != STATEMENT_SCHEMA
         or type(value["version"]) is not int
@@ -529,13 +566,15 @@ def _parse_payload_without_jti(value: Mapping[str, object]) -> None:
     _hex64(value["attemptId"])
     issued = _integer(value["issuedAt"])
     expires = _integer(value["expiresAt"])
-    if expires <= issued or expires - issued > MAX_STATEMENT_LIFETIME_MS:
+    if expires <= issued or expires - issued > freshness_policy.max_lifetime_ms(freshness_profile):
         _deny()
 
 
-def _parse_payload(value: Mapping[str, object]) -> None:
-    without_jti = {name: value[name] for name in _PAYLOAD_WITHOUT_JTI_FIELDS}
-    _parse_payload_without_jti(without_jti)
+def _parse_payload(value: Mapping[str, object], *, freshness_profile=freshness_policy.LEGACY_10S) -> None:
+    without_jti = {
+        name: value[name] for name in freshness_policy.payload_fields(_PAYLOAD_WITHOUT_JTI_FIELDS, freshness_profile)
+    }
+    _parse_payload_without_jti(without_jti, freshness_profile=freshness_profile)
     if _hex64(value["jti"]) != _jti_from_values(without_jti):
         _deny()
 
@@ -771,8 +810,10 @@ def verify_social_preaccepted_enrollment_verification_statement_v2(
         key = matches[0]
 
         payload_wire = _base64url_decode(payload_segment).decode("ascii")
-        payload = _closed_json(payload_wire, _PAYLOAD_FIELDS, MAX_PAYLOAD_BYTES)
-        _parse_payload(payload)
+        payload = _closed_json(
+            payload_wire, freshness_policy.payload_fields(_PAYLOAD_FIELDS, config.freshness_profile), MAX_PAYLOAD_BYTES
+        )
+        _parse_payload(payload, freshness_profile=config.freshness_profile)
         bindings = _expected_bindings(expected_context_wire, expected_input_wire)
         expected_payload = canonical_preaccepted_enrollment_verification_statement_payload_v2_bytes(
             issuer=config.issuer,
@@ -783,6 +824,7 @@ def verify_social_preaccepted_enrollment_verification_statement_v2(
             expected_input_wire=bindings.input_wire,
             issued_at=payload["issuedAt"],
             expires_at=payload["expiresAt"],
+            freshness_profile=config.freshness_profile,
         ).decode("ascii")
         if payload_wire != expected_payload:
             raise ValueError

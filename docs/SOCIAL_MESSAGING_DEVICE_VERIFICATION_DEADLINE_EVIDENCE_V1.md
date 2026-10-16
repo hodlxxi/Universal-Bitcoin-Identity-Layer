@@ -1,5 +1,9 @@
 # Social messaging-device verification deadline evidence V1
 
+
+Freshness policy: [server-selected signed freshness profiles](SOCIAL_ENROLLMENT_V2_FINALIZATION_V1.md#server-selected-signed-freshness-profiles). Legacy closed payload field sets and fixed
+vectors remain exact; the separately selected new contract requires its signed
+marker. Default configuration remains disabled and legacy ten seconds.
 Status: **dormant pure byte and public-trust contract, with separate dormant
 reservation/signer source; no route, runtime wiring, or authority activation**.
 
@@ -82,7 +86,8 @@ Its closed fields bind:
 
 Every epoch-millisecond value is a nonnegative JavaScript-safe integer and
 represents wall-clock UTC. Booleans and floats are not integers. The interval
-is exclusive at expiry, positive, no longer than 10,000 ms, and bounded by the
+is exclusive at expiry, positive, no longer than the configured profile maximum
+(10,000 ms for legacy), and bounded by the
 minimum of all four effective deadlines, Enrollment V2 expiry and
 pre-enrollment expiry. The X25519 deadline must also equal the deadline in the
 exact signed V1 binding tuple. Processing timeouts, if a later adapter needs
