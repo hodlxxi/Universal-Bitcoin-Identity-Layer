@@ -567,6 +567,7 @@ def test_no_io_at_import_no_runtime_dependency_no_admission_api():
         "app/services/social_enrollment_atomic_owner.py",
         "app/services/social_enrollment_receipt_storage.py",
         "app/services/social_enrollment_transition_authority_storage.py",
+        "app/services/social_enrollment_v2_challenge.py",
         "app/services/social_enrollment_v2_finalization_storage.py",
     ]
     assert storage.FINAL_ADMISSION == "denied"

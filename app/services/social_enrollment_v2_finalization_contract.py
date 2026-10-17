@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from functools import wraps
 
 from app.services import social_preaccepted_enrollment_verification_statement_v2 as statement
+from app.services.social_enrollment_v2_catalog_roles import ChallengeWriterCatalogPin, freeze_pin
 from app.services.social_enrollment_v2_reservation_contract import ReservationConfig, _freeze_config
 
 RUNTIME_ENABLED = False
@@ -70,11 +71,16 @@ class FinalizationConfig:
         default_factory=statement.SocialPreacceptedEnrollmentVerificationStatementV2Config
     )
     statement_pins: tuple[StatementTrustPin, ...] = ()
+    challenge_writer_role: ChallengeWriterCatalogPin | None = None
 
     @_sanitized
     def __post_init__(self):
         if type(self.enabled) is not bool:
             _deny()
+        writer = freeze_pin(self.challenge_writer_role)
+        if writer is not None and not self.enabled:
+            _deny()
+        object.__setattr__(self, "challenge_writer_role", writer)
         rc = _freeze_config(self.reservation_config)
         sc = self.statement_config
         if type(sc) is not statement.SocialPreacceptedEnrollmentVerificationStatementV2Config:
@@ -121,7 +127,13 @@ class FinalizationConfig:
 def freeze_config(config):
     if type(config) is not FinalizationConfig:
         _deny()
-    return FinalizationConfig(config.enabled, config.reservation_config, config.statement_config, config.statement_pins)
+    return FinalizationConfig(
+        config.enabled,
+        config.reservation_config,
+        config.statement_config,
+        config.statement_pins,
+        config.challenge_writer_role,
+    )
 
 
 @dataclass(frozen=True, slots=True, repr=False)

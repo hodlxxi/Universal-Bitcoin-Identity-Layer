@@ -85,6 +85,25 @@ Many historical checkpoint documents now include a standard status note at the t
 
 These are useful for future development, staging, compatibility, and design intent, but should not be presented as current production readiness evidence unless a current smoke/runbook says so:
 
+- `docs/SOCIAL_ENROLLMENT_V2_INGRESS_V1.md` — dormant confidential POST adapter
+  with per-command service credentials and same-transaction phone matching;
+  disposable native and real Node/Unix/Flask/PostgreSQL verification; synthetic
+  Social proof boundary, no default factory installation or runtime activation
+
+- `docs/SOCIAL_ENROLLMENT_V2_RUNTIME_COMPOSITION_V1.md` — dormant explicit
+  caller ownership of reservation/finalization transactions, flush/recheck and
+  publication after confirmed commit, unchanged deadlines and exact historical
+  recovery; explicit restricted peer-role profile, native and real Unix caller
+  verification; challenge producer and ingress are separate linked source;
+  no default factory installation, operational key or live runtime activation
+
+- `docs/SOCIAL_ENROLLMENT_V2_CHALLENGE_V1.md` — dormant original V2 challenge
+  producer, exact canonical phone/session binding, persisted native revision,
+  original-byte retry and caller-owned commit publication; separate issuance
+  writer, separate finalization role, native trigger/concurrency/wait verification
+  and real Unix caller flow; no default factory installation, operational grants,
+  live database change or runtime activation
+
 - `docs/SOCIAL_SESSION_ISSUANCE_V2_PROVENANCE_V1.md` — dormant additive native
   first-onboarding V2 offer/acceptance/binding/basic OAuth producer, immutable
   issuance provenance and caller-transaction locked reader; separate metadata,

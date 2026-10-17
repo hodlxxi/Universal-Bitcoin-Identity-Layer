@@ -1467,10 +1467,13 @@ class _FreshCatalogObservation:
     """One attestation only; identical later accesses execute a fresh SELECT."""
 
     def __init__(self, connection):
+        from app.services.social_enrollment_v2_catalog_roles import attest_catalog_role, catalog_pin_for
         from app.services.social_session_issuance_v2_storage import FUNCTIONS, LEGACY_FUNCTION_HASHES
 
         self.connection = connection
         self._chain = _fresh_catalog_chain(connection)
+        self._catalog_role_pin = catalog_pin_for(connection)
+        self._catalog_role_identity = attest_catalog_role(connection, self._catalog_role_pin, sql=text)
         self._names = sorted(
             NATIVE_FUNCTIONS.keys()
             | ORIGINAL_FUNCTIONS.keys()
@@ -1485,6 +1488,10 @@ class _FreshCatalogObservation:
         self._completion_named_used = set()
 
     def _check(self):
+        from app.services.social_enrollment_v2_catalog_roles import catalog_pin_for
+
+        if catalog_pin_for(self.connection) != self._catalog_role_pin:
+            _deny()
         if _fresh_catalog_chain(self.connection) != self._chain:
             _deny()
 
@@ -1663,6 +1670,9 @@ def _attest_native_schema(connection):
     if len(secure) != 3 or secure[0] is not True or any(type(v) is not int or v <= 0 for v in secure[1:]):
         _deny()
     identities = [role, tuple(secure[1:]), _attest_pg16_system_definitions(connection)]
+    peer_identity = getattr(connection, "_catalog_role_identity", None)
+    if peer_identity is not None:
+        identities.append(("challenge_writer_role", peer_identity))
     membership = connection.execute(text("""SELECT m.roleid::bigint,m.member::bigint,m.grantor::bigint,
         m.admin_option,m.inherit_option,m.set_option FROM pg_catalog.pg_auth_members m
         JOIN pg_catalog.pg_roles r ON r.oid=m.member WHERE r.rolname=current_user""")).all()
@@ -3176,7 +3186,15 @@ def _attest_shared_acl(connection, relation, *, profiles=None):
             if relation["relname"] == durable.TABLE
             else (runtime_privileges, runtime_privileges + ("INSERT",))
         )
-    accepted = tuple(owner | {(runtime, p) for p in profile} for profile in profiles)
+    from app.services.social_enrollment_v2_catalog_roles import peer_acl
+
+    peer = peer_acl(
+        getattr(connection, "_catalog_role_pin", None),
+        relation_name=relation["relname"],
+        owner=relation["relowner"],
+        runtime=runtime,
+    )
+    accepted = tuple(owner | {(runtime, p) for p in profile} | peer for profile in profiles)
     if actual not in accepted:
         _deny()
     return tuple(sorted(actual))

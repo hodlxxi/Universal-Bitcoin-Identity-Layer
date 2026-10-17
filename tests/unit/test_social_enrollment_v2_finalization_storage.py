@@ -5228,3 +5228,126 @@ def test_original_issuance_catalog_port_current_transport_reads_fresh_function_b
     with pytest.raises(original.V2IssuanceUnavailable):
         original.attest(port)
     assert port.poisoned
+
+
+class PeerRoleCatalogConnection(CompleteCatalogConnection):
+    """Complete existing catalog plus explicit second-role rows, no no-op guards."""
+
+    closed = invalidated = False
+
+    def __init__(self):
+        from types import SimpleNamespace
+
+        from tests.unit.test_social_enrollment_v2_catalog_roles import role_row, table_rows
+
+        super().__init__()
+        self.root = SimpleNamespace(is_active=True)
+        self.connection = SimpleNamespace(dbapi_connection=object())
+        self.peer_role = role_row()
+        self.peer_tables = table_rows()
+        for item in self.peer_tables:
+            if item[0] in self.relations:
+                relation = self.relations[item[0]]
+                item[2], item[3] = relation["oid"], relation["relowner"]
+                grants = self.catalog[relation["oid"]].get("aclexplode")
+                if grants is not None:
+                    grants.extend((relation["relowner"], 20001, privilege, False, 203) for privilege in item[4])
+        fixture_direct_acls(self)
+
+    def get_transaction(self):
+        return self.root
+
+    def get_nested_transaction(self):
+        return None
+
+    def execute(self, statement, parameters=None):
+        from app.services import social_enrollment_v2_catalog_roles as roles
+
+        if str(statement) == roles.ROLE_SQL:
+            self.queries.append((str(statement), parameters))
+            return CatalogResult([deepcopy(self.peer_role)])
+        if str(statement) == roles.TABLES_SQL:
+            self.queries.append((str(statement), parameters))
+            return CatalogResult(deepcopy(self.peer_tables))
+        return super().execute(statement, parameters)
+
+
+def peer_catalog_scope(connection):
+    from app.services.social_enrollment_v2_catalog_roles import catalog_role_scope
+    from tests.unit.test_social_enrollment_v2_catalog_roles import BoundSession, pin
+
+    session = BoundSession()
+    session.bound = connection
+    return catalog_role_scope(session, pin())
+
+
+def test_peer_role_complete_catalog_accepts_only_explicit_scoped_registration():
+    connection = PeerRoleCatalogConnection()
+    with pytest.raises(FinalizationDenied):
+        storage.attest_native_schema(connection)
+    with peer_catalog_scope(connection):
+        first = storage.attest_native_schema(connection)
+        assert storage.attest_native_schema(connection) == first
+    with pytest.raises(FinalizationDenied):
+        storage.attest_native_schema(connection)
+    assert not any("execute_social_enrollment_v2_native_effects(" in sql for sql, _ in connection.queries)
+
+
+@pytest.mark.parametrize(
+    "damage",
+    (
+        "public",
+        "third_role",
+        "extra_peer_insert",
+        "extra_runtime_insert",
+        "grant_option",
+        "missing_peer_select",
+        "peer_superuser",
+        "peer_oid",
+        "peer_native_effects",
+    ),
+)
+def test_peer_role_complete_catalog_still_denies_bypass(damage):
+    connection = PeerRoleCatalogConnection()
+    with peer_catalog_scope(connection):
+        storage.attest_native_schema(connection)
+        name = "social_device_admission_challenges"
+        owner, runtime = 202, 203
+        if damage in ("public", "third_role"):
+            connection.catalog[connection.relations[name]["oid"]]["aclexplode"].append(
+                (owner, 0 if damage == "public" else 20002, "SELECT", False, runtime)
+            )
+        elif damage in ("extra_peer_insert", "extra_runtime_insert"):
+            name = "social_device_admission_challenge_revisions" if damage == "extra_peer_insert" else name
+            connection.catalog[connection.relations[name]["oid"]]["aclexplode"].append(
+                (owner, 20001 if damage == "extra_peer_insert" else runtime, "INSERT", False, runtime)
+            )
+        elif damage == "grant_option":
+            row = next(item for item in connection.peer_tables if item[0] == name)
+            row[6] = True
+        elif damage == "missing_peer_select":
+            connection.peer_tables[0][4] = []
+        elif damage == "peer_superuser":
+            connection.peer_role[2] = True
+        elif damage == "peer_oid":
+            connection.peer_role[0] += 1
+        else:
+            connection.peer_role[15] = True
+        with pytest.raises(FinalizationDenied):
+            storage.attest_native_schema(connection)
+
+
+def test_peer_role_config_freezes_registration_without_changing_default(final_graph):
+    from dataclasses import replace
+
+    from app.services.social_enrollment_v2_finalization_contract import FinalizationConfig, freeze_config
+    from tests.unit.test_social_enrollment_v2_catalog_roles import pin
+
+    original = final_graph.final_config
+    assert original.challenge_writer_role is None
+    config = replace(original, challenge_writer_role=pin())
+    frozen = freeze_config(config)
+    assert frozen.challenge_writer_role == config.challenge_writer_role
+    assert frozen.challenge_writer_role is not config.challenge_writer_role
+    with pytest.raises(FinalizationDenied):
+        FinalizationConfig(challenge_writer_role=pin())
