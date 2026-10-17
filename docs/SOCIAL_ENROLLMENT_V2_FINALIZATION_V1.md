@@ -103,8 +103,11 @@ Accepted retry authenticates byte-identical immutable native history at original
 This remains default off, source only, with `final_admission=denied`. Results are
 provisional until the caller commits the complete transaction; publication must
 follow a successful caller commit. Disposable synthetic PostgreSQL feedback is
-rehearsal evidence only. Runtime composition, live DB/HTTP access, deployment,
-key custody provisioning and production activation remain separate obligations.
+rehearsal evidence only. The separate dormant
+[caller composition](SOCIAL_ENROLLMENT_V2_RUNTIME_COMPOSITION_V1.md) and
+[confidential ingress](SOCIAL_ENROLLMENT_V2_INGRESS_V1.md) can publish only after
+confirmed commit. Their operational installation, live DB/HTTP access,
+deployment, key provisioning and production activation remain separate obligations.
 
 ## Transaction, locks and current authority
 
@@ -203,8 +206,11 @@ Shared and native table/index relation definitions are checked in full. Where
 the source creates TOAST, its relation, attributes and unique index are checked
 through the same evaluator. The bounded association-chain, challenge-revision
 and issuance-invalidation schemas have no TOAST table; an unexpected TOAST
-binding denies. Direct table ACLs admit only the actual DDL owner and runtime role,
+binding denies. By default, direct table ACLs admit only the actual DDL owner and runtime role,
 with the original supported history grants and no runtime grant options.
+The optional [explicit challenge-writer profile](SOCIAL_ENROLLMENT_V2_RUNTIME_COMPOSITION_V1.md#explicit-challenge-writer-role)
+admits one configured name/OID and its fixed privilege matrix only inside the
+same caller root; it grants no rights and preserves the original finalizer profile.
 Fresh native definitions are validated on every pass. Raw expression trees and
 object identities supplement the fixed deparsed definitions as retained
 fingerprints; they are never substitutes for fresh definition checks. OID JSON
@@ -367,6 +373,17 @@ Every result is `provisional_until_caller_commit`, with `final_admission=denied`
 and no bearer/reexecution permission. Uncertain commit is reconciled from
 immutable historical evidence, never retried as a new effect.
 
+The separately composed [caller transaction boundary](SOCIAL_ENROLLMENT_V2_RUNTIME_COMPOSITION_V1.md)
+owns flush, the additive `check_before_commit(result)` recheck, commit and
+postcommit publication fencing. The original owner API still never commits and
+still returns a provisional result. The composition is dormant source with no
+HTTP/factory installation or deployment authority.
+
+The separately prepared [native challenge producer](SOCIAL_ENROLLMENT_V2_CHALLENGE_V1.md)
+uses the issuance lifecycle and an independent challenge writer. It does not
+change this owner's closed privileges, association-history checks or effect
+protocol, and is not installed into the running application.
+
 ## Accepted historical receipt recovery
 
 The exact row is discovered and locked before current authority. Accepted retry
@@ -475,8 +492,11 @@ an extra pre-loop read/audit/read, without changing any write boundary, SQL,
 clock, signature, evidence lifetime, or caller-owned transaction.
 
 These changes are transport and duplicate-work corrections. They do not grant
-admission or enable runtime behavior. End-to-end acceptance still requires the
+admission or enable runtime behavior. End-to-end acceptance remains gated on a
 real PostgreSQL flow with a genuine clock and zero skipped native cases.
+Separate caller/ingress rehearsals cover that native flow and a real Social
+Node client through a temporary Unix listener. The trusted synthetic statement
+and shape-only phone proof retain the cryptographic and deployment limits above.
 
 
 ## Completion transport equivalence
