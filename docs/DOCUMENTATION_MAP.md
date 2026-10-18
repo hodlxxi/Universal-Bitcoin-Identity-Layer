@@ -267,3 +267,7 @@ Do not delete them in this PR. Use `docs/ARCHIVE_CANDIDATES.md` and a future foc
 
 Enrollment V2 freshness policy is canonical in
 [server-selected signed freshness profiles](SOCIAL_ENROLLMENT_V2_FINALIZATION_V1.md#server-selected-signed-freshness-profiles). This is a separate opt-in signed profile; legacy defaults and vectors remain unchanged.
+
+## Native V2 phone-session bridge
+
+The default-off [native V2 session bridge](SOCIAL_SESSION_V2_BRIDGE_V1.md) documents the separate issuance ingress and original-child cancellation. It installs no live route or browser flow.

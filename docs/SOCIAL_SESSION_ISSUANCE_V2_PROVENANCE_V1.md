@@ -336,3 +336,7 @@ and equal original/batched/original fingerprints on the same real transaction,
 role and physical Connection. Reservation tests additionally cover completed
 waits. Offline tests alone establish none of these native properties; a new
 runtime target still requires its own schema, role and behavior verification.
+
+## Separate source transport
+
+The additive [native V2 session bridge](SOCIAL_SESSION_V2_BRIDGE_V1.md) supplies exact offer retry and original-child self-cancellation, plus explicitly installed service-authenticated transport. The default factory remains unchanged.
