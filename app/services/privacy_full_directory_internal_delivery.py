@@ -12,6 +12,7 @@ from app.services.confidential_service_assertion_replay_storage import (
     PostgresConfidentialServiceAssertionReplayStore,
 )
 from app.services.confidential_service_credentials import (
+    SERVICE_PURPOSE,
     SERVICE_SCOPE,
     ConfidentialServiceConfig,
     CredentialDenied,
@@ -65,7 +66,9 @@ class PrivacyFullDirectoryInternalDeliveryRuntime:
         try:
             validate_confidential_service_config(self.service_config)
             if (
-                not callable(self.replay_consumer)
+                self.service_config.service_scope != SERVICE_SCOPE
+                or self.service_config.service_purpose != SERVICE_PURPOSE
+                or not callable(self.replay_consumer)
                 or not isinstance(self.service_signing_kid, str)
                 or not self.service_signing_kid
                 or self.service_signing_kid.strip() != self.service_signing_kid
@@ -100,6 +103,7 @@ class PrivacyFullDirectoryInternalDeliveryRuntime:
             or service.service_principal != self.service_config.service_principal
             or service.client_id != self.service_config.client_id
             or service.scope != SERVICE_SCOPE
+            or service.purpose != SERVICE_PURPOSE
         ):
             raise CredentialDenied("credential denied")
         return service
@@ -114,6 +118,7 @@ class PrivacyFullDirectoryInternalDeliveryRuntime:
             or service.service_principal != self.service_config.service_principal
             or service.client_id != self.service_config.client_id
             or service.scope != SERVICE_SCOPE
+            or service.purpose != SERVICE_PURPOSE
         ):
             raise CredentialDenied("credential denied")
 

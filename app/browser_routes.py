@@ -1,4 +1,5 @@
 import time
+
 from flask import redirect, render_template, render_template_string, session, url_for
 
 _BROWSER_ROUTE_HANDLERS = {}
@@ -1378,13 +1379,20 @@ if (qrBox && typeof QRCode !== "undefined") renderQR(qrBox, lnurl);
 
 
 def perform_browser_logout(*, audit_logger=None, remote_addr=None):
+    from flask import current_app
+
+    from app.services.oauth_browser_authentication import protected_browser_logout
+
+    guarded = protected_browser_logout()
+    if guarded is not None:
+        return guarded
     if audit_logger is not None:
         try:
             audit_logger.log_event("auth.logout", ip=remote_addr)
         except Exception:
             pass
     session.clear()
-    return redirect(url_for("auth.login"))
+    return redirect(url_for("auth.login" if "auth.login" in current_app.view_functions else "login"))
 
 
 def register_browser_routes(
@@ -4573,7 +4581,7 @@ def register_browser_routes(
 
     _BROWSER_ROUTE_HANDLERS["chat"] = chat
 
-    @app.route("/logout")
+    @app.route("/logout", methods=["GET", "POST"])
     def logout():
         return perform_browser_logout()
 
@@ -4585,7 +4593,7 @@ def register_browser_routes(
         - logged-in users -> /home
         - everyone else   -> agent-first homepage
         """
-        from flask import session, redirect, url_for, render_template
+        from flask import redirect, render_template, session, url_for
 
         try:
             if session.get("logged_in_pubkey"):
