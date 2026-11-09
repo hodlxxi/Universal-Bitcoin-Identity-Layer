@@ -1,4 +1,5 @@
 """Private device routes for the explicit Social V2 entrypoint."""
+
 from app.blueprints.internal_social_messaging_device import internal_social_messaging_device_bp
 from app.blueprints.internal_social_messaging_device_binding_authorization import (
     internal_social_messaging_device_binding_authorization_bp,
@@ -12,6 +13,7 @@ from app.services.social_messaging_device_binding_authorization_runtime import (
 from app.services.social_messaging_recipient_runtime_configuration import (
     configure_messaging_recipient_internal_delivery,
 )
+
 
 def install_private_messaging(app, cfg):
     device = configure_messaging_device_internal_delivery(app, cfg)

@@ -2861,11 +2861,15 @@ def _uses_production_oauth_profile(relation):
     return relation["relname"] == "oauth_clients" and relation["relnatts"] == 13
 
 
-def _attest_shared_attributes(connection, relation, columns, *, alternatives=(), positions=None,
-                              production_oauth=False):
-    if production_oauth and (positions is not None or alternatives
-                             or not _uses_production_oauth_profile(relation)
-                             or columns != DEPENDENCY_COLUMNS["oauth_clients"] + _PRODUCTION_OAUTH_EXTRA_COLUMNS):
+def _attest_shared_attributes(
+    connection, relation, columns, *, alternatives=(), positions=None, production_oauth=False
+):
+    if production_oauth and (
+        positions is not None
+        or alternatives
+        or not _uses_production_oauth_profile(relation)
+        or columns != DEPENDENCY_COLUMNS["oauth_clients"] + _PRODUCTION_OAUTH_EXTRA_COLUMNS
+    ):
         _deny()
     sql = SHARED_ATTRIBUTES_SQL
     params = {"oid": relation["oid"]}
@@ -5097,8 +5101,9 @@ def _attest_dependency_definitions(connection, relations, functions):
             columns += _PRODUCTION_OAUTH_EXTRA_COLUMNS
         if relation["relnatts"] != len(columns):
             _deny()
-        identities.append((name, _attest_shared_attributes(connection, relation, columns,
-                                                             production_oauth=production_oauth)))
+        identities.append(
+            (name, _attest_shared_attributes(connection, relation, columns, production_oauth=production_oauth))
+        )
         if name not in V2_DEFINITION_PROFILES:
             continue
         profiles = V2_DEFINITION_PROFILES[name]
