@@ -8,9 +8,11 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, jsonify, request, session, url_for
+from flask import Blueprint, current_app, jsonify, request, session, url_for
 
 from app.services.canonical_oauth_browser_subject import persist_verified_browser_subject
+from app.services.oauth_browser_authentication import complete_verified_browser_login
+from app.services.oauth_session_lifecycle import configured_lifecycle
 
 api_auth_bp = Blueprint("api_auth", __name__)
 
@@ -116,8 +118,8 @@ def api_verify():
         AGENT_REQUESTER_PROOF_SESSION_KEY,
         CHALLENGE_TTL_SECONDS,
         is_valid_pubkey,
-        prune_expired_agent_requester_proofs,
         mint_access_token,
+        prune_expired_agent_requester_proofs,
         verify_nostr_login_event,
     )
 
@@ -154,6 +156,7 @@ def api_verify():
     if not rec or rec["expires"] < datetime.now(timezone.utc):
         return jsonify(error="Invalid or expired challenge"), 400
 
+    lifecycle = configured_lifecycle(current_app)
     method = rec.get("method", "api")
 
     # For nostr, pubkey is validated inside nostr event
@@ -178,11 +181,16 @@ def api_verify():
                 nostr_expected_pubkey = nostr_expected_pubkey[2:]
 
         logger.warning("NOSTR_STEP=before_verify_nostr_login_event cid=%r", cid)
+        verify_url = (
+            lifecycle.browser_origin + "/api/verify"
+            if lifecycle is not None
+            else request.url_root.rstrip("/") + url_for("api_auth.api_verify")
+        )
         ok, error = verify_nostr_login_event(
             nostr_event,
             expected_pubkey=nostr_expected_pubkey,
             expected_challenge=rec["challenge"],
-            expected_verify_url=request.url_root.rstrip("/") + url_for("api_auth.api_verify"),
+            expected_verify_url=verify_url,
             require_verify_url=rec.get("purpose") == AGENT_REQUESTER_PROOF_PURPOSE,
         )
         logger.warning("NOSTR_STEP=after_verify_nostr_login_event cid=%r ok=%r error=%r", cid, ok, error)
@@ -229,6 +237,13 @@ def api_verify():
 
         try:
             persist_verified_browser_subject(rec["pubkey"])
+            if lifecycle is not None:
+                complete_verified_browser_login(
+                    rec["pubkey"],
+                    challenge=rec["challenge"],
+                    created_at=rec["created"],
+                    expires_at=rec["expires"],
+                )
         except Exception:
             logger.exception("Canonical Nostr identity persistence failed")
             return jsonify(error="Authentication service temporarily unavailable"), 503
@@ -260,6 +275,18 @@ def api_verify():
 
         if not ok:
             return jsonify(error="Invalid signature"), 403
+
+    if lifecycle is not None:
+        try:
+            complete_verified_browser_login(
+                pubkey,
+                challenge=rec["challenge"],
+                created_at=rec["created"],
+                expires_at=rec["expires"],
+            )
+        except Exception:
+            return jsonify(error="Authentication service temporarily unavailable"), 503
+        session["login_method"] = "legacy"
 
     # --- Determine access level ---
     try:

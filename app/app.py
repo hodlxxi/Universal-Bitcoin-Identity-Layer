@@ -1935,6 +1935,13 @@ def make_qr_base64(data):
 
 @app.route("/verify_signature", methods=["POST"])
 def verify_signature():
+    from app.services.oauth_browser_authentication import lifecycle_enabled
+
+    if lifecycle_enabled():
+        from app.blueprints.auth import verify_signature as verified_handler
+
+        return verified_handler()
+
     data = request.get_json() or {}
     logger.warning("API_VERIFY_DATA=%r", data)
     print("API_VERIFY_DATA =", data, flush=True)
@@ -3517,6 +3524,13 @@ def api_whoami():
 
 @app.route("/api/challenge", methods=["POST"])
 def api_challenge():
+    from app.services.oauth_browser_authentication import lifecycle_enabled
+
+    if lifecycle_enabled():
+        from app.blueprints.api_auth import api_challenge as verified_handler
+
+        return verified_handler()
+
     data = request.get_json() or {}
     user_input = (data.get("pubkey") or "").strip()
 
@@ -3557,6 +3571,13 @@ def api_playground_pof_challenge():
 # /ALIAS_PLAYGROUND_POF_CHALLENGE_V1
 @app.route("/api/verify", methods=["POST"])
 def api_verify():
+    from app.services.oauth_browser_authentication import lifecycle_enabled
+
+    if lifecycle_enabled():
+        from app.blueprints.api_auth import api_verify as verified_handler
+
+        return verified_handler()
+
     data = request.get_json() or {}
 
     # Transitional compatibility:
@@ -3702,7 +3723,10 @@ def special_login():
         try:
             addr = derive_legacy_address_from_pubkey(pubkey)
             if rpc.verifymessage(addr, signature, challenge):
-                # Session
+                # Complete the just-verified proof before compatibility membership.
+                from app.services.oauth_browser_authentication import complete_verified_legacy_browser_login
+
+                complete_verified_legacy_browser_login(pubkey)
                 user = on_successful_login(pubkey)
                 session["access_level"] = "special"
                 payload = {
@@ -3723,6 +3747,13 @@ def special_login():
 # DEPRECATED: old signature flow, kept only for reference.
 # @app.route("/verify_signature", methods=["POST"])
 def verify_signature_legacy():
+    from app.services.oauth_browser_authentication import lifecycle_enabled
+
+    if lifecycle_enabled():
+        from app.blueprints.auth import verify_signature as verified_handler
+
+        return verified_handler()
+
     from flask import jsonify, request, session
 
     data = request.get_json(silent=True) or {}
