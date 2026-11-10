@@ -121,7 +121,13 @@ def test_distinct_client_and_service_keys_remain_valid_and_issue_once_with_defau
     evidence = verify_service_access_token(encoded, config=configured, now=NOW + 1)
     assert calls == [("assertion-1", NOW + 66)]
     assert evidence == VerifiedServiceCredential(
-        PRINCIPAL, CLIENT, "social:full-directory:read", NOW, NOW + 60, "service-token-1"
+        service_principal=PRINCIPAL,
+        client_id=CLIENT,
+        scope="social:full-directory:read",
+        purpose="social_full_directory_read",
+        issued_at=NOW,
+        expires_at=NOW + 60,
+        token_id="service-token-1",
     )
     with pytest.raises(FrozenInstanceError):
         evidence.scope = "other"
