@@ -170,9 +170,9 @@ class CanonicalSponsoredScriptEvidenceV2:
             or type(self.pair_sha256) is not str
         ):
             _fail("invalid_evidence_field_type")
-        expected_sponsor_id = (
-            GENESIS_PARTICIPANT_ID if self.sponsor_depth == 0 else self.sponsor_compressed_pubkey[2:]
-        )
+        expected_sponsor_id = self.sponsor_compressed_pubkey[2:]
+        if self.sponsor_depth == 0:
+            expected_sponsor_id = GENESIS_PARTICIPANT_ID
         if (
             self.sponsor_participant_id != expected_sponsor_id
             or self.sponsor_xonly_pubkey != pair.subject_xonly_pubkey
@@ -247,16 +247,22 @@ def canonical_sponsored_script_evidence_v2_bytes(
     """Deterministic, strictly revalidated bytes for future provenance linkage."""
     if type(evidence) is not CanonicalSponsoredScriptEvidenceV2:
         _fail("invalid_v2_evidence_type")
-    validated = CanonicalSponsoredScriptEvidenceV2(
-        *(getattr(evidence, field.name) for field in fields(CanonicalSponsoredScriptEvidenceV2))
+    values = tuple(
+        getattr(evidence, field.name)
+        for field in fields(CanonicalSponsoredScriptEvidenceV2)
     )
-    payload = {field.name: getattr(validated, field.name) for field in fields(validated)}
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode(
-        "ascii"
+    validated = CanonicalSponsoredScriptEvidenceV2(*values)
+    payload = {
+        field.name: getattr(validated, field.name) for field in fields(validated)
+    }
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
     )
+    return encoded.encode("ascii")
 
 
 def canonical_sponsored_script_evidence_v2_sha256(
     evidence: CanonicalSponsoredScriptEvidenceV2,
 ) -> str:
-    return hashlib.sha256(canonical_sponsored_script_evidence_v2_bytes(evidence)).hexdigest()
+    payload = canonical_sponsored_script_evidence_v2_bytes(evidence)
+    return hashlib.sha256(payload).hexdigest()

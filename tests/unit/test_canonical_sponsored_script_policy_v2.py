@@ -16,7 +16,9 @@ from app.services.canonical_sponsored_script_policy_v2 import (
     canonical_sponsored_script_evidence_v2_sha256,
     validate_canonical_sponsored_scripts_v2,
 )
-from app.services.sponsored_admission_import_preflight import assess_sponsored_imported_pair
+from app.services.sponsored_admission_import_preflight import (
+    assess_sponsored_imported_pair,
+)
 
 ALICE = "023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923"
 BOB = "02c870934f7aaa2fd1c40834989fd97933a8866ebcf35f3e529d95b50d320f80a3"
@@ -100,10 +102,12 @@ def test_swapped_import_order_has_identical_canonical_v2_record_and_commitment()
     assert canonical_sponsored_script_evidence_v2_bytes(forward) == (
         canonical_sponsored_script_evidence_v2_bytes(reversed_order)
     )
+    digest_input = canonical_sponsored_script_evidence_v2_bytes(forward)
     assert canonical_sponsored_script_evidence_v2_sha256(forward) == (
-        hashlib.sha256(canonical_sponsored_script_evidence_v2_bytes(forward)).hexdigest()
+        hashlib.sha256(digest_input).hexdigest()
     )
-    assert json.loads(canonical_sponsored_script_evidence_v2_bytes(forward))["child_depth"] == 1
+    payload = json.loads(canonical_sponsored_script_evidence_v2_bytes(forward))
+    assert payload["child_depth"] == 1
 
 
 @pytest.mark.parametrize(
@@ -209,7 +213,9 @@ def test_depth_must_remain_inside_positive_absolute_cltv_height_range():
     ],
 )
 def test_fixed_policy_metadata_cannot_be_forged(field, value):
-    with pytest.raises(InvalidCanonicalSponsoredScriptPolicyV2, match="fixed_v2_policy"):
+    with pytest.raises(
+        InvalidCanonicalSponsoredScriptPolicyV2, match="fixed_v2_policy"
+    ):
         replace(_check(), **{field: value})
 
 
@@ -243,5 +249,7 @@ def test_forged_script_field_is_reparsed_and_rejected():
 
 
 def test_untrusted_objects_cannot_be_serialized_as_evidence():
-    with pytest.raises(InvalidCanonicalSponsoredScriptPolicyV2, match="invalid_v2_evidence_type"):
+    with pytest.raises(
+        InvalidCanonicalSponsoredScriptPolicyV2, match="invalid_v2_evidence_type"
+    ):
         canonical_sponsored_script_evidence_v2_bytes({"fake": "evidence"})
