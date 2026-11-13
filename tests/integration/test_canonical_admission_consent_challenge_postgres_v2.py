@@ -73,6 +73,7 @@ def postgres_engine():
         finally:
             engine.dispose()
 
+
 @pytest.fixture
 def clean_ledger(postgres_engine):
     with postgres_engine.begin() as conn:
