@@ -118,7 +118,12 @@ def test_sponsor_key_must_be_exact_compressed_lowercase_hex(key):
     ],
 )
 def test_cascade_next_full_participant_can_sponsor_at_depth(
-    sponsor, child, sponsor_depth, early, middle, late
+    sponsor,
+    child,
+    sponsor_depth,
+    early,
+    middle,
+    late,
 ):
     """Depth schedule is generic; no E923-only exception after root depth zero."""
     result = _assess(
@@ -142,7 +147,12 @@ def test_cascade_next_full_participant_can_sponsor_at_depth(
     ],
 )
 def test_canon_orientation_is_only_structural_at_deeper_depth(
-    sponsor, child, sponsor_depth, early, middle, late
+    sponsor,
+    child,
+    sponsor_depth,
+    early,
+    middle,
+    late,
 ):
     result = _assess(
         _leg(child, sponsor, early, middle),
