@@ -196,9 +196,9 @@ class SqlAlchemyCanonicalAdmissionCandidateRegistryV2:
         # Do not accept a detached VerifiedCurrentFullEntitlement, a spoofed
         # proof_id, or a child with only a PARENT_PROPOSAL as authority.
         try:
-            current = SqlAlchemyTransactionBoundCurrentFullVerifier(
-                self._session
-            ).verify_with_evidence_in_transaction(policy.sponsor_xonly_pubkey, now=now)
+            current = SqlAlchemyTransactionBoundCurrentFullVerifier(self._session).verify_with_evidence_in_transaction(
+                policy.sponsor_xonly_pubkey, now=now
+            )
             full_proof = current.verified_entitlement
             if full_proof.subject != policy.sponsor_xonly_pubkey or not now < full_proof.expires_at:
                 raise ValueError
@@ -209,9 +209,7 @@ class SqlAlchemyCanonicalAdmissionCandidateRegistryV2:
         # both role-specific BTC signatures and consumes the nonce in the
         # *same* caller-owned transaction as the candidate/outpoint inserts.
         try:
-            consumed = SqlAlchemyCanonicalAdmissionChallengeLedgerV2(
-                self._session, clock=self._clock
-            ).consume(
+            consumed = SqlAlchemyCanonicalAdmissionChallengeLedgerV2(self._session, clock=self._clock).consume(
                 proposal,
                 challenge_sha256=challenge_sha256,
                 authenticated_child_pubkey=authenticated_child_pubkey,

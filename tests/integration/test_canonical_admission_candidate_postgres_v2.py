@@ -111,8 +111,11 @@ def _seed_full(engine, key, *, full=True):
             session.add(User(pubkey=xonly, is_active=True, metadata_json={}))
             session.add(
                 CurrentEntitlementEvidence(
-                    evidence_id=("00000000-0000-4000-8000-000000000071" if key == ALICE
-                                 else "00000000-0000-4000-8000-000000000072"),
+                    evidence_id=(
+                        "00000000-0000-4000-8000-000000000071"
+                        if key == ALICE
+                        else "00000000-0000-4000-8000-000000000072"
+                    ),
                     contract_version=CONTRACT_VERSION,
                     subject_pubkey=xonly,
                     identity_class=IdentityClass.FULL.value if full else IdentityClass.LIMITED.value,
@@ -131,9 +134,9 @@ def _seed_full(engine, key, *, full=True):
 def _issue(engine, proposal, sponsor):
     with Session(engine) as session:
         with session.begin():
-            return SqlAlchemyCanonicalAdmissionChallengeLedgerV2(
-                session, clock=lambda: NOW
-            ).issue(proposal, authenticated_sponsor_pubkey=sponsor)
+            return SqlAlchemyCanonicalAdmissionChallengeLedgerV2(session, clock=lambda: NOW).issue(
+                proposal, authenticated_sponsor_pubkey=sponsor
+            )
 
 
 def _rpc(pending, sponsor, child):
@@ -328,7 +331,9 @@ def test_wrong_authenticated_key_or_sqlite_fail_before_any_new_rights(db):
         with Session(sqlite) as session:
             with session.begin():
                 registry = SqlAlchemyCanonicalAdmissionCandidateRegistryV2(session, clock=lambda: NOW)
-                with pytest.raises(CanonicalAdmissionCandidateUnavailableV2, match="read_committed_postgres_transaction_required"):
+                with pytest.raises(
+                    CanonicalAdmissionCandidateUnavailableV2, match="read_committed_postgres_transaction_required"
+                ):
                     registry.reserve_candidate_in_transaction(
                         node.edge,
                         nodes=(node,),
