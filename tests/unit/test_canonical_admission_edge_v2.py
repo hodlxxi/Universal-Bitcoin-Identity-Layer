@@ -307,4 +307,4 @@ def test_untrusted_objects_and_missing_target_never_mint_structural_proof():
     with pytest.raises(InvalidCanonicalAdmissionEdgeV2, match="missing_target_edge"):
         _check((node,), target="00000000-0000-4000-8000-000000009999")
     with pytest.raises(InvalidCanonicalAdmissionEdgeV2, match="lineage_evidence_type"):
-        _check(({"fake": "node"},))
+        _check(({"fake": "node"},), target=node.edge.edge_id)
