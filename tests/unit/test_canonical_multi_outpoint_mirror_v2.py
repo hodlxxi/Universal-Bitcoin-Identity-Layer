@@ -228,7 +228,14 @@ def test_rejects_stale_future_incomplete_or_foreign_observation():
         (current, NOW + timedelta(seconds=121)),
         (current, NOW - timedelta(seconds=1)),
         (replace(current, observations=current.observations[:-1]), NOW),
-        (replace(current, subject_pubkey="b" * 64), NOW),
+        (
+            replace(
+                current,
+                subject_pubkey="b" * 64,
+                observations=tuple(replace(o, subject_pubkey="b" * 64) for o in current.observations),
+            ),
+            NOW,
+        ),
     )
     for altered, at in checks:
         with pytest.raises(InvalidCanonicalMultiOutpointMirrorV2):
