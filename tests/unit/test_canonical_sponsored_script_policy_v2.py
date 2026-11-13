@@ -16,9 +16,7 @@ from app.services.canonical_sponsored_script_policy_v2 import (
     canonical_sponsored_script_evidence_v2_sha256,
     validate_canonical_sponsored_scripts_v2,
 )
-from app.services.sponsored_admission_import_preflight import (
-    assess_sponsored_imported_pair,
-)
+from app.services.sponsored_admission_import_preflight import assess_sponsored_imported_pair
 
 ALICE = "023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923"
 BOB = "02c870934f7aaa2fd1c40834989fd97933a8866ebcf35f3e529d95b50d320f80a3"
@@ -103,9 +101,7 @@ def test_swapped_import_order_has_identical_canonical_v2_record_and_commitment()
         canonical_sponsored_script_evidence_v2_bytes(reversed_order)
     )
     digest_input = canonical_sponsored_script_evidence_v2_bytes(forward)
-    assert canonical_sponsored_script_evidence_v2_sha256(forward) == (
-        hashlib.sha256(digest_input).hexdigest()
-    )
+    assert canonical_sponsored_script_evidence_v2_sha256(forward) == hashlib.sha256(digest_input).hexdigest()
     payload = json.loads(canonical_sponsored_script_evidence_v2_bytes(forward))
     assert payload["child_depth"] == 1
 
@@ -139,17 +135,13 @@ def test_any_current_full_participant_may_be_candidate_sponsor_at_child_depth(
 def test_canon_v1_orientation_remains_separate_and_is_rejected_under_v2():
     legacy_early = _leg(BOB, ALICE, 1777000, 1777777)
     legacy_late = _leg(ALICE, BOB, 1777777, 1778554)
-    old = assess_sponsored_imported_pair(
-        legacy_early, legacy_late, sponsor_compressed_pubkey=ALICE, sponsor_depth=0
-    )
+    old = assess_sponsored_imported_pair(legacy_early, legacy_late, sponsor_compressed_pubkey=ALICE, sponsor_depth=0)
     assert old.status == "canonical_script_shape_only"
     _rejected("v2_unilateral_role_mismatch", legacy_early, legacy_late)
 
 
 def test_real_canon_v2_scripts_remain_unmodified_under_v1():
-    old = assess_sponsored_imported_pair(
-        DEMO_EARLY, DEMO_LATE, sponsor_compressed_pubkey=ALICE, sponsor_depth=0
-    )
+    old = assess_sponsored_imported_pair(DEMO_EARLY, DEMO_LATE, sponsor_compressed_pubkey=ALICE, sponsor_depth=0)
     assert old.status == "reverse_branch_roles_requires_policy_review"
     assert old.grants_full is False
 
@@ -213,9 +205,7 @@ def test_depth_must_remain_inside_positive_absolute_cltv_height_range():
     ],
 )
 def test_fixed_policy_metadata_cannot_be_forged(field, value):
-    with pytest.raises(
-        InvalidCanonicalSponsoredScriptPolicyV2, match="fixed_v2_policy"
-    ):
+    with pytest.raises(InvalidCanonicalSponsoredScriptPolicyV2, match="fixed_v2_policy"):
         replace(_check(), **{field: value})
 
 
@@ -237,9 +227,7 @@ def test_fixed_policy_metadata_cannot_be_forged(field, value):
     ],
 )
 def test_forged_identity_schedule_or_digest_is_rejected(field, value):
-    with pytest.raises(
-        InvalidCanonicalSponsoredScriptPolicyV2, match="v2_evidence_binding_mismatch"
-    ):
+    with pytest.raises(InvalidCanonicalSponsoredScriptPolicyV2, match="v2_evidence_binding_mismatch"):
         replace(_check(), **{field: value})
 
 
@@ -249,7 +237,5 @@ def test_forged_script_field_is_reparsed_and_rejected():
 
 
 def test_untrusted_objects_cannot_be_serialized_as_evidence():
-    with pytest.raises(
-        InvalidCanonicalSponsoredScriptPolicyV2, match="invalid_v2_evidence_type"
-    ):
+    with pytest.raises(InvalidCanonicalSponsoredScriptPolicyV2, match="invalid_v2_evidence_type"):
         canonical_sponsored_script_evidence_v2_bytes({"fake": "evidence"})

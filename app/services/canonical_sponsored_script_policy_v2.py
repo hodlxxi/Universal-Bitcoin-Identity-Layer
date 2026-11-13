@@ -180,8 +180,7 @@ class CanonicalSponsoredScriptEvidenceV2:
             or self.child_compressed_pubkey != pair.counterparty_pubkey
             or self.child_xonly_pubkey != pair.counterparty_xonly_pubkey
             or self.child_depth != self.sponsor_depth + 1
-            or (self.early_height, self.middle_height, self.late_height)
-            != (early, middle, late)
+            or (self.early_height, self.middle_height, self.late_height) != (early, middle, late)
             or self.earlier_raw_script_hex != pair.earlier_leg.raw_script_hex
             or self.later_raw_script_hex != pair.later_leg.raw_script_hex
             or self.earlier_script_sha256 != pair.earlier_leg.script_sha256
@@ -247,17 +246,10 @@ def canonical_sponsored_script_evidence_v2_bytes(
     """Deterministic, strictly revalidated bytes for future provenance linkage."""
     if type(evidence) is not CanonicalSponsoredScriptEvidenceV2:
         _fail("invalid_v2_evidence_type")
-    values = tuple(
-        getattr(evidence, field.name)
-        for field in fields(CanonicalSponsoredScriptEvidenceV2)
-    )
+    values = tuple(getattr(evidence, field.name) for field in fields(CanonicalSponsoredScriptEvidenceV2))
     validated = CanonicalSponsoredScriptEvidenceV2(*values)
-    payload = {
-        field.name: getattr(validated, field.name) for field in fields(validated)
-    }
-    encoded = json.dumps(
-        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
-    )
+    payload = {field.name: getattr(validated, field.name) for field in fields(validated)}
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return encoded.encode("ascii")
 
 
