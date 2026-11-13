@@ -124,6 +124,42 @@ approved. Durable source capture, signature verification, transactional
 uniqueness/conflict handling, reorg/mempool spend checks, and genuine
 current Full sponsor evaluation remain separate prerequisites.
 
+## Dual consent proof for sponsor and child (read-only, no grant)
+
+An independent proof module now exists at
+app/services/canonical_admission_consent_v2.py. Its issuance function
+constructs a **fresh 256-bit nonce** and a bounded 5-minute challenge
+over the canonical SHA-256 digest of the *complete* V2 proposal.
+Separate domain-separated ASCII signmessage texts bind the protocol,
+Bitcoin network, proposal, exact sponsor and child compressed keys,
+role (sponsor or child), nonce and expiration.
+
+The verification function requires **two separate legacy Bitcoin
+Signed Message compact signatures** (standard base64, 65 bytes).
+For each distinct signature it derives the corresponding compressed-key
+Bitcoin P2PKH address and calls the existing Bitcoin Core
+verifymessage RPC using the exact role-specific ASCII text. This is
+intended to interoperate with the existing legacy UBID login signing
+scheme, not Bitcoin transaction signing or a newly invented key format.
+
+The returned immutable verification receipt stores hashes of the two
+signed messages, two compact signatures, challenge, and proposal.
+Both grants_full and replay_protected are **always false**. Every
+read-only proof result needs independent server trust before it can
+ever be used for admission. A caller can construct a challenge or a
+receipt object; neither object proves that UBID ever issued it or that
+the nonce was reserved or consumed. The module does not persist a
+nonce, verify active signer sessions, verify Full sponsor lineage,
+check revocation, or register an admission.
+
+Security prerequisites for any live entitlement transition remain:
+a transactionally unique issued-challenge row, strict issuance
+ownership, challenge consumption exactly once, two verified signers,
+fresh independent UTXO observation with mempool/reorg policy,
+effective ancestor Full, idempotent canonical V2 registration and
+entitlement publication. None of these state-changing operations
+can be inferred from a successful cryptographic signature check alone.
+
 ## Separate V2 admission implementation required next
 
 1. Promote the independent **proposed-only V2 source-bound domain** into
