@@ -160,6 +160,50 @@ effective ancestor Full, idempotent canonical V2 registration and
 entitlement publication. None of these state-changing operations
 can be inferred from a successful cryptographic signature check alone.
 
+## Dormant issued challenge ledger and atomic one-use reservation
+
+The additive, unapplied PostgreSQL migration
+`migrations/2026-11-13_canonical_admission_consent_challenge_v2.sql`
+defines a new namespace for V2 consent challenges. Its immutable
+original fields include the complete challenge digest, proposal digest,
+random nonce, both participant keys and issuing session key, issuance
+time and expiry. The unique nonce, unique verification digest, lifetime
+checks and guarded NULL-to-consumed transition protect the storage
+contract against duplicate keys, replay or history rewrites.
+
+The dormant `SqlAlchemyCanonicalAdmissionChallengeLedgerV2` in
+`app/services/canonical_admission_consent_challenge_storage_v2.py`
+requires an already active **PostgreSQL SQLAlchemy transaction**.
+The issuance path verifies that the caller-asserted authenticated
+sponsor key equals the proposal sponsor, generates a fresh nonce and
+inserts the exact challenge. The consumption path locks that database
+row `FOR UPDATE`, reconstructs its canonical challenge, rechecks its
+digest/keys/proposal/issuer, invokes the two-signature Bitcoin Core
+verifier over the *stored* challenge, then executes a conditional
+`UPDATE ... consumed_at IS NULL ... RETURNING`. It resamples the
+clock after verification to prevent use after a blocking RPC call.
+
+The repository never calls `commit()`, `rollback()`, updates current
+entitlement, stores either private key, registers an admission edge, or
+modifies a live route. Both return types are **pending transaction
+results** and unconditionally report `grants_full=False`. A pending
+consumption is *not yet durably replay-protected*; the calling owner
+must commit to make it so, and must roll back on failure.
+
+**Limits and required security gates:** the ledger cannot independently
+authenticate the supplied session principal, ensure that a transaction
+is eventually committed, prove that the signer is currently Full,
+prove UTXO freshness or live chain/mempool state, or authorize Bob.
+No runtime composition calls this module, and no database migration
+has been applied. The SQLite/fake-session unit tests prove input and
+SQL-query behavior, **not** real PostgreSQL locking or concurrent
+issuance. Before activation, run a separately authorized disposable
+PostgreSQL integration suite with two connections, racing consumes,
+rollbacks/retries and trigger immutability tests. Then integrate it
+with the authenticated session, current Full sponsor lineage, fresh
+Bitcoin snapshot and atomic admission state, not an independent
+role-setting endpoint.
+
 ## Separate V2 admission implementation required next
 
 1. Promote the independent **proposed-only V2 source-bound domain** into
