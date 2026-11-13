@@ -95,7 +95,7 @@ grep "rate_limit_exceeded" /srv/app/logs/audit.log | jq .
 
 ```bash
 # App health
-curl http://localhost:5000/health | jq .
+curl http://localhost:5000/health/live | jq .
 
 # OAuth status
 curl http://localhost:5000/oauthx/status | jq .
