@@ -12,7 +12,6 @@ from app.services.canonical_admission_edge_v2 import (
     EDGE_SCHEMA,
     EDGE_VERSION,
     LINEAGE_SCHEMA,
-    CanonicalAdmissionEdgeV2,
     CanonicalSponsorLineageNodeEvidenceV2,
     InvalidCanonicalAdmissionEdgeV2,
     canonical_admission_edge_v2_bytes,
@@ -32,7 +31,6 @@ from app.services.trusted_covenant_registration import (
     create_trusted_covenant_registration,
 )
 from tests.unit.test_canonical_admission_proposal_v2 import (
-    ALICE,
     BOB,
     CHARLIE,
     NOW,
