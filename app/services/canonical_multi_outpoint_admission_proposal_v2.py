@@ -104,9 +104,7 @@ def _bundle(value: object) -> CanonicalMultiOutpointMirrorV2:
     if type(value) is not CanonicalMultiOutpointMirrorV2:
         _fail("mirror_type")
     try:
-        return CanonicalMultiOutpointMirrorV2(
-            *(getattr(value, f.name) for f in fields(CanonicalMultiOutpointMirrorV2))
-        )
+        return CanonicalMultiOutpointMirrorV2(*(getattr(value, f.name) for f in fields(CanonicalMultiOutpointMirrorV2)))
     except Exception:
         _fail("mirror_invalid")
 
@@ -117,9 +115,7 @@ def _basis_reference(bundle: CanonicalMultiOutpointMirrorV2, basis: object):
         if type(basis) is not CanonicalGenesisEvaluation:
             _fail("root_basis_type")
         try:
-            checked = CanonicalGenesisEvaluation(
-                *(getattr(basis, f.name) for f in fields(CanonicalGenesisEvaluation))
-            )
+            checked = CanonicalGenesisEvaluation(*(getattr(basis, f.name) for f in fields(CanonicalGenesisEvaluation)))
         except Exception:
             _fail("root_basis_invalid")
         if (
@@ -175,11 +171,7 @@ class CanonicalMultiOutpointAdmissionProposalV2:
     child_acceptance_reference_sha256: str
 
     def __post_init__(self) -> None:
-        if (
-            self.schema != SCHEMA
-            or self.version != VERSION
-            or self.authorization_boundary != BOUNDARY
-        ):
+        if self.schema != SCHEMA or self.version != VERSION or self.authorization_boundary != BOUNDARY:
             _fail("schema_or_boundary")
         _id(self.proposal_id)
         _id(self.basis_record_id)
@@ -191,11 +183,16 @@ class CanonicalMultiOutpointAdmissionProposalV2:
             self.child_acceptance_reference_sha256,
         ):
             _digest(digest)
-        if len({
-            self.sponsor_import_reference_sha256,
-            self.sponsor_key_proof_reference_sha256,
-            self.child_acceptance_reference_sha256,
-        }) != 3:
+        if (
+            len(
+                {
+                    self.sponsor_import_reference_sha256,
+                    self.sponsor_key_proof_reference_sha256,
+                    self.child_acceptance_reference_sha256,
+                }
+            )
+            != 3
+        ):
             _fail("distinct_references")
         if type(self.basis_kind) is not SponsorBasisV2:
             _fail("basis_kind")
@@ -311,9 +308,7 @@ def validate_canonical_multi_outpoint_admission_proposal_v2_sources(
     if (
         checked.mirror_sha256 != canonical_multi_outpoint_mirror_v2_sha256(actual_mirror)
         or checked.snapshot != observed
-        or (checked.basis_kind, checked.basis_record_id, checked.basis_record_sha256) != (
-            kind, basis_id, basis_sha
-        )
+        or (checked.basis_kind, checked.basis_record_id, checked.basis_record_sha256) != (kind, basis_id, basis_sha)
         or checked.proposed_at > current
     ):
         _fail("source_or_parent_mismatch")

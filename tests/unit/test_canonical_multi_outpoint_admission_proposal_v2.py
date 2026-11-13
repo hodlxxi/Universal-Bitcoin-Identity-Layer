@@ -102,8 +102,11 @@ def test_three_plus_two_actual_funding_bound_into_exact_proposal_digest():
     assert digest != proposal.mirror_sha256
     assert (
         validate_canonical_multi_outpoint_admission_proposal_v2_sources(
-            proposal, mirror=proposal.mirror, observation=_observation(proposal.mirror),
-            sponsor_basis=_genesis(), now=NOW
+            proposal,
+            mirror=proposal.mirror,
+            observation=_observation(proposal.mirror),
+            sponsor_basis=_genesis(),
+            now=NOW,
         )
         == proposal
     )
@@ -219,26 +222,24 @@ def test_stale_spent_or_forged_current_observation_not_a_valid_proposal_source()
     )
     with pytest.raises(Exception):
         validate_canonical_multi_outpoint_admission_proposal_v2_sources(
-            proposal, mirror=proposal.mirror, observation=tampered,
-            sponsor_basis=_genesis(), now=NOW
+            proposal, mirror=proposal.mirror, observation=tampered, sponsor_basis=_genesis(), now=NOW
         )
     with pytest.raises(Exception):
         validate_canonical_multi_outpoint_admission_proposal_v2_sources(
-            proposal, mirror=proposal.mirror, observation=observation,
-            sponsor_basis=_genesis(), now=NOW + timedelta(seconds=121)
+            proposal,
+            mirror=proposal.mirror,
+            observation=observation,
+            sponsor_basis=_genesis(),
+            now=NOW + timedelta(seconds=121),
         )
 
 
 def test_parent_multi_proposal_allows_bob_to_sponsor_charlie_structurally():
     parent = _new()
-    policy, registration, _, observation, _ = _sources(
-        sponsor=BOB, child=CHARLIE, depth=1
-    )
+    policy, registration, _, observation, _ = _sources(sponsor=BOB, child=CHARLIE, depth=1)
     from app.services.trusted_covenant_registration import trusted_outpoints_from_registration
 
-    mirror = create_canonical_multi_outpoint_mirror_v2(
-        policy, trusted_outpoints_from_registration(registration)
-    )
+    mirror = create_canonical_multi_outpoint_mirror_v2(policy, trusted_outpoints_from_registration(registration))
     child = _new(
         mirror,
         basis=parent,
@@ -254,14 +255,10 @@ def test_parent_multi_proposal_allows_bob_to_sponsor_charlie_structurally():
 
 def test_existing_strict_v2_parent_may_be_referenced_without_rewriting_it():
     legacy, _, _ = _make()
-    policy, registration, _, observation, _ = _sources(
-        sponsor=BOB, child=CHARLIE, depth=1
-    )
+    policy, registration, _, observation, _ = _sources(sponsor=BOB, child=CHARLIE, depth=1)
     from app.services.trusted_covenant_registration import trusted_outpoints_from_registration
 
-    mirror = create_canonical_multi_outpoint_mirror_v2(
-        policy, trusted_outpoints_from_registration(registration)
-    )
+    mirror = create_canonical_multi_outpoint_mirror_v2(policy, trusted_outpoints_from_registration(registration))
     proposal = _new(mirror, basis=legacy, proposal_id=CHILD_ID, observation=observation)
     assert proposal.basis_record_id == legacy.proposal_id
     assert proposal.mirror.script_evidence.child_depth == 2
@@ -276,9 +273,7 @@ def test_wrong_parent_or_root_cannot_be_spliced_into_multileg_proposal():
     policy, reg, _, obs, _ = _sources(sponsor=BOB, child=CHARLIE, depth=1)
     from app.services.trusted_covenant_registration import trusted_outpoints_from_registration
 
-    child_mirror = create_canonical_multi_outpoint_mirror_v2(
-        policy, trusted_outpoints_from_registration(reg)
-    )
+    child_mirror = create_canonical_multi_outpoint_mirror_v2(policy, trusted_outpoints_from_registration(reg))
     with pytest.raises(InvalidCanonicalMultiAdmissionProposalV2, match="parent_proposal_type"):
         _new(child_mirror, basis=_genesis(), proposal_id=CHILD_ID, observation=obs)
 
