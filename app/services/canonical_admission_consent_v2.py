@@ -287,6 +287,12 @@ def verify_canonical_admission_consent_signatures_v2(
     child_signature = _message_sig(child_signature, "child_signature")
     if sponsor_signature == child_signature:
         _fail("indistinguishable_signatures")
+    # Refuse the legacy utility's historical all-keys RIPEMD160 fallback.
+    # A real Bitcoin P2PKH address requires functioning RIPEMD160.
+    try:
+        hashlib.new("ripemd160")
+    except (ValueError, TypeError):
+        raise CanonicalAdmissionConsentVerifierUnavailable("ripemd160_unavailable") from None
     method = getattr(rpc, "verifymessage", None)
     if not callable(method):
         raise CanonicalAdmissionConsentVerifierUnavailable("bitcoin_verifymessage_unavailable")

@@ -148,6 +148,34 @@ from the child-relative pair hash in a trusted registration. Exact
 scripts, participant keys and on-chain outpoint bindings are therefore
 compared, not falsely equated between these two perspectives.
 
+## Two independently signed admissions (read-only preflight)
+
+The new `app/services/canonical_admission_consent_v2.py` implements
+role-separated Bitcoin Signed Message verification through the same
+`verifymessage` RPC style used by the current UBID browser login.
+For each proposed Canon V2 admission it creates a random 256-bit
+challenge and constructs two separate messages (sponsor and child),
+binding protocol domain, Bitcoin network, full proposal digest,
+signer key, counterparty key, role, nonce and expiry (maximum 5 minutes).
+
+Verification requires distinct canonical compact Bitcoin message
+signatures from **both** sponsor and child; each is verified by Bitcoin
+Core against the P2PKH address derived from its actual compressed key.
+The implementation explicitly fails closed if RIPEMD160 support is
+missing, rather than using the legacy utility's fallback. The
+verification receipt contains message/signature hashes, never grants
+Full, and is not itself a trusted signed authority.
+
+**Not yet implemented:** server-side ownership of issuance,
+transactionally unique issued/consumed nonce, authenticated sessions,
+durable signed consent storage, current sponsor Full lineage,
+funding/reorg/mempool observation transaction boundary, or any
+entitlement/Social publication. A caller may construct a challenge
+and fake an already-verified receipt if the admission path were to
+trust these data objects; it must not. Future admission must consume
+only freshly verified outputs of the trusted server authority
+and must enforce replay prevention atomically.
+
 ## Required continuation (not implemented by this preflight PR)
 
 1. **Ingest after confirmed import.** A successful, exact scoped descriptor
