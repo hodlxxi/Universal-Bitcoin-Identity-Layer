@@ -45,9 +45,7 @@ assert DEMO_EARLY == (
 
 
 def _assess(a, b, *, sponsor=ALICE, depth=0):
-    return assess_sponsored_imported_pair(
-        a, b, sponsor_compressed_pubkey=sponsor, sponsor_depth=depth
-    )
+    return assess_sponsored_imported_pair(a, b, sponsor_compressed_pubkey=sponsor, sponsor_depth=depth)
 
 
 def test_real_alice_bob_scripts_fail_closed_as_reversed_canon_roles():
