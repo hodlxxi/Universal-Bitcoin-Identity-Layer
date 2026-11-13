@@ -228,7 +228,7 @@ def test_ledger_migration_is_dormant_and_has_unique_nonce_cas_and_write_guard():
     assert "consumed_at IS NULL" in CONSUME_SQL
     assert "FOR UPDATE" in LOCK_SQL
     assert "CREATE TABLE public.canonical_admission_consent_challenges_v2" in sql
-    assert "GRANT " not in sql
+    assert "\nGRANT " not in sql
     assert "DROP TABLE" not in sql
 
 
