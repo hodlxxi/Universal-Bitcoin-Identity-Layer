@@ -64,9 +64,7 @@ def postgres_engine():
             # NEVER drop anything that this fixture did not create.
             if created:
                 with engine.begin() as connection:
-                    connection.execute(
-                        text("DROP TABLE IF EXISTS public.canonical_admission_consent_challenges_v2")
-                    )
+                    connection.execute(text("DROP TABLE IF EXISTS public.canonical_admission_consent_challenges_v2"))
                     connection.execute(
                         text("DROP FUNCTION IF EXISTS public.guard_canonical_admission_consent_challenge_v2()")
                     )
