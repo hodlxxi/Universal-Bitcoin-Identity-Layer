@@ -7,8 +7,8 @@ UTXO funding, sponsor authorization, or the child's consent.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 
 from app.services.canonical_admission_edge import (
     GENESIS_COMPRESSED_KEY,
@@ -78,7 +78,12 @@ def assess_sponsored_imported_pair(
         )
     except (InvalidMirroredCovenantPair, ValueError, TypeError):
         return SponsoredAdmissionImportPreflight(
-            SCHEMA, "invalid_or_unsupported_pair", sponsor_xonly, None, child_depth, None
+            SCHEMA,
+            "invalid_or_unsupported_pair",
+            sponsor_xonly,
+            None,
+            child_depth,
+            None,
         )
     child = pair.counterparty_pubkey
     digest = mirrored_covenant_pair_sha256(pair)
@@ -90,7 +95,12 @@ def assess_sponsored_imported_pair(
         earlier.sender_height,
         later.receiver_height,
         later.sender_height,
-    ) != (expected_heights[0], expected_heights[1], expected_heights[1], expected_heights[2]):
+    ) != (
+        expected_heights[0],
+        expected_heights[1],
+        expected_heights[1],
+        expected_heights[2],
+    ):
         status = "wrong_admission_schedule"
     elif (
         earlier.receiver_pubkey == child
@@ -109,6 +119,10 @@ def assess_sponsored_imported_pair(
     else:
         status = "invalid_admission_roles"
     return SponsoredAdmissionImportPreflight(
-        SCHEMA, status, sponsor_xonly, pair.counterparty_xonly_pubkey,
-        child_depth, digest,
+        SCHEMA,
+        status,
+        sponsor_xonly,
+        pair.counterparty_xonly_pubkey,
+        child_depth,
+        digest,
     )
