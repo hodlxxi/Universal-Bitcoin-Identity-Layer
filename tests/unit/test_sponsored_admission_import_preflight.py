@@ -9,6 +9,8 @@ from app.services.sponsored_admission_import_preflight import (
 
 ALICE = "023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923"
 BOB = "02c870934f7aaa2fd1c40834989fd97933a8866ebcf35f3e529d95b50d320f80a3"
+CHARLIE = "032f664095c520438506ddea8f584be08aeef210bc7ec37817a56478a489b72a8c"
+DAVE = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 
 
 def _num(n):
@@ -105,3 +107,61 @@ def test_depth_must_be_exact_nonnegative_integer(depth):
 def test_sponsor_key_must_be_exact_compressed_lowercase_hex(key):
     with pytest.raises(ValueError):
         _assess(DEMO_EARLY, DEMO_LATE, sponsor=key)
+
+
+@pytest.mark.parametrize(
+    "sponsor,child,sponsor_depth,early,middle,late",
+    [
+        (ALICE, BOB, 0, 1777000, 1777777, 1778554),
+        (BOB, CHARLIE, 1, 1776223, 1777000, 1777777),
+        (CHARLIE, DAVE, 2, 1775446, 1776223, 1777000),
+    ],
+)
+def test_cascade_next_full_participant_can_sponsor_at_depth(
+    sponsor, child, sponsor_depth, early, middle, late
+):
+    """Depth schedule is generic; no E923-only exception after root depth zero."""
+    result = _assess(
+        _leg(sponsor, child, early, middle),
+        _leg(child, sponsor, middle, late),
+        sponsor=sponsor,
+        depth=sponsor_depth,
+    )
+    assert result.child_depth == sponsor_depth + 1
+    assert result.sponsor_xonly_pubkey == sponsor[2:]
+    assert result.candidate_child_xonly_pubkey == child[2:]
+    assert result.status == "reverse_branch_roles_requires_policy_review"
+    assert result.grants_full is False
+
+
+@pytest.mark.parametrize(
+    "sponsor,child,sponsor_depth,early,middle,late",
+    [
+        (BOB, CHARLIE, 1, 1776223, 1777000, 1777777),
+        (CHARLIE, DAVE, 2, 1775446, 1776223, 1777000),
+    ],
+)
+def test_canon_orientation_is_only_structural_at_deeper_depth(
+    sponsor, child, sponsor_depth, early, middle, late
+):
+    result = _assess(
+        _leg(child, sponsor, early, middle),
+        _leg(sponsor, child, middle, late),
+        sponsor=sponsor,
+        depth=sponsor_depth,
+    )
+    assert result.status == "canonical_script_shape_only"
+    assert result.child_depth == sponsor_depth + 1
+    assert result.candidate_child_xonly_pubkey == child[2:]
+    assert result.grants_full is False
+
+
+def test_depth_two_does_not_accept_depth_one_cltv_heights():
+    result = _assess(
+        _leg(BOB, CHARLIE, 1777000, 1777777),
+        _leg(CHARLIE, BOB, 1777777, 1778554),
+        sponsor=BOB,
+        depth=1,
+    )
+    assert result.status == "wrong_admission_schedule"
+    assert result.grants_full is False
