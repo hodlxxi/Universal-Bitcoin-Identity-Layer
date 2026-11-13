@@ -172,11 +172,14 @@ class CanonicalAdmissionProposalV2:
         ):
             _digest(getattr(self, name), name)
         if (
-            len({
-                self.sponsor_import_event_sha256,
-                self.sponsor_key_proof_reference_sha256,
-                self.child_acceptance_reference_sha256,
-            }) != 3
+            len(
+                {
+                    self.sponsor_import_event_sha256,
+                    self.sponsor_key_proof_reference_sha256,
+                    self.child_acceptance_reference_sha256,
+                }
+            )
+            != 3
         ):
             _fail("distinct_evidence_references")
         if type(self.basis_kind) is not SponsorBasisV2:
@@ -198,14 +201,12 @@ class CanonicalAdmissionProposalV2:
             _fail("two_outpoints")
         if any(type(item) is not V2AdmissionOutpoint for item in self.outpoints):
             _fail("outpoint_type")
-        a, b = (V2AdmissionOutpoint(*(getattr(x, f.name) for f in fields(V2AdmissionOutpoint)))
-                for x in self.outpoints)
+        a, b = (V2AdmissionOutpoint(*(getattr(x, f.name) for f in fields(V2AdmissionOutpoint))) for x in self.outpoints)
         if (
             (a.leg_order, b.leg_order) != ("earlier", "later")
             or (a.direction, b.direction) != (CovenantDirection.OUTGOING, CovenantDirection.INCOMING)
-            or (a.witness_script_sha256, b.witness_script_sha256) != (
-                evidence.earlier_script_sha256, evidence.later_script_sha256
-            )
+            or (a.witness_script_sha256, b.witness_script_sha256)
+            != (evidence.earlier_script_sha256, evidence.later_script_sha256)
             or (a.amount_sats, b.amount_sats) != (self.mirror_sats_per_leg,) * 2
             or (a.txid, a.vout) == (b.txid, b.vout)
         ):
@@ -227,9 +228,7 @@ class CanonicalAdmissionProposalV2:
 def canonical_admission_proposal_v2_bytes(proposal: CanonicalAdmissionProposalV2) -> bytes:
     if type(proposal) is not CanonicalAdmissionProposalV2:
         _fail("proposal_type")
-    value = CanonicalAdmissionProposalV2(
-        *(getattr(proposal, f.name) for f in fields(CanonicalAdmissionProposalV2))
-    )
+    value = CanonicalAdmissionProposalV2(*(getattr(proposal, f.name) for f in fields(CanonicalAdmissionProposalV2)))
     payload = {}
     for field in fields(value):
         key = field.name
@@ -238,8 +237,10 @@ def canonical_admission_proposal_v2_bytes(proposal: CanonicalAdmissionProposalV2
             content = {f.name: getattr(content, f.name) for f in fields(content)}
         elif key == "outpoints":
             content = [
-                {f.name: (getattr(item, f.name).value if f.name == "direction" else getattr(item, f.name))
-                 for f in fields(item)}
+                {
+                    f.name: (getattr(item, f.name).value if f.name == "direction" else getattr(item, f.name))
+                    for f in fields(item)
+                }
                 for item in content
             ]
         elif key == "basis_kind":
@@ -258,9 +259,7 @@ def _checked_registration(value: object) -> TrustedCovenantRegistration:
     if type(value) is not TrustedCovenantRegistration:
         _fail("registration_type")
     try:
-        copy = TrustedCovenantRegistration(
-            *(getattr(value, f.name) for f in fields(TrustedCovenantRegistration))
-        )
+        copy = TrustedCovenantRegistration(*(getattr(value, f.name) for f in fields(TrustedCovenantRegistration)))
     except Exception:
         _fail("registration_invalid")
     if copy.lifecycle_state is not TrustedCovenantRegistrationLifecycle.ACTIVE:
@@ -268,15 +267,11 @@ def _checked_registration(value: object) -> TrustedCovenantRegistration:
     return copy
 
 
-def _checked_funding(
-    value: object, registration: TrustedCovenantRegistration
-) -> CanonicalCovenantFundingSet:
+def _checked_funding(value: object, registration: TrustedCovenantRegistration) -> CanonicalCovenantFundingSet:
     if type(value) is not CanonicalCovenantFundingSet:
         _fail("funding_set_type")
     try:
-        copy = CanonicalCovenantFundingSet(
-            *(getattr(value, f.name) for f in fields(CanonicalCovenantFundingSet))
-        )
+        copy = CanonicalCovenantFundingSet(*(getattr(value, f.name) for f in fields(CanonicalCovenantFundingSet)))
         validate_funding_set_registration(copy, registration)
     except Exception:
         _fail("funding_set_invalid")
@@ -325,8 +320,13 @@ def _source_outpoints(
         item = matched[0]
         ordered.append(
             V2AdmissionOutpoint(
-                leg_order, item.direction, item.txid, item.vout, item.amount_sats,
-                item.witness_script_sha256, item.descriptor_sha256
+                leg_order,
+                item.direction,
+                item.txid,
+                item.vout,
+                item.amount_sats,
+                item.witness_script_sha256,
+                item.descriptor_sha256,
             )
         )
     a, b = ordered
@@ -343,9 +343,7 @@ def _basis(
         if type(basis) is not CanonicalGenesisEvaluation:
             _fail("genesis_basis_type")
         try:
-            genesis = CanonicalGenesisEvaluation(
-                *(getattr(basis, f.name) for f in fields(CanonicalGenesisEvaluation))
-            )
+            genesis = CanonicalGenesisEvaluation(*(getattr(basis, f.name) for f in fields(CanonicalGenesisEvaluation)))
         except Exception:
             _fail("genesis_basis_invalid")
         if (
@@ -354,16 +352,11 @@ def _basis(
             or genesis.selected_effective_record_id is None
         ):
             _fail("genesis_basis_inactive")
-        return (
-            SponsorBasisV2.GENESIS, genesis.selected_effective_record_id,
-            genesis.selected_effective_record_sha256
-        )
+        return (SponsorBasisV2.GENESIS, genesis.selected_effective_record_id, genesis.selected_effective_record_sha256)
     if type(basis) is not CanonicalAdmissionProposalV2:
         _fail("parent_proposal_type")
     try:
-        parent = CanonicalAdmissionProposalV2(
-            *(getattr(basis, f.name) for f in fields(CanonicalAdmissionProposalV2))
-        )
+        parent = CanonicalAdmissionProposalV2(*(getattr(basis, f.name) for f in fields(CanonicalAdmissionProposalV2)))
     except Exception:
         _fail("parent_proposal_invalid")
     prev = parent.script_evidence
@@ -382,16 +375,12 @@ def _basis(
 
 
 def _checked_observation(
-    observation: object, registration: TrustedCovenantRegistration,
-    *,
-    now: datetime
+    observation: object, registration: TrustedCovenantRegistration, *, now: datetime
 ) -> CovenantRelationEvaluation:
     if type(observation) is not CovenantRelationEvaluation:
         _fail("observation_type")
     try:
-        value = CovenantRelationEvaluation(
-            *(getattr(observation, f.name) for f in fields(CovenantRelationEvaluation))
-        )
+        value = CovenantRelationEvaluation(*(getattr(observation, f.name) for f in fields(CovenantRelationEvaluation)))
         expected = trusted_outpoints_from_registration(registration)
     except Exception:
         _fail("observation_invalid")
@@ -403,14 +392,10 @@ def _checked_observation(
     ):
         _fail("observation_missing_or_stale")
     observed = {
-        (x.direction, x.txid, x.vout, x.amount_sats, x.script_sha256, x.descriptor_sha256):
-        (x.unspent, x.confirmations)
+        (x.direction, x.txid, x.vout, x.amount_sats, x.script_sha256, x.descriptor_sha256): (x.unspent, x.confirmations)
         for x in value.observations
     }
-    bindings = {
-        (x.direction, x.txid, x.vout, x.amount_sats, x.script_sha256, x.descriptor_sha256)
-        for x in expected
-    }
+    bindings = {(x.direction, x.txid, x.vout, x.amount_sats, x.script_sha256, x.descriptor_sha256) for x in expected}
     if set(observed) != bindings or any(not unspent or conf < 1 for unspent, conf in observed.values()):
         _fail("observation_outpoint_inactive_or_mismatched")
     return value
@@ -428,9 +413,7 @@ def validate_canonical_admission_proposal_v2_sources(
     """Fail-closed consistency over supplied immutable sources. No signature verification."""
     if type(proposal) is not CanonicalAdmissionProposalV2:
         _fail("proposal_type")
-    proposal = CanonicalAdmissionProposalV2(
-        *(getattr(proposal, f.name) for f in fields(CanonicalAdmissionProposalV2))
-    )
+    proposal = CanonicalAdmissionProposalV2(*(getattr(proposal, f.name) for f in fields(CanonicalAdmissionProposalV2)))
     now = _time(now, "now")
     reg = _checked_registration(registration)
     funding = _checked_funding(funding_set, reg)
@@ -443,8 +426,7 @@ def validate_canonical_admission_proposal_v2_sources(
         or proposal.registration_sha256 != trusted_registration_sha256(reg)
         or proposal.funding_set_id != funding.funding_set_id
         or proposal.funding_set_sha256 != canonical_covenant_funding_set_sha256(funding)
-        or (proposal.basis_kind, proposal.basis_record_id, proposal.basis_record_sha256)
-        != (kind, basis_id, basis_sha)
+        or (proposal.basis_kind, proposal.basis_record_id, proposal.basis_record_sha256) != (kind, basis_id, basis_sha)
         or proposal.outpoints != (a, b)
         or proposal.mirror_sats_per_leg != a.amount_sats
         or proposal.observation_sha256 != covenant_relation_source_sha256(obs)
@@ -480,17 +462,29 @@ def create_canonical_admission_proposal_v2(
     created = _time(proposed_at, "proposed_at")
     observed = _checked_observation(observation, reg, now=created)
     proposal = CanonicalAdmissionProposalV2(
-        SCHEMA, VERSION, BOUNDARY, proposal_id, created,
-        kind, basis_id, basis_sha, evidence,
+        SCHEMA,
+        VERSION,
+        BOUNDARY,
+        proposal_id,
+        created,
+        kind,
+        basis_id,
+        basis_sha,
+        evidence,
         canonical_sponsored_script_evidence_v2_sha256(evidence),
-        reg.registration_id, trusted_registration_sha256(reg),
-        funding.funding_set_id, canonical_covenant_funding_set_sha256(funding),
-        covenant_relation_source_sha256(observed), observed.observed_at,
-        observed.observed_block_height, outpoints[0].amount_sats, outpoints,
-        sponsor_import_event_sha256, sponsor_key_proof_reference_sha256,
+        reg.registration_id,
+        trusted_registration_sha256(reg),
+        funding.funding_set_id,
+        canonical_covenant_funding_set_sha256(funding),
+        covenant_relation_source_sha256(observed),
+        observed.observed_at,
+        observed.observed_block_height,
+        outpoints[0].amount_sats,
+        outpoints,
+        sponsor_import_event_sha256,
+        sponsor_key_proof_reference_sha256,
         child_acceptance_reference_sha256,
     )
     return validate_canonical_admission_proposal_v2_sources(
-        proposal, registration=reg, funding_set=funding, sponsor_basis=sponsor_basis,
-        observation=observed, now=created
+        proposal, registration=reg, funding_set=funding, sponsor_basis=sponsor_basis, observation=observed, now=created
     )

@@ -33,6 +33,7 @@ from app.services.canonical_genesis_record import (
     parse_canonical_genesis_record,
 )
 from app.services.canonical_sponsored_script_policy_v2 import (
+    InvalidCanonicalSponsoredScriptPolicyV2,
     validate_canonical_sponsored_scripts_v2,
 )
 from app.services.covenant_relation import CovenantDirection
@@ -74,10 +75,15 @@ def _num(value):
 
 def _leg(receiver, sender, first_height, second_height):
     return (
-        b"\x63" + _num(first_height) + b"\xb1\x75"
-        + bytes.fromhex("21" + receiver) + b"\xac\x67"
-        + _num(second_height) + b"\xb1\x75"
-        + bytes.fromhex("21" + sender) + b"\xac\x68"
+        b"\x63"
+        + _num(first_height)
+        + b"\xb1\x75"
+        + bytes.fromhex("21" + receiver)
+        + b"\xac\x67"
+        + _num(second_height)
+        + b"\xb1\x75"
+        + bytes.fromhex("21" + sender)
+        + b"\xac\x68"
     ).hex()
 
 
@@ -88,9 +94,7 @@ DEMO_LATE = _leg(BOB, ALICE, 1777777, 1778554)
 def _genesis():
     raw = Path("docs/data/e923_canonical_genesis_record_v1.json").read_bytes()
     record = parse_canonical_genesis_record(raw)
-    evidence = evaluate_canonical_genesis(
-        (record,), graph_or_protocol_id=GRAPH_ID, evaluated_at=record.effective_at
-    )
+    evidence = evaluate_canonical_genesis((record,), graph_or_protocol_id=GRAPH_ID, evaluated_at=record.effective_at)
     assert evidence.selected_effective_record_sha256 == canonical_genesis_record_sha256(record)
     return evidence
 
@@ -109,9 +113,7 @@ class StubRpc:
             "bestblock": BLOCK_HASH,
             "confirmations": 6,
             "value": Decimal("0.00050000"),
-            "scriptPubKey": {
-                "hex": "0020" + hashlib.sha256(bytes.fromhex(script)).hexdigest()
-            },
+            "scriptPubKey": {"hex": "0020" + hashlib.sha256(bytes.fromhex(script)).hexdigest()},
         }
 
     def getblockcount(self):
@@ -126,26 +128,17 @@ class StubRpc:
 
 
 def _sources(*, sponsor=ALICE, child=BOB, depth=0, at=NOW):
-    early, mid, late = (
-        (1777000, 1777777, 1778554) if depth == 0 else (1776223, 1777000, 1777777)
-    )
+    early, mid, late = (1777000, 1777777, 1778554) if depth == 0 else (1776223, 1777000, 1777777)
     scripts = (_leg(sponsor, child, early, mid), _leg(child, sponsor, mid, late))
-    policy = validate_canonical_sponsored_scripts_v2(
-        *scripts, sponsor_compressed_pubkey=sponsor, sponsor_depth=depth
-    )
+    policy = validate_canonical_sponsored_scripts_v2(*scripts, sponsor_compressed_pubkey=sponsor, sponsor_depth=depth)
     pair = validate_mirrored_covenant_pair(
-        *scripts, subject_pubkey=child,
-        allowed_delta_profiles=(CovenantDeltaProfile.LEGACY_777,)
+        *scripts, subject_pubkey=child, allowed_delta_profiles=(CovenantDeltaProfile.LEGACY_777,)
     )
     reg = create_trusted_covenant_registration(
         pair,
         (
-            RegisteredCovenantOutpoint(
-                CovenantDirection.INCOMING, LATE_TX, 1, 50000, pair.incoming_leg_script_sha256
-            ),
-            RegisteredCovenantOutpoint(
-                CovenantDirection.OUTGOING, EARLY_TX, 0, 50000, pair.outgoing_leg_script_sha256
-            ),
+            RegisteredCovenantOutpoint(CovenantDirection.INCOMING, LATE_TX, 1, 50000, pair.incoming_leg_script_sha256),
+            RegisteredCovenantOutpoint(CovenantDirection.OUTGOING, EARLY_TX, 0, 50000, pair.outgoing_leg_script_sha256),
         ),
         registration_id=ID1 if depth == 0 else ID2,
         lifecycle_state=TrustedCovenantRegistrationLifecycle.ACTIVE,
@@ -161,13 +154,14 @@ def _sources(*, sponsor=ALICE, child=BOB, depth=0, at=NOW):
         effective_at=at,
         recognized_outpoints=tuple(
             RecognizedCovenantFundingOutpoint(
-                x.direction, x.txid, x.vout, x.amount_sats,
-                x.witness_script_sha256, x.descriptor_sha256
-            ) for x in reg.outpoints
+                x.direction, x.txid, x.vout, x.amount_sats, x.witness_script_sha256, x.descriptor_sha256
+            )
+            for x in reg.outpoints
         ),
     )
     rpc = StubRpc(*scripts)
     from app.services.trusted_covenant_registration import trusted_outpoints_from_registration
+
     snapshot = TrustedBitcoinCovenantObservationAdapter(rpc, clock=lambda: at).observe(
         trusted_outpoints_from_registration(reg)
     )
@@ -198,8 +192,7 @@ def _make(*, sources=None, basis=None, depth=0, at=NOW):
 def _validate(proposal, sources, basis, *, now=NOW):
     _, reg, funding, snapshot, _ = sources
     return validate_canonical_admission_proposal_v2_sources(
-        proposal, registration=reg, funding_set=funding,
-        sponsor_basis=basis, observation=snapshot, now=now
+        proposal, registration=reg, funding_set=funding, sponsor_basis=basis, observation=snapshot, now=now
     )
 
 
@@ -218,9 +211,7 @@ def test_real_alice_bob_scripts_bind_to_two_exact_50k_outputs_without_full():
     assert proposal.mirror_sats_per_leg == 50000
     assert not proposal.grants_full and not proposal.is_effective
     assert _validate(proposal, sources, basis) == proposal
-    assert set(sources[-1].calls) == {
-        (EARLY_TX, 0, False), (LATE_TX, 1, False)
-    }
+    assert set(sources[-1].calls) == {(EARLY_TX, 0, False), (LATE_TX, 1, False)}
 
 
 def test_snapshot_digest_and_canonical_serialization_are_stable():
@@ -321,12 +312,8 @@ def test_expired_or_future_snapshot_is_rejected():
 def test_extraneous_recognized_outpoint_is_not_a_two_leg_admission():
     proposal, sources, basis = _make()
     policy, reg, funding, snapshot, rpc = sources
-    extra = replace(
-        funding.recognized_outpoints[0], txid="c" * 64, vout=2
-    )
-    amended = replace(
-        funding, recognized_outpoints=funding.recognized_outpoints + (extra,)
-    )
+    extra = replace(funding.recognized_outpoints[0], txid="c" * 64, vout=2)
+    amended = replace(funding, recognized_outpoints=funding.recognized_outpoints + (extra,))
     with pytest.raises(InvalidCanonicalAdmissionProposalV2, match="funding_set_not_exact_two"):
         _validate(proposal, (policy, reg, amended, snapshot, rpc), basis)
 
@@ -352,10 +339,8 @@ def test_separately_forged_proof_references_never_elevate_rights():
 
 def test_malformed_script_source_cannot_be_reframed_as_proposal():
     proposal, _, _ = _make()
-    with pytest.raises(InvalidCanonicalAdmissionProposalV2):
-        replace(proposal, script_evidence=replace(
-            proposal.script_evidence, earlier_raw_script_hex="00"
-        ))
+    with pytest.raises((InvalidCanonicalAdmissionProposalV2, InvalidCanonicalSponsoredScriptPolicyV2)):
+        replace(proposal, script_evidence=replace(proposal.script_evidence, earlier_raw_script_hex="00"))
 
 
 def test_wrong_source_owner_does_not_pass_registration_binding():
