@@ -1,8 +1,9 @@
-from datetime import datetime, timedelta, timezone
 import uuid
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models import Base, CurrentEntitlementEvidence, User
@@ -12,6 +13,8 @@ from app.services.current_entitlement_evidence_storage import (
     CompleteLatestEntitlementPopulation,
     CurrentEntitlementEvidenceStorageError,
     SqlAlchemyCurrentEntitlementEvidenceRepository,
+    SqlAlchemyTransactionBoundCurrentFullVerifier,
+    _CurrentFullTransactionGuard,
 )
 from app.services.full_entitlement_snapshot import FullEntitlementSnapshotReader, FullEntitlementSnapshotUnavailable
 
@@ -107,6 +110,52 @@ def test_append_retrieve_and_timezone_normalization(storage):
     actual = repository.get_latest(expected.subject_pubkey)
     assert actual == expected
     assert actual.observed_at.tzinfo is timezone.utc
+
+
+@pytest.mark.parametrize("method", ["verify_in_transaction", "verify_with_evidence_in_transaction"])
+def test_atomic_verifier_rejects_sqlite_and_preserves_caller_transaction(storage, method):
+    _, factory, repository = storage
+    repository.append(item(identity=IdentityClass.FULL))
+    with factory() as session:
+        with session.begin() as transaction:
+            with pytest.raises(CurrentEntitlementEvidenceStorageError):
+                getattr(SqlAlchemyTransactionBoundCurrentFullVerifier(session), method)("a" * 64, now=NOW)
+            assert session.get_transaction() is transaction
+            assert transaction.is_active
+
+
+@pytest.mark.parametrize("kind", ["user", "evidence"])
+def test_provenance_locked_read_refreshes_cached_database_state(storage, kind):
+    """SQLite proves ORM refresh semantics only, never PostgreSQL authority."""
+    _, factory, repository = storage
+    add_user(factory)
+    record = item(identity=IdentityClass.FULL)
+    repository.append(record)
+    model = User if kind == "user" else CurrentEntitlementEvidence
+    predicate = User.pubkey == record.subject_pubkey if kind == "user" else model.evidence_id == record.evidence_id
+    statement = select(model).where(predicate).limit(2).with_for_update()
+    with factory() as session:
+        with session.begin() as transaction:
+            cached = session.execute(statement).scalars().one()
+            connection = session.connection()
+            if kind == "user":
+                connection.execute(model.__table__.update().where(predicate).values(is_active=False))
+                assert cached.is_active is True
+            else:
+                connection.execute(model.__table__.update().where(predicate).values(source_evidence_sha256="c" * 64))
+                assert cached.source_evidence_sha256 == "b" * 64
+            assert not session.new and not session.dirty and not session.deleted
+            # Exercise the production read helper with real ORM identity-map
+            # behavior; do not construct or bypass the PostgreSQL verifier.
+            read_context = SimpleNamespace(session=session, connection=connection)
+            refreshed = _CurrentFullTransactionGuard.execute(read_context, statement).scalars().one()
+            assert refreshed is cached
+            if kind == "user":
+                assert refreshed.is_active is False, "CURRENT_FULL_REVIEW_REGRESSION_CACHED_USER"
+            else:
+                assert refreshed.source_evidence_sha256 == "c" * 64, "CURRENT_FULL_REVIEW_REGRESSION_CACHED_EVIDENCE"
+            assert session.get_transaction() is transaction and transaction.is_active
+            assert not session.new and not session.dirty and not session.deleted
 
 
 def test_latest_is_deterministic_and_subjects_are_isolated(storage):
@@ -507,3 +556,60 @@ def test_atomic_pair_rolls_back_first_row_when_second_row_conflicts(storage):
     assert repository.get_latest("a" * 64) is None
     assert repository.get_latest("c" * 64) is None
     assert repository.get_latest("d" * 64) == existing
+
+
+@pytest.mark.parametrize("case", range(16))
+def test_latest_population_matches_independent_history_reference(storage, case):
+    import random
+
+    _, _, repository = storage
+    randomizer = random.Random(20261021 + case)
+    histories = {}
+    counter = 1
+    for digit in "acd"[: case % 4]:
+        subject = digit * 64
+        history = []
+        for _ in range(randomizer.randrange(1, 9)):
+            observed = NOW + timedelta(seconds=randomizer.randrange(4))
+            record = item(
+                subject=subject,
+                identity=randomizer.choice((IdentityClass.FULL, IdentityClass.LIMITED)),
+                observed=observed,
+                created=observed + timedelta(seconds=randomizer.randrange(1, 3)),
+                eid=str(uuid.UUID(int=counter)),
+            )
+            counter += 1
+            history.append(record)
+            repository.append(record)
+        histories[subject] = history
+
+    expected = []
+    ambiguous = False
+    for subject in sorted(histories):
+        history = histories[subject]
+        latest_time = max((row.observed_at, row.created_at) for row in history)
+        latest = [row for row in history if (row.observed_at, row.created_at) == latest_time]
+        ambiguous |= len(latest) != 1
+        expected.append(latest[0])
+
+    for maximum in range(5):
+        if ambiguous or len(histories) > maximum:
+            with pytest.raises(CurrentEntitlementEvidenceStorageError):
+                repository.get_latest_population(maximum)
+        else:
+            population = repository.get_latest_population(maximum)
+            assert population.records == tuple(expected)
+            assert population.active_subjects == tuple(sorted(histories))
+            assert population.complete is True
+
+
+def test_latest_population_ignores_historical_tie_and_orders_created_time(storage):
+    _, _, repository = storage
+    old = item(eid="00000000-0000-0000-0000-000000000001")
+    old_twin = item(identity=IdentityClass.FULL, eid="00000000-0000-0000-0000-000000000002")
+    observed = NOW + timedelta(seconds=5)
+    earlier = item(identity=IdentityClass.FULL, observed=observed, created=observed + timedelta(seconds=1))
+    latest = item(observed=observed, created=observed + timedelta(seconds=2))
+    for record in (old, old_twin, earlier, latest):
+        repository.append(record)
+    assert repository.get_latest_population(1).records == (latest,)

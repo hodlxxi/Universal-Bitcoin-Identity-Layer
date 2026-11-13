@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -179,9 +180,18 @@ def _snapshot(subjects=(VIEWER, TARGET), *, complete=True, expires_at=None):
     }
 
 
-def _runtime(material, *, replay=None, viewer=None, resolver=None, provider=None, secret=ALIAS_SECRET):
+def _runtime(
+    material,
+    *,
+    replay=None,
+    viewer=None,
+    resolver=None,
+    provider=None,
+    secret=ALIAS_SECRET,
+    service_config=None,
+):
     return PrivacyFullDirectoryInternalDeliveryRuntime(
-        service_config=_service_config(material),
+        service_config=service_config or _service_config(material),
         replay_consumer=replay or (lambda _jti, _deadline: True),
         service_signing_key=material[1],
         service_signing_kid="service-key",
@@ -564,3 +574,28 @@ def test_default_viewer_validator_uses_canonical_oauth_with_exact_social_client(
     runtime = build_internal_delivery_runtime(_runtime_config(tmp_path, material), session_factory=lambda: None)
     assert runtime.viewer_token_validator("viewer-bearer") == _viewer_principal()
     assert calls == [("viewer-bearer", VIEWER_CLIENT)]
+
+
+def test_full_directory_runtime_rejects_non_directory_service_policy(material):
+    base = _service_config(material)
+
+    foreign_policies = (
+        replace(
+            base,
+            service_scope="social:messaging-device:manage",
+        ),
+        replace(
+            base,
+            service_purpose="social_messaging_device_manage",
+        ),
+    )
+
+    for service_config in foreign_policies:
+        with pytest.raises(
+            InternalDeliveryConfigurationError,
+            match="^privacy Full-directory internal delivery configuration invalid$",
+        ):
+            _runtime(
+                material,
+                service_config=service_config,
+            )

@@ -24,15 +24,16 @@ from app.database import close_all, init_all
 from app.feature_flags import production_closed_flag
 from app.jwks import load_signing_material
 from app.request_context import get_or_create_request_id
-from app.security import init_security
+from app.security import exempt_liveness_endpoints, exempt_readiness_endpoint, init_security
 from app.socket_handlers import register_socket_handlers
 from app.socket_state import CHAT_HISTORY, ONLINE_USERS
 from app.structured_logging import log_event
-from app.utils import generate_challenge, get_rpc_connection
+from app.utils import generate_challenge
 
 logger = logging.getLogger(__name__)
 
 EXPIRY_SECONDS = int(os.getenv("CHAT_EXPIRY_SECONDS", "45"))
+LIVENESS_PATHS = frozenset({"/health", "/health/live"})
 
 
 def purge_old_messages() -> None:
@@ -65,30 +66,6 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     """
 
     app = Flask(__name__)
-
-    # TESTING/CI: isolate Flask-Limiter counters between tests (memory storage persists otherwise)
-    try:
-        import os
-        import uuid
-
-        if (
-            os.environ.get("TESTING") == "1"
-            or "PYTEST_CURRENT_TEST" in os.environ
-            or app.config.get("TESTING")
-            or getattr(app, "testing", False)
-        ):
-            # REMOVED: do not force memory rate limit storage
-            app.config.setdefault("RATELIMIT_KEY_PREFIX", f"test-{uuid.uuid4()}")
-    except Exception:
-        pass
-
-    # Initialize rate limiter BEFORE importing blueprints (decorators bind at import time)
-    try:
-        from app.security import init_rate_limiter
-
-        init_rate_limiter(app)
-    except Exception:
-        pass
 
     # Semantic version used by /health and tests
     app.config.setdefault("APP_VERSION", "1.0.0-beta")
@@ -145,21 +122,36 @@ def create_app(config_override: Optional[AppConfig] = None) -> Flask:
     # dependency validates. No keys or secrets are generated here.
     from app.services.privacy_full_directory_internal_delivery import (
         configure_internal_delivery,
+        configured_internal_delivery_runtime,
     )
 
     configure_internal_delivery(app, cfg)
 
-    # Register blueprints
-    # Rate limiter must be initialized BEFORE importing blueprints (blueprints use @limiter.limit at import time)
-    try:
-        from app.security import init_rate_limiter
+    from app.services.social_messaging_device_internal_delivery import configure_messaging_device_internal_delivery
 
-        init_rate_limiter(app)
-    except Exception:
-        # Tests/minimal setups may intentionally disable the limiter
-        pass
+    configure_messaging_device_internal_delivery(app, cfg)
 
+    from app.services.social_messaging_device_binding_authorization_runtime import (
+        configure_messaging_device_binding_authorization,
+    )
+
+    configure_messaging_device_binding_authorization(app, cfg)
+
+    from app.services.social_messaging_recipient_runtime_configuration import (
+        configure_messaging_recipient_internal_delivery,
+    )
+
+    configure_messaging_recipient_internal_delivery(
+        app,
+        cfg,
+        privacy_directory_runtime=configured_internal_delivery_runtime(app),
+    )
+
+    # Decorators bind to the module-level limiter before or after init_app;
+    # application initialization itself occurs exactly once in init_security.
     register_blueprints(app)
+    app.config["LIVENESS_ROUTE_OWNERS"] = exempt_liveness_endpoints(app)
+    app.config["READINESS_ROUTE_OWNER"] = exempt_readiness_endpoint(app)
     register_runtime_handlers()
 
     # Register error handlers
@@ -199,6 +191,24 @@ def create_social_mobile_app(config_override: Optional[AppConfig] = None) -> Fla
         raise MobileSessionConfigurationError()
     configure_social_mobile_session(app, cfg, session_factory=database.get_session)
     return app
+
+
+def register_messaging_device_binding_authorization_blueprint(app: Flask) -> bool:
+    """Register only the explicitly configured private authorization surface."""
+
+    from app.services.social_messaging_device_binding_authorization_runtime import (
+        configured_messaging_device_binding_authorization_runtime,
+    )
+
+    if configured_messaging_device_binding_authorization_runtime(app) is None:
+        return False
+
+    from app.blueprints.internal_social_messaging_device_binding_authorization import (
+        internal_social_messaging_device_binding_authorization_bp,
+    )
+
+    app.register_blueprint(internal_social_messaging_device_binding_authorization_bp)
+    return True
 
 
 def register_blueprints(app: Flask) -> None:
@@ -269,9 +279,7 @@ def register_blueprints(app: Flask) -> None:
     # OAuth client billing endpoints
     from app.blueprints.agent import agent_bp
     from app.blueprints.billing_agent import billing_agent_bp
-    from app.blueprints.crt_authorization_proof import (
-        crt_authorization_proof_bp,
-    )
+    from app.blueprints.crt_authorization_proof import crt_authorization_proof_bp
     from app.blueprints.nip17_messages import nip17_messages_bp
     from app.blueprints.qr_operator import qr_operator_bp
     from app.blueprints.qr_pointer import qr_pointer_bp
@@ -283,16 +291,30 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(qr_operator_bp)
     app.register_blueprint(qr_pointer_bp)
 
-    from app.services.privacy_full_directory_internal_delivery import (
-        configured_internal_delivery_runtime,
-    )
+    from app.services.privacy_full_directory_internal_delivery import configured_internal_delivery_runtime
 
     if configured_internal_delivery_runtime(app) is not None:
-        from app.blueprints.internal_privacy_full_directory import (
-            internal_privacy_full_directory_bp,
-        )
+        from app.blueprints.internal_privacy_full_directory import internal_privacy_full_directory_bp
 
         app.register_blueprint(internal_privacy_full_directory_bp)
+
+    from app.services.social_messaging_device_internal_delivery import configured_messaging_device_internal_runtime
+
+    if configured_messaging_device_internal_runtime(app) is not None:
+        from app.blueprints.internal_social_messaging_device import internal_social_messaging_device_bp
+
+        app.register_blueprint(internal_social_messaging_device_bp)
+
+    register_messaging_device_binding_authorization_blueprint(app)
+
+    from app.services.social_messaging_recipient_runtime_configuration import (
+        configured_messaging_recipient_internal_runtime,
+    )
+
+    if configured_messaging_recipient_internal_runtime(app) is not None:
+        from app.blueprints.internal_social_messaging_recipient import internal_social_messaging_recipient_bp
+
+        app.register_blueprint(internal_social_messaging_recipient_bp)
 
     # Public status route: factory-native and lightweight.
     # Must register before legacy_bridge so /api/public/status does not lazy-import app.app.
@@ -334,7 +356,6 @@ def register_runtime_handlers() -> None:
     """Initialize browser runtime handlers without registering Flask routes."""
     register_browser_route_handlers(
         generate_challenge=generate_challenge,
-        get_rpc_connection=get_rpc_connection,
         logger=logger,
         render_template_string_func=render_template_string,
         special_names={},
@@ -428,8 +449,9 @@ def register_request_handlers(app: Flask) -> None:
     def mark_oauth_public_paths():
         """Mark OAuth public paths to bypass authentication checks."""
         get_or_create_request_id()
-        log_event(logger, "http.request_received", outcome="started")
         p = request.path or "/"
+        if p not in LIVENESS_PATHS:
+            log_event(logger, "http.request_received", outcome="started")
         if any(p.startswith(pref) for pref in OAUTH_PATH_PREFIXES) or p in OAUTH_PUBLIC_PATHS:
             setattr(request, "_oauth_public", True)
 
@@ -443,7 +465,8 @@ def register_request_handlers(app: Flask) -> None:
         if cfg.get("FORCE_HTTPS") and request.is_secure:
             response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
         response.headers["X-Request-ID"] = getattr(g, "request_id", "") or response.headers.get("X-Request-ID", "")
-        log_event(logger, "http.response_sent", outcome="completed", status=response.status_code)
+        if request.path not in LIVENESS_PATHS:
+            log_event(logger, "http.response_sent", outcome="completed", status=response.status_code)
 
         return response
 

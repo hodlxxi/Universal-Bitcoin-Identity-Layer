@@ -1,0 +1,43 @@
+{
+  "schema": "hodlxxi.social_session_issuance_consumer_fixture.v1",
+  "version": 1,
+  "socialBase": "3116db8f7f257b677782e2654340d61c49ac537b",
+  "sourceSha256": {
+    "src/server/social-oauth-bff.mjs": "bb04348db2cf6d1a71be89fc5a488dc4af66a8635d533f7f0fe8c0782ed43017",
+    "src/server/social-oauth-memory.mjs": "a453a50928c44101528f1ea2cef303af2977ed9c54eac3f95ca93ef16132780f",
+    "src/server/hodlxxi-oauth-client.mjs": "3b8a4504d5f524c90eb1adc18930a244649e4505cb575da702256cbae81d0c19",
+    "src/server/social-authority-reader.mjs": "250ab1af44178bd1220f0eecded69f0767a913d2a36e17956770649b85a61b48",
+    "src/server/ubid-full-directory-client.mjs": "05521c20ea7e7d9aec2aa5ae77bc3dff9ce0c6aa92052c72accfb0ebaeb7394a",
+    "src/server/ubid-messaging-device-client.mjs": "1705e6b30faa993e64ed20eadca26f6d4e8d209a5149707f19df5d9e33bbd306",
+    "src/server/ubid-messaging-recipient-client.mjs": "8071a3211e7f47ea56747a7df4c4a62484a12d6a1776409c8bbcb7e31af3da36",
+    "src/server/opaque-recipient-capability-issuer.mjs": "d8ea309ee916cc8e802c25b6ff1af7b0894488d7da94dd6899eae73e6b50f512",
+    "src/server/opaque-recipient-capability-resolver.mjs": "239b2956289967a1dc4477ab4b9ed007a2c0a787d618b63dfdd0fe3f793f8bf8"
+  },
+  "browserSessionFields": [
+    "subject",
+    "viewerAccessToken"
+  ],
+  "mobileSessionFields": [
+    "subject",
+    "viewerAccessToken",
+    "issuanceId",
+    "issuedAt",
+    "expiresAt"
+  ],
+  "dateEncoding": "UTC-Z whole seconds on wire; absolute milliseconds in Social local record",
+  "proofFields": [
+    "pairingId",
+    "revision",
+    "authorizationDigest",
+    "verifier",
+    "deliveryKey"
+  ],
+  "viewerHeader": "X-HODLXXI-Viewer-Authorization",
+  "receipt": {
+    "schema": "hodlxxi.social_session_issuance.v1",
+    "version": 1,
+    "issuanceId": "abababababababababababababababababababababababababababababababab",
+    "issuedAt": "2030-01-01T00:00:00Z",
+    "expiresAt": "2030-01-01T00:03:00Z"
+  }
+}

@@ -58,11 +58,14 @@ class RecipientAliasInvalid(ValueError):
         super().__init__(_INVALID_MESSAGE)
 
 
-def _utc_time(value: object) -> datetime:
+def _utc_second(value: object) -> datetime:
     try:
         if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
             raise ValueError
-        return value.astimezone(timezone.utc)
+        normalized = value.astimezone(timezone.utc)
+        if normalized.microsecond:
+            raise ValueError
+        return normalized
     except Exception:
         raise RecipientDeviceResolverUnavailable() from None
 
@@ -97,12 +100,13 @@ class RecipientDeviceResolverV1:
         self._device_repository = device_repository
         self._alias_secret = alias_secret
         self._alias_version = alias_version
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._clock = clock or (lambda: datetime.now(timezone.utc).replace(microsecond=0))
 
     def resolve(self, *, viewer_subject: object, recipient_alias: object) -> dict[str, object]:
         if type(recipient_alias) is not str or _ALIAS(recipient_alias) is None:
             raise RecipientAliasInvalid()
 
+        now = _utc_second(self._clock())
         captured: list[object] = []
 
         def capture_population() -> object:
@@ -117,7 +121,7 @@ class RecipientDeviceResolverV1:
                 full_population_provider=capture_population,
                 alias_secret=self._alias_secret,
                 alias_version=self._alias_version,
-                clock=self._clock,
+                clock=lambda: now,
             ).current_directory()
         except PrivacySafeFullDirectoryDenied:
             raise RecipientDeviceResolverDenied() from None
@@ -162,7 +166,7 @@ class RecipientDeviceResolverV1:
 
             device_snapshot = SocialMessagingDeviceAuthority(
                 self._device_repository,
-                clock=lambda: _utc_time(self._clock()).replace(microsecond=0),
+                clock=lambda: now,
             ).current(authenticated_subject=target)
             raw_devices = device_snapshot["activeDevices"]
             if type(raw_devices) is not list or not 1 <= len(raw_devices) <= MAX_ACTIVE_DEVICES:
@@ -197,7 +201,7 @@ class RecipientDeviceResolverV1:
 
             issued_at = max(population["issuedAt"], device_snapshot["issuedAt"])
             expires_at = min(population["expiresAt"], device_snapshot["expiresAt"])
-            now_ms = int(_utc_time(self._clock()).timestamp() * 1000)
+            now_ms = int(now.timestamp() * 1000)
             if (
                 type(issued_at) is not int
                 or type(expires_at) is not int

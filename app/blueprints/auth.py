@@ -245,7 +245,4 @@ def guest_login():
 @auth_bp.route("/login")
 def login():
     """Render browser login page and seed challenge for signature auth."""
-    return render_browser_login(
-        generate_challenge=generate_challenge,
-        get_rpc_connection=get_rpc_connection,
-    )
+    return render_browser_login(generate_challenge=generate_challenge)

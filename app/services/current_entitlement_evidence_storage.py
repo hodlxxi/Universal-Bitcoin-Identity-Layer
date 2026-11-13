@@ -370,40 +370,48 @@ class SqlAlchemyCurrentEntitlementEvidenceRepository:
         try:
             if type(maximum) is not int or maximum < 0:
                 raise ValueError
-            ranked = select(
-                CurrentEntitlementEvidence.evidence_id.label("evidence_id"),
-                func.row_number()
-                .over(
-                    partition_by=CurrentEntitlementEvidence.subject_pubkey,
-                    order_by=(
-                        CurrentEntitlementEvidence.observed_at.desc(),
-                        CurrentEntitlementEvidence.created_at.desc(),
-                        CurrentEntitlementEvidence.evidence_id.desc(),
-                    ),
+            # Bound the subject population before indexed latest-row lookups.
+            subjects = (
+                select(CurrentEntitlementEvidence.subject_pubkey)
+                .distinct()
+                .order_by(CurrentEntitlementEvidence.subject_pubkey)
+                .limit(maximum + 1)
+                .subquery()
+            )
+            latest_id = (
+                select(CurrentEntitlementEvidence.evidence_id)
+                .where(CurrentEntitlementEvidence.subject_pubkey == subjects.c.subject_pubkey)
+                .order_by(
+                    CurrentEntitlementEvidence.observed_at.desc(),
+                    CurrentEntitlementEvidence.created_at.desc(),
+                    CurrentEntitlementEvidence.evidence_id.desc(),
                 )
-                .label("rank"),
-                func.count(CurrentEntitlementEvidence.evidence_id)
-                .over(
-                    partition_by=(
-                        CurrentEntitlementEvidence.subject_pubkey,
-                        CurrentEntitlementEvidence.observed_at,
-                        CurrentEntitlementEvidence.created_at,
-                    )
+                .limit(1)
+                .correlate(subjects)
+                .scalar_subquery()
+            )
+            peer = CurrentEntitlementEvidence.__table__.alias()
+            logical_tie_count = (
+                select(func.count(peer.c.evidence_id))
+                .where(
+                    peer.c.subject_pubkey == CurrentEntitlementEvidence.subject_pubkey,
+                    peer.c.observed_at == CurrentEntitlementEvidence.observed_at,
+                    peer.c.created_at == CurrentEntitlementEvidence.created_at,
                 )
-                .label("logical_tie_count"),
-            ).subquery()
+                .correlate(CurrentEntitlementEvidence)
+                .scalar_subquery()
+            )
             with self._session_factory() as session:
                 transaction = session.begin()
                 try:
                     rows = session.execute(
                         select(
                             CurrentEntitlementEvidence,
-                            ranked.c.logical_tie_count,
+                            logical_tie_count,
                         )
-                        .join(ranked, ranked.c.evidence_id == CurrentEntitlementEvidence.evidence_id)
-                        .where(ranked.c.rank == 1)
+                        .select_from(subjects)
+                        .join(CurrentEntitlementEvidence, CurrentEntitlementEvidence.evidence_id == latest_id)
                         .order_by(CurrentEntitlementEvidence.subject_pubkey)
-                        .limit(maximum + 1)
                     ).all()
                     if len(rows) > maximum:
                         raise CurrentEntitlementEvidenceStorageError()

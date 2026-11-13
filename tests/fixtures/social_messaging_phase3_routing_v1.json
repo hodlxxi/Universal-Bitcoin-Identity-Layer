@@ -1,0 +1,25 @@
+{
+  "recipientPackage": {
+    "schema": "hodlxxi.social_messaging_recipient_package.v1",
+    "version": 1,
+    "source": "hodlxxi-ubid",
+    "snapshotId": "sha256:7b6178076d8fa6d551f3fa431aa94661f1da804c012d9d49efbbcf2d81ebba1f",
+    "complete": true,
+    "alias": "p_-3B7vrH3hPugf5KUDBziWQ",
+    "issuedAt": 1788906599000,
+    "expiresAt": 1788906719000,
+    "devices": [
+      {
+        "deviceHandle": "d_PKfXNG5lmbfzHj2upkfaQA",
+        "algorithm": "x25519-v1",
+        "version": 1,
+        "publicKey": "0900000000000000000000000000000000000000000000000000000000000000",
+        "validFrom": 1788906599000,
+        "expiresAt": 1791498599000
+      }
+    ]
+  },
+  "envelopeWire": "{\"schema\":\"hodlxxi.social_message_envelope.v1\",\"version\":1,\"suite\":\"hodlxxi-hpke-x25519-hkdfsha256-aes128gcm-aes256gcm-v1\",\"messageId\":\"m_ByRBXnuYtdLvDClGY4Cdutf0ES5LaIWiv9z5FjNQbYo\",\"recipientPackageSnapshotId\":\"sha256:7b6178076d8fa6d551f3fa431aa94661f1da804c012d9d49efbbcf2d81ebba1f\",\"recipientDeviceHandles\":[\"d_PKfXNG5lmbfzHj2upkfaQA\"],\"body\":{\"algorithm\":\"aes-256-gcm\",\"nonce\":\"HzxZdpOwzeoHJEFe\",\"ciphertext\":\"NVJvjKnG4wAdOld0ka7L6AUiP1x5lrPQ7QonRGF-m7jV8g8sSWaDoL3a9xQxTmuIpcLf_Bk2U3CNqsfkAR47WHWSr8zpBiNAXXqXtNHuCyhFYn-cudbzEC1KZ4Shvtv4FQ\"},\"keyWraps\":[{\"deviceHandle\":\"d_PKfXNG5lmbfzHj2upkfaQA\",\"algorithm\":\"hpke-base-x25519-hkdfsha256-aes128gcm-v1\",\"enc\":\"R2SBnrvY9RIvTGmGo8Dd-hc0UW6LqMXi_xw5VnOQrco\",\"ciphertext\":\"bYqnxOH-GzhVco-syeYDID1ad5SxzusIJUJffJm20_ANKkdkgZ672PUSL0xphqPA\"}]}",
+  "envelopeDigest": "hodlxxi-social-message-envelope-v1-sha256:69b4d5ec2947348d67507821ee7d96c75172df61a81df5bb3464e34329492a43",
+  "routingRequest": "{\"envelopeDigest\":\"hodlxxi-social-message-envelope-v1-sha256:69b4d5ec2947348d67507821ee7d96c75172df61a81df5bb3464e34329492a43\",\"messageId\":\"m_ByRBXnuYtdLvDClGY4Cdutf0ES5LaIWiv9z5FjNQbYo\",\"recipientDeviceHandles\":[\"d_PKfXNG5lmbfzHj2upkfaQA\"],\"recipientPackageSnapshotId\":\"sha256:7b6178076d8fa6d551f3fa431aa94661f1da804c012d9d49efbbcf2d81ebba1f\",\"schema\":\"hodlxxi.social_messaging_recipient_routing_request.v1\",\"version\":1}"
+}

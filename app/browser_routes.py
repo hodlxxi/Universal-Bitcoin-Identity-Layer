@@ -33,34 +33,11 @@ def render_browser_playground(*, render_template_func=render_template):
     return render_template_func("playground.html")
 
 
-def render_browser_login(*, generate_challenge, get_rpc_connection, render_template_string_func=render_template_string):
+def render_browser_login(*, generate_challenge, render_template_string_func=render_template_string):
     # Session challenge for legacy /verify_signature flow
     challenge_str = generate_challenge()
     session["challenge"] = challenge_str
     session["challenge_timestamp"] = time.time()
-
-    # Optional node stats (safe if node unreachable)
-    from datetime import datetime, timedelta, timezone
-
-    try:
-        rpc = get_rpc_connection()
-        wallet_balance = rpc.getbalance()
-        block_height = rpc.getblockcount()
-        remaining = 1777777 - block_height
-
-        uptime_sec = rpc.uptime()
-        startup_time = (datetime.now(timezone.utc) - timedelta(seconds=uptime_sec)).strftime("%Y-%m-%d %H:%M:%S UTC")
-
-        mp_info = rpc.getmempoolinfo()
-        mempool_txs = mp_info.get("size", 0)
-        mempool_usage = mp_info.get("usage", 0)
-    except Exception:
-        wallet_balance = None
-        block_height = None
-        remaining = None
-        startup_time = None
-        mempool_txs = None
-        mempool_usage = None
 
     # Login page with dual Matrix backgrounds (toggle embedded inside panel)
     html = """
@@ -613,8 +590,10 @@ def render_browser_login(*, generate_challenge, get_rpc_connection, render_templ
         <div class="panel-title">Node</div>
       </div>
       <div class="panel-bd">
-        <div class="hintline mono">block_height={{ block_height }} · balance={{ wallet_balance }} · remaining={{ remaining }}</div>
-        <div class="hintline mono">startup={{ startup_time }} · mempool={{ mempool_txs }} ({{ mempool_usage }})</div>
+        <div class="hintline mono">
+          Optional node telemetry is available separately at
+          <a class="home-link" href="/api/public/status">/api/public/status</a>.
+        </div>
       </div>
     </section>
   </div>
@@ -1153,61 +1132,74 @@ if (qrBox && typeof QRCode !== "undefined") renderQR(qrBox, lnurl);
       }
     }
 
+    let nostrLoginInFlight = false;
     async function loginWithNostr() {
-      if (!window.nostr) {
-        alert("No Nostr extension found");
-        return;
-      }
+      // Legacy click/touch bindings may invoke this again before navigation.
+      if (nostrLoginInFlight) return;
+      nostrLoginInFlight = true;
+      let redirectStarted = false;
+      try {
+        if (!window.nostr) {
+          alert("No Nostr extension found");
+          return;
+        }
 
-      let pubkey = await window.nostr.getPublicKey();
+        let pubkey = await window.nostr.getPublicKey();
 
-      // normalize x-only pubkey to compressed form for backend challenge route
-      if (/^[0-9a-f]{64}$/i.test(pubkey)) {
-        pubkey = "02" + pubkey;
-      }
+        // normalize x-only pubkey to compressed form for backend challenge route
+        if (/^[0-9a-f]{64}$/i.test(pubkey)) {
+          pubkey = "02" + pubkey;
+        }
 
-      const r = await fetch("/api/challenge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pubkey, method: "nostr" }),
-      });
+        const r = await fetch("/api/challenge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pubkey, method: "nostr" }),
+        });
 
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        alert(d.error || "Challenge failed");
-        return;
-      }
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          alert(d.error || "Challenge failed");
+          return;
+        }
 
-      const verifyUrl = window.location.origin + "/api/verify";
+        const verifyUrl = window.location.origin + "/api/verify";
 
-      const event = {
-        kind: 22242,
-        created_at: Math.floor(Date.now() / 1000),
-        tags: [
-          ["challenge", d.challenge],
-          ["url", verifyUrl]
-        ],
-        content: "",
-      };
+        const event = {
+          kind: 22242,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [
+            ["challenge", d.challenge],
+            ["url", verifyUrl]
+          ],
+          content: "",
+        };
 
-      const signed = await window.nostr.signEvent(event);
+        const signed = await window.nostr.signEvent(event);
 
-      const vr = await fetch("/api/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          challenge_id: d.challenge_id,
-          pubkey,
-          nostr_event: signed,
-        }),
-      });
+        const vr = await fetch("/api/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            challenge_id: d.challenge_id,
+            pubkey,
+            nostr_event: signed,
+          }),
+        });
 
-      const j2 = await vr.json().catch(() => ({}));
-      if (vr.ok && j2.verified) {
-        window.location.href = getRedirectUrl();
-      } else {
-        console.error("Nostr verify failed:", j2);
-        alert(j2.error || "Verification failed");
+        const j2 = await vr.json().catch(() => ({}));
+        if (vr.ok && j2.verified) {
+          window.location.href = getRedirectUrl();
+          redirectStarted = true;
+        } else {
+          console.error("Nostr verify failed:", j2);
+          alert(j2.error || "Verification failed");
+        }
+      } catch (e) {
+        alert("Nostr login failed. Please try again.");
+      } finally {
+        // Keep the guard after success until the page navigates away.
+        if (!redirectStarted) nostrLoginInFlight = false;
       }
     }
 
@@ -1369,12 +1361,6 @@ if (qrBox && typeof QRCode !== "undefined") renderQR(qrBox, lnurl);
     return render_template_string(
         html,
         challenge=challenge_str,
-        block_height=block_height,
-        wallet_balance=wallet_balance,
-        remaining=remaining,
-        startup_time=startup_time,
-        mempool_txs=mempool_txs,
-        mempool_usage=mempool_usage,
     )
 
 
@@ -1399,7 +1385,6 @@ def register_browser_routes(
     app,
     *,
     generate_challenge,
-    get_rpc_connection,
     logger,
     render_template_string_func,
     special_names,
@@ -1414,7 +1399,6 @@ def register_browser_routes(
     def login():
         return render_browser_login(
             generate_challenge=generate_challenge,
-            get_rpc_connection=get_rpc_connection,
             render_template_string_func=render_template_string_func,
         )
 
@@ -4645,7 +4629,6 @@ def register_browser_routes(
 def register_browser_route_handlers(
     *,
     generate_challenge,
-    get_rpc_connection,
     logger,
     render_template_string_func,
     special_names,
@@ -4663,7 +4646,6 @@ def register_browser_route_handlers(
     register_browser_routes(
         _NoopRouteRegistrar(),
         generate_challenge=generate_challenge,
-        get_rpc_connection=get_rpc_connection,
         logger=logger,
         render_template_string_func=render_template_string_func,
         special_names=special_names,

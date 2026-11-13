@@ -1,0 +1,786 @@
+{
+  "adversarialCorpus": {
+    "c2spCommit": "4448f2097b2daa812c91a26141f9f36c2096b9ca",
+    "c2spFileSha256": "b38e84caf3e7e89170ff520292dbeae421b0a794c27408ce5ce973018fe3d7f9",
+    "lowOrderPointEncodings": [
+      "0000000000000000000000000000000000000000000000000000000000000000",
+      "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "0000000000000000000000000000000000000000000000000000000000000080",
+      "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "0100000000000000000000000000000000000000000000000000000000000000",
+      "0100000000000000000000000000000000000000000000000000000000000080",
+      "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    ],
+    "mixedOrderPublicPointEncodings": [
+      "10eb7c3acfb2bed3e0d6ab89bf5a3d6afddd1176ce4812e38d9fd485058fdb1f",
+      "dd1483c5304d412c1f29547640a5c2950222ee8931b7ed1c72602b7afa7024e0",
+      "6718d0a3d58deaeaefa655eae3f119071deaa2cfebfd0ca28b670f879d657086",
+      "eca00a6a1b1f522ff2217691059915b097b73bc69bef396c36ddcd559b79e2b0",
+      "015ff595e4e0add00dde896efa66ea4f6848c4396410c693c92232aa64861d4f",
+      "86e72f5c2a7215151059aa151c0ee6f8e2155d301402f35d7498f078629a8f79",
+      "fe894df18abf1c20088bfbe6c9ad45d42ec20663eaf7111eaea1d851da0d7f89"
+    ],
+    "mixedOrderSignatureRPointEncodings": [
+      "36684ea91032ba5b1dbab2d02f4debc74c3327f2b3802e2e4d371aa42b12b56b",
+      "b797b156efcd45a4e2454d2fd0b21438b3ccd80d4c7fd1d1b2c8e55bd4ed4a94",
+      "5ae36d433a7bd0efb150b6b04610d1986e3044c46b6ad69bae17aaf76b608d21",
+      "fa9dde274f4820efb19a890f8ba2d8791710a4303ceef4aedf9dddc4e81a1f11",
+      "f36121d8b0b7df104e6576f0745d2786e8ef5bcfc3110b512062223b17e5e0ee",
+      "931c92bcc5842f104eaf494fb9ef2e6791cfbb3b9495296451e85508949f72de",
+      "37d3076f21bd3bec4ee4ebee360fe0e3b288557810e7dda72edae09650d5caf9"
+    ],
+    "nonCanonicalPointEncodings": [
+      "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "0100000000000000000000000000000000000000000000000000000000000080",
+      "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    ],
+    "scalarOrderLittleEndian": "edd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010"
+  },
+  "enrollmentVector": {
+    "approvalEvent": {
+      "content": "{\"audience\":\"https://social.example\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"domain\":\"HODLXXI_SOCIAL_MESSAGING_DEVICE_ENROLLMENT_V2\",\"ed25519PublicKey\":\"da481f61f5b52d28aa88306a7c9f086f05364eb02f41e50d561050f07b239d79\",\"enrollmentChallengeId\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"expiresAt\":1788906659000,\"issuedAt\":1788906599000,\"profile\":\"hodlxxi.social_messaging_device_proof.ed25519_webcrypto.v1\",\"schema\":\"hodlxxi.social_messaging_device_enrollment.v2\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":2,\"x25519BindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"x25519BindingVersion\":1,\"x25519PublicKeyCommitment\":\"hodlxxi-social-messaging-x25519-public-key-v1-sha256:a3dee16669a4727d30142f077219eb7ab19e24821c4cb3581d1a045f43584381\"}",
+      "created_at": 1788906599,
+      "id": "9bebd690ae4a92d5922fa72b97259b6717ff5128dec56a50b180f8e1e3828a24",
+      "kind": 27236,
+      "pubkey": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+      "sig": "a5fe3e59206c4fc9d82d8a1356216765f88b3e8b52c305f92a0688ae79d8e0badb0d3edeb713ed7760191daf129c2c0f96e7a9b079e6836cbe7a2093b3eac2f5",
+      "tags": [
+        [
+          "purpose",
+          "hodlxxi-social-messaging-device-enrollment-v2"
+        ],
+        [
+          "enrollment-digest",
+          "hodlxxi-social-messaging-device-enrollment-v2-sha256:f2f5604348369eff151c1525bbbdffa2c50925438aa9339f63f021f0d225ff05"
+        ],
+        [
+          "challenge-id",
+          "7777777777777777777777777777777777777777777777777777777777777777"
+        ],
+        [
+          "device-id",
+          "2222222222222222222222222222222222222222222222222222222222222222"
+        ]
+      ]
+    },
+    "alternateSignerApproval": {
+      "id": "4ada1a64db78e32914891fe7396d978d247edd53d677ae25a305cc74c6ea2c62",
+      "pubkey": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "sig": "c3ac472aa0fe06e5bc848faead8ecc9d07d8019ada0cdaacdd7717e9ea63154260ab5befdc2deee71ffd7c76378cfaa37e784057ddc1d865fc68d01d09b1294d"
+    },
+    "approvalUnsignedEvent": {
+      "content": "{\"audience\":\"https://social.example\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"domain\":\"HODLXXI_SOCIAL_MESSAGING_DEVICE_ENROLLMENT_V2\",\"ed25519PublicKey\":\"da481f61f5b52d28aa88306a7c9f086f05364eb02f41e50d561050f07b239d79\",\"enrollmentChallengeId\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"expiresAt\":1788906659000,\"issuedAt\":1788906599000,\"profile\":\"hodlxxi.social_messaging_device_proof.ed25519_webcrypto.v1\",\"schema\":\"hodlxxi.social_messaging_device_enrollment.v2\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":2,\"x25519BindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"x25519BindingVersion\":1,\"x25519PublicKeyCommitment\":\"hodlxxi-social-messaging-x25519-public-key-v1-sha256:a3dee16669a4727d30142f077219eb7ab19e24821c4cb3581d1a045f43584381\"}",
+      "created_at": 1788906599,
+      "kind": 27236,
+      "tags": [
+        [
+          "purpose",
+          "hodlxxi-social-messaging-device-enrollment-v2"
+        ],
+        [
+          "enrollment-digest",
+          "hodlxxi-social-messaging-device-enrollment-v2-sha256:f2f5604348369eff151c1525bbbdffa2c50925438aa9339f63f021f0d225ff05"
+        ],
+        [
+          "challenge-id",
+          "7777777777777777777777777777777777777777777777777777777777777777"
+        ],
+        [
+          "device-id",
+          "2222222222222222222222222222222222222222222222222222222222222222"
+        ]
+      ]
+    },
+    "digest": "hodlxxi-social-messaging-device-enrollment-v2-sha256:f2f5604348369eff151c1525bbbdffa2c50925438aa9339f63f021f0d225ff05",
+    "now": 1788906599000,
+    "phoneProofSigningPreimage": "{\"domain\":\"HODLXXI_SOCIAL_MESSAGING_DEVICE_ENROLLMENT_PROOF_V2\",\"enrollment\":\"{\\\"audience\\\":\\\"https://social.example\\\",\\\"deviceId\\\":\\\"2222222222222222222222222222222222222222222222222222222222222222\\\",\\\"domain\\\":\\\"HODLXXI_SOCIAL_MESSAGING_DEVICE_ENROLLMENT_V2\\\",\\\"ed25519PublicKey\\\":\\\"da481f61f5b52d28aa88306a7c9f086f05364eb02f41e50d561050f07b239d79\\\",\\\"enrollmentChallengeId\\\":\\\"7777777777777777777777777777777777777777777777777777777777777777\\\",\\\"expiresAt\\\":1788906659000,\\\"issuedAt\\\":1788906599000,\\\"profile\\\":\\\"hodlxxi.social_messaging_device_proof.ed25519_webcrypto.v1\\\",\\\"schema\\\":\\\"hodlxxi.social_messaging_device_enrollment.v2\\\",\\\"subject\\\":\\\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\\\",\\\"version\\\":2,\\\"x25519BindingId\\\":\\\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\\\",\\\"x25519BindingVersion\\\":1,\\\"x25519PublicKeyCommitment\\\":\\\"hodlxxi-social-messaging-x25519-public-key-v1-sha256:a3dee16669a4727d30142f077219eb7ab19e24821c4cb3581d1a045f43584381\\\"}\",\"profile\":\"hodlxxi.social_messaging_device_proof.ed25519_webcrypto.v1\",\"publicKey\":\"da481f61f5b52d28aa88306a7c9f086f05364eb02f41e50d561050f07b239d79\",\"schema\":\"hodlxxi.social_messaging_device_enrollment_proof_preimage.v2\",\"version\":2}",
+    "phoneProofWire": "{\"algorithm\":\"Ed25519\",\"enrollmentChallengeId\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"enrollmentDigest\":\"hodlxxi-social-messaging-device-enrollment-v2-sha256:f2f5604348369eff151c1525bbbdffa2c50925438aa9339f63f021f0d225ff05\",\"profile\":\"hodlxxi.social_messaging_device_proof.ed25519_webcrypto.v1\",\"publicKey\":\"da481f61f5b52d28aa88306a7c9f086f05364eb02f41e50d561050f07b239d79\",\"schema\":\"hodlxxi.social_messaging_device_enrollment_proof.v2\",\"signature\":\"228d6abac15b09a2366b288b43e0301821ba1fecdfc773983501344bbd07993e4eb69e9e160e095b7eefc728ecd5c16cb20c82d7e8471a3b4bddaa06a1d5d701\",\"version\":2}",
+    "wire": "{\"audience\":\"https://social.example\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"domain\":\"HODLXXI_SOCIAL_MESSAGING_DEVICE_ENROLLMENT_V2\",\"ed25519PublicKey\":\"da481f61f5b52d28aa88306a7c9f086f05364eb02f41e50d561050f07b239d79\",\"enrollmentChallengeId\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"expiresAt\":1788906659000,\"issuedAt\":1788906599000,\"profile\":\"hodlxxi.social_messaging_device_proof.ed25519_webcrypto.v1\",\"schema\":\"hodlxxi.social_messaging_device_enrollment.v2\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":2,\"x25519BindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"x25519BindingVersion\":1,\"x25519PublicKeyCommitment\":\"hodlxxi-social-messaging-x25519-public-key-v1-sha256:a3dee16669a4727d30142f077219eb7ab19e24821c4cb3581d1a045f43584381\"}",
+    "x25519PublicKey": "0900000000000000000000000000000000000000000000000000000000000000",
+    "x25519PublicKeyCommitment": "hodlxxi-social-messaging-x25519-public-key-v1-sha256:a3dee16669a4727d30142f077219eb7ab19e24821c4cb3581d1a045f43584381"
+  },
+  "note": "Independent fixed vectors: Python cryptography Ed25519 generated the profile and enrollment signatures, and a standalone BIP340 implementation generated the completed Nostr approval event; no private key or seed is retained. C2SP points are a pinned adversarial corpus.",
+  "profile": "hodlxxi.social_messaging_device_proof.ed25519_webcrypto.v1",
+  "proofVector": {
+    "actualRequestWire": "{\"audience\":\"https://social.example\",\"bindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"bindingVersion\":1,\"bodyDigest\":\"hodlxxi-social-device-request-body-v1-sha256:c41ebe47a969038438c5151c59108aa45cfa84b3459d531d53061867c64046f5\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"method\":\"POST\",\"operation\":\"ciphertext-submit\",\"path\":\"/auth/messaging/v1/ciphertext\",\"recipientHandle\":null,\"schema\":\"hodlxxi.social_messaging_device_request_candidate.v1\",\"sessionBinding\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1}",
+    "now": 1788906599000,
+    "proofWire": "{\"algorithm\":\"Ed25519\",\"challengeId\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"profile\":\"hodlxxi.social_messaging_device_proof.ed25519_webcrypto.v1\",\"publicKey\":\"da481f61f5b52d28aa88306a7c9f086f05364eb02f41e50d561050f07b239d79\",\"schema\":\"hodlxxi.social_messaging_device_proof.v1\",\"signature\":\"fecf9acc6507375866a141bd4f005b725fcbbb81450ca7eb269953ed08acd3c6f737a8a71b1892b70dfc20b01e40795ddc0174ab653e886cab88e5b0d0089105\",\"version\":1}",
+    "publicKey": "da481f61f5b52d28aa88306a7c9f086f05364eb02f41e50d561050f07b239d79",
+    "signingPreimage": "{\"challenge\":\"{\\\"challengeId\\\":\\\"5555555555555555555555555555555555555555555555555555555555555555\\\",\\\"domain\\\":\\\"HODLXXI_SOCIAL_MESSAGING_DEVICE_REQUEST_CHALLENGE_V1\\\",\\\"expiresAt\\\":1788906659000,\\\"issuedAt\\\":1788906599000,\\\"request\\\":\\\"{\\\\\\\"audience\\\\\\\":\\\\\\\"https://social.example\\\\\\\",\\\\\\\"bindingId\\\\\\\":\\\\\\\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\\\\\\\",\\\\\\\"bindingVersion\\\\\\\":1,\\\\\\\"bodyDigest\\\\\\\":\\\\\\\"hodlxxi-social-device-request-body-v1-sha256:c41ebe47a969038438c5151c59108aa45cfa84b3459d531d53061867c64046f5\\\\\\\",\\\\\\\"deviceId\\\\\\\":\\\\\\\"2222222222222222222222222222222222222222222222222222222222222222\\\\\\\",\\\\\\\"method\\\\\\\":\\\\\\\"POST\\\\\\\",\\\\\\\"operation\\\\\\\":\\\\\\\"ciphertext-submit\\\\\\\",\\\\\\\"path\\\\\\\":\\\\\\\"/auth/messaging/v1/ciphertext\\\\\\\",\\\\\\\"recipientHandle\\\\\\\":null,\\\\\\\"schema\\\\\\\":\\\\\\\"hodlxxi.social_messaging_device_request_candidate.v1\\\\\\\",\\\\\\\"sessionBinding\\\\\\\":\\\\\\\"4444444444444444444444444444444444444444444444444444444444444444\\\\\\\",\\\\\\\"subject\\\\\\\":\\\\\\\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\\\\\\\",\\\\\\\"version\\\\\\\":1}\\\",\\\"schema\\\":\\\"hodlxxi.social_messaging_device_challenge_candidate.v1\\\",\\\"version\\\":1}\",\"domain\":\"HODLXXI_SOCIAL_MESSAGING_DEVICE_PROOF_ED25519_WEBCRYPTO_V1\",\"profile\":\"hodlxxi.social_messaging_device_proof.ed25519_webcrypto.v1\",\"publicKey\":\"da481f61f5b52d28aa88306a7c9f086f05364eb02f41e50d561050f07b239d79\",\"schema\":\"hodlxxi.social_messaging_device_proof_preimage.v1\",\"version\":1}",
+    "storedChallengeWire": "{\"challengeId\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"domain\":\"HODLXXI_SOCIAL_MESSAGING_DEVICE_REQUEST_CHALLENGE_V1\",\"expiresAt\":1788906659000,\"issuedAt\":1788906599000,\"request\":\"{\\\"audience\\\":\\\"https://social.example\\\",\\\"bindingId\\\":\\\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\\\",\\\"bindingVersion\\\":1,\\\"bodyDigest\\\":\\\"hodlxxi-social-device-request-body-v1-sha256:c41ebe47a969038438c5151c59108aa45cfa84b3459d531d53061867c64046f5\\\",\\\"deviceId\\\":\\\"2222222222222222222222222222222222222222222222222222222222222222\\\",\\\"method\\\":\\\"POST\\\",\\\"operation\\\":\\\"ciphertext-submit\\\",\\\"path\\\":\\\"/auth/messaging/v1/ciphertext\\\",\\\"recipientHandle\\\":null,\\\"schema\\\":\\\"hodlxxi.social_messaging_device_request_candidate.v1\\\",\\\"sessionBinding\\\":\\\"4444444444444444444444444444444444444444444444444444444444444444\\\",\\\"subject\\\":\\\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\\\",\\\"version\\\":1}\",\"schema\":\"hodlxxi.social_messaging_device_challenge_candidate.v1\",\"version\":1}"
+  },
+  "rfc8032Vector1": {
+    "message": "",
+    "publicKey": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+    "signature": "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+  },
+  "audienceCorpus": {
+    "grammar": "hodlxxi.canonical_https_origin.ascii_ldh_no_idn.v1",
+    "cases": [
+      {
+        "id": "dns",
+        "audience": "https://example.com",
+        "audienceJson": "\"https://example.com\"",
+        "accepted": true
+      },
+      {
+        "id": "dns-subdomain",
+        "audience": "https://social.example.com",
+        "audienceJson": "\"https://social.example.com\"",
+        "accepted": true
+      },
+      {
+        "id": "dns-single",
+        "audience": "https://localhost",
+        "audienceJson": "\"https://localhost\"",
+        "accepted": true
+      },
+      {
+        "id": "dns-one-char",
+        "audience": "https://a",
+        "audienceJson": "\"https://a\"",
+        "accepted": true
+      },
+      {
+        "id": "dns-hyphen",
+        "audience": "https://foo-bar.example",
+        "audienceJson": "\"https://foo-bar.example\"",
+        "accepted": true
+      },
+      {
+        "id": "dns-digit-prefix",
+        "audience": "https://3com.example",
+        "audienceJson": "\"https://3com.example\"",
+        "accepted": true
+      },
+      {
+        "id": "dns-alphanumeric-final",
+        "audience": "https://example.123abc",
+        "audienceJson": "\"https://example.123abc\"",
+        "accepted": true
+      },
+      {
+        "id": "dns-nonhex-final",
+        "audience": "https://example.0xg",
+        "audienceJson": "\"https://example.0xg\"",
+        "accepted": true
+      },
+      {
+        "id": "dns-internal-double-hyphen",
+        "audience": "https://ab--cd.example",
+        "audienceJson": "\"https://ab--cd.example\"",
+        "accepted": true
+      },
+      {
+        "id": "dns-label-63",
+        "audience": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example",
+        "audienceJson": "\"https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example\"",
+        "accepted": true
+      },
+      {
+        "id": "origin-255",
+        "audience": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "audienceJson": "\"https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+        "accepted": true
+      },
+      {
+        "id": "port-min",
+        "audience": "https://example.com:1",
+        "audienceJson": "\"https://example.com:1\"",
+        "accepted": true
+      },
+      {
+        "id": "port-max",
+        "audience": "https://example.com:65535",
+        "audienceJson": "\"https://example.com:65535\"",
+        "accepted": true
+      },
+      {
+        "id": "port-80",
+        "audience": "https://example.com:80",
+        "audienceJson": "\"https://example.com:80\"",
+        "accepted": true
+      },
+      {
+        "id": "port-8443",
+        "audience": "https://example.com:8443",
+        "audienceJson": "\"https://example.com:8443\"",
+        "accepted": true
+      },
+      {
+        "id": "ipv4",
+        "audience": "https://127.0.0.1",
+        "audienceJson": "\"https://127.0.0.1\"",
+        "accepted": true
+      },
+      {
+        "id": "ipv4-zero",
+        "audience": "https://0.0.0.0",
+        "audienceJson": "\"https://0.0.0.0\"",
+        "accepted": true
+      },
+      {
+        "id": "ipv4-max",
+        "audience": "https://255.255.255.255",
+        "audienceJson": "\"https://255.255.255.255\"",
+        "accepted": true
+      },
+      {
+        "id": "ipv4-port",
+        "audience": "https://192.0.2.1:8443",
+        "audienceJson": "\"https://192.0.2.1:8443\"",
+        "accepted": true
+      },
+      {
+        "id": "ipv6-zero",
+        "audience": "https://[::]",
+        "audienceJson": "\"https://[::]\"",
+        "accepted": true
+      },
+      {
+        "id": "ipv6-loopback",
+        "audience": "https://[::1]",
+        "audienceJson": "\"https://[::1]\"",
+        "accepted": true
+      },
+      {
+        "id": "ipv6",
+        "audience": "https://[2001:db8::1]",
+        "audienceJson": "\"https://[2001:db8::1]\"",
+        "accepted": true
+      },
+      {
+        "id": "ipv6-port",
+        "audience": "https://[2001:db8::1]:8443",
+        "audienceJson": "\"https://[2001:db8::1]:8443\"",
+        "accepted": true
+      },
+      {
+        "id": "ipv6-no-zero",
+        "audience": "https://[1:2:3:4:5:6:7:8]",
+        "audienceJson": "\"https://[1:2:3:4:5:6:7:8]\"",
+        "accepted": true
+      },
+      {
+        "id": "ipv6-single-zero",
+        "audience": "https://[1:2:3:0:5:6:7:8]",
+        "audienceJson": "\"https://[1:2:3:0:5:6:7:8]\"",
+        "accepted": true
+      },
+      {
+        "id": "ipv6-leftmost-tie",
+        "audience": "https://[1::2:0:0:3:4]",
+        "audienceJson": "\"https://[1::2:0:0:3:4]\"",
+        "accepted": true
+      },
+      {
+        "id": "ipv6-longest",
+        "audience": "https://[1:0:0:2::3]",
+        "audienceJson": "\"https://[1:0:0:2::3]\"",
+        "accepted": true
+      },
+      {
+        "id": "ipv6-trailing-zero",
+        "audience": "https://[2001:db8:1:2:3:4::]",
+        "audienceJson": "\"https://[2001:db8:1:2:3:4::]\"",
+        "accepted": true
+      },
+      {
+        "id": "ipv6-mapped-hex",
+        "audience": "https://[::ffff:c000:201]",
+        "audienceJson": "\"https://[::ffff:c000:201]\"",
+        "accepted": true
+      },
+      {
+        "id": "empty",
+        "audience": "",
+        "audienceJson": "\"\"",
+        "accepted": false
+      },
+      {
+        "id": "http",
+        "audience": "http://example.com",
+        "audienceJson": "\"http://example.com\"",
+        "accepted": false
+      },
+      {
+        "id": "scheme-upper",
+        "audience": "HTTPS://example.com",
+        "audienceJson": "\"HTTPS://example.com\"",
+        "accepted": false
+      },
+      {
+        "id": "scheme-missing",
+        "audience": "example.com",
+        "audienceJson": "\"example.com\"",
+        "accepted": false
+      },
+      {
+        "id": "host-missing",
+        "audience": "https://",
+        "audienceJson": "\"https://\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-upper",
+        "audience": "https://Example.com",
+        "audienceJson": "\"https://Example.com\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-percent",
+        "audience": "https://%65xample.com",
+        "audienceJson": "\"https://%65xample.com\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-percent-dot",
+        "audience": "https://example%2ecom",
+        "audienceJson": "\"https://example%2ecom\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-unicode",
+        "audience": "https://\u00e9xample.com",
+        "audienceJson": "\"https://\\u00e9xample.com\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-unicode-dot",
+        "audience": "https://example\u3002com",
+        "audienceJson": "\"https://example\\u3002com\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-unicode-combining",
+        "audience": "https://e\u0301xample.com",
+        "audienceJson": "\"https://e\\u0301xample.com\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-unicode-joiner",
+        "audience": "https://exam\u200dple.com",
+        "audienceJson": "\"https://exam\\u200dple.com\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-unpaired-surrogate",
+        "audience": "https://\ud800.example",
+        "audienceJson": "\"https://\\ud800.example\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-punycode-outside-grammar",
+        "audience": "https://xn--bcher-kva.example",
+        "audienceJson": "\"https://xn--bcher-kva.example\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-punycode-empty",
+        "audience": "https://xn--.example",
+        "audienceJson": "\"https://xn--.example\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-empty-label",
+        "audience": "https://a..example",
+        "audienceJson": "\"https://a..example\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-leading-dot",
+        "audience": "https://.example",
+        "audienceJson": "\"https://.example\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-trailing-dot",
+        "audience": "https://example.com.",
+        "audienceJson": "\"https://example.com.\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-underscore",
+        "audience": "https://foo_bar.example",
+        "audienceJson": "\"https://foo_bar.example\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-leading-hyphen",
+        "audience": "https://-foo.example",
+        "audienceJson": "\"https://-foo.example\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-trailing-hyphen",
+        "audience": "https://foo-.example",
+        "audienceJson": "\"https://foo-.example\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-label-64",
+        "audience": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example",
+        "audienceJson": "\"https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example\"",
+        "accepted": false
+      },
+      {
+        "id": "origin-256",
+        "audience": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "audienceJson": "\"https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-numeric-final",
+        "audience": "https://example.123",
+        "audienceJson": "\"https://example.123\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-hex-final",
+        "audience": "https://example.0xff",
+        "audienceJson": "\"https://example.0xff\"",
+        "accepted": false
+      },
+      {
+        "id": "dns-hex-empty-final",
+        "audience": "https://example.0x",
+        "audienceJson": "\"https://example.0x\"",
+        "accepted": false
+      },
+      {
+        "id": "port-default",
+        "audience": "https://example.com:443",
+        "audienceJson": "\"https://example.com:443\"",
+        "accepted": false
+      },
+      {
+        "id": "port-leading-zero",
+        "audience": "https://example.com:08443",
+        "audienceJson": "\"https://example.com:08443\"",
+        "accepted": false
+      },
+      {
+        "id": "port-default-leading-zero",
+        "audience": "https://example.com:0443",
+        "audienceJson": "\"https://example.com:0443\"",
+        "accepted": false
+      },
+      {
+        "id": "port-zero",
+        "audience": "https://example.com:0",
+        "audienceJson": "\"https://example.com:0\"",
+        "accepted": false
+      },
+      {
+        "id": "port-double-zero",
+        "audience": "https://example.com:00",
+        "audienceJson": "\"https://example.com:00\"",
+        "accepted": false
+      },
+      {
+        "id": "port-empty",
+        "audience": "https://example.com:",
+        "audienceJson": "\"https://example.com:\"",
+        "accepted": false
+      },
+      {
+        "id": "port-overflow",
+        "audience": "https://example.com:65536",
+        "audienceJson": "\"https://example.com:65536\"",
+        "accepted": false
+      },
+      {
+        "id": "port-long",
+        "audience": "https://example.com:123456",
+        "audienceJson": "\"https://example.com:123456\"",
+        "accepted": false
+      },
+      {
+        "id": "port-plus",
+        "audience": "https://example.com:+8443",
+        "audienceJson": "\"https://example.com:+8443\"",
+        "accepted": false
+      },
+      {
+        "id": "port-negative",
+        "audience": "https://example.com:-1",
+        "audienceJson": "\"https://example.com:-1\"",
+        "accepted": false
+      },
+      {
+        "id": "port-unicode",
+        "audience": "https://example.com:\uff18\uff14\uff14\uff13",
+        "audienceJson": "\"https://example.com:\\uff18\\uff14\\uff14\\uff13\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv4-abbreviated",
+        "audience": "https://127.1",
+        "audienceJson": "\"https://127.1\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv4-three",
+        "audience": "https://127.0.1",
+        "audienceJson": "\"https://127.0.1\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv4-single",
+        "audience": "https://2130706433",
+        "audienceJson": "\"https://2130706433\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv4-hex",
+        "audience": "https://0x7f000001",
+        "audienceJson": "\"https://0x7f000001\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv4-hex-dotted",
+        "audience": "https://0x7f.0.0.1",
+        "audienceJson": "\"https://0x7f.0.0.1\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv4-octal",
+        "audience": "https://0177.0.0.1",
+        "audienceJson": "\"https://0177.0.0.1\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv4-octal-single",
+        "audience": "https://017700000001",
+        "audienceJson": "\"https://017700000001\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv4-leading-zero",
+        "audience": "https://127.00.0.1",
+        "audienceJson": "\"https://127.00.0.1\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv4-overflow",
+        "audience": "https://256.0.0.1",
+        "audienceJson": "\"https://256.0.0.1\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv4-five",
+        "audience": "https://1.2.3.4.5",
+        "audienceJson": "\"https://1.2.3.4.5\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv4-trailing-dot",
+        "audience": "https://127.0.0.1.",
+        "audienceJson": "\"https://127.0.0.1.\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv4-percent",
+        "audience": "https://%31%32%37.0.0.1",
+        "audienceJson": "\"https://%31%32%37.0.0.1\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv6-uppercase",
+        "audience": "https://[2001:DB8::1]",
+        "audienceJson": "\"https://[2001:DB8::1]\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv6-leading-zero",
+        "audience": "https://[2001:0db8::1]",
+        "audienceJson": "\"https://[2001:0db8::1]\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv6-expanded",
+        "audience": "https://[2001:db8:0:0:0:0:0:1]",
+        "audienceJson": "\"https://[2001:db8:0:0:0:0:0:1]\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv6-wrong-tie",
+        "audience": "https://[1:0:0:2::3:4]",
+        "audienceJson": "\"https://[1:0:0:2::3:4]\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv6-shorter-run",
+        "audience": "https://[1::2:0:0:0:3]",
+        "audienceJson": "\"https://[1::2:0:0:0:3]\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv6-single-compressed",
+        "audience": "https://[1:2:3::5:6:7:8]",
+        "audienceJson": "\"https://[1:2:3::5:6:7:8]\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv6-dotted-tail",
+        "audience": "https://[::ffff:192.0.2.1]",
+        "audienceJson": "\"https://[::ffff:192.0.2.1]\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv6-zone",
+        "audience": "https://[fe80::1%25eth0]",
+        "audienceJson": "\"https://[fe80::1%25eth0]\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv6-zone-raw",
+        "audience": "https://[fe80::1%eth0]",
+        "audienceJson": "\"https://[fe80::1%eth0]\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv6-missing-brackets",
+        "audience": "https://2001:db8::1",
+        "audienceJson": "\"https://2001:db8::1\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv6-empty",
+        "audience": "https://[]",
+        "audienceJson": "\"https://[]\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv6-too-many-groups",
+        "audience": "https://[1:2:3:4:5:6:7:8:9]",
+        "audienceJson": "\"https://[1:2:3:4:5:6:7:8:9]\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv6-two-compressions",
+        "audience": "https://[1::2::3]",
+        "audienceJson": "\"https://[1::2::3]\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv6-group-overflow",
+        "audience": "https://[12345::]",
+        "audienceJson": "\"https://[12345::]\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv6-default-port",
+        "audience": "https://[::1]:443",
+        "audienceJson": "\"https://[::1]:443\"",
+        "accepted": false
+      },
+      {
+        "id": "ipv6-zero-port",
+        "audience": "https://[::1]:080",
+        "audienceJson": "\"https://[::1]:080\"",
+        "accepted": false
+      },
+      {
+        "id": "username",
+        "audience": "https://user@example.com",
+        "audienceJson": "\"https://user@example.com\"",
+        "accepted": false
+      },
+      {
+        "id": "password",
+        "audience": "https://user:pass@example.com",
+        "audienceJson": "\"https://user:pass@example.com\"",
+        "accepted": false
+      },
+      {
+        "id": "empty-credentials",
+        "audience": "https://@example.com",
+        "audienceJson": "\"https://@example.com\"",
+        "accepted": false
+      },
+      {
+        "id": "path",
+        "audience": "https://example.com/path",
+        "audienceJson": "\"https://example.com/path\"",
+        "accepted": false
+      },
+      {
+        "id": "trailing-slash",
+        "audience": "https://example.com/",
+        "audienceJson": "\"https://example.com/\"",
+        "accepted": false
+      },
+      {
+        "id": "query",
+        "audience": "https://example.com?a=b",
+        "audienceJson": "\"https://example.com?a=b\"",
+        "accepted": false
+      },
+      {
+        "id": "empty-query",
+        "audience": "https://example.com?",
+        "audienceJson": "\"https://example.com?\"",
+        "accepted": false
+      },
+      {
+        "id": "fragment",
+        "audience": "https://example.com#x",
+        "audienceJson": "\"https://example.com#x\"",
+        "accepted": false
+      },
+      {
+        "id": "empty-fragment",
+        "audience": "https://example.com#",
+        "audienceJson": "\"https://example.com#\"",
+        "accepted": false
+      },
+      {
+        "id": "backslash",
+        "audience": "https://example.com\\path",
+        "audienceJson": "\"https://example.com\\\\path\"",
+        "accepted": false
+      },
+      {
+        "id": "leading-space",
+        "audience": " https://example.com",
+        "audienceJson": "\" https://example.com\"",
+        "accepted": false
+      },
+      {
+        "id": "trailing-space",
+        "audience": "https://example.com ",
+        "audienceJson": "\"https://example.com \"",
+        "accepted": false
+      },
+      {
+        "id": "trailing-newline",
+        "audience": "https://example.com\n",
+        "audienceJson": "\"https://example.com\\n\"",
+        "accepted": false
+      },
+      {
+        "id": "embedded-tab",
+        "audience": "https://exam\tple.com",
+        "audienceJson": "\"https://exam\\tple.com\"",
+        "accepted": false
+      },
+      {
+        "id": "nul",
+        "audience": "https://example.com\u0000",
+        "audienceJson": "\"https://example.com\\u0000\"",
+        "accepted": false
+      }
+    ]
+  }
+}

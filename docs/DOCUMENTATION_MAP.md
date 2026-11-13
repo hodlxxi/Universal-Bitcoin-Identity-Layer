@@ -85,7 +85,149 @@ Many historical checkpoint documents now include a standard status note at the t
 
 These are useful for future development, staging, compatibility, and design intent, but should not be presented as current production readiness evidence unless a current smoke/runbook says so:
 
+- `docs/SOCIAL_ENROLLMENT_V2_INGRESS_V1.md` — dormant confidential POST adapter
+  with per-command service credentials and same-transaction phone matching;
+  disposable native and real Node/Unix/Flask/PostgreSQL verification; synthetic
+  Social proof boundary, no default factory installation or runtime activation
+
+- `docs/SOCIAL_ENROLLMENT_V2_RUNTIME_COMPOSITION_V1.md` — dormant explicit
+  caller ownership of reservation/finalization transactions, flush/recheck and
+  publication after confirmed commit, unchanged deadlines and exact historical
+  recovery; explicit restricted peer-role profile, native and real Unix caller
+  verification; challenge producer and ingress are separate linked source;
+  no default factory installation, operational key or live runtime activation
+
+- `docs/SOCIAL_ENROLLMENT_V2_CHALLENGE_V1.md` — dormant original V2 challenge
+  producer, exact canonical phone/session binding, persisted native revision,
+  original-byte retry and caller-owned commit publication; separate issuance
+  writer, separate finalization role, native trigger/concurrency/wait verification
+  and real Unix caller flow; no default factory installation, operational grants,
+  live database change or runtime activation
+
+- `docs/SOCIAL_SESSION_ISSUANCE_V2_PROVENANCE_V1.md` — dormant additive native
+  first-onboarding V2 offer/acceptance/binding/basic OAuth producer, immutable
+  issuance provenance and caller-transaction locked reader; separate metadata,
+  additive migration and opt-in synthetic PostgreSQL 16 verification; bounded
+  issuance/recovery and reader wait/concurrency evidence; general Current-Full
+  concurrency and finalization waits remain separate; dedicated reservation
+  signing source is linked below; no finalization, live migration, runtime wiring
+  or activation
+
+- `docs/SOCIAL_DEVICE_CHALLENGE_REVISION_V1.md` — canonical dormant native
+  immutable first-issuance challenge generation, additive unapplied companion
+  source and caller-transaction enrollment reader; unchanged legacy store and
+  wires; bounded disposable PostgreSQL 16 verification completed, lock-wait
+  acceptance unverified, no runtime activation
+
+- `docs/SOCIAL_PREACCEPTANCE_ED25519_HANDOFF_V2.md` — dormant deterministic
+  `register + initial` preacceptance-through-candidate-association-link contract
+  and reviewed public vector; serializers grant no acceptance/persistence
+  authority; linked dedicated V2 statement authentication is separately
+  documented below; no runtime wiring, session continuation, or activation
+- `docs/SOCIAL_PREACCEPTED_ENROLLMENT_VERIFICATION_STATEMENT_V2.md` — dormant
+  additive canonical V2-only RS256 statement bytes, dedicated empty-by-default
+  public trust registration and strict pure authenticated consumer for one exact
+  preaccepted-enrollment input; no Social producer, durable acceptance,
+  challenge consumption, association mutation, route or runtime activation in
+  this pure consumer; separate dormant finalization source is linked below
+- `docs/SOCIAL_MESSAGING_DEVICE_VERIFICATION_DEADLINE_EVIDENCE_V1.md` —
+  dormant UBID-owned canonical four-authority deadline evidence, dedicated
+  empty-by-default RS256 public trust lifecycle and strict pure consumer;
+  separate dormant reservation/signer source is linked below; no operational
+  private key, route or runtime activation
+- `docs/SOCIAL_ENROLLMENT_V2_RESERVATION_V1.md` — dormant native reservation
+  owner, purpose-specific injected RS256 signer, canonical pending storage and
+  discovery-before-signing exact pending retry; caller-owned guarded transaction,
+  table serialization and native authority/revision/history composition;
+  offline and bounded disposable PostgreSQL verification, including catalog
+  composition, collision/retry and completed waits; no finalization, key
+  provisioning, route, runtime wiring, transport or deployment
+- `docs/SOCIAL_PREACCEPTED_ENROLLMENT_V2_ATOMIC_ACCEPTANCE_AND_CAS_V1.md` —
+  dormant UBID-owned pure pending-reservation and final locked-recheck contract
+  plus a caller-transaction PostgreSQL durability/CAS owner, immutable
+  evidence-bound effect/receipt history and exact retry; accepted durable
+  reparse authenticates both the dedicated signed deadline evidence and Social
+  verification statement with server-owned trust, while the explicitly mapped
+  `public` relation, associated TOAST object and complete relation/function/trigger
+  definitions and object identities are attested on every operation under a
+  distinct least-privilege runtime role; storage is not
+  current authority; the separate dormant reservation owner is linked above,
+  while separate dormant finalization source is linked below; no route, runtime
+  wiring, migration application or activation
+- `docs/SOCIAL_ENROLLMENT_V2_FINALIZATION_V1.md` — dormant default-off locked
+  V2 finalization owner and distinct native shared association/effect/receipt/
+  consumption seam, immutable causal evidence and accepted historical recovery;
+  additive unapplied migration and separately activated composed CAS profile;
+  offline and isolated PostgreSQL verification of catalog/role/completeness,
+  rollback, concurrent retry and completed waits; separate signed native
+  freshness profile and additive SQL guard; no Social signer, V2 challenge producer,
+  operational key, route, runtime activation, deployment or DM transport
 - `docs/NIP17_RUNTIME_PLAN.md`
+- `docs/SOCIAL_SESSION_ISSUANCE_V1.md` — dormant PostgreSQL one-shot phone
+  authority, original OAuth-generation provenance, canonical viewer credential,
+  bound recovery, current resolution and exact revocation; no default factory
+  composition, Social runtime wiring or activation
+- `docs/SOCIAL_MOBILE_AUTHORIZATION_INGRESS_V1.md` — dormant confidential mobile
+  POST contracts, independent backend/viewer/proof checks, original operation
+  context, historical handoff delivery and generation-scoped invalidation;
+  no default factory registration, Social issuer or runtime activation
+- `docs/OAUTH_SESSION_LIFECYCLE_V1.md` — dormant canonical OAuth generation,
+  durable Session mapping, replacement and invalidation prerequisite for mobile
+  ingress; no factory composition, mobile routes or activation
+- `docs/SOCIAL_MOBILE_DEVICE_AUTHORIZATION_PERSISTENCE_V1.md` — dormant durable
+  mobile service, PostgreSQL lifecycle/replay ownership, authenticated continuity
+  prerequisite and exact session-exchange handoff; separate ingress, no activation
+- `docs/SOCIAL_MOBILE_DEVICE_AUTHORIZATION_V1.md` — canonical Phase 1 mobile
+  challenge binding, QR transcript/approval, method separation, fixed vectors,
+  and dormant acceptance/session-exchange seams; no mobile routes or activation
+- `docs/SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_V1.md` —
+  disabled-by-default deterministic Nostr-carrier and trusted-intent contract,
+  runtime/factory/internal-HTTP wiring for identity-authorized device-binding
+  operations; kind 27236 is repository-local and never published; source
+  presence is not runtime activation or deployment
+- `docs/SOCIAL_MESSAGING_RECIPIENT_ROUTING_V1.md` — dormant canonical
+  recipient-package routing plus a transaction-bound PostgreSQL snapshot,
+  complete route, confidential pairwise-handle owner and message-ID decision
+  registry; immutable handle owners are historical routing evidence only; a
+  separate empty-by-default transaction-bound reader reconciles one guarded
+  ACTIVE alias namespace with the exact startup-configured secret/version but
+  supplies no authorization; a separate dormant, offline-signed UBID
+  deployment-key command verifier and caller-transaction lifecycle owner
+  authenticate empty version-1 provisioning or exact one-step rotation, stage
+  immutable event-backed history and leave commit ownership to the caller,
+  without key/config provisioning or runtime composition; a dormant
+  transaction-bound internal candidate strictly compares one requested
+  self-read handle with the locked ACTIVE namespace, immutable history and
+  authoritative current binding without granting self-read or returning
+  ciphertext; lifecycle operational cutover, authorizing current-handle
+  ownership and self-read effects remain blocked; no
+  ciphertext persistence, request admission, receipt, challenge consumption,
+  factory wiring, migration application or activation
+- `docs/SOCIAL_MESSAGING_DEVICE_PROOF_PROFILE_V1.md` — dormant byte-identical
+  Exact Messaging Device Proof Profile V1 and Enrollment V2 shape contracts;
+  Social contains the current strict Ed25519 primitive, UBID never reports
+  cryptographic or final-admission authority; the selected dormant UBID owner
+  and authenticated statement boundary are linked below
+- `docs/SOCIAL_DEVICE_ADMISSION_V1.md` — dormant pure final-device-admission
+  context/input/JWS-shape, route, receipt, state and typed-port contracts,
+  authenticated statement verifier, immutable challenge store, durable
+  Ed25519 association store, transaction-bound current-authority adapter and
+  transaction-bound pre-effect enrollment transition-authority adapter,
+  deterministic immutable enrollment receipt store, enrollment-only challenge
+  consumption primitive, deferred three-row commit invariant and dormant
+  transaction-bound UBID owner for the exact enrollment effect/receipt/consume
+  unit; pure deterministic device-request effect ID, operation-effect digest
+  and future receipt identity are frozen for submit and self-read; separate
+  dormant registries own routing history and read-only configured ACTIVE
+  alias-namespace reconciliation, and a dormant transaction-bound internal
+  candidate compares one exact self-read handle with current admission/binding
+  evidence while granting no authorization and returning no ciphertext;
+  signed namespace commands have a dormant transaction-bound writer and
+  immutable event ledger but no runtime trust configuration or key provisioning;
+  namespace operational cutover, authorizing current-handle ownership, actual
+  ciphertext/self-read effects, durable request effect/receipt ownership,
+  request consumption, its additive migration, runtime wiring and final
+  admission remain unimplemented
 - `docs/milestones/NIP17_SITE_LOCAL_MESSAGING_V0.md`
 - `docs/ops/NIP17_*.md`
 - `docs/ops/NIP59_*.md`
@@ -122,3 +264,14 @@ Do not delete them in this PR. Use `docs/ARCHIVE_CANDIDATES.md` and a future foc
 - Public smoke does not prove paid job completion unless the paid receipt runbook is executed.
 - Public smoke does not require or print secrets or invoice strings.
 - Static/conceptual docs may discuss broader vision; current runtime docs and smoke tests are the implementation truth.
+
+Enrollment V2 freshness policy is canonical in
+[server-selected signed freshness profiles](SOCIAL_ENROLLMENT_V2_FINALIZATION_V1.md#server-selected-signed-freshness-profiles). This is a separate opt-in signed profile; legacy defaults and vectors remain unchanged.
+
+## Native V2 phone-session bridge
+
+The default-off [native V2 session bridge](SOCIAL_SESSION_V2_BRIDGE_V1.md) documents the separate issuance ingress and original-child cancellation. It installs no live route or browser flow.
+
+## Explicit enrollment application assembly
+
+[SOCIAL_ENROLLMENT_V2_APPLICATION_V1.md](SOCIAL_ENROLLMENT_V2_APPLICATION_V1.md) describes the separate opt-in factory, two direct SQL identities and dedicated signing registrations. Ordinary factories retain their existing behavior.

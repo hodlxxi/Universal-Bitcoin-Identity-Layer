@@ -145,15 +145,6 @@ def _get_env_int(name: str, default: int) -> int:
         raise ValueError(f"Environment variable {name} must be an integer (got {raw_value!r})") from exc
 
 
-def _get_explicit_mobile_flag(name: str) -> bool:
-    value = os.getenv(name)
-    if value in (None, "", "false"):
-        return False
-    if value == "true":
-        return True
-    raise ValueError("mobile session configuration invalid")
-
-
 def _get_optional_env_int(name: str) -> Optional[int]:
     """Return an optional environment variable as an integer."""
 
@@ -165,6 +156,15 @@ def _get_optional_env_int(name: str) -> Optional[int]:
         return int(raw_value)
     except ValueError as exc:
         raise ValueError(f"Environment variable {name} must be an integer (got {raw_value!r})") from exc
+
+
+def _get_explicit_mobile_flag(name: str) -> bool:
+    value = os.getenv(name)
+    if value in (None, "", "false"):
+        return False
+    if value == "true":
+        return True
+    raise ValueError("mobile session configuration invalid")
 
 
 def get_config() -> AppConfig:
@@ -212,7 +212,7 @@ def get_config() -> AppConfig:
         ),
         # Logging
         "LOG_LEVEL": os.getenv("LOG_LEVEL", "INFO"),
-        "LOG_FILE": os.getenv("LOG_FILE", "logs/app.log"),
+        "LOG_FILE": os.getenv("LOG_FILE", ""),
         # Database Configuration (REQUIRED for production)
         "DATABASE_URL": os.getenv("DATABASE_URL"),
         "DB_HOST": os.getenv("DB_HOST", "localhost"),
@@ -298,71 +298,127 @@ def get_config() -> AppConfig:
             "PRIVACY_FULL_DIRECTORY_ALIAS_VERSION",
             1,
         ),
-        "SOCIAL_MESSAGING_DEVICE_INTERNAL_ENABLED": _get_env_bool("SOCIAL_MESSAGING_DEVICE_INTERNAL_ENABLED", False),
-        "SOCIAL_MESSAGING_DEVICE_SERVICE_CLIENT_ID": os.getenv("SOCIAL_MESSAGING_DEVICE_SERVICE_CLIENT_ID", ""),
-        "SOCIAL_MESSAGING_DEVICE_SERVICE_PRINCIPAL": os.getenv("SOCIAL_MESSAGING_DEVICE_SERVICE_PRINCIPAL", ""),
-        "SOCIAL_MESSAGING_DEVICE_SERVICE_ISSUER": os.getenv("SOCIAL_MESSAGING_DEVICE_SERVICE_ISSUER", ""),
+        # Private Social messaging-device authority (disabled by default)
+        "SOCIAL_MESSAGING_DEVICE_INTERNAL_ENABLED": _get_env_bool(
+            "SOCIAL_MESSAGING_DEVICE_INTERNAL_ENABLED",
+            False,
+        ),
+        "SOCIAL_MESSAGING_DEVICE_SERVICE_CLIENT_ID": os.getenv(
+            "SOCIAL_MESSAGING_DEVICE_SERVICE_CLIENT_ID",
+            "",
+        ),
+        "SOCIAL_MESSAGING_DEVICE_SERVICE_PRINCIPAL": os.getenv(
+            "SOCIAL_MESSAGING_DEVICE_SERVICE_PRINCIPAL",
+            "",
+        ),
+        "SOCIAL_MESSAGING_DEVICE_SERVICE_ISSUER": os.getenv(
+            "SOCIAL_MESSAGING_DEVICE_SERVICE_ISSUER",
+            "",
+        ),
         "SOCIAL_MESSAGING_DEVICE_SERVICE_TOKEN_ENDPOINT_AUDIENCE": os.getenv(
-            "SOCIAL_MESSAGING_DEVICE_SERVICE_TOKEN_ENDPOINT_AUDIENCE", ""
+            "SOCIAL_MESSAGING_DEVICE_SERVICE_TOKEN_ENDPOINT_AUDIENCE",
+            "",
         ),
         "SOCIAL_MESSAGING_DEVICE_SERVICE_RESOURCE_AUDIENCE": os.getenv(
-            "SOCIAL_MESSAGING_DEVICE_SERVICE_RESOURCE_AUDIENCE", ""
+            "SOCIAL_MESSAGING_DEVICE_SERVICE_RESOURCE_AUDIENCE",
+            "",
         ),
         "SOCIAL_MESSAGING_DEVICE_VIEWER_OAUTH_CLIENT_ID": os.getenv(
-            "SOCIAL_MESSAGING_DEVICE_VIEWER_OAUTH_CLIENT_ID", ""
+            "SOCIAL_MESSAGING_DEVICE_VIEWER_OAUTH_CLIENT_ID",
+            "",
         ),
-        "SOCIAL_MESSAGING_DEVICE_CLIENT_JWKS_DIR": os.getenv("SOCIAL_MESSAGING_DEVICE_CLIENT_JWKS_DIR", ""),
-        "SOCIAL_MESSAGING_DEVICE_SIGNING_JWKS_DIR": os.getenv("SOCIAL_MESSAGING_DEVICE_SIGNING_JWKS_DIR", ""),
-        "SOCIAL_MESSAGING_DEVICE_CLOCK_SKEW_SECONDS": _get_env_int("SOCIAL_MESSAGING_DEVICE_CLOCK_SKEW_SECONDS", 5),
+        "SOCIAL_MESSAGING_DEVICE_CLIENT_JWKS_DIR": os.getenv(
+            "SOCIAL_MESSAGING_DEVICE_CLIENT_JWKS_DIR",
+            "",
+        ),
+        "SOCIAL_MESSAGING_DEVICE_SIGNING_JWKS_DIR": os.getenv(
+            "SOCIAL_MESSAGING_DEVICE_SIGNING_JWKS_DIR",
+            "",
+        ),
+        "SOCIAL_MESSAGING_DEVICE_CLOCK_SKEW_SECONDS": _get_env_int(
+            "SOCIAL_MESSAGING_DEVICE_CLOCK_SKEW_SECONDS",
+            5,
+        ),
         "SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS": _get_optional_env_int(
-            "SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS"
+            "SOCIAL_MESSAGING_DEVICE_BINDING_LIFETIME_SECONDS",
         ),
+        # Identity-authorized Social messaging-device mutation (separate gate)
         "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_INTERNAL_ENABLED": _get_env_bool(
-            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_INTERNAL_ENABLED", False
+            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_INTERNAL_ENABLED",
+            False,
         ),
         "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SERVICE_CLIENT_ID": os.getenv(
-            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SERVICE_CLIENT_ID", ""
+            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SERVICE_CLIENT_ID",
+            "",
         ),
         "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SERVICE_PRINCIPAL": os.getenv(
-            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SERVICE_PRINCIPAL", ""
+            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SERVICE_PRINCIPAL",
+            "",
         ),
         "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SERVICE_ISSUER": os.getenv(
-            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SERVICE_ISSUER", ""
+            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SERVICE_ISSUER",
+            "",
         ),
         "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SERVICE_TOKEN_ENDPOINT_AUDIENCE": os.getenv(
-            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SERVICE_TOKEN_ENDPOINT_AUDIENCE", ""
+            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SERVICE_TOKEN_ENDPOINT_AUDIENCE",
+            "",
         ),
         "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SERVICE_RESOURCE_AUDIENCE": os.getenv(
-            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SERVICE_RESOURCE_AUDIENCE", ""
+            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SERVICE_RESOURCE_AUDIENCE",
+            "",
         ),
         "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_VIEWER_OAUTH_CLIENT_ID": os.getenv(
-            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_VIEWER_OAUTH_CLIENT_ID", ""
+            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_VIEWER_OAUTH_CLIENT_ID",
+            "",
         ),
         "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_CLIENT_JWKS_DIR": os.getenv(
-            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_CLIENT_JWKS_DIR", ""
+            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_CLIENT_JWKS_DIR",
+            "",
         ),
         "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SIGNING_JWKS_DIR": os.getenv(
-            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SIGNING_JWKS_DIR", ""
+            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_SIGNING_JWKS_DIR",
+            "",
         ),
         "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_CLOCK_SKEW_SECONDS": _get_env_int(
-            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_CLOCK_SKEW_SECONDS", 5
+            "SOCIAL_MESSAGING_DEVICE_BINDING_AUTHORIZATION_CLOCK_SKEW_SECONDS",
+            5,
         ),
+        # Private Social recipient-device resolution (disabled by default)
         "SOCIAL_MESSAGING_RECIPIENT_INTERNAL_ENABLED": _get_env_bool(
-            "SOCIAL_MESSAGING_RECIPIENT_INTERNAL_ENABLED", False
+            "SOCIAL_MESSAGING_RECIPIENT_INTERNAL_ENABLED",
+            False,
         ),
-        "SOCIAL_MESSAGING_RECIPIENT_SERVICE_CLIENT_ID": os.getenv("SOCIAL_MESSAGING_RECIPIENT_SERVICE_CLIENT_ID", ""),
-        "SOCIAL_MESSAGING_RECIPIENT_SERVICE_PRINCIPAL": os.getenv("SOCIAL_MESSAGING_RECIPIENT_SERVICE_PRINCIPAL", ""),
-        "SOCIAL_MESSAGING_RECIPIENT_SERVICE_ISSUER": os.getenv("SOCIAL_MESSAGING_RECIPIENT_SERVICE_ISSUER", ""),
+        "SOCIAL_MESSAGING_RECIPIENT_SERVICE_CLIENT_ID": os.getenv(
+            "SOCIAL_MESSAGING_RECIPIENT_SERVICE_CLIENT_ID",
+            "",
+        ),
+        "SOCIAL_MESSAGING_RECIPIENT_SERVICE_PRINCIPAL": os.getenv(
+            "SOCIAL_MESSAGING_RECIPIENT_SERVICE_PRINCIPAL",
+            "",
+        ),
+        "SOCIAL_MESSAGING_RECIPIENT_SERVICE_ISSUER": os.getenv(
+            "SOCIAL_MESSAGING_RECIPIENT_SERVICE_ISSUER",
+            "",
+        ),
         "SOCIAL_MESSAGING_RECIPIENT_SERVICE_TOKEN_ENDPOINT_AUDIENCE": os.getenv(
-            "SOCIAL_MESSAGING_RECIPIENT_SERVICE_TOKEN_ENDPOINT_AUDIENCE", ""
+            "SOCIAL_MESSAGING_RECIPIENT_SERVICE_TOKEN_ENDPOINT_AUDIENCE",
+            "",
         ),
         "SOCIAL_MESSAGING_RECIPIENT_SERVICE_RESOURCE_AUDIENCE": os.getenv(
-            "SOCIAL_MESSAGING_RECIPIENT_SERVICE_RESOURCE_AUDIENCE", ""
+            "SOCIAL_MESSAGING_RECIPIENT_SERVICE_RESOURCE_AUDIENCE",
+            "",
         ),
-        "SOCIAL_MESSAGING_RECIPIENT_CLIENT_JWKS_DIR": os.getenv("SOCIAL_MESSAGING_RECIPIENT_CLIENT_JWKS_DIR", ""),
-        "SOCIAL_MESSAGING_RECIPIENT_SIGNING_JWKS_DIR": os.getenv("SOCIAL_MESSAGING_RECIPIENT_SIGNING_JWKS_DIR", ""),
+        "SOCIAL_MESSAGING_RECIPIENT_CLIENT_JWKS_DIR": os.getenv(
+            "SOCIAL_MESSAGING_RECIPIENT_CLIENT_JWKS_DIR",
+            "",
+        ),
+        "SOCIAL_MESSAGING_RECIPIENT_SIGNING_JWKS_DIR": os.getenv(
+            "SOCIAL_MESSAGING_RECIPIENT_SIGNING_JWKS_DIR",
+            "",
+        ),
         "SOCIAL_MESSAGING_RECIPIENT_CLOCK_SKEW_SECONDS": _get_env_int(
-            "SOCIAL_MESSAGING_RECIPIENT_CLOCK_SKEW_SECONDS", 5
+            "SOCIAL_MESSAGING_RECIPIENT_CLOCK_SKEW_SECONDS",
+            5,
         ),
     }
 

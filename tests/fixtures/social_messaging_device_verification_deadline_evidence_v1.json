@@ -1,0 +1,51 @@
+{
+  "configuration": {
+    "audience": "https://social.example/internal/v1/social/messaging-device-verification/deadline-evidence/consume",
+    "clientId": "social-messaging-device-verification-deadline-evidence-v1",
+    "issuer": "https://ubid.example",
+    "kid": "ubid-social-deadline-evidence-rs256-v1-test-2026-10",
+    "servicePrincipal": "ubid-deadline-evidence-v1"
+  },
+  "deadlines": {
+    "approverSessionExpiresAt": 1788906660000,
+    "evidenceExpiresAt": 1788906610000,
+    "fullExpiresAt": 1788906660000,
+    "observedAt": 1788906600000,
+    "phoneSessionExpiresAt": 1788906660000,
+    "x25519BindingExpiresAt": 1791498599000
+  },
+  "note": "Synthetic public vector only. The ephemeral private key was not serialized or retained; pure values prove no lock, persistence, signing-key custody, acceptance, receipt, commit, or runtime activation.",
+  "schema": "hodlxxi.social_messaging_device_verification_deadline_evidence_fixture.v1",
+  "sourceFixture": {
+    "bytes": 32998,
+    "path": "tests/fixtures/social_preacceptance_ed25519_handoff_v2.json",
+    "sha256": "4f79dd0f24fd8ded4c2e4e3e644811dd42ca620d8c0e09aea177237dd5d199dc",
+    "verificationInputDigest": "hodlxxi-social-preaccepted-enrollment-verification-input-v2-sha256:3cbd20bc4061fc8fd074c76bbd70239a102519ac5196417d0c2c20b8a6a02939",
+    "verificationInputSha256": "fd275b30a21882c1d7f0996acf640f6c0d6aa8e7a7ea868766e83824e86c2560"
+  },
+  "trustRecord": {
+    "jwk": {
+      "alg": "RS256",
+      "e": "AQAB",
+      "kid": "ubid-social-deadline-evidence-rs256-v1-test-2026-10",
+      "kty": "RSA",
+      "n": "otATNPEyfTiOaALpdT8Bc1lOTGTom0lUIevlk6Bta2U8NiEYGDuqeyAOfg2cH6YTK3VFhKOXRPCxCfeUVKJewxkeCK3-9eVHMvXLJP8hPRAWvCw3SpqBMlxP0FIg0kWe1mvstoDva7ykxPPbSx9TjRjYjHHvdG5y5LzRMoTu4qA5mUm9HFpWDEKpQTZ2VgVnm7CZFXu_slt7y8fBvejQVSIBcgrsnhJ1XCFmxWrRMGfEkLbHxu_uMhhH1nEcAIWQ6dmJUU88SopdyYfeLeXbcgRATGQea9z4qPc_vBQYO_fwomKGUt4q2L1An4pHrVUmxuPD8mYbTQcUryX3Guqftw",
+      "use": "sig"
+    },
+    "keyFingerprint": "sha256:17393ba7b83cb98cf5ed356d7ca731b5d2e8bdf5e7caa2c23bbc8dd55de1cefe",
+    "notAfter": 1791498600000,
+    "notBefore": 1788906500000,
+    "revokedAt": null,
+    "trustRecordId": "b22abbd2ba50f2db5f1ec740d8afbb1d8ebe1a92e4ddcf372a907f5284ccb270",
+    "trustRevision": 1
+  },
+  "vector": {
+    "inputPayloadDigest": "hodlxxi-social-messaging-device-verification-deadline-input-payload-v1-sha256:9487c96dc5879ec81f7c87ea110eeb90e1037b0387896b5c5c000587541d4071",
+    "jti": "6393e4784c314295d133769ff20ea9f3a5f0b41b24cab8d04d4ec79e7b388150",
+    "payloadWire": "{\"acceptanceId\":\"79527b0846c15188288f97281b9e92e0c783100512d0ea01f1400dfb24a1f16c\",\"approvalEventId\":\"3e43cecf3c2d30d280f7b10a0a2d41d7bd44bc818d8a9d0a4f2513416ddca42c\",\"approverOAuthBrowserGenerationId\":\"1919191919191919191919191919191919191919191919191919191919191919\",\"approverOAuthSessionId\":\"1818181818181818181818181818181818181818181818181818181818181818\",\"approverOAuthTokenId\":\"17171717171717171717171717171717\",\"approverSessionExpiresAt\":1788906660000,\"associationId\":\"9a75b0fbb4ceaa87209355ac50922af779609854b62ae9d59f388b9bfe9c64e6\",\"associationVersion\":1,\"attemptId\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"aud\":\"https://social.example/internal/v1/social/messaging-device-verification/deadline-evidence/consume\",\"authorizationDigest\":\"c57f9ff5983a6478e53551e9581060f2789212bc2cf6093cce7e418379c08f25\",\"clientId\":\"social-messaging-device-verification-deadline-evidence-v1\",\"deviceId\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"enrollmentChallengeId\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"expiresAt\":1788906610000,\"fullEvidenceId\":\"123e4567-e89b-42d3-a456-426614174000\",\"fullEvidenceVersion\":\"social-current-full-v1\",\"fullExpiresAt\":1788906660000,\"fullProofId\":\"hodlxxi-full-entitlement-v1-sha256:abababababababababababababababababababababababababababababababab\",\"fullSourceEvidenceSha256\":\"2121212121212121212121212121212121212121212121212121212121212121\",\"inputDigest\":\"hodlxxi-social-preaccepted-enrollment-verification-input-v2-sha256:3cbd20bc4061fc8fd074c76bbd70239a102519ac5196417d0c2c20b8a6a02939\",\"inputPayloadDigest\":\"hodlxxi-social-messaging-device-verification-deadline-input-payload-v1-sha256:9487c96dc5879ec81f7c87ea110eeb90e1037b0387896b5c5c000587541d4071\",\"iss\":\"https://ubid.example\",\"jti\":\"6393e4784c314295d133769ff20ea9f3a5f0b41b24cab8d04d4ec79e7b388150\",\"observedAt\":1788906600000,\"operation\":\"register\",\"operationId\":\"2020202020202020202020202020202020202020202020202020202020202020\",\"parentOAuthBrowserGenerationId\":\"1616161616161616161616161616161616161616161616161616161616161616\",\"parentOAuthSessionId\":\"1515151515151515151515151515151515151515151515151515151515151515\",\"parentOAuthTokenId\":\"14141414141414141414141414141414\",\"phoneSessionExpiresAt\":1788906660000,\"purpose\":\"social_messaging_device_verification_deadline_evidence_v1\",\"requestId\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"reservationId\":\"bd61aff1e3a81222ce493446736eacf8405be713b876f0340069ba4301b41c1f\",\"reservationRevision\":1,\"schema\":\"hodlxxi.social_messaging_device_verification_deadline_evidence.v1\",\"servicePrincipal\":\"ubid-deadline-evidence-v1\",\"socialSessionIssuanceId\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"socialSessionIssuanceRevision\":\"1212121212121212121212121212121212121212121212121212121212121212\",\"socialSessionTokenId\":\"13131313131313131313131313131313\",\"subject\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"version\":1,\"x25519BindingExpiresAt\":1791498599000,\"x25519BindingId\":\"6d64122a05d41e5823f2e9ff95bbc220035cfae53f0364410851f86d2b62a56d\",\"x25519BindingVersion\":1,\"x25519PublicKeyCommitment\":\"hodlxxi-social-messaging-x25519-public-key-v1-sha256:a3dee16669a4727d30142f077219eb7ab19e24821c4cb3581d1a045f43584381\"}",
+    "protectedHeaderWire": "{\"alg\":\"RS256\",\"kid\":\"ubid-social-deadline-evidence-rs256-v1-test-2026-10\",\"typ\":\"hodlxxi-social-messaging-device-verification-deadline-evidence-v1+jws\"}",
+    "reservationId": "bd61aff1e3a81222ce493446736eacf8405be713b876f0340069ba4301b41c1f",
+    "signature": "95458de0ba23c108a832aed5be2935aa2d5d3dd294515440f478c87b4419e131b08e2ac2d443368baa44dc4a482f9f9afee2141fab29c23ef763f9705be31498ea7c901a2acf5b7ce0ce126bf58ec03ab2cd73b49602024d861eb97a19103142afd1e501ffdb14b32e450be9fa4a388333089d899f1c7248f29ee6b1deace00af11d2f47ba0b31880ee6b8812ed48aabae7066bc6fb6e398d2fb64633e87aba4abac0818303f023f1474e89f28c78cb890bed7851d5a8f1fdc5ea56a4979bf7e0abad998cf1742eb38c1bb9a6fcbbf268512809ca1b4db3a3d4517a32200697d3bbc6072a3a06015f999343cfdfb9a6e2f69a96e0c67b5e08379fa087d33cbfe"
+  },
+  "version": 1
+}

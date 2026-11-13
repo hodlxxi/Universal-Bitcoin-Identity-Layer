@@ -252,7 +252,7 @@ This is currently a solo project by **alnostru**.
 
 - Website: https://hodlxxi.com
 - Playground: https://hodlxxi.com/playground
-- Status: https://hodlxxi.com/health
+- Process liveness: https://hodlxxi.com/health/live
 
 ---
 

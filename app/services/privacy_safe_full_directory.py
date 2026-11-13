@@ -277,18 +277,12 @@ class PrivacySafeFullDirectoryV1:
         return viewer
 
     def _alias(self, viewer: str, target: str) -> str:
-        message = b"\x00".join(
-            (
-                ALIAS_DOMAIN,
-                str(VERSION).encode("ascii"),
-                str(self._alias_version).encode("ascii"),
-                viewer.encode("ascii"),
-                target.encode("ascii"),
-            )
+        return derive_privacy_directory_alias(
+            viewer=viewer,
+            target=target,
+            alias_secret=self._alias_secret,
+            alias_version=self._alias_version,
         )
-        digest = hmac.new(self._alias_secret, message, hashlib.sha256).digest()[:ALIAS_BYTES]
-        encoded = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-        return "p_" + encoded
 
     def current_directory(self) -> dict[str, object]:
         """Return only opaque entries, or fail without returning partial data."""

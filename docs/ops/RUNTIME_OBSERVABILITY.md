@@ -2,8 +2,20 @@
 
 This document defines the runtime-observability contract for production/staging health surfaces used by operators, smoke checks, and integrators.
 
+## Legacy logging destination
+
+Legacy application logging uses the console by default, including when the
+factory imports legacy authentication helpers on the first verification request.
+Unset or empty `LOG_FILE` does not create a log directory or file. For an optional
+rotating file, explicitly set `LOG_FILE` to a writable destination outside an
+immutable source checkout. Relative paths remain supported for writable local
+checkouts. An explicitly configured destination that cannot be opened raises an
+error; it does not silently fall back to another file. Rotation remains 10 MiB
+with ten backups. Service logging can be collected from the systemd journal.
+
 ## Canonical health/status endpoints
 
+- `GET /health/live`
 - `GET /health/ready`
 - `GET /api/public/status`
 - `GET /agent/chain/health`
@@ -13,10 +25,25 @@ This document defines the runtime-observability contract for production/staging 
 
 ## Expected HTTP codes
 
+### `GET /health/live`
+- `200` while the application process can dispatch requests.
+- Performs no Bitcoin RPC, Redis, database, filesystem, subprocess, DNS, socket, or other dependency check.
+- Use this endpoint for process monitors. `GET /health` has the same liveness-only dependency boundary as a compatibility alias.
+
+Shape:
+```json
+{
+  "status": "alive"
+}
+```
+
 ### `GET /health/ready`
-- `200` when ready.
+- `200` only after the configured application database answers a minimal read-only probe.
 - `503` when not ready.
 - Must not return `500` for routine dependency outage checks.
+- Connection acquisition and statement execution are bounded. The probe always releases its transaction, result, and connection.
+- Missing, malformed, or implicit fallback database state fails closed.
+- The route is limiter-exempt and does not probe Redis, Bitcoin RPC, or the legacy SQLite file.
 
 Shape:
 ```json
@@ -91,11 +118,12 @@ Public health/status responses must not include:
 
 ## Operator first checks
 
-1. `GET /health/ready`
-2. `GET /api/public/status`
-3. `GET /agent/chain/health`
-4. If app session available: `GET /api/lnd/status`
-5. Confirm discovery surfaces:
+1. `GET /health/live` for process liveness.
+2. `GET /health/ready` for database readiness.
+3. `GET /api/public/status` for bounded/cached optional Bitcoin and LND telemetry.
+4. `GET /agent/chain/health`
+5. If app session available: `GET /api/lnd/status`
+6. Confirm discovery surfaces:
    - `GET /.well-known/agent.json`
    - `GET /agent/capabilities`
 

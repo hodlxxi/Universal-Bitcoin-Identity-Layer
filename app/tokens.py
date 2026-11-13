@@ -6,7 +6,6 @@ import time
 from typing import Any, Dict, Optional
 
 import jwt
-from cryptography.hazmat.primitives import serialization
 
 from .config import get_config
 from .jwks import get_signing_key
@@ -48,15 +47,10 @@ def issue_rs256_jwt(
 
     jwks_dir = str(cfg.get("JWKS_DIR") or "keys")
     kid, private_key = get_signing_key(jwks_dir)
-    private_pem = private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
-    )
 
     return jwt.encode(
         payload,
-        private_pem,
+        private_key,
         algorithm="RS256",
         headers={"kid": kid},
     )

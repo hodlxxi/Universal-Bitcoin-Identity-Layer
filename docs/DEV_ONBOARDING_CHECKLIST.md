@@ -56,13 +56,13 @@ You will need Postgres and Redis running on your machine and reachable via the s
 Once the app is running (Docker or native), validate the key endpoints:
 
 ```bash
-curl -f http://localhost:5000/health
+curl -f http://localhost:5000/health/live
 curl -f http://localhost:5000/oauthx/status
 curl -f http://localhost:5000/metrics/prometheus | head -n 5
 ```
 
 Expected results:
-- `/health` returns `{"status":"ok"}`.
+- `/health/live` returns `{"status":"alive"}` without checking external dependencies.
 - `/oauthx/status` returns a JSON payload with `status: "ok"` and `provider: "hodlxxi"`.
 - `/metrics/prometheus` streams Prometheus-compatible metrics (any output indicates the exporter is live).
 

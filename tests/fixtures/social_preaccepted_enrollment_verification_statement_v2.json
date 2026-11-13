@@ -1,0 +1,74 @@
+{
+  "configuration": {
+    "audience": "https://ubid.example/internal/v2/social/device-admission/consume",
+    "clientId": "social-preaccepted-enrollment-verification-client-v2",
+    "issuer": "https://social.example",
+    "kid": "social-preaccepted-enrollment-verifier-rs256-v2",
+    "servicePrincipal": "social-preaccepted-enrollment-verifier-v2"
+  },
+  "deadlines": {
+    "approverSessionExpiresAtMs": 1788906660000,
+    "fullExpiresAtMs": 1788906660000,
+    "now": 1788906600000,
+    "phoneSessionExpiresAtMs": 1788906660000,
+    "x25519BindingExpiresAtMs": 1791498599000
+  },
+  "publicVerificationMaterial": {
+    "jwk": {
+      "alg": "RS256",
+      "e": "AQAB",
+      "kid": "social-preaccepted-enrollment-verifier-rs256-v2",
+      "kty": "RSA",
+      "n": "vwAkbEY3MqYCPRY6MgsktureNcL5uF6MWCbPyKY7TnlEsbHF3eePYYdUh1cQlI7mMq6zOlRbSaeNcVOCr6rUzgnK1W5gbdrJY3cYRoFj8VwGWseeYXTv178qG0-lG7RL-he7m7qQujpla2EBvNVe-5EXr6XOoyrZwrM4izG8wxq73FoXZbzaxRHXvXMF2hvMGvE8w0Nbyqhyag-dbxQ15drVw6KIQrr145fEoxG20JiY-s8DYYHe_9-BVYD3cYnmKexwgCEP0Ap4JDgPYyC3SOL-XaGbZFY0ooyF5gezyIgvD1pRKda922p1fJuXKGQpfhrHZJ6Dy-vHp-ckl26Z2Q",
+      "use": "sig"
+    },
+    "spkiPem": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvwAkbEY3MqYCPRY6Mgsk\ntureNcL5uF6MWCbPyKY7TnlEsbHF3eePYYdUh1cQlI7mMq6zOlRbSaeNcVOCr6rU\nzgnK1W5gbdrJY3cYRoFj8VwGWseeYXTv178qG0+lG7RL+he7m7qQujpla2EBvNVe\n+5EXr6XOoyrZwrM4izG8wxq73FoXZbzaxRHXvXMF2hvMGvE8w0Nbyqhyag+dbxQ1\n5drVw6KIQrr145fEoxG20JiY+s8DYYHe/9+BVYD3cYnmKexwgCEP0Ap4JDgPYyC3\nSOL+XaGbZFY0ooyF5gezyIgvD1pRKda922p1fJuXKGQpfhrHZJ6Dy+vHp+ckl26Z\n2QIDAQAB\n-----END PUBLIC KEY-----\n",
+    "spkiSha256": "sha256:1e3d304c7f863b18c7e96edb5f839182302534ea779b504bf8ceefe471301a5b"
+  },
+  "schema": "hodlxxi.social_preaccepted_enrollment_verification_statement_fixture.v2",
+  "sourceFixture": {
+    "bytes": 32998,
+    "path": "tests/fixtures/social_preacceptance_ed25519_handoff_v2.json",
+    "sha256": "4f79dd0f24fd8ded4c2e4e3e644811dd42ca620d8c0e09aea177237dd5d199dc",
+    "verificationInputDigest": "hodlxxi-social-preaccepted-enrollment-verification-input-v2-sha256:3cbd20bc4061fc8fd074c76bbd70239a102519ac5196417d0c2c20b8a6a02939",
+    "verificationInputSha256": "fd275b30a21882c1d7f0996acf640f6c0d6aa8e7a7ea868766e83824e86c2560"
+  },
+  "vector": {
+    "compactJws": "eyJhbGciOiJSUzI1NiIsImtpZCI6InNvY2lhbC1wcmVhY2NlcHRlZC1lbnJvbGxtZW50LXZlcmlmaWVyLXJzMjU2LXYyIiwidHlwIjoiaG9kbHh4aS1zb2NpYWwtcHJlYWNjZXB0ZWQtZW5yb2xsbWVudC12ZXJpZmljYXRpb24tdjIrandzIn0.eyJhY2NlcHRhbmNlSWQiOiI3OTUyN2IwODQ2YzE1MTg4Mjg4Zjk3MjgxYjllOTJlMGM3ODMxMDA1MTJkMGVhMDFmMTQwMGRmYjI0YTFmMTZjIiwiYXNzb2NpYXRpb25JZCI6IjlhNzViMGZiYjRjZWFhODcyMDkzNTVhYzUwOTIyYWY3Nzk2MDk4NTRiNjJhZTlkNTlmMzg4YjliZmU5YzY0ZTYiLCJhdHRlbXB0SWQiOiJjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjIiwiYXVkIjoiaHR0cHM6Ly91YmlkLmV4YW1wbGUvaW50ZXJuYWwvdjIvc29jaWFsL2RldmljZS1hZG1pc3Npb24vY29uc3VtZSIsImNsaWVudElkIjoic29jaWFsLXByZWFjY2VwdGVkLWVucm9sbG1lbnQtdmVyaWZpY2F0aW9uLWNsaWVudC12MiIsImVucm9sbG1lbnRDaGFsbGVuZ2VJZCI6ImVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWUiLCJleHBpcmVzQXQiOjE3ODg5MDY2MDkwMDAsImlucHV0RGlnZXN0IjoiaG9kbHh4aS1zb2NpYWwtcHJlYWNjZXB0ZWQtZW5yb2xsbWVudC12ZXJpZmljYXRpb24taW5wdXQtdjItc2hhMjU2OjNjYmQyMGJjNDA2MWZjOGZkMDc0Yzc2YmJkNzAyMzlhMTAyNTE5YWM1MTk2NDE3ZDBjMmMyMGI4YTZhMDI5MzkiLCJpc3MiOiJodHRwczovL3NvY2lhbC5leGFtcGxlIiwiaXNzdWVkQXQiOjE3ODg5MDY2MDAwMDAsImp0aSI6Ijg0YmNiNzc3YTVkM2FmZDA1MzhlZDFkOTFhMTg1NDQ1ZDQ1MGJjYjAwOTI5OGI5MjI5MzQzMjg5NjAzZGQ4MDYiLCJwdXJwb3NlIjoic29jaWFsX3ByZWFjY2VwdGVkX2Vucm9sbG1lbnRfY3J5cHRvZ3JhcGhpY192ZXJpZmljYXRpb25fdjIiLCJyZXN1bHQiOiJwcmVhY2NlcHRlZC1lbnJvbGxtZW50LXYyLWJpcDM0MC1hbmQtZWQyNTUxOS12YWxpZCIsInNjaGVtYSI6ImhvZGx4eGkuc29jaWFsX3ByZWFjY2VwdGVkX2Vucm9sbG1lbnRfdmVyaWZpY2F0aW9uX3N0YXRlbWVudC52MiIsInNlcnZpY2VQcmluY2lwYWwiOiJzb2NpYWwtcHJlYWNjZXB0ZWQtZW5yb2xsbWVudC12ZXJpZmllci12MiIsInZlcnNpb24iOjJ9.Pt1u3IX-oVZz5jfXT6anxjkIuMNtqRhSpoYKvoRWMtkAOYUaI8dw3FpuIQL36F0fo10kBPDWRE424bFn9xoI06fMPyB7fdcp4fQKL_vB7mTo6OQ7Ff0nYx1wmmzLeKl7WNeSYkKrrheRw8sz2MuMZaSKMWCmsARqnIKlgDDUNXbG232LRxYyMdiXRSSsCVky9ksdbx4PL9b99TUP1bQq0gHqpo7R42tcWIJdWJNlBz4g1rK8yqPuqRz9gnp1jbx9k2aDmVr9mgVckVuwGL5OozqnDqb01fMICzWFUuNaeAsVO3drJPD24y_bHiI0Q3wL2X9kTG_2YIfvyKFboHbDhA",
+    "expectedAuthenticatedProjection": {
+      "acceptanceId": "79527b0846c15188288f97281b9e92e0c783100512d0ea01f1400dfb24a1f16c",
+      "associationCommitment": "not_implemented",
+      "associationId": "9a75b0fbb4ceaa87209355ac50922af779609854b62ae9d59f388b9bfe9c64e6",
+      "attemptId": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "audience": "https://ubid.example/internal/v2/social/device-admission/consume",
+      "authority": "not-granted",
+      "challengeConsumption": "not_implemented",
+      "clientId": "social-preaccepted-enrollment-verification-client-v2",
+      "currentAuthority": "not_evaluated",
+      "durableAcceptance": "not_established",
+      "enrollmentChallengeId": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "expiresAt": 1788906609000,
+      "finalAdmission": "denied",
+      "inputDigest": "hodlxxi-social-preaccepted-enrollment-verification-input-v2-sha256:3cbd20bc4061fc8fd074c76bbd70239a102519ac5196417d0c2c20b8a6a02939",
+      "issuedAt": 1788906600000,
+      "issuer": "https://social.example",
+      "keyFingerprint": "sha256:1e3d304c7f863b18c7e96edb5f839182302534ea779b504bf8ceefe471301a5b",
+      "keyId": "social-preaccepted-enrollment-verifier-rs256-v2",
+      "purpose": "social_preaccepted_enrollment_cryptographic_verification_v2",
+      "receipt": "not_issued",
+      "result": "preaccepted-enrollment-v2-bip340-and-ed25519-valid",
+      "runtimeEnabled": false,
+      "servicePrincipal": "social-preaccepted-enrollment-verifier-v2",
+      "tokenId": "84bcb777a5d3afd0538ed1d91a185445d450bcb009298b9229343289603dd806"
+    },
+    "jti": "84bcb777a5d3afd0538ed1d91a185445d450bcb009298b9229343289603dd806",
+    "payloadSegment": "eyJhY2NlcHRhbmNlSWQiOiI3OTUyN2IwODQ2YzE1MTg4Mjg4Zjk3MjgxYjllOTJlMGM3ODMxMDA1MTJkMGVhMDFmMTQwMGRmYjI0YTFmMTZjIiwiYXNzb2NpYXRpb25JZCI6IjlhNzViMGZiYjRjZWFhODcyMDkzNTVhYzUwOTIyYWY3Nzk2MDk4NTRiNjJhZTlkNTlmMzg4YjliZmU5YzY0ZTYiLCJhdHRlbXB0SWQiOiJjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjIiwiYXVkIjoiaHR0cHM6Ly91YmlkLmV4YW1wbGUvaW50ZXJuYWwvdjIvc29jaWFsL2RldmljZS1hZG1pc3Npb24vY29uc3VtZSIsImNsaWVudElkIjoic29jaWFsLXByZWFjY2VwdGVkLWVucm9sbG1lbnQtdmVyaWZpY2F0aW9uLWNsaWVudC12MiIsImVucm9sbG1lbnRDaGFsbGVuZ2VJZCI6ImVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWUiLCJleHBpcmVzQXQiOjE3ODg5MDY2MDkwMDAsImlucHV0RGlnZXN0IjoiaG9kbHh4aS1zb2NpYWwtcHJlYWNjZXB0ZWQtZW5yb2xsbWVudC12ZXJpZmljYXRpb24taW5wdXQtdjItc2hhMjU2OjNjYmQyMGJjNDA2MWZjOGZkMDc0Yzc2YmJkNzAyMzlhMTAyNTE5YWM1MTk2NDE3ZDBjMmMyMGI4YTZhMDI5MzkiLCJpc3MiOiJodHRwczovL3NvY2lhbC5leGFtcGxlIiwiaXNzdWVkQXQiOjE3ODg5MDY2MDAwMDAsImp0aSI6Ijg0YmNiNzc3YTVkM2FmZDA1MzhlZDFkOTFhMTg1NDQ1ZDQ1MGJjYjAwOTI5OGI5MjI5MzQzMjg5NjAzZGQ4MDYiLCJwdXJwb3NlIjoic29jaWFsX3ByZWFjY2VwdGVkX2Vucm9sbG1lbnRfY3J5cHRvZ3JhcGhpY192ZXJpZmljYXRpb25fdjIiLCJyZXN1bHQiOiJwcmVhY2NlcHRlZC1lbnJvbGxtZW50LXYyLWJpcDM0MC1hbmQtZWQyNTUxOS12YWxpZCIsInNjaGVtYSI6ImhvZGx4eGkuc29jaWFsX3ByZWFjY2VwdGVkX2Vucm9sbG1lbnRfdmVyaWZpY2F0aW9uX3N0YXRlbWVudC52MiIsInNlcnZpY2VQcmluY2lwYWwiOiJzb2NpYWwtcHJlYWNjZXB0ZWQtZW5yb2xsbWVudC12ZXJpZmllci12MiIsInZlcnNpb24iOjJ9",
+    "payloadWire": "{\"acceptanceId\":\"79527b0846c15188288f97281b9e92e0c783100512d0ea01f1400dfb24a1f16c\",\"associationId\":\"9a75b0fbb4ceaa87209355ac50922af779609854b62ae9d59f388b9bfe9c64e6\",\"attemptId\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"aud\":\"https://ubid.example/internal/v2/social/device-admission/consume\",\"clientId\":\"social-preaccepted-enrollment-verification-client-v2\",\"enrollmentChallengeId\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"expiresAt\":1788906609000,\"inputDigest\":\"hodlxxi-social-preaccepted-enrollment-verification-input-v2-sha256:3cbd20bc4061fc8fd074c76bbd70239a102519ac5196417d0c2c20b8a6a02939\",\"iss\":\"https://social.example\",\"issuedAt\":1788906600000,\"jti\":\"84bcb777a5d3afd0538ed1d91a185445d450bcb009298b9229343289603dd806\",\"purpose\":\"social_preaccepted_enrollment_cryptographic_verification_v2\",\"result\":\"preaccepted-enrollment-v2-bip340-and-ed25519-valid\",\"schema\":\"hodlxxi.social_preaccepted_enrollment_verification_statement.v2\",\"servicePrincipal\":\"social-preaccepted-enrollment-verifier-v2\",\"version\":2}",
+    "payloadWithoutJtiWire": "{\"acceptanceId\":\"79527b0846c15188288f97281b9e92e0c783100512d0ea01f1400dfb24a1f16c\",\"associationId\":\"9a75b0fbb4ceaa87209355ac50922af779609854b62ae9d59f388b9bfe9c64e6\",\"attemptId\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"aud\":\"https://ubid.example/internal/v2/social/device-admission/consume\",\"clientId\":\"social-preaccepted-enrollment-verification-client-v2\",\"enrollmentChallengeId\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"expiresAt\":1788906609000,\"inputDigest\":\"hodlxxi-social-preaccepted-enrollment-verification-input-v2-sha256:3cbd20bc4061fc8fd074c76bbd70239a102519ac5196417d0c2c20b8a6a02939\",\"iss\":\"https://social.example\",\"issuedAt\":1788906600000,\"purpose\":\"social_preaccepted_enrollment_cryptographic_verification_v2\",\"result\":\"preaccepted-enrollment-v2-bip340-and-ed25519-valid\",\"schema\":\"hodlxxi.social_preaccepted_enrollment_verification_statement.v2\",\"servicePrincipal\":\"social-preaccepted-enrollment-verifier-v2\",\"version\":2}",
+    "protectedHeaderSegment": "eyJhbGciOiJSUzI1NiIsImtpZCI6InNvY2lhbC1wcmVhY2NlcHRlZC1lbnJvbGxtZW50LXZlcmlmaWVyLXJzMjU2LXYyIiwidHlwIjoiaG9kbHh4aS1zb2NpYWwtcHJlYWNjZXB0ZWQtZW5yb2xsbWVudC12ZXJpZmljYXRpb24tdjIrandzIn0",
+    "protectedHeaderWire": "{\"alg\":\"RS256\",\"kid\":\"social-preaccepted-enrollment-verifier-rs256-v2\",\"typ\":\"hodlxxi-social-preaccepted-enrollment-verification-v2+jws\"}",
+    "signature": "Pt1u3IX-oVZz5jfXT6anxjkIuMNtqRhSpoYKvoRWMtkAOYUaI8dw3FpuIQL36F0fo10kBPDWRE424bFn9xoI06fMPyB7fdcp4fQKL_vB7mTo6OQ7Ff0nYx1wmmzLeKl7WNeSYkKrrheRw8sz2MuMZaSKMWCmsARqnIKlgDDUNXbG232LRxYyMdiXRSSsCVky9ksdbx4PL9b99TUP1bQq0gHqpo7R42tcWIJdWJNlBz4g1rK8yqPuqRz9gnp1jbx9k2aDmVr9mgVckVuwGL5OozqnDqb01fMICzWFUuNaeAsVO3drJPD24y_bHiI0Q3wL2X9kTG_2YIfvyKFboHbDhA",
+    "signingInput": "eyJhbGciOiJSUzI1NiIsImtpZCI6InNvY2lhbC1wcmVhY2NlcHRlZC1lbnJvbGxtZW50LXZlcmlmaWVyLXJzMjU2LXYyIiwidHlwIjoiaG9kbHh4aS1zb2NpYWwtcHJlYWNjZXB0ZWQtZW5yb2xsbWVudC12ZXJpZmljYXRpb24tdjIrandzIn0.eyJhY2NlcHRhbmNlSWQiOiI3OTUyN2IwODQ2YzE1MTg4Mjg4Zjk3MjgxYjllOTJlMGM3ODMxMDA1MTJkMGVhMDFmMTQwMGRmYjI0YTFmMTZjIiwiYXNzb2NpYXRpb25JZCI6IjlhNzViMGZiYjRjZWFhODcyMDkzNTVhYzUwOTIyYWY3Nzk2MDk4NTRiNjJhZTlkNTlmMzg4YjliZmU5YzY0ZTYiLCJhdHRlbXB0SWQiOiJjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjIiwiYXVkIjoiaHR0cHM6Ly91YmlkLmV4YW1wbGUvaW50ZXJuYWwvdjIvc29jaWFsL2RldmljZS1hZG1pc3Npb24vY29uc3VtZSIsImNsaWVudElkIjoic29jaWFsLXByZWFjY2VwdGVkLWVucm9sbG1lbnQtdmVyaWZpY2F0aW9uLWNsaWVudC12MiIsImVucm9sbG1lbnRDaGFsbGVuZ2VJZCI6ImVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWUiLCJleHBpcmVzQXQiOjE3ODg5MDY2MDkwMDAsImlucHV0RGlnZXN0IjoiaG9kbHh4aS1zb2NpYWwtcHJlYWNjZXB0ZWQtZW5yb2xsbWVudC12ZXJpZmljYXRpb24taW5wdXQtdjItc2hhMjU2OjNjYmQyMGJjNDA2MWZjOGZkMDc0Yzc2YmJkNzAyMzlhMTAyNTE5YWM1MTk2NDE3ZDBjMmMyMGI4YTZhMDI5MzkiLCJpc3MiOiJodHRwczovL3NvY2lhbC5leGFtcGxlIiwiaXNzdWVkQXQiOjE3ODg5MDY2MDAwMDAsImp0aSI6Ijg0YmNiNzc3YTVkM2FmZDA1MzhlZDFkOTFhMTg1NDQ1ZDQ1MGJjYjAwOTI5OGI5MjI5MzQzMjg5NjAzZGQ4MDYiLCJwdXJwb3NlIjoic29jaWFsX3ByZWFjY2VwdGVkX2Vucm9sbG1lbnRfY3J5cHRvZ3JhcGhpY192ZXJpZmljYXRpb25fdjIiLCJyZXN1bHQiOiJwcmVhY2NlcHRlZC1lbnJvbGxtZW50LXYyLWJpcDM0MC1hbmQtZWQyNTUxOS12YWxpZCIsInNjaGVtYSI6ImhvZGx4eGkuc29jaWFsX3ByZWFjY2VwdGVkX2Vucm9sbG1lbnRfdmVyaWZpY2F0aW9uX3N0YXRlbWVudC52MiIsInNlcnZpY2VQcmluY2lwYWwiOiJzb2NpYWwtcHJlYWNjZXB0ZWQtZW5yb2xsbWVudC12ZXJpZmllci12MiIsInZlcnNpb24iOjJ9"
+  },
+  "version": 2
+}

@@ -1,0 +1,14 @@
+{
+  "keyId": "ubid-offline-v1",
+  "provision": {
+    "commandId": "hodlxxi-social-active-alias-lifecycle-command-v1-sha256:57c315a956b4aa5461a64d0e590a6605ec871e08d047eadaeae93c4e510145aa",
+    "commandWire": "{\"action\":\"provision\",\"algorithm\":\"Ed25519\",\"audience\":\"hodlxxi.ubid.alias_namespace_lifecycle.v1\",\"commandId\":\"hodlxxi-social-active-alias-lifecycle-command-v1-sha256:57c315a956b4aa5461a64d0e590a6605ec871e08d047eadaeae93c4e510145aa\",\"expectedCommitment\":null,\"expectedVersion\":null,\"expiresAtMs\":1800000060000,\"issuedAtMs\":1800000000000,\"keyId\":\"ubid-offline-v1\",\"nonce\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"schema\":\"hodlxxi.social_active_alias_namespace_lifecycle_command.v1\",\"successorCommitment\":\"hodlxxi-social-active-alias-namespace-v1-sha256:6e35acd92e03e0d6506601b4dfde5a812d4ba0a568cd7ade1428b41b74dae2a8\",\"successorVersion\":1,\"version\":1}",
+    "signature": "bzV_A8O6LSGDgsaZw8r3va2jqvuLl_T65fcvmZAmNLWUZkbNUdPfXEiea4CfpyXxgYdS42BTjMQfXRsuolnCBw"
+  },
+  "publicKey": "cc670b67c625dedbe38608282945b61ef6a37eed83e323b8e61da4df881ced24",
+  "rotate": {
+    "commandId": "hodlxxi-social-active-alias-lifecycle-command-v1-sha256:ed34fcece9e4e50342aabd64ffc247f473ff2aaf623f806e6d10c5e95e0ae09d",
+    "commandWire": "{\"action\":\"rotate\",\"algorithm\":\"Ed25519\",\"audience\":\"hodlxxi.ubid.alias_namespace_lifecycle.v1\",\"commandId\":\"hodlxxi-social-active-alias-lifecycle-command-v1-sha256:ed34fcece9e4e50342aabd64ffc247f473ff2aaf623f806e6d10c5e95e0ae09d\",\"expectedCommitment\":\"hodlxxi-social-active-alias-namespace-v1-sha256:6e35acd92e03e0d6506601b4dfde5a812d4ba0a568cd7ade1428b41b74dae2a8\",\"expectedVersion\":1,\"expiresAtMs\":1800000060000,\"issuedAtMs\":1800000000000,\"keyId\":\"ubid-offline-v1\",\"nonce\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"schema\":\"hodlxxi.social_active_alias_namespace_lifecycle_command.v1\",\"successorCommitment\":\"hodlxxi-social-active-alias-namespace-v1-sha256:97ca381e2e16c7f10003dbc2230e69af6bd5a1fe24342cd796a2ca03a97067be\",\"successorVersion\":2,\"version\":1}",
+    "signature": "HeJAS3N9BuF83ezjIKtBkzW3iDT29X2VaZQUdt1DuVSRKAcTWg9vBBpZx_UmgvHAD7sRhoHfmtBX4aZPNlxeBA"
+  }
+}

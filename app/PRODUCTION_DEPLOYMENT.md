@@ -21,7 +21,7 @@ This guide captures the deployment pattern currently aligned with this projectâ€
 1. Configure TLS and strict proxy forwarding in Nginx.
 2. Run application via systemd-managed Gunicorn process.
 3. Provide environment variables for Flask, DB, Redis, OAuth, and Bitcoin RPC.
-4. Verify health endpoints (`/health`, `/health/live`, `/health/ready`).
+4. Use `/health/live` for process liveness; verify `/health/ready` separately for database readiness. `/health` remains a liveness compatibility alias.
 5. Confirm DB schema alignment before exposing OAuth and PoF endpoints.
 6. Validate log capture and rotation.
 
