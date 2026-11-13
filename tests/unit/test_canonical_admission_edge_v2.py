@@ -56,9 +56,7 @@ def _root():
 
 
 def _child(parent):
-    policy, reg, _funding, snapshot, rpc = _sources(
-        sponsor=BOB, child=CHARLIE, depth=1
-    )
+    policy, reg, _funding, snapshot, rpc = _sources(sponsor=BOB, child=CHARLIE, depth=1)
     new_id = {"a" * 64: CHILD_EARLY_TX, "b" * 64: CHILD_LATE_TX}
     reg = create_trusted_covenant_registration(
         reg.mirrored_pair,
@@ -117,9 +115,7 @@ def _check(nodes, target=None, *, genesis=None, at=NOW):
         genesis = _genesis()
     if target is None:
         target = nodes[-1].edge.edge_id
-    return evaluate_canonical_sponsor_lineage_v2(
-        target, nodes=nodes, genesis_evaluation=genesis, evaluated_at=at
-    )
+    return evaluate_canonical_sponsor_lineage_v2(target, nodes=nodes, genesis_evaluation=genesis, evaluated_at=at)
 
 
 def test_alice_bob_v2_edge_has_distinct_schema_and_never_grants_full():
@@ -129,14 +125,17 @@ def test_alice_bob_v2_edge_has_distinct_schema_and_never_grants_full():
     assert edge.version == EDGE_VERSION
     assert edge.authorization_boundary == BOUNDARY
     assert edge.edge_id == proposal.proposal_id
-    assert edge.proposal_sha256 == hashlib.sha256(
-        json.dumps(
-            json.loads(canonical_admission_edge_v2_bytes(edge))["proposal"],
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=True,
-        ).encode("ascii")
-    ).hexdigest()
+    assert (
+        edge.proposal_sha256
+        == hashlib.sha256(
+            json.dumps(
+                json.loads(canonical_admission_edge_v2_bytes(edge))["proposal"],
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode("ascii")
+        ).hexdigest()
+    )
     assert len(canonical_admission_edge_v2_sha256(edge)) == 64
     assert edge.is_effective is False
     assert edge.grants_full is False
@@ -289,10 +288,7 @@ def test_original_observation_is_required_separately_from_current():
     _, node = _root()
     bogus = replace(
         node.original_observation,
-        observations=tuple(
-            replace(o, txid="f" * 64)
-            for o in node.original_observation.observations
-        ),
+        observations=tuple(replace(o, txid="f" * 64) for o in node.original_observation.observations),
     )
     with pytest.raises(InvalidCanonicalAdmissionEdgeV2, match="historical_proposal_sources_invalid"):
         _check((replace(node, original_observation=bogus),))

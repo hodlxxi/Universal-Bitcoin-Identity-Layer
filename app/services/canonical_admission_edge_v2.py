@@ -249,7 +249,9 @@ def _checked_current_observation(
     evaluated_at: datetime,
 ) -> CovenantRelationEvaluation:
     try:
-        observation = CovenantRelationEvaluation(*(getattr(current, f.name) for f in fields(CovenantRelationEvaluation)))
+        observation = CovenantRelationEvaluation(
+            *(getattr(current, f.name) for f in fields(CovenantRelationEvaluation))
+        )
         expected = trusted_outpoints_from_registration(registration)
         if (
             observation.subject_pubkey != registration.subject_xonly_pubkey
@@ -259,17 +261,15 @@ def _checked_current_observation(
         ):
             _fail("current_observation_missing_or_stale")
         expected_set = {
-            (x.direction, x.txid, x.vout, x.amount_sats, x.script_sha256, x.descriptor_sha256)
-            for x in expected
+            (x.direction, x.txid, x.vout, x.amount_sats, x.script_sha256, x.descriptor_sha256) for x in expected
         }
         observed_set = {
             (x.direction, x.txid, x.vout, x.amount_sats, x.script_sha256, x.descriptor_sha256)
             for x in observation.observations
         }
-        if (
-            observed_set != expected_set
-            or any(type(x) is not CovenantRelationObservation or not x.unspent or x.confirmations < 1
-                   for x in observation.observations)
+        if observed_set != expected_set or any(
+            type(x) is not CovenantRelationObservation or not x.unspent or x.confirmations < 1
+            for x in observation.observations
         ):
             _fail("current_outpoints_missing_spent_or_mismatched")
         return observation
@@ -378,9 +378,7 @@ def evaluate_canonical_sponsor_lineage_v2(
             )
         except Exception:
             _fail("historical_proposal_sources_invalid")
-        current_observation = _checked_current_observation(
-            item.registration, item.current_observation, evaluated_at=at
-        )
+        current_observation = _checked_current_observation(item.registration, item.current_observation, evaluated_at=at)
         for leg in proposal.outpoints:
             key = (leg.txid, leg.vout)
             if key in outpoints:
