@@ -122,6 +122,32 @@ a separately approved transactional protocol and fresh re-observation.
 The dedicated GitHub Actions workflow runs both import and funding preflight
 unit tests. It has no permission or path to mutate a VPS, wallet or database.
 
+## Canon V2 admission proposal (implemented, read-only)
+
+A separate proposed-only domain layer now exists in
+`app/services/canonical_admission_proposal_v2.py`. It binds the V2
+sponsor-early script evidence to an ACTIVE exact two-outpoint
+`TrustedCovenantRegistration`, an EFFECTIVE exact two-anchor
+`CanonicalCovenantFundingSet`, and a recent (at most 120 seconds)
+two-outpoint chain observation with positive/equal sats, exact P2WSH
+scriptPubKeys, confirmations and unspent status. V2 records reference
+a live genesis-evaluation anchor for depth 1 or an exact previous
+**V2 proposal** at depth 2+. Bob→Charlie ancestry may be structurally
+represented, but a parent proposal is not proof Bob is currently Full.
+
+Import provenance, sponsor-key evidence and child acceptance are
+recorded as distinct SHA-256 **references**, not as cryptographically
+verified signatures. Bitcoin observations must originate from the
+trusted adapter; a caller-supplied observation alone is not independent
+on-chain proof. This code creates no DB row, automatically verified
+membership, current-entitlement evidence or Social role. Both
+`grants_full` and `is_effective` remain unconditionally false.
+
+The sponsor-relative pair hash from the V2 script evidence differs
+from the child-relative pair hash in a trusted registration. Exact
+scripts, participant keys and on-chain outpoint bindings are therefore
+compared, not falsely equated between these two perspectives.
+
 ## Required continuation (not implemented by this preflight PR)
 
 1. **Ingest after confirmed import.** A successful, exact scoped descriptor
@@ -150,7 +176,7 @@ unit tests. It has no permission or path to mutate a VPS, wallet or database.
 5. **Complete Canon V2 admission from the versioned script policy.**
    The independent V2 script-role policy now validates the actual
    demonstrator arrangement, including sponsors at depth >0. A distinct
-   durable Canon V2 admission record, registry, lineage-aware evaluator,
+   effective Canon V2 admission record, durable registry, lineage-aware evaluator,
    lifecycle and explicitly approved entitlement policy are **still
    required**. Fail closed until these are implemented and approved;
    do not reinterpret or mutate V1 records.
@@ -185,6 +211,7 @@ unit tests. It has no permission or path to mutate a VPS, wallet or database.
 - Production unchanged until all tests and staging E2E pass.
 
 This PR contains **read-only V1 structural and exact-UTXO snapshot preflights,
-a separate V2 script-role evidence validator, regression tests and CI**.
+a V2 script-role evidence validator, a source-bound proposed-only V2
+admission object, regression tests and CI**.
 No `/import_descriptor` route changes, database migrations, automatic
 grants, cron/timer changes, production writes, or deployments.
