@@ -23,9 +23,15 @@ def _num(n):
 
 def _leg(receiver, sender, early, late):
     return (
-        b"\x63" + _num(early) + b"\xb1\x75" + bytes.fromhex("21" + receiver)
-        + b"\xac\x67" + _num(late) + b"\xb1\x75"
-        + bytes.fromhex("21" + sender) + b"\xac\x68"
+        b"\x63"
+        + _num(early)
+        + b"\xb1\x75"
+        + bytes.fromhex("21" + receiver)
+        + b"\xac\x67"
+        + _num(late)
+        + b"\xb1\x75"
+        + bytes.fromhex("21" + sender)
+        + b"\xac\x68"
     ).hex()
 
 
