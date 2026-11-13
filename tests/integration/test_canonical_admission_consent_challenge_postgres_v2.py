@@ -42,28 +42,36 @@ def postgres_engine():
     ):
         raise RuntimeError("refuse_non_disposable_postgres_target")
     engine = create_engine(url, future=True, pool_pre_ping=True)
+    created = False
     try:
-        with engine.connect() as connection:
-            # Fail closed if table preexists; NEVER run against a shared database.
+        # SQLAlchemy must own the complete DDL transaction. A raw DBAPI
+        # cursor followed by SQLAlchemy Connection.commit() did not make
+        # the CREATE TABLE visible to the next test connection.
+        with engine.begin() as connection:
             existing = connection.execute(
                 text("SELECT to_regclass('public.canonical_admission_consent_challenges_v2')")
             ).scalar_one()
             if existing is not None:
                 raise RuntimeError("disposable_test_database_must_be_empty")
-            connection.commit()
-            # A single SQL file is executed by psycopg within a transaction:
-            # its PL/pgSQL function body has embedded semicolons.
-            raw = connection.connection.driver_connection
-            with raw.cursor() as cursor:
-                cursor.execute(MIGRATION.read_text())
-            connection.commit()
+            # psycopg2 supports the complete migration, including $$ plpgsql
+            # function bodies, as one driver SQL command in this transaction.
+            connection.exec_driver_sql(MIGRATION.read_text())
+        created = True
         yield engine
     finally:
-        with engine.begin() as connection:
-            connection.execute(text("DROP TABLE IF EXISTS public.canonical_admission_consent_challenges_v2"))
-            connection.execute(text("DROP FUNCTION IF EXISTS public.guard_canonical_admission_consent_challenge_v2()"))
-        engine.dispose()
-
+        try:
+            # On a refused preexisting table or failed DDL transaction,
+            # NEVER drop anything that this fixture did not create.
+            if created:
+                with engine.begin() as connection:
+                    connection.execute(
+                        text("DROP TABLE IF EXISTS public.canonical_admission_consent_challenges_v2")
+                    )
+                    connection.execute(
+                        text("DROP FUNCTION IF EXISTS public.guard_canonical_admission_consent_challenge_v2()")
+                    )
+        finally:
+            engine.dispose()
 
 @pytest.fixture
 def clean_ledger(postgres_engine):
@@ -156,10 +164,13 @@ def test_real_postgres_transaction_rollback_does_not_consume_nonce(clean_ledger)
                 assert not result.replay_protected
                 raise RuntimeError("simulate_rollback")
     with clean_ledger.connect() as conn:
-        assert conn.execute(
-            text(f"SELECT consumed_at FROM {TABLE} WHERE challenge_sha256=:sha"),
-            {"sha": pending.challenge_sha256},
-        ).scalar_one() is None
+        assert (
+            conn.execute(
+                text(f"SELECT consumed_at FROM {TABLE} WHERE challenge_sha256=:sha"),
+                {"sha": pending.challenge_sha256},
+            ).scalar_one()
+            is None
+        )
     _consume(clean_ledger, proposal, pending)
 
 
@@ -178,10 +189,13 @@ def test_postgres_trigger_rejects_rewrite_second_consumption_and_deletion(clean_
             with clean_ledger.begin() as conn:
                 conn.execute(text(sql), {"sha": sha, "nonce": "0" * 64})
     with clean_ledger.connect() as conn:
-        assert conn.execute(
-            text(f"SELECT count(*) FROM {TABLE} WHERE challenge_sha256=:sha"),
-            {"sha": sha},
-        ).scalar_one() == 1
+        assert (
+            conn.execute(
+                text(f"SELECT count(*) FROM {TABLE} WHERE challenge_sha256=:sha"),
+                {"sha": sha},
+            ).scalar_one()
+            == 1
+        )
 
 
 def test_postgres_unique_nonce_and_immutable_issuer_constraints(clean_ledger):

@@ -166,10 +166,7 @@ class SqlAlchemyCanonicalAdmissionChallengeLedgerV2:
 
     def _transaction(self) -> None:
         try:
-            if (
-                not self._session.in_transaction()
-                or self._session.get_bind().dialect.name != "postgresql"
-            ):
+            if not self._session.in_transaction() or self._session.get_bind().dialect.name != "postgresql":
                 raise CanonicalAdmissionChallengeLedgerUnavailable("postgres_transaction_required")
         except CanonicalAdmissionChallengeLedgerUnavailable:
             raise
@@ -192,9 +189,7 @@ class SqlAlchemyCanonicalAdmissionChallengeLedgerV2:
         sponsor = proposal.script_evidence.sponsor_compressed_pubkey
         if type(authenticated_sponsor_pubkey) is not str or authenticated_sponsor_pubkey != sponsor:
             raise CanonicalAdmissionChallengeReplayV2("issuer_not_sponsor")
-        challenge = issue_canonical_admission_consent_challenge_v2(
-            proposal, now=_stamp(self._clock())
-        )
+        challenge = issue_canonical_admission_consent_challenge_v2(proposal, now=_stamp(self._clock()))
         sha = _challenge_sha256(challenge)
         params = {
             "challenge_sha256": sha,
@@ -242,9 +237,7 @@ class SqlAlchemyCanonicalAdmissionChallengeLedgerV2:
         if type(authenticated_child_pubkey) is not str or authenticated_child_pubkey != child:
             raise CanonicalAdmissionChallengeReplayV2("consumer_not_child")
         try:
-            row = self._session.execute(
-                text(LOCK_SQL), {"challenge_sha256": challenge_sha256}
-            ).mappings().one_or_none()
+            row = self._session.execute(text(LOCK_SQL), {"challenge_sha256": challenge_sha256}).mappings().one_or_none()
         except SQLAlchemyError:
             raise CanonicalAdmissionChallengeLedgerUnavailable("challenge_lock_failed") from None
         if row is None or row["consumed_at"] is not None or row["verification_sha256"] is not None:
