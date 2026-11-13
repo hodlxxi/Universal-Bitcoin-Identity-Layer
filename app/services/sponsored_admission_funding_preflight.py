@@ -15,24 +15,18 @@ from typing import Callable
 
 from app.services.canonical_admission_edge import MIN_CONFIRMATIONS
 from app.services.covenant_relation import MAX_BITCOIN_SATS, MAX_VOUT, CovenantDirection
-from app.services.mirrored_covenant_pair import (
-    CovenantDeltaProfile,
-    validate_mirrored_covenant_pair,
-)
+from app.services.mirrored_covenant_pair import CovenantDeltaProfile, validate_mirrored_covenant_pair
 from app.services.sponsored_admission_import_preflight import assess_sponsored_imported_pair
 from app.services.trusted_covenant_observation import (
     TRUSTED_OUTPOINT_SCHEMA,
     TrustedBitcoinCovenantObservationAdapter,
-    TrustedCovenantObservationUnavailable,
     TrustedCovenantOutpoint,
 )
 from app.services.trusted_covenant_registration import p2wsh_script_pubkey_sha256
 
 SCHEMA = "hodlxxi.sponsored_admission_funding_preflight.v1"
 _HEX64 = re.compile(r"[0-9a-f]{64}\Z")
-_STRUCTURAL_CANDIDATES = frozenset(
-    ("canonical_script_shape_only", "reverse_branch_roles_requires_policy_review")
-)
+_STRUCTURAL_CANDIDATES = frozenset(("canonical_script_shape_only", "reverse_branch_roles_requires_policy_review"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,7 +91,9 @@ def assess_sponsored_funding_snapshot(
     )
 
     def result(
-        status: str, observed_at: datetime | None = None, block_height: int | None = None,
+        status: str,
+        observed_at: datetime | None = None,
+        block_height: int | None = None,
         sats: int | None = None,
     ) -> SponsoredAdmissionFundingPreflight:
         return SponsoredAdmissionFundingPreflight(
