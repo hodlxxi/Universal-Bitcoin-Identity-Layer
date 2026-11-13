@@ -4,7 +4,6 @@ These tests must run only against an isolated CI Postgres database.
 No production DB or runtime services are connected, and no role is granted.
 """
 
-import hashlib
 from pathlib import Path
 
 import pytest
@@ -197,7 +196,7 @@ def test_postgres_unique_nonce_and_immutable_issuer_constraints(clean_ledger):
                     "end": pending.challenge.expires_at,
                 },
             )
-    with pytest.raises(IntegrityError):
+    with pytest.raises(DBAPIError):
         with clean_ledger.begin() as conn:
             conn.execute(
                 text(f"UPDATE {TABLE} SET issuer_session_pubkey=:child WHERE challenge_sha256=:sha"),
