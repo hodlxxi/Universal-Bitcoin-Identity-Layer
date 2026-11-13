@@ -72,6 +72,39 @@ exact vectors as `reverse_branch_roles_requires_policy_review`.
 edit historical on-chain Scripts, change Canon's fixed semantics silently,
 or invent a `TrustedCovenantRegistration` simply to satisfy tests.
 
+## Exact-UTXO funding snapshot preflight (implemented, read-only)
+
+`app/services/sponsored_admission_funding_preflight.py` adds a second,
+independent check over **two explicit** `CandidateOutpoint(txid, vout,
+amount_sats)` values. It does not discover outpoints from wallet balances,
+address labels, or `listdescriptors`. The caller is responsible for
+authenticated sponsor-bound provenance; this preflight does not supply it.
+
+The implementation:
+
+- requires the same fail-closed mirror shape as the import preflight, preserving
+  the `reverse_branch_roles_requires_policy_review` classification for the
+  real Alice/Bob pair;
+- derives the earlier and later witness-script SHA-256 from the authoritative
+  parser and then derives the exact native-P2WSH `scriptPubKey` hashes;
+- binds those hashes to explicitly selected distinct `txid:vout` outputs;
+- uses the existing `TrustedBitcoinCovenantObservationAdapter` to observe
+  Bitcoin Core `gettxout` and a consistent before/after best-block snapshot;
+- checks both outputs, positive equal exact integer satoshi amounts,
+  scriptPubKey equality, unspent state and at least one confirmation;
+- returns `two_exact_utxos_observed_no_admission` for a successful snapshot.
+  **All results have `grants_full == False`.**
+
+The adapter's current `gettxout(txid, vout, False)` observes the confirmed
+UTXO set with mempool excluded. A pending mempool spend therefore requires
+a separate admission-time policy/check. A successful observation is neither
+durable proof nor authorization, and can become stale immediately. Do not
+store it as a canonical admission record or use it to refresh Full without
+a separately approved transactional protocol and fresh re-observation.
+
+The dedicated GitHub Actions workflow runs both import and funding preflight
+unit tests. It has no permission or path to mutate a VPS, wallet or database.
+
 ## Required continuation (not implemented by this preflight PR)
 
 1. **Ingest after confirmed import.** A successful, exact scoped descriptor
@@ -84,7 +117,9 @@ or invent a `TrustedCovenantRegistration` simply to satisfy tests.
    Enforce same two pubkeys, reversed unilateral roles, equal 777-block
    deltas, valid common middle height, exact CLTV-only profile, and distinct
    script hashes. One-leg arrival remains `pending`.
-3. **Bind exact UTXOs.** Verify Bitcoin Core `gettxout` against the
+3. **Bind exact UTXOs.** The read-only two-UTXO snapshot preflight exists;
+   authenticated provenance, admission-time mempool policy, durable binding
+   and atomic re-observation are **not yet implemented**. Verify Bitcoin Core `gettxout` against the
    SHA-256 witness Script to P2WSH scriptPubKey mapping, both exact txid:vout
    identities, sufficient confirmations, positive/equal satoshi amounts,
    current unspent state, and fresh observation. Reject wallet balances,
@@ -130,6 +165,6 @@ or invent a `TrustedCovenantRegistration` simply to satisfy tests.
 - Bob can sponsor Charlie under the same exact published rules.
 - Production unchanged until all tests and staging E2E pass.
 
-This PR contains **only the pure read-only structural preflight and its
-regression tests**. No `/import_descriptor` route changes, database migrations,
-automatic grants, cron/timer changes, production writes, or deployments.
+This PR contains **only read-only structural and exact-UTXO snapshot preflights,
+plus regression tests and CI**. No `/import_descriptor` route changes, database
+migrations, automatic grants, cron/timer changes, production writes, or deployments.
