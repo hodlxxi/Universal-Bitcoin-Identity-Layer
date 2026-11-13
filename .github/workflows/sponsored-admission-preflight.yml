@@ -13,6 +13,8 @@ on:
       - "tests/unit/test_canonical_sponsored_script_policy_v2.py"
       - "app/services/canonical_admission_proposal_v2.py"
       - "tests/unit/test_canonical_admission_proposal_v2.py"
+      - "app/services/canonical_admission_consent_v2.py"
+      - "tests/unit/test_canonical_admission_consent_v2.py"
       - ".github/workflows/sponsored-admission-preflight.yml"
   workflow_dispatch:
 
@@ -41,4 +43,4 @@ jobs:
           FLASK_ENV: "testing"
           DATABASE_URL: "sqlite:///:memory:"
         run: |
-          python -m pytest -q tests/unit/test_mirrored_covenant_pair.py tests/unit/test_sponsored_admission_import_preflight.py tests/unit/test_sponsored_admission_funding_preflight.py tests/unit/test_canonical_sponsored_script_policy_v2.py tests/unit/test_canonical_admission_proposal_v2.py
+          python -m pytest -q tests/unit/test_mirrored_covenant_pair.py tests/unit/test_sponsored_admission_import_preflight.py tests/unit/test_sponsored_admission_funding_preflight.py tests/unit/test_canonical_sponsored_script_policy_v2.py tests/unit/test_canonical_admission_proposal_v2.py tests/unit/test_canonical_admission_consent_v2.py
