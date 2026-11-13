@@ -113,11 +113,10 @@ def assess_sponsored_funding_snapshot(
         return result("structural_candidate_rejected")
     if type(earlier_outpoint) is not CandidateOutpoint or type(later_outpoint) is not CandidateOutpoint:
         return result("invalid_outpoint_binding")
-    if (
-        (earlier_outpoint.txid, earlier_outpoint.vout)
-        == (later_outpoint.txid, later_outpoint.vout)
-        or earlier_outpoint.amount_sats != later_outpoint.amount_sats
-    ):
+    if (earlier_outpoint.txid, earlier_outpoint.vout) == (
+        later_outpoint.txid,
+        later_outpoint.vout,
+    ) or earlier_outpoint.amount_sats != later_outpoint.amount_sats:
         return result("invalid_outpoint_binding")
 
     try:
@@ -159,8 +158,7 @@ def assess_sponsored_funding_snapshot(
             or {item.direction for item in observation.observations}
             != {CovenantDirection.INCOMING, CovenantDirection.OUTGOING}
             or any(
-                item.unspent is not True or item.confirmations < MIN_CONFIRMATIONS
-                for item in observation.observations
+                item.unspent is not True or item.confirmations < MIN_CONFIRMATIONS for item in observation.observations
             )
         ):
             return result("missing_or_insufficient_qualifying_utxo")
