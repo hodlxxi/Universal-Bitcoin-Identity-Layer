@@ -65,9 +65,7 @@ def assess_sponsored_imported_pair(
     child_depth = sponsor_depth + 1
     sponsor_xonly = sponsor_compressed_pubkey[2:]
     if sponsor_depth == 0 and sponsor_compressed_pubkey != GENESIS_COMPRESSED_KEY:
-        return SponsoredAdmissionImportPreflight(
-            SCHEMA, "non_genesis_root", sponsor_xonly, None, child_depth, None
-        )
+        return SponsoredAdmissionImportPreflight(SCHEMA, "non_genesis_root", sponsor_xonly, None, child_depth, None)
     try:
         expected_heights = cascade_heights(child_depth)
         pair = validate_mirrored_covenant_pair(
