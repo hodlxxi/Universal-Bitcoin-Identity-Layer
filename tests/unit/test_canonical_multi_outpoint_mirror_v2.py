@@ -167,8 +167,12 @@ def test_serialization_independent_of_outpoint_input_order():
     original = _bundle()
     sorted_variant = replace(original, outpoints=tuple(reversed(original.outpoints)))
     assert original.outpoints == sorted_variant.outpoints
-    assert canonical_multi_outpoint_mirror_v2_bytes(original) == canonical_multi_outpoint_mirror_v2_bytes(sorted_variant)
-    assert canonical_multi_outpoint_mirror_v2_sha256(original) == canonical_multi_outpoint_mirror_v2_sha256(sorted_variant)
+    assert canonical_multi_outpoint_mirror_v2_bytes(original) == canonical_multi_outpoint_mirror_v2_bytes(
+        sorted_variant
+    )
+    assert canonical_multi_outpoint_mirror_v2_sha256(original) == canonical_multi_outpoint_mirror_v2_sha256(
+        sorted_variant
+    )
     data = json.loads(canonical_multi_outpoint_mirror_v2_bytes(original))
     assert len(data["outpoints"]) == 5
     assert data["script_evidence"]["orientation"] == "sponsor_early_child_middle_sponsor_late"
@@ -213,9 +217,14 @@ def test_observation_rejects_any_spent_unconfirmed_or_mismatched_UTXO(modifier):
     elif modifier == "script":
         replacement = replace(item, script_sha256="f" * 64)
     else:
-        replacement = replace(item, direction=(
-            CovenantDirection.OUTGOING if item.direction is CovenantDirection.INCOMING else CovenantDirection.INCOMING
-        ))
+        replacement = replace(
+            item,
+            direction=(
+                CovenantDirection.OUTGOING
+                if item.direction is CovenantDirection.INCOMING
+                else CovenantDirection.INCOMING
+            ),
+        )
     altered = replace(snapshot, observations=(replacement, *snapshot.observations[1:]))
     with pytest.raises(InvalidCanonicalMultiOutpointMirrorV2):
         validate_canonical_multi_outpoint_snapshot_v2(bundle, altered, now=NOW)
@@ -277,6 +286,4 @@ def test_declares_legacy_two_outpoint_proposal_boundary_without_issuing_full():
     bundle = _bundle()
     assert len(bundle.outpoints) > 2
     assert not bundle.is_effective
-    assert validate_canonical_multi_outpoint_snapshot_v2(
-        bundle, _observation(bundle), now=NOW
-    ).grants_full is False
+    assert validate_canonical_multi_outpoint_snapshot_v2(bundle, _observation(bundle), now=NOW).grants_full is False

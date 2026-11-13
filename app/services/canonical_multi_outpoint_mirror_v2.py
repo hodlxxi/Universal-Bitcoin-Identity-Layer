@@ -73,9 +73,7 @@ def _expected_script_sha(evidence: CanonicalSponsoredScriptEvidenceV2, direction
     # the LATER leg is INCOMING. The Bitcoin Core gettxout adapter stores
     # SHA256 of native P2WSH scriptPubKey, NOT hash of the witness script.
     witness_hash = (
-        evidence.earlier_script_sha256
-        if direction is CovenantDirection.OUTGOING
-        else evidence.later_script_sha256
+        evidence.earlier_script_sha256 if direction is CovenantDirection.OUTGOING else evidence.later_script_sha256
     )
     return p2wsh_script_pubkey_sha256(witness_hash)
 
@@ -101,10 +99,9 @@ class CanonicalMultiOutpointMirrorV2:
         ):
             _fail("schema_or_boundary")
         evidence = _checked_script_evidence(self.script_evidence)
-        if (
-            type(self.script_evidence_sha256) is not str
-            or self.script_evidence_sha256 != canonical_sponsored_script_evidence_v2_sha256(evidence)
-        ):
+        if type(
+            self.script_evidence_sha256
+        ) is not str or self.script_evidence_sha256 != canonical_sponsored_script_evidence_v2_sha256(evidence):
             _fail("script_policy_digest")
         if type(self.outpoints) is not tuple or not 2 <= len(self.outpoints) <= MAX_OUTPOINTS:
             _fail("outpoint_population")
@@ -167,8 +164,9 @@ def canonical_multi_outpoint_mirror_v2_bytes(value: CanonicalMultiOutpointMirror
     body = {
         "schema": checked.schema,
         "authorization_boundary": checked.authorization_boundary,
-        "script_evidence": {f.name: getattr(checked.script_evidence, f.name)
-                            for f in fields(CanonicalSponsoredScriptEvidenceV2)},
+        "script_evidence": {
+            f.name: getattr(checked.script_evidence, f.name) for f in fields(CanonicalSponsoredScriptEvidenceV2)
+        },
         "script_evidence_sha256": checked.script_evidence_sha256,
         "outpoints": [
             {
@@ -252,19 +250,15 @@ def validate_canonical_multi_outpoint_snapshot_v2(
     ):
         _fail("stale_or_incomplete_observation")
     anchors = {
-        (x.direction, x.txid, x.vout, x.amount_sats, x.script_sha256, x.descriptor_sha256)
-        for x in checked.outpoints
+        (x.direction, x.txid, x.vout, x.amount_sats, x.script_sha256, x.descriptor_sha256) for x in checked.outpoints
     }
     observed = {
-        (x.direction, x.txid, x.vout, x.amount_sats, x.script_sha256, x.descriptor_sha256)
-        for x in actual.observations
+        (x.direction, x.txid, x.vout, x.amount_sats, x.script_sha256, x.descriptor_sha256) for x in actual.observations
     }
     if len(observed) != len(checked.outpoints) or observed != anchors:
         _fail("outpoint_observation_mismatch")
     if any(
-        type(item) is not CovenantRelationObservation
-        or not item.unspent
-        or item.confirmations < 1
+        type(item) is not CovenantRelationObservation or not item.unspent or item.confirmations < 1
         for item in actual.observations
     ):
         _fail("outpoint_spent_or_unconfirmed")
@@ -301,9 +295,9 @@ def observe_canonical_multi_outpoint_mirror_v2(
     if type(bundle) is not CanonicalMultiOutpointMirrorV2:
         _fail("bundle_type")
     try:
-        observation = TrustedBitcoinCovenantObservationAdapter(
-            bitcoin_rpc, clock=lambda: checked_at
-        ).observe(bundle.outpoints)
+        observation = TrustedBitcoinCovenantObservationAdapter(bitcoin_rpc, clock=lambda: checked_at).observe(
+            bundle.outpoints
+        )
     except Exception:
         _fail("bitcoin_observation_unavailable")
     return validate_canonical_multi_outpoint_snapshot_v2(bundle, observation, now=checked_at)
