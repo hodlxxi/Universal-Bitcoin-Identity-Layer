@@ -88,13 +88,49 @@ mempool: fresh admission-time spend/mempool policy is required.
 No GitHub CI run can grant a subject Full, change Social authority,
 create a database row, or deploy to the VPS.
 
+## Source-bound V2 admission proposal (implemented, proposed only)
+
+The new app/services/canonical_admission_proposal_v2.py adds a separate,
+immutable hodlxxi.canonical_sponsored_admission_proposal.v2 record.
+It builds on V2 script evidence, TrustedCovenantRegistration and
+CanonicalCovenantFundingSet **without changing their V1 storage contracts**.
+
+The proposal validates:
+- The exact child-subject trusted registration of the two real scripts.
+- An effective recognized funding set consisting of exactly the two
+  matching distinct registration anchors, of equal positive satoshi value.
+- A recent two-outpoint observation (120-second maximum) bound to exact
+  P2WSH scriptPubKey hashes, confirmations and unspent states.
+- An active genesis evaluation for Alice at depth 0 or the exact
+  digest and identity of a preceding V2 proposal at greater depth.
+- Three distinct supplied SHA-256 references to import provenance,
+  sponsor-key evidence and child acceptance **without treating those
+  references as validated signatures or independently trusted proof**.
+- Deterministic canonical serialization/digest of the complete proposal.
+
+Important: this is an immutable **proposal**, not an effective admission
+record. A parent proposal is only a structural lineage predecessor; it
+does not prove that Bob is currently Full or authorized to sponsor
+Charlie. Supplying an arbitrary reference digest does not establish
+child consent. The observation source may be caller-controlled and is
+not, in isolation, independent proof that Bitcoin Core was queried;
+the trusted observation adapter is the intended source. A successful
+proposal never becomes Full through the pure evaluator.
+Both grants_full and is_effective always return False.
+
+The proposed record must not be written into current_entitlement_evidence,
+Social roles, or an existing V1 admission edge table as though it were
+approved. Durable source capture, signature verification, transactional
+uniqueness/conflict handling, reorg/mempool spend checks, and genuine
+current Full sponsor evaluation remain separate prerequisites.
+
 ## Separate V2 admission implementation required next
 
-1. Define a distinct **versioned V2 trusted admission record**, source
-   validation, lifecycle, conflict rules and migration; preserve V1
-   records verbatim. Design an explicit ancestor binding, including
-   current Full sponsor and unique parent edge, not the caller's
-   claimed sponsor_depth.
+1. Promote the independent **proposed-only V2 source-bound domain** into
+   a separately versioned durable admission registry with verified
+   lifecycle and migration. Preserve V1 records verbatim. Validate
+   actual current Full sponsor/ancestor authority, not the fact that a
+   parent proposal happens to exist.
 2. Capture authenticated, sponsor-scoped, idempotent import provenance,
    exact distinct on-chain UTXO registration and positive equal sats,
    both parties' public-key/key-possession and acceptance signals.
