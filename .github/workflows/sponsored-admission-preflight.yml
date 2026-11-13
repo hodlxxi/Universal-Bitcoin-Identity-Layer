@@ -5,6 +5,8 @@ on:
     paths:
       - "app/services/sponsored_admission_import_preflight.py"
       - "tests/unit/test_sponsored_admission_import_preflight.py"
+      - "app/services/sponsored_admission_funding_preflight.py"
+      - "tests/unit/test_sponsored_admission_funding_preflight.py"
       - "app/services/mirrored_covenant_pair.py"
       - "app/services/canonical_admission_edge.py"
       - ".github/workflows/sponsored-admission-preflight.yml"
@@ -35,4 +37,4 @@ jobs:
           FLASK_ENV: "testing"
           DATABASE_URL: "sqlite:///:memory:"
         run: |
-          python -m pytest -q tests/unit/test_mirrored_covenant_pair.py tests/unit/test_sponsored_admission_import_preflight.py
+          python -m pytest -q tests/unit/test_mirrored_covenant_pair.py tests/unit/test_sponsored_admission_import_preflight.py tests/unit/test_sponsored_admission_funding_preflight.py
