@@ -72,6 +72,23 @@ exact vectors as `reverse_branch_roles_requires_policy_review`.
 edit historical on-chain Scripts, change Canon's fixed semantics silently,
 or invent a `TrustedCovenantRegistration` simply to satisfy tests.
 
+## Versioned Canon V2 script-role policy (implemented, read-only)
+
+The proposed `canonical_sponsored_script_policy_v2.py` is a **separate**
+`hodlxxi.canonical_sponsored_script_evidence.v2` type. It validates
+the actual sponsored CLTV-only order (sponsor early, child at the shared
+middle, sponsor late) against the fixed 777-block schedule and
+supports Alice→Bob at depth 1, Bob→Charlie at depth 2 and successor
+sponsorship at subsequent valid depths. The witness script input
+order is normalized, metadata and hashes are revalidated, and the
+evidence has a canonical digest. **It is not CanonicalAdmissionEdgeV2
+registration or authority.** It does not change the historical Canon V1
+record validation or the existing V1 preflight classification and
+always has `grants_full == False`.
+
+See `docs/CANONICAL_SPONSORED_SCRIPT_POLICY_V2.md` for the exact
+V2 policy boundary, witness ordering and admission prerequisites.
+
 ## Exact-UTXO funding snapshot preflight (implemented, read-only)
 
 `app/services/sponsored_admission_funding_preflight.py` adds a second,
@@ -130,11 +147,13 @@ unit tests. It has no permission or path to mutate a VPS, wallet or database.
    authenticated public-key possession. Require an explicit approved
    consent/acceptance protocol if required by the current Canon; a public
    descriptor is not child consent. Reject circular or competing sponsors.
-5. **Resolve Canon policy incompatibility explicitly.** Review the
-   reversed first-leg roles using a versioned policy/protocol amendment
-   compatible with the shipped real Scripts and with sponsors at depth >0.
-   Require audited membership semantics and propagation of sponsor
-   lineage. Fail closed until approval; never silently downgrade checks.
+5. **Complete Canon V2 admission from the versioned script policy.**
+   The independent V2 script-role policy now validates the actual
+   demonstrator arrangement, including sponsors at depth >0. A distinct
+   durable Canon V2 admission record, registry, lineage-aware evaluator,
+   lifecycle and explicitly approved entitlement policy are **still
+   required**. Fail closed until these are implemented and approved;
+   do not reinterpret or mutate V1 records.
 6. **Atomic canonical persistence.** Within one controlled, locked,
    idempotent transaction append the authorized Trusted Registration,
    funding set, Admission Edge and relevant observation/provenance;
@@ -165,6 +184,7 @@ unit tests. It has no permission or path to mutate a VPS, wallet or database.
 - Bob can sponsor Charlie under the same exact published rules.
 - Production unchanged until all tests and staging E2E pass.
 
-This PR contains **only read-only structural and exact-UTXO snapshot preflights,
-plus regression tests and CI**. No `/import_descriptor` route changes, database
-migrations, automatic grants, cron/timer changes, production writes, or deployments.
+This PR contains **read-only V1 structural and exact-UTXO snapshot preflights,
+a separate V2 script-role evidence validator, regression tests and CI**.
+No `/import_descriptor` route changes, database migrations, automatic
+grants, cron/timer changes, production writes, or deployments.
