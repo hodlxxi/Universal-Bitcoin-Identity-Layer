@@ -12,6 +12,36 @@ importing or funding again.
 Every eligible Full participant must be able to sponsor their own successor
 (Bob -> Charlie), without a privileged Alice/E923-only UI shortcut.
 
+## Cascading sponsors and fixed 777-block schedule
+
+The admission depth belongs to the **child**, not to the number of keys a
+sponsor has or the number of contacts imported. Each independent sponsor-child
+pair receives its own two exact mirrored UTXOs. The sponsor must itself be
+currently canonical Full and its unique parent lineage must be valid.
+
+For child depth `d >= 1`:
+
+```text
+middle(d) = 1,777,777 - 777 * (d - 1)
+early(d)  = middle(d) - 777
+late(d)   = middle(d) + 777
+
+Alice -> Bob      d=1   1,777,000 / 1,777,777 / 1,778,554
+Bob -> Charlie    d=2   1,776,223 / 1,777,000 / 1,777,777
+Charlie -> Dave   d=3   1,775,446 / 1,776,223 / 1,777,000
+```
+
+A Full participant may sponsor multiple distinct children and may simultaneously
+be a child in one parent relationship and sponsor in other child relationships.
+There is no special E923 operator exemption for depth >0 sponsorship. Do not
+derive Full from a sponsor's identity alone or copy the parent entitlement
+without separately observing each child's UTXOs.
+
+`canonical_sponsor_lineage.py` has a pure fail-closed evaluator for finite
+ancestry snapshots; it does not itself persist an admission or activate Full.
+The fixed V1 positive-block-height schedule and evaluator have an explicit
+maximum child depth of 2288; do not claim an unbounded absolute CLTV ladder.
+
 ## Current finding
 
 The legacy `POST /import_descriptor` route in `app/app.py` calls Bitcoin
