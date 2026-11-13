@@ -83,6 +83,7 @@ jobs:
           TESTING: "1"
           FLASK_ENV: "testing"
           DATABASE_URL: "sqlite:///:memory:"
+          CANON_V2_DISPOSABLE_PG_ACK: "1"
           CANON_V2_TEST_DATABASE_URL: "postgresql+psycopg2://canonv2test:disposable-ci-only@localhost:5432/canonv2test"
         run: |
           python -m pytest -q tests/integration/test_canonical_admission_consent_challenge_postgres_v2.py
