@@ -1,14 +1,22 @@
 name: pytest
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [ "main", "production" ]
   pull_request:
 
 jobs:
-  test:
+  pytest-shard:
+    name: pytest-shard-${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
 
     steps:
       - name: Checkout
@@ -33,14 +41,51 @@ jobs:
           FLASK_ENV: "testing"
           DATABASE_URL: "sqlite:///:memory:"
           PYTHONFAULTHANDLER: "1"
+          PYTEST_SHARD_INDEX: ${{ matrix.shard }}
+          PYTEST_SHARD_COUNT: "3"
         run: |
           timeout 45m python -u - <<'PY'
           import faulthandler
+          import hashlib
           import os
           import pytest
 
+          count = int(os.environ["PYTEST_SHARD_COUNT"])
+          index = int(os.environ["PYTEST_SHARD_INDEX"])
+          assert count == 3 and 0 <= index < count
+
+          class ModuleShard:
+              # Keep tests from a single module in the same job.
+              @pytest.hookimpl(trylast=True)
+              def pytest_collection_modifyitems(self, session, config, items):
+                  selected, deselected = [], []
+                  for item in items:
+                      module = item.nodeid.split("::", 1)[0]
+                      shard = int.from_bytes(
+                          hashlib.sha256(module.encode("utf-8")).digest()[:8],
+                          "big",
+                      ) % count
+                      (selected if shard == index else deselected).append(item)
+                  if not selected:
+                      raise pytest.UsageError("Empty test shard; refusing false green")
+                  items[:] = selected
+                  config.hook.pytest_deselected(items=deselected)
+                  print(f"PYTEST_SHARD={index}/{count} SELECTED={len(selected)} DESELECTED={len(deselected)}", flush=True)
+
           faulthandler.dump_traceback_later(35 * 60, repeat=False)
-          rc = pytest.main(["-q", "--durations=25"])
-          print(f"pytest.main returned rc={rc}", flush=True)
+          rc = pytest.main(["-q", "--durations=25"], plugins=[ModuleShard()])
+          print(f"pytest shard {index}/{count} returned rc={rc}", flush=True)
           os._exit(rc)
           PY
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    needs: [pytest-shard]
+    if: ${{ always() }}
+    steps:
+      - name: Require all pytest shards to pass
+        env:
+          SHARDS_RESULT: ${{ needs.pytest-shard.result }}
+        run: |
+          test "$SHARDS_RESULT" = "success"
