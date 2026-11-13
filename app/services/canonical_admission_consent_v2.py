@@ -183,20 +183,14 @@ def issue_canonical_admission_consent_challenge_v2(
     )
 
 
-def canonical_admission_consent_message_v2(
-    challenge: CanonicalAdmissionConsentChallengeV2, *, role: str
-) -> str:
+def canonical_admission_consent_message_v2(challenge: CanonicalAdmissionConsentChallengeV2, *, role: str) -> str:
     """The exact role-separated ASCII text to sign with Bitcoin signmessage."""
     if type(challenge) is not CanonicalAdmissionConsentChallengeV2:
         _fail("challenge_type")
     if role not in ("sponsor", "child") or type(role) is not str:
         _fail("role")
-    signer = (
-        challenge.sponsor_compressed_pubkey if role == "sponsor" else challenge.child_compressed_pubkey
-    )
-    counterparty = (
-        challenge.child_compressed_pubkey if role == "sponsor" else challenge.sponsor_compressed_pubkey
-    )
+    signer = challenge.sponsor_compressed_pubkey if role == "sponsor" else challenge.child_compressed_pubkey
+    counterparty = challenge.child_compressed_pubkey if role == "sponsor" else challenge.sponsor_compressed_pubkey
     return "\n".join(
         (
             DOMAIN,
@@ -239,9 +233,7 @@ def canonical_admission_consent_challenge_v2_bytes(
         "issued_at": _iso(value.issued_at),
         "expires_at": _iso(value.expires_at),
     }
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode(
-        "ascii"
-    )
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
 
 
 def verify_canonical_admission_consent_signatures_v2(

@@ -44,19 +44,14 @@ def _setup():
     challenge = issue_canonical_admission_consent_challenge_v2(proposal, now=NOW)
     sponsor_message = canonical_admission_consent_message_v2(challenge, role="sponsor")
     child_message = canonical_admission_consent_message_v2(challenge, role="child")
-    sponsor_call = (
-        derive_legacy_address_from_pubkey(ALICE), SPONSOR_SIG, sponsor_message
-    )
-    child_call = (
-        derive_legacy_address_from_pubkey(BOB), CHILD_SIG, child_message
-    )
+    sponsor_call = (derive_legacy_address_from_pubkey(ALICE), SPONSOR_SIG, sponsor_message)
+    child_call = (derive_legacy_address_from_pubkey(BOB), CHILD_SIG, child_message)
     return proposal, challenge, sponsor_call, child_call, StrictRpc((sponsor_call, child_call))
 
 
 def _verify(proposal, challenge, rpc, sponsor_signature=SPONSOR_SIG, child_signature=CHILD_SIG, now=NOW):
     return verify_canonical_admission_consent_signatures_v2(
-        proposal, challenge, sponsor_signature=sponsor_signature,
-        child_signature=child_signature, rpc=rpc, now=now
+        proposal, challenge, sponsor_signature=sponsor_signature, child_signature=child_signature, rpc=rpc, now=now
     )
 
 
