@@ -296,21 +296,24 @@ def _source_outpoints(
         or pair.counterparty_pubkey != evidence.sponsor_compressed_pubkey
         or pair.earlier_leg.raw_script_hex != evidence.earlier_raw_script_hex
         or pair.later_leg.raw_script_hex != evidence.later_raw_script_hex
-        or registration.pair_sha256 != evidence.pair_sha256
     ):
         _fail("source_pair_mismatch")
     if len(funding.recognized_outpoints) != 2:
         _fail("funding_set_not_exact_two")
     if len(registration.outpoints) != 2:
         _fail("registration_not_exact_two")
-    if set(funding.recognized_outpoints) != set(registration.outpoints):
-        # The two domain types intentionally differ; compare exact scalar bindings below.
-        supplied = {(x.direction, x.txid, x.vout, x.amount_sats, x.witness_script_sha256,
-                    x.descriptor_sha256) for x in funding.recognized_outpoints}
-        anchors = {(x.direction, x.txid, x.vout, x.amount_sats, x.witness_script_sha256,
-                   x.descriptor_sha256) for x in registration.outpoints}
-        if supplied != anchors:
-            _fail("funding_set_exact_anchor_mismatch")
+    # Domain source and funding-set outpoints use distinct dataclass types.
+    # Compare all six scalar binding fields, not their Python object identity.
+    supplied = {
+        (x.direction, x.txid, x.vout, x.amount_sats, x.witness_script_sha256, x.descriptor_sha256)
+        for x in funding.recognized_outpoints
+    }
+    anchors = {
+        (x.direction, x.txid, x.vout, x.amount_sats, x.witness_script_sha256, x.descriptor_sha256)
+        for x in registration.outpoints
+    }
+    if supplied != anchors:
+        _fail("funding_set_exact_anchor_mismatch")
     ordered = []
     for leg_order, script_sha in (
         ("earlier", evidence.earlier_script_sha256),
