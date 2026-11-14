@@ -226,7 +226,9 @@ def test_deferred_database_trigger_refuses_header_without_all_outputs(db):
         with Session(db) as session:
             with session.begin():
                 session.execute(text("SET CONSTRAINTS trg_cmlac_complete IMMEDIATE"))
-                SqlAlchemyCanonicalMultiLegCandidateRegistryV2(session, clock=lambda: NOW).reserve_candidate_in_transaction(
+                SqlAlchemyCanonicalMultiLegCandidateRegistryV2(
+                    session, clock=lambda: NOW
+                ).reserve_candidate_in_transaction(
                     proposal,
                     sponsor_basis=_genesis(),
                     current_observation=_observation(proposal.mirror),
