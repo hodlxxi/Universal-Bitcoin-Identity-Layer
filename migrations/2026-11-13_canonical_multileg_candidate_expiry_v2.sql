@@ -52,10 +52,8 @@ BEGIN
     IF matches <> 1 THEN
         RAISE EXCEPTION 'expected exactly one historical child unique constraint';
     END IF;
-    EXECUTE format(
-        'ALTER TABLE public.canonical_multileg_admission_candidates_v2 DROP CONSTRAINT %I',
-        unique_name
-    );
+    EXECUTE 'ALTER TABLE public.canonical_multileg_admission_candidates_v2 DROP CONSTRAINT '
+        || quote_ident(unique_name);
 END;
 $$;
 
