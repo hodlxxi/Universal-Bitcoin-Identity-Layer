@@ -48,12 +48,10 @@ def effective_engine(global_shared_pg):
     yield global_shared_pg
     with global_shared_pg.begin() as connection:
         connection.exec_driver_sql(
-            "DROP TRIGGER trg_cmev2_protect_live_child "
-            "ON public.canonical_multileg_live_child_claims_v2"
+            "DROP TRIGGER trg_cmev2_protect_live_child " "ON public.canonical_multileg_live_child_claims_v2"
         )
         connection.exec_driver_sql(
-            "DROP TRIGGER trg_cmev2_protect_live_outpoints "
-            "ON public.canonical_multileg_live_outpoint_claims_v2"
+            "DROP TRIGGER trg_cmev2_protect_live_outpoints " "ON public.canonical_multileg_live_outpoint_claims_v2"
         )
         connection.exec_driver_sql(f"DROP TABLE {EFFECTIVE}")
         for name in FUNCTIONS:
@@ -148,15 +146,11 @@ def test_root_effective_and_child_full_are_bound_in_one_commit(db):
             eid, at = _evidence(session)
             session.execute(text(INSERT), _params(proposal, eid, at))
     with db.connect() as connection:
-        edge = connection.execute(
-            text(f"SELECT * FROM {EFFECTIVE}")
-        ).mappings().one()
+        edge = connection.execute(text(f"SELECT * FROM {EFFECTIVE}")).mappings().one()
         assert edge["child_xonly_pubkey"] == BOB[2:]
         assert edge["sponsor_xonly_pubkey"] == ALICE[2:]
         assert edge["entitlement_evidence_id"] == eid
-        assert connection.execute(
-            text(f"SELECT COUNT(*) FROM {GLOBAL}")
-        ).scalar_one() == 5
+        assert connection.execute(text(f"SELECT COUNT(*) FROM {GLOBAL}")).scalar_one() == 5
 
 
 def test_candidate_cannot_be_effective_without_bound_full_evidence(db):
