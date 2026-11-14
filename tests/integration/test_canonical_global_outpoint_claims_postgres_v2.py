@@ -159,7 +159,11 @@ def test_separate_utxos_across_two_candidate_formats_are_all_claimed(db):
     assert len(rows) == 7
     assert sum(row["claim_kind"] == "strict_two" for row in rows) == 2
     assert sum(row["claim_kind"] == "multileg" for row in rows) == 5
-    assert all(row["strict_edge_id"] == strict.proposal_id for row in rows[:2])
+    assert all(
+        row["strict_edge_id"] == strict.proposal_id
+        for row in rows
+        if row["claim_kind"] == "strict_two"
+    )
 
 
 def test_existing_strict_two_reservation_rejects_signed_multileg_overlap(db):
