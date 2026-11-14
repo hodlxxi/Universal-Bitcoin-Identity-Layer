@@ -50,6 +50,7 @@ NONCES = "public.canonical_multileg_consent_challenges_v2"
 MIGRATIONS = (
     Path("migrations/2026-11-13_canonical_multileg_consent_challenge_v2.sql"),
     Path("migrations/2026-11-13_canonical_multileg_admission_candidates_v2.sql"),
+    Path("migrations/2026-11-13_canonical_multileg_candidate_expiry_v2.sql"),
 )
 
 
@@ -96,9 +97,16 @@ def postgres_engine():
         try:
             if created:
                 with engine.begin() as connection:
+                    connection.execute(text("DROP TABLE public.canonical_multileg_candidate_expirations_v2"))
+                    connection.execute(text("DROP TABLE public.canonical_multileg_live_outpoint_claims_v2"))
+                    connection.execute(text("DROP TABLE public.canonical_multileg_live_child_claims_v2"))
                     connection.execute(text(f"DROP TABLE {OUTPOINTS}"))
                     connection.execute(text(f"DROP TABLE {CANDIDATES}"))
                     connection.execute(text(f"DROP TABLE {NONCES}"))
+                    connection.execute(text("DROP FUNCTION public.expire_canonical_multileg_candidate_v2(VARCHAR)"))
+                    connection.execute(text("DROP FUNCTION public.guard_canonical_multileg_candidate_expiry_v2()"))
+                    connection.execute(text("DROP FUNCTION public.claim_canonical_multileg_child_v2()"))
+                    connection.execute(text("DROP FUNCTION public.claim_canonical_multileg_outpoint_v2()"))
                     connection.execute(text("DROP FUNCTION public.validate_canonical_multileg_candidate_v2()"))
                     connection.execute(text("DROP FUNCTION public.guard_canonical_multileg_candidate_immutable_v2()"))
                     connection.execute(text("DROP FUNCTION public.guard_canonical_multileg_consent_challenge_v2()"))

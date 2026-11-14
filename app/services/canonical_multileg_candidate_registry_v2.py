@@ -84,10 +84,15 @@ RETURNING txid, vout
 """
 
 LOCK_PARENT = """
-SELECT proposal_sha256, child_compressed_pubkey, child_depth
-FROM public.canonical_multileg_admission_candidates_v2
-WHERE proposal_id = :parent_id AND proposal_sha256 = :parent_sha
-FOR SHARE
+SELECT candidate.proposal_sha256, candidate.child_compressed_pubkey,
+       candidate.child_depth
+FROM public.canonical_multileg_admission_candidates_v2 AS candidate
+JOIN public.canonical_multileg_live_child_claims_v2 AS reservation
+  ON reservation.proposal_id = candidate.proposal_id
+ AND reservation.child_xonly_pubkey = candidate.child_xonly_pubkey
+WHERE candidate.proposal_id = :parent_id
+  AND candidate.proposal_sha256 = :parent_sha
+FOR SHARE OF candidate, reservation
 """
 
 
