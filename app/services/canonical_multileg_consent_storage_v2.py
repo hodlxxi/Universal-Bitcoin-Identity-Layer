@@ -137,11 +137,7 @@ def _proposal(value: object) -> CanonicalMultiOutpointAdmissionProposalV2:
 
 
 def _digest(value: object) -> bool:
-    return (
-        type(value) is str
-        and len(value) == 64
-        and all(character in "0123456789abcdef" for character in value)
-    )
+    return type(value) is str and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
 def _challenge_digest(value: CanonicalAdmissionConsentChallengeV2) -> str:
@@ -166,11 +162,7 @@ class SqlAlchemyMultiLegConsentLedgerV2:
     """Caller-owned PostgreSQL transaction, no implicit commit or Full grant."""
 
     def __init__(self, session: Session, *, clock: Callable[[], datetime]) -> None:
-        if (
-            session is None
-            or not callable(getattr(session, "execute", None))
-            or not callable(clock)
-        ):
+        if session is None or not callable(getattr(session, "execute", None)) or not callable(clock):
             raise MultiLegConsentLedgerUnavailableV2("session_and_clock_required")
         self._session = session
         self._clock = clock
@@ -201,9 +193,7 @@ class SqlAlchemyMultiLegConsentLedgerV2:
         sponsor = verified.mirror.script_evidence.sponsor_compressed_pubkey
         if type(authenticated_sponsor_pubkey) is not str or authenticated_sponsor_pubkey != sponsor:
             raise MultiLegConsentReplayV2("issuer_not_sponsor")
-        challenge = issue_multi_outpoint_admission_challenge_v2(
-            verified, now=_timestamp(self._clock())
-        )
+        challenge = issue_multi_outpoint_admission_challenge_v2(verified, now=_timestamp(self._clock()))
         sha = _challenge_digest(challenge)
         params = {
             "challenge_sha256": sha,
@@ -243,9 +233,7 @@ class SqlAlchemyMultiLegConsentLedgerV2:
         if type(authenticated_child_pubkey) is not str or authenticated_child_pubkey != child:
             raise MultiLegConsentReplayV2("consumer_not_child")
         try:
-            row = self._session.execute(
-                text(LOCK_SQL), {"challenge_sha256": challenge_sha256}
-            ).mappings().one_or_none()
+            row = self._session.execute(text(LOCK_SQL), {"challenge_sha256": challenge_sha256}).mappings().one_or_none()
         except SQLAlchemyError:
             raise MultiLegConsentLedgerUnavailableV2("challenge_lock_failed") from None
         if row is None or row["consumed_at"] is not None or row["verification_sha256"] is not None:
@@ -297,13 +285,9 @@ class SqlAlchemyMultiLegConsentLedgerV2:
             "verification_sha256": verification_sha,
         }
         try:
-            updated = self._session.execute(
-                text(CONSUME_SQL), params
-            ).scalar_one_or_none()
+            updated = self._session.execute(text(CONSUME_SQL), params).scalar_one_or_none()
         except SQLAlchemyError:
             raise MultiLegConsentLedgerUnavailableV2("challenge_consume_failed") from None
         if updated != challenge_sha256:
             raise MultiLegConsentReplayV2("one_use_consumption_conflict")
-        return PendingMultiLegConsumptionV2(
-            challenge_sha256, verification_sha, receipt
-        )
+        return PendingMultiLegConsumptionV2(challenge_sha256, verification_sha, receipt)

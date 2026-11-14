@@ -68,9 +68,7 @@ def pg_engine():
             if created:
                 with engine.begin() as connection:
                     connection.execute(text(f"DROP TABLE {TABLE}"))
-                    connection.execute(
-                        text("DROP FUNCTION public.guard_canonical_multileg_consent_challenge_v2()")
-                    )
+                    connection.execute(text("DROP FUNCTION public.guard_canonical_multileg_consent_challenge_v2()"))
         finally:
             engine.dispose()
 
@@ -86,9 +84,9 @@ def _issue(engine, proposal=None, *, sponsor=ALICE, now=NOW):
     proposal = _new() if proposal is None else proposal
     with Session(engine) as session:
         with session.begin():
-            pending = SqlAlchemyMultiLegConsentLedgerV2(
-                session, clock=lambda: now
-            ).issue(proposal, authenticated_sponsor_pubkey=sponsor)
+            pending = SqlAlchemyMultiLegConsentLedgerV2(session, clock=lambda: now).issue(
+                proposal, authenticated_sponsor_pubkey=sponsor
+            )
             assert not pending.durable and not pending.grants_full
             return pending
 
@@ -105,9 +103,7 @@ def _consume(
 ):
     with Session(engine) as session:
         with session.begin():
-            result = SqlAlchemyMultiLegConsentLedgerV2(
-                session, clock=lambda: now
-            ).consume(
+            result = SqlAlchemyMultiLegConsentLedgerV2(session, clock=lambda: now).consume(
                 proposal,
                 challenge_sha256=pending.challenge_sha256,
                 authenticated_child_pubkey=child,
@@ -123,10 +119,14 @@ def _consume(
 
 def _row(engine, pending):
     with engine.connect() as connection:
-        return connection.execute(
-            text(f"SELECT * FROM {TABLE} WHERE challenge_sha256=:digest"),
-            {"digest": pending.challenge_sha256},
-        ).mappings().one()
+        return (
+            connection.execute(
+                text(f"SELECT * FROM {TABLE} WHERE challenge_sha256=:digest"),
+                {"digest": pending.challenge_sha256},
+            )
+            .mappings()
+            .one()
+        )
 
 
 def test_postgresql_issues_exact_five_output_digest_and_consumes_once(clean):
@@ -287,6 +287,4 @@ def test_issued_or_consumed_row_is_not_full_entitlement(clean):
                 )
             )
         }
-    assert columns.isdisjoint(
-        {"full", "access_level", "current_entitlement", "role", "effective_at"}
-    )
+    assert columns.isdisjoint({"full", "access_level", "current_entitlement", "role", "effective_at"})
