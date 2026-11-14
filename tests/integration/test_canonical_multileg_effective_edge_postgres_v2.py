@@ -25,8 +25,9 @@ from tests.integration.test_canonical_global_outpoint_claims_postgres_v2 import 
 from tests.integration.test_canonical_multileg_candidate_postgres_v2 import (
     _issue,
     _reserve,
+    postgres_engine as multileg_postgres_engine,
 )
-from tests.unit.test_canonical_admission_proposal_v2 import ALICE, BOB
+from tests.unit.test_canonical_admission_proposal_v2 import ALICE, BOB, CHARLIE
 from tests.unit.test_canonical_multi_outpoint_admission_proposal_v2 import _new
 
 EFFECTIVE = "public.canonical_multileg_effective_edges_v2"
@@ -175,7 +176,7 @@ def test_mismatched_subject_does_not_create_effective_status(db):
     with pytest.raises(DBAPIError):
         with Session(db) as session:
             with session.begin():
-                eid, at = _evidence(session, subject=ALICE)
+                eid, at = _evidence(session, subject=CHARLIE)
                 session.execute(text(INSERT), _params(proposal, eid, at))
     with db.connect() as connection:
         assert connection.execute(text(f"SELECT count(*) FROM {EFFECTIVE}")).scalar_one() == 0
@@ -189,7 +190,10 @@ def test_committed_effective_claims_cannot_be_released_or_replayed(db):
             session.execute(text(INSERT), _params(proposal, eid, at))
     with pytest.raises(DBAPIError):
         with db.begin() as connection:
-            connection.execute(text(f"DELETE FROM {LIVE} WHERE proposal_id=:id"), {"id": proposal.proposal_id})
+            connection.execute(
+                text(f"DELETE FROM {LIVE} WHERE proposal_id=:id"),
+                {"id": proposal.proposal_id},
+            )
     with pytest.raises(DBAPIError):
         with db.begin() as connection:
             connection.execute(text(f"DELETE FROM {EFFECTIVE}"))
@@ -201,7 +205,7 @@ def test_committed_effective_claims_cannot_be_released_or_replayed(db):
         assert connection.execute(text(f"SELECT COUNT(*) FROM {EFFECTIVE}")).scalar_one() == 1
 
 
-def test_stale_full_source_is_rejected_atomically(db):
+def test_incorrect_full_source_is_rejected_atomically(db):
     proposal = _candidate(db)
     with pytest.raises(DBAPIError):
         with Session(db) as session:
@@ -210,4 +214,10 @@ def test_stale_full_source_is_rejected_atomically(db):
                 session.execute(text(INSERT), _params(proposal, eid, at))
     with db.connect() as connection:
         assert connection.execute(text(f"SELECT COUNT(*) FROM {EFFECTIVE}")).scalar_one() == 0
-        assert connection.execute(text("SELECT COUNT(*) FROM users WHERE pubkey=:key"), {"key": BOB[2:]}).scalar_one() == 0
+        assert (
+            connection.execute(
+                text("SELECT COUNT(*) FROM users WHERE pubkey=:key"),
+                {"key": BOB[2:]},
+            ).scalar_one()
+            == 0
+        )
