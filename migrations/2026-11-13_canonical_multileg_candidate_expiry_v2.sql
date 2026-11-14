@@ -48,7 +48,7 @@ BEGIN
       FROM pg_constraint
      WHERE conrelid = 'public.canonical_multileg_admission_candidates_v2'::regclass
        AND contype = 'u'
-       AND pg_get_constraintdef(oid) LIKE 'UNIQUE (child_xonly_pubkey)%';
+       AND position('UNIQUE (child_xonly_pubkey)' in pg_get_constraintdef(oid)) = 1;
     IF matches <> 1 THEN
         RAISE EXCEPTION 'expected exactly one historical child unique constraint';
     END IF;
