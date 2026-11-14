@@ -217,6 +217,32 @@ def test_roll_back_candidate_five_utxos_and_nonce_in_same_transaction(db):
     assert _counts(db) == (1, 5)
 
 
+def test_deferred_database_trigger_refuses_header_without_all_outputs(db):
+    """Making the deferred completeness gate IMMEDIATE prevents partial inserts."""
+    proposal = _new()
+    _seed_full(db, ALICE)
+    nonce = _issue(db, proposal)
+    with pytest.raises(CanonicalMultiLegCandidateUnavailableV2, match="candidate_conflict_or_incomplete"):
+        with Session(db) as session:
+            with session.begin():
+                session.execute(text("SET CONSTRAINTS trg_cmlac_complete IMMEDIATE"))
+                SqlAlchemyCanonicalMultiLegCandidateRegistryV2(session, clock=lambda: NOW).reserve_candidate_in_transaction(
+                    proposal,
+                    sponsor_basis=_genesis(),
+                    current_observation=_observation(proposal.mirror),
+                    authenticated_sponsor_pubkey=ALICE,
+                    authenticated_child_pubkey=BOB,
+                    challenge_sha256=nonce.challenge_sha256,
+                    sponsor_signature=SPONSOR_SIG,
+                    child_signature=CHILD_SIG,
+                    bitcoin_message_rpc=_rpc(proposal, nonce.challenge),
+                )
+    assert _counts(db) == (0, 0)
+    assert _nonce_consumed(db, nonce) is None
+    _reserve(db, proposal, nonce)
+    assert _counts(db) == (1, 5)
+
+
 def test_no_sponsor_current_full_never_consumes_or_registers(db):
     proposal = _new()
     nonce = _issue(db, proposal)
