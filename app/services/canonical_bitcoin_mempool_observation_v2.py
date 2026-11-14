@@ -22,7 +22,7 @@ from app.services.covenant_relation import CovenantRelationEvaluation
 from app.services.trusted_covenant_observation import TrustedBitcoinCovenantObservationAdapter
 
 RUNTIME_ENABLED = False
-_HEX64 = re.compile(r"[0-9a-f]{64}\\Z")
+_HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class CanonicalBitcoinMempoolObservationUnavailableV2(RuntimeError):
