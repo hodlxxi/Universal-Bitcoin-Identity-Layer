@@ -74,16 +74,13 @@ def shared_pg(multileg_postgres_engine):
     yield engine
     with engine.begin() as connection:
         connection.exec_driver_sql(
-            "DROP TRIGGER trg_cgoc_release_audit "
-            "ON public.canonical_multileg_live_outpoint_claims_v2"
+            "DROP TRIGGER trg_cgoc_release_audit " "ON public.canonical_multileg_live_outpoint_claims_v2"
         )
         connection.exec_driver_sql(
-            "DROP TRIGGER trg_cgoc_release_multileg "
-            "ON public.canonical_multileg_live_outpoint_claims_v2"
+            "DROP TRIGGER trg_cgoc_release_multileg " "ON public.canonical_multileg_live_outpoint_claims_v2"
         )
         connection.exec_driver_sql(
-            "DROP TRIGGER trg_cgoc_claim_multileg "
-            "ON public.canonical_multileg_live_outpoint_claims_v2"
+            "DROP TRIGGER trg_cgoc_claim_multileg " "ON public.canonical_multileg_live_outpoint_claims_v2"
         )
         connection.exec_driver_sql(f"DROP TABLE {GLOBAL}")
         connection.exec_driver_sql(f"DROP TABLE {STRICT_OUTPOINTS}")
@@ -92,9 +89,7 @@ def shared_pg(multileg_postgres_engine):
         for name in FUNCTIONS:
             connection.exec_driver_sql(f"DROP FUNCTION public.{name}()")
         connection.exec_driver_sql("DROP FUNCTION public.guard_canonical_admission_candidate_v2()")
-        connection.exec_driver_sql(
-            "DROP FUNCTION public.guard_canonical_admission_consent_challenge_v2()"
-        )
+        connection.exec_driver_sql("DROP FUNCTION public.guard_canonical_admission_consent_challenge_v2()")
 
 
 @pytest.fixture
@@ -115,12 +110,16 @@ def db(shared_pg):
 
 def _global_rows(engine):
     with engine.connect() as connection:
-        return connection.execute(
-            text(
-                f"SELECT claim_kind, txid, vout, strict_edge_id, multileg_proposal_id "
-                f"FROM {GLOBAL} ORDER BY claim_kind, txid, vout"
+        return (
+            connection.execute(
+                text(
+                    f"SELECT claim_kind, txid, vout, strict_edge_id, multileg_proposal_id "
+                    f"FROM {GLOBAL} ORDER BY claim_kind, txid, vout"
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
 
 
 def _overlapping_mirror():
@@ -159,11 +158,7 @@ def test_separate_utxos_across_two_candidate_formats_are_all_claimed(db):
     assert len(rows) == 7
     assert sum(row["claim_kind"] == "strict_two" for row in rows) == 2
     assert sum(row["claim_kind"] == "multileg" for row in rows) == 5
-    assert all(
-        row["strict_edge_id"] == strict.proposal_id
-        for row in rows
-        if row["claim_kind"] == "strict_two"
-    )
+    assert all(row["strict_edge_id"] == strict.proposal_id for row in rows if row["claim_kind"] == "strict_two")
 
 
 def test_existing_strict_two_reservation_rejects_signed_multileg_overlap(db):
@@ -211,9 +206,7 @@ def test_expiration_releases_only_matching_multileg_claims_and_keeps_history(db)
     assert receipt.released_outpoints == 5
     assert len(_global_rows(db)) == 0
 
-    _full_at(
-        db, ALICE, NOW, "00000000-0000-4000-8000-0000000000e2", new_user=False
-    )
+    _full_at(db, ALICE, NOW, "00000000-0000-4000-8000-0000000000e2", new_user=False)
     strict, nonce, node = _strict(db)
     reserve_strict(db, node, (node,), nonce)
     rows = _global_rows(db)
@@ -221,9 +214,12 @@ def test_expiration_releases_only_matching_multileg_claims_and_keeps_history(db)
     assert all(row["claim_kind"] == "strict_two" for row in rows)
     with db.connect() as connection:
         assert connection.execute(text(f"SELECT COUNT(*) FROM {MULTI_OUTPOINTS}")).scalar_one() == 5
-        assert connection.execute(
-            text("SELECT COUNT(*) FROM public.canonical_multileg_candidate_expirations_v2")
-        ).scalar_one() == 1
+        assert (
+            connection.execute(
+                text("SELECT COUNT(*) FROM public.canonical_multileg_candidate_expirations_v2")
+            ).scalar_one()
+            == 1
+        )
 
 
 def test_manual_live_delete_without_immutable_expiry_event_rolls_back(db):
