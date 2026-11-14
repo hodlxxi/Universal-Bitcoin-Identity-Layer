@@ -44,7 +44,7 @@ DECLARE
     unique_name NAME;
     matches INTEGER;
 BEGIN
-    SELECT COUNT(*), MIN(conname) INTO matches, unique_name
+    SELECT COUNT(*), MIN(conname::text)::name INTO matches, unique_name
       FROM pg_constraint
      WHERE conrelid = 'public.canonical_multileg_admission_candidates_v2'::regclass
        AND contype = 'u'
