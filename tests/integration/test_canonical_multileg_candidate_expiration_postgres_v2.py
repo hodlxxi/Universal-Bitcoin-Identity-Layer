@@ -28,8 +28,8 @@ from app.services.trusted_covenant_registration import trusted_outpoints_from_re
 from tests.integration.test_canonical_multileg_candidate_postgres_v2 import (
     CANDIDATES,
     OUTPOINTS,
-    db,
-    postgres_engine,
+    db as db,
+    postgres_engine as postgres_engine,
     _counts,
     _issue,
     _nonce_consumed,
@@ -49,6 +49,7 @@ from tests.unit.test_canonical_multi_outpoint_admission_proposal_v2 import (
 )
 from tests.unit.test_canonical_admission_consent_v2 import CHILD_SIG, SPONSOR_SIG
 from tests.unit.test_canonical_multi_outpoint_mirror_v2 import _bundle, _observation
+from app.services.canonical_multileg_candidate_registry_v2 import SqlAlchemyCanonicalMultiLegCandidateRegistryV2
 from app.services.canonical_multileg_consent_storage_v2 import SqlAlchemyMultiLegConsentLedgerV2
 
 CLAIMS = "public.canonical_multileg_live_child_claims_v2"
@@ -125,10 +126,6 @@ def _reserve_at(engine, proposal, observation, nonce, at, sponsor, child, basis=
             assert not pending.is_effective and not pending.grants_full
             return pending
 
-
-from app.services.canonical_multileg_candidate_registry_v2 import (
-    SqlAlchemyCanonicalMultiLegCandidateRegistryV2,
-)
 
 
 def _historical_root(engine):
@@ -232,7 +229,7 @@ def test_re_registration_after_expiry_needs_new_signed_proposal_and_nonce(db):
 
 def test_parent_cannot_expire_while_child_candidate_claims_are_active(db):
     parent, _ = _historical_root(db)
-    policy, registration, _, current, _ = _sources(sponsor=BOB, child=CHARLIE, depth=1)
+    policy, registration, _, _, _ = _sources(sponsor=BOB, child=CHARLIE, depth=1)
     child_mirror = create_canonical_multi_outpoint_mirror_v2(
         policy, trusted_outpoints_from_registration(registration)
     )
