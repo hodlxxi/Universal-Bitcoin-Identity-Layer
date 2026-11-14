@@ -3,8 +3,6 @@
 Offline fake RPC is NOT Bitcoin Core or a trusted producer of Full.
 """
 
-from dataclasses import replace
-
 import pytest
 
 from app.services.canonical_bitcoin_mempool_observation_v2 import (
