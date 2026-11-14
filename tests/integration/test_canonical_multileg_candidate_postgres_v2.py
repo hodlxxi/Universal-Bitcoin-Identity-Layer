@@ -81,9 +81,10 @@ def postgres_engine():
                 "canonical_multileg_consent_challenges_v2",
             )
             for name in existing:
-                if connection.execute(
-                    text("SELECT to_regclass(:table)"), {"table": "public." + name}
-                ).scalar_one() is not None:
+                if (
+                    connection.execute(text("SELECT to_regclass(:table)"), {"table": "public." + name}).scalar_one()
+                    is not None
+                ):
                     raise RuntimeError("disposable_test_database_must_be_empty")
             User.__table__.create(bind=connection)
             CurrentEntitlementEvidence.__table__.create(bind=connection)
@@ -180,9 +181,7 @@ def _nonce_consumed(engine, nonce):
 
 def _child(parent):
     policy, registration, _, snapshot, _ = _sources(sponsor=BOB, child=CHARLIE, depth=1)
-    mirror = create_canonical_multi_outpoint_mirror_v2(
-        policy, trusted_outpoints_from_registration(registration)
-    )
+    mirror = create_canonical_multi_outpoint_mirror_v2(policy, trusted_outpoints_from_registration(registration))
     return _new(mirror, basis=parent, proposal_id=CHILD_ID, observation=snapshot), snapshot
 
 
@@ -277,8 +276,9 @@ def test_bob_current_full_makes_charlie_candidate_possible_but_not_effective(db)
     assert not result.is_effective
     assert _counts(db) == (2, 7)
     with db.connect() as conn:
-        rows = conn.execute(text(f"SELECT parent_proposal_id FROM {CANDIDATES} WHERE proposal_id=:id"),
-                           {"id": child.proposal_id}).one()
+        rows = conn.execute(
+            text(f"SELECT parent_proposal_id FROM {CANDIDATES} WHERE proposal_id=:id"), {"id": child.proposal_id}
+        ).one()
     assert rows.parent_proposal_id == parent.proposal_id
 
 
@@ -334,11 +334,19 @@ def test_database_enforces_global_outpoint_uniqueness(db):
     with pytest.raises(IntegrityError):
         with db.begin() as conn:
             conn.execute(
-                text(f"INSERT INTO {OUTPOINTS} "
-                     "(proposal_id,leg_order,txid,vout,amount_sats,script_pubkey_sha256) "
-                     "VALUES (:pid,:leg,:txid,:vout,:amt,:script)"),
-                {"pid": proposal.proposal_id, "leg": row["leg_order"], "txid": row["txid"],
-                 "vout": row["vout"], "amt": row["amount_sats"], "script": row["script_pubkey_sha256"]},
+                text(
+                    f"INSERT INTO {OUTPOINTS} "
+                    "(proposal_id,leg_order,txid,vout,amount_sats,script_pubkey_sha256) "
+                    "VALUES (:pid,:leg,:txid,:vout,:amt,:script)"
+                ),
+                {
+                    "pid": proposal.proposal_id,
+                    "leg": row["leg_order"],
+                    "txid": row["txid"],
+                    "vout": row["vout"],
+                    "amt": row["amount_sats"],
+                    "script": row["script_pubkey_sha256"],
+                },
             )
     assert _counts(db) == (1, 5)
 
@@ -351,9 +359,12 @@ def test_refuses_sqlite_or_an_unopened_transaction(db):
         with Session(sqlite) as session:
             with session.begin():
                 registrar = SqlAlchemyCanonicalMultiLegCandidateRegistryV2(session, clock=lambda: NOW)
-                with pytest.raises(CanonicalMultiLegCandidateUnavailableV2, match="read_committed_pg_transaction_required"):
+                with pytest.raises(
+                    CanonicalMultiLegCandidateUnavailableV2, match="read_committed_pg_transaction_required"
+                ):
                     registrar.reserve_candidate_in_transaction(
-                        _new(), sponsor_basis=_genesis(),
+                        _new(),
+                        sponsor_basis=_genesis(),
                         current_observation=_observation(_new().mirror),
                         authenticated_sponsor_pubkey=ALICE,
                         authenticated_child_pubkey=BOB,

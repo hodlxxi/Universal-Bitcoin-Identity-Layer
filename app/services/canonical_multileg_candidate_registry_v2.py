@@ -210,9 +210,11 @@ class SqlAlchemyCanonicalMultiLegCandidateRegistryV2:
             parent_id = proposal.basis_record_id
             parent_sha = proposal.basis_record_sha256
             try:
-                row = self._session.execute(
-                    text(LOCK_PARENT), {"parent_id": parent_id, "parent_sha": parent_sha}
-                ).mappings().one_or_none()
+                row = (
+                    self._session.execute(text(LOCK_PARENT), {"parent_id": parent_id, "parent_sha": parent_sha})
+                    .mappings()
+                    .one_or_none()
+                )
             except SQLAlchemyError:
                 raise CanonicalMultiLegCandidateUnavailableV2("parent_lock_unavailable") from None
             if (
@@ -225,9 +227,9 @@ class SqlAlchemyCanonicalMultiLegCandidateRegistryV2:
         # Independent Current-Full proof is obtained from locked Postgres
         # authority, not from any proposed parent or caller-supplied proof.
         try:
-            current = SqlAlchemyTransactionBoundCurrentFullVerifier(
-                self._session
-            ).verify_with_evidence_in_transaction(policy.sponsor_xonly_pubkey, now=now)
+            current = SqlAlchemyTransactionBoundCurrentFullVerifier(self._session).verify_with_evidence_in_transaction(
+                policy.sponsor_xonly_pubkey, now=now
+            )
             proof = current.verified_entitlement
             if proof.subject != policy.sponsor_xonly_pubkey or not now < proof.expires_at:
                 raise ValueError("current sponsor Full missing")
@@ -238,9 +240,7 @@ class SqlAlchemyCanonicalMultiLegCandidateRegistryV2:
         # transaction: on any later INSERT conflict the caller rolls back
         # both the nonce and every partial candidate/outpoint row.
         try:
-            consumed = SqlAlchemyMultiLegConsentLedgerV2(
-                self._session, clock=self._clock
-            ).consume(
+            consumed = SqlAlchemyMultiLegConsentLedgerV2(self._session, clock=self._clock).consume(
                 proposal,
                 challenge_sha256=challenge_sha256,
                 authenticated_child_pubkey=authenticated_child_pubkey,
@@ -284,15 +284,11 @@ class SqlAlchemyCanonicalMultiLegCandidateRegistryV2:
             "candidate_created_at": now,
         }
         try:
-            inserted = self._session.execute(
-                text(INSERT_CANDIDATE), params
-            ).scalar_one_or_none()
+            inserted = self._session.execute(text(INSERT_CANDIDATE), params).scalar_one_or_none()
             if inserted != proposal.proposal_id:
                 raise ValueError("nonce_verification_uncommitted")
             for utxo in mirror.outpoints:
-                leg = (
-                    "earlier" if utxo.direction is CovenantDirection.OUTGOING else "later"
-                )
+                leg = "earlier" if utxo.direction is CovenantDirection.OUTGOING else "later"
                 result = self._session.execute(
                     text(INSERT_OUTPOINT),
                     {
