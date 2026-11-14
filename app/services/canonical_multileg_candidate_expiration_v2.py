@@ -82,6 +82,4 @@ class SqlAlchemyMultiLegCandidateExpirationV2:
                 raise ValueError("invalid expiry receipt")
         except (SQLAlchemyError, ValueError, TypeError):
             raise MultiLegCandidateExpirationUnavailableV2("expiry_not_permitted") from None
-        return PendingExpiredMultiLegCandidateV2(
-            proposal_id, result.released_outpoints, result.at_time
-        )
+        return PendingExpiredMultiLegCandidateV2(proposal_id, result.released_outpoints, result.at_time)
