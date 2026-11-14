@@ -25,7 +25,7 @@ from tests.integration.test_canonical_global_outpoint_claims_postgres_v2 import 
 from tests.integration.test_canonical_multileg_candidate_postgres_v2 import (
     _issue,
     _reserve,
-    postgres_engine as multileg_postgres_engine,
+    postgres_engine as multileg_postgres_engine,  # noqa: F401 - Pytest fixture imported for dependency resolution
 )
 from tests.unit.test_canonical_admission_proposal_v2 import ALICE, BOB, CHARLIE
 from tests.unit.test_canonical_multi_outpoint_admission_proposal_v2 import _new
