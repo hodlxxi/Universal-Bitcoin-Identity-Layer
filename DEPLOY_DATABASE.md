@@ -205,16 +205,15 @@ alembic upgrade head
 python app/app.py
 ```
 
-Visit `http://your-vps-ip:5000/health` - you should see:
+Check process liveness at `http://your-vps-ip:5000/health/live`:
 ```json
-{
-  "status": "healthy",
-  "timestamp": "2025-01-XX...",
-  "version": "1.0.0-alpha",
-  "database": {"status": "healthy", "connected": true},
-  "redis": {"status": "healthy", "connected": true}
-}
+{"status": "alive"}
 ```
+
+Check database readiness separately at `http://your-vps-ip:5000/health/ready`.
+A successful readiness response is HTTP 200 with `{"status": "ready"}`.
+Liveness does not probe PostgreSQL, Redis, or Bitcoin RPC; readiness checks
+only the configured application database. Check Redis separately.
 
 ### Step 10: Restart Production Service
 
@@ -240,7 +239,7 @@ After deployment, verify:
 - [ ] Redis is running: `sudo systemctl status redis-server`
 - [ ] Database exists: `sudo -u postgres psql -l | grep hodlxxi`
 - [ ] Application starts without errors
-- [ ] `/health` endpoint shows healthy database and redis
+- [ ] `/health/live` returns HTTP 200 for liveness; `/health/ready` returns HTTP 200 when the application database is ready (Redis must be checked separately)
 - [ ] Can create OAuth clients (test with `/oauth/register`)
 - [ ] Sessions persist across app restarts
 
@@ -499,15 +498,15 @@ If you encounter issues:
 1. **Check logs**: `sudo journalctl -u hodlxxi -f`
 2. **Test database**: `python scripts/db_init.py`
 3. **Verify config**: `env | grep -E "(DATABASE|REDIS)"`
-4. **Health check**: `curl http://localhost:5000/health`
+4. **Health checks**: `curl -f http://localhost:5000/health/live` (liveness) and `curl -f http://localhost:5000/health/ready` (database readiness)
 
 ---
 
 ## ✅ Success Indicators
 
 You know it's working when:
-- ✅ `/health` endpoint returns `"database": {"status": "healthy"}`
-- ✅ `/health` endpoint returns `"redis": {"status": "healthy"}`
+- ✅ `/health/live` responds with `{"status":"alive"}` independently of database health
+- ✅ `/health/ready` succeeds when the application database is ready; Redis health must be assessed separately
 - ✅ Application restarts don't lose OAuth clients or sessions
 - ✅ Users can log in and sessions persist
 - ✅ No database connection errors in logs
