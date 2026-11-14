@@ -84,8 +84,10 @@ def _full_at(engine, key, at, evidence_id, *, new_user=True):
             )
 
 
-def _propose(mirror, at, proposal_id, *, basis=None):
-    observation = replace(_observation(mirror), observed_at=at)
+def _propose(mirror, at, proposal_id, *, basis=None, observation=None):
+    if observation is None:
+        observation = _observation(mirror)
+    observation = replace(observation, observed_at=at)
     proposal = create_canonical_multi_outpoint_admission_proposal_v2(
         proposal_id=proposal_id,
         proposed_at=at,
@@ -229,11 +231,11 @@ def test_re_registration_after_expiry_needs_new_signed_proposal_and_nonce(db):
 
 def test_parent_cannot_expire_while_child_candidate_claims_are_active(db):
     parent, _ = _historical_root(db)
-    policy, registration, _, _, _ = _sources(sponsor=BOB, child=CHARLIE, depth=1)
+    policy, registration, _, snapshot, _ = _sources(sponsor=BOB, child=CHARLIE, depth=1)
     child_mirror = create_canonical_multi_outpoint_mirror_v2(
         policy, trusted_outpoints_from_registration(registration)
     )
-    child, old_observation = _propose(child_mirror, OLD, OLD_CHILD_ID, basis=parent)
+    child, old_observation = _propose(child_mirror, OLD, OLD_CHILD_ID, basis=parent, observation=snapshot)
     _full_at(db, BOB, OLD, "00000000-0000-4000-8000-0000000000e3")
     nonce = _issue_at(db, child, BOB, OLD)
     _reserve_at(db, child, old_observation, nonce, OLD, BOB, CHARLIE, basis=parent)
@@ -254,7 +256,7 @@ def test_expired_parent_history_is_not_authority_to_create_new_child(db):
         policy, trusted_outpoints_from_registration(registration)
     )
     now = datetime.now(timezone.utc).replace(microsecond=0)
-    child, obs = _propose(mirror, now, OLD_CHILD_ID, basis=parent)
+    child, obs = _propose(mirror, now, OLD_CHILD_ID, basis=parent, observation=observation)
     _full_at(db, BOB, now, "00000000-0000-4000-8000-0000000000e3")
     nonce = _issue_at(db, child, BOB, now)
     with pytest.raises(Exception):
