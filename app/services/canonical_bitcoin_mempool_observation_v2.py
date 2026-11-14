@@ -137,9 +137,7 @@ def observe_multileg_with_mempool_v2(
         observation = TrustedBitcoinCovenantObservationAdapter(
             _MempoolInclusiveProxy(bitcoin_rpc), clock=lambda: checked_at
         ).observe(bundle.outpoints)
-        snapshot = validate_canonical_multi_outpoint_snapshot_v2(
-            bundle, observation, now=checked_at
-        )
+        snapshot = validate_canonical_multi_outpoint_snapshot_v2(bundle, observation, now=checked_at)
 
         mempool_after = _mempool_sequence(bitcoin_rpc.getrawmempool(False, True))
         height_after = _block_height(bitcoin_rpc.getblockcount())
@@ -152,9 +150,7 @@ def observe_multileg_with_mempool_v2(
         ):
             _fail()
 
-        return MempoolCheckedMultiLegObservationV2(
-            observation, snapshot, hash_before, mempool_before
-        )
+        return MempoolCheckedMultiLegObservationV2(observation, snapshot, hash_before, mempool_before)
     except CanonicalBitcoinMempoolObservationUnavailableV2:
         raise
     except Exception:
