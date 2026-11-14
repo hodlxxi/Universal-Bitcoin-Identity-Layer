@@ -22,7 +22,7 @@ from app.services.canonical_multi_outpoint_admission_proposal_v2 import (
     create_canonical_multi_outpoint_admission_proposal_v2,
 )
 from tests.unit.test_canonical_admission_consent_v2 import CHILD_SIG, SPONSOR_SIG
-from tests.unit.test_canonical_admission_proposal_v2 import ALICE, BOB, NOW, _make
+from tests.unit.test_canonical_admission_proposal_v2 import ALICE, BOB, NOW, _genesis, _make
 from tests.unit.test_canonical_multi_outpoint_admission_proposal_v2 import (
     _new,
     _rpc,
@@ -173,9 +173,7 @@ def test_altered_single_amount_after_issuance_invalidates_consent(clean):
         proposed_at=NOW,
         mirror=mirror,
         observation=_observation(mirror),
-        sponsor_basis=__import__(
-            "tests.unit.test_canonical_admission_proposal_v2", fromlist=["_genesis"]
-        )._genesis(),
+        sponsor_basis=_genesis(),
         sponsor_import_reference_sha256="1" * 64,
         sponsor_key_proof_reference_sha256="2" * 64,
         child_acceptance_reference_sha256="3" * 64,
