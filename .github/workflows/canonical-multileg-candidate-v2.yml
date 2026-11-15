@@ -63,4 +63,4 @@ jobs:
           black --check --diff app/services/canonical_multileg_candidate_registry_v2.py app/services/canonical_multi_outpoint_admission_proposal_v2.py app/services/canonical_v2_browser_admission.py tests/integration/test_canonical_multileg_candidate_postgres_v2.py tests/unit/test_canonical_v2_fresh_signed_funding.py tests/unit/test_canonical_v2_browser_admission.py
       - name: Flake8
         run: |
-          flake8 app/services/canonical_multileg_candidate_registry_v2.py app/services/canonical_multi_outpoint_admission_proposal_v2.py tests/integration/test_canonical_multileg_candidate_postgres_v2.py tests/unit/test_canonical_v2_fresh_signed_funding.py
+          flake8 app/services/canonical_multileg_candidate_registry_v2.py app/services/canonical_multi_outpoint_admission_proposal_v2.py app/services/canonical_v2_browser_admission.py tests/integration/test_canonical_multileg_candidate_postgres_v2.py tests/unit/test_canonical_v2_fresh_signed_funding.py tests/unit/test_canonical_v2_browser_admission.py
