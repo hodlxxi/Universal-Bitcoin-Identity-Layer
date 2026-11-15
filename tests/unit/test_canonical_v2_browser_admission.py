@@ -53,7 +53,9 @@ def test_sponsor_and_child_resolve_separate_verified_generations(app, monkeypatc
     monkeypatch.setattr(
         service,
         "configured_lifecycle",
-        lambda _: SimpleNamespace(browser_origin="https://ubid.test", client_id="canon-ubid-test", browser_subject=browser_subject),
+        lambda _: SimpleNamespace(
+            browser_origin="https://ubid.test", client_id="canon-ubid-test", browser_subject=browser_subject
+        ),
     )
     with _request(app):
         assert service._verified_browser_subject(object(), expected_compressed=ALICE, now=NOW) == ALICE[2:]
