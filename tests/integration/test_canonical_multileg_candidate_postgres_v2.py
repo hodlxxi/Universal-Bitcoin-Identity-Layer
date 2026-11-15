@@ -525,18 +525,23 @@ def _browser_harness(monkeypatch):
 
 
 def _browser_request(app, compressed, generation):
+    from contextlib import contextmanager
+
     from flask import session as browser_session
 
-    context = app.test_request_context(
-        "/canon/v2/admission",
-        method="POST",
-        headers={"Origin": "https://ubid.test", "Content-Type": "application/json"},
-    )
-    context.push()
-    browser_session["logged_in_pubkey"] = compressed
-    browser_session["login_method"] = "legacy"
-    browser_session["oauth_browser_generation_v1"] = generation
-    return context
+    @contextmanager
+    def scoped_request():
+        with app.test_request_context(
+            "/canon/v2/admission",
+            method="POST",
+            headers={"Origin": "https://ubid.test", "Content-Type": "application/json"},
+        ):
+            browser_session["logged_in_pubkey"] = compressed
+            browser_session["login_method"] = "legacy"
+            browser_session["oauth_browser_generation_v1"] = generation
+            yield
+
+    return scoped_request()
 
 
 def test_two_independent_browser_generations_issue_then_consume_signed_nonce(db, monkeypatch):
