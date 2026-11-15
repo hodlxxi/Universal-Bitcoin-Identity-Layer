@@ -411,3 +411,96 @@ def test_refuses_sqlite_or_an_unopened_transaction(db):
                     )
     finally:
         sqlite.dispose()
+
+
+def _server_core_for_signed_candidate(monkeypatch, proposal, nonce, *, at):
+    """Fake Core used ONLY by disposable PG16 tests (no live Bitcoin authority)."""
+    import app.services.canonical_v2_server_bitcoin_collateral as server
+    from tests.unit.test_canonical_bitcoin_mempool_observation_v2 import CoreRpc
+
+    signed_rpc = _rpc(proposal, nonce.challenge)
+
+    class CoreWithSignatures(CoreRpc):
+        def getblockchaininfo(self):
+            return {
+                "chain": "regtest",
+                "blocks": 900000,
+                "headers": 900000,
+                "bestblockhash": "f" * 64,
+                "initialblockdownload": False,
+            }
+
+        def verifymessage(self, address, signature, message):
+            return signed_rpc.verifymessage(address, signature, message)
+
+    core = CoreWithSignatures(proposal.mirror)
+    monkeypatch.setattr(server, "_new_rpc", lambda: core)
+    monkeypatch.setattr(server, "_expected_chain", lambda: "regtest")
+    monkeypatch.setattr(server, "_clock", lambda: at)
+    return core, signed_rpc
+
+
+def test_server_core_fresh_observation_reserves_signed_candidate_atomically(db, monkeypatch):
+    """Sign the old proposal; write the *new* server scan in one PG transaction."""
+    proposal = _new()
+    _seed_full(db, ALICE)
+    nonce = _issue(db, proposal)
+    at = NOW + timedelta(seconds=40)
+    core, signed_rpc = _server_core_for_signed_candidate(monkeypatch, proposal, nonce, at=at)
+    with Session(db) as session:
+        with session.begin():
+            candidate = SqlAlchemyCanonicalMultiLegCandidateRegistryV2(
+                session, clock=lambda: at
+            ).reserve_candidate_from_server_in_transaction(
+                proposal,
+                sponsor_basis=_genesis(),
+                authenticated_sponsor_pubkey=ALICE,
+                authenticated_child_pubkey=BOB,
+                challenge_sha256=nonce.challenge_sha256,
+                sponsor_signature=SPONSOR_SIG,
+                child_signature=CHILD_SIG,
+            )
+            assert candidate.outpoint_count == 5
+            assert not candidate.is_effective
+            assert not candidate.grants_full
+    assert len(core.calls) == 5
+    assert all(call[2] is True for call in core.calls)
+    assert len(signed_rpc.calls) == 2
+    assert _counts(db) == (1, 5)
+    assert _nonce_consumed(db, nonce) is not None
+    with db.connect() as connection:
+        row = connection.execute(text(f"SELECT * FROM {CANDIDATES}")).mappings().one()
+    assert row["snapshot_observed_at"].replace(tzinfo=at.tzinfo) == at
+    assert row["observation_sha256"] != proposal.snapshot.observation_sha256
+    assert row["proposal_sha256"] == nonce.challenge.proposal_sha256
+
+
+@pytest.mark.parametrize("failure", ("spent", "wrong_child", "expired"))
+def test_server_core_failure_rolls_back_nonce_and_all_claims(db, monkeypatch, failure):
+    proposal = _new()
+    _seed_full(db, ALICE)
+    nonce = _issue(db, proposal)
+    at = NOW + timedelta(seconds=40 if failure != "expired" else 300)
+    core, _ = _server_core_for_signed_candidate(monkeypatch, proposal, nonce, at=at)
+    if failure == "spent":
+        core.mempool_spent = True
+    try:
+        with Session(db) as session:
+            with session.begin():
+                SqlAlchemyCanonicalMultiLegCandidateRegistryV2(
+                    session, clock=lambda: at
+                ).reserve_candidate_from_server_in_transaction(
+                    proposal,
+                    sponsor_basis=_genesis(),
+                    authenticated_sponsor_pubkey=ALICE,
+                    authenticated_child_pubkey=ALICE if failure == "wrong_child" else BOB,
+                    challenge_sha256=nonce.challenge_sha256,
+                    sponsor_signature=SPONSOR_SIG,
+                    child_signature=CHILD_SIG,
+                )
+    except CanonicalMultiLegCandidateUnavailableV2:
+        pass
+    else:
+        pytest.fail("unsafe candidate registration was accepted")
+    assert _counts(db) == (0, 0)
+    assert _nonce_consumed(db, nonce) is None
