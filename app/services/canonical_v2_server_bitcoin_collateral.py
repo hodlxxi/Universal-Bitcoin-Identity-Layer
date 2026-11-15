@@ -142,9 +142,7 @@ def observe_server_bitcoin_collateral_v2(
         if now.microsecond:
             _fail()
         before = _chain_identity(rpc.getblockchaininfo(), expected)
-        observed = observe_multileg_with_mempool_v2(
-            bundle, bitcoin_rpc=rpc, now=now
-        )
+        observed = observe_multileg_with_mempool_v2(bundle, bitcoin_rpc=rpc, now=now)
         after = _chain_identity(rpc.getblockchaininfo(), expected)
         if (
             before != after
