@@ -1,5 +1,6 @@
 """Browser principal isolation for Canon V2 enrollment; no real user grants."""
 
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -16,17 +17,17 @@ def app():
     return app
 
 
+@contextmanager
 def _request(app, *, key=ALICE, reference="a" * 64, login="legacy", origin="https://ubid.test"):
-    context = app.test_request_context(
+    with app.test_request_context(
         "/canon/v2/issue",
         method="POST",
         headers={"Origin": origin, "Content-Type": "application/json"},
-    )
-    context.push()
-    session["logged_in_pubkey"] = key
-    session["oauth_browser_generation_v1"] = reference
-    session["login_method"] = login
-    return context
+    ):
+        session["logged_in_pubkey"] = key
+        session["oauth_browser_generation_v1"] = reference
+        session["login_method"] = login
+        yield
 
 
 def test_sponsor_and_child_resolve_separate_verified_generations(app, monkeypatch):
