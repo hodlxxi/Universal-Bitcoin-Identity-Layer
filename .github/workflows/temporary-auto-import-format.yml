@@ -1,0 +1,34 @@
+name: Temporary scoped auto-import Black formatter
+on:
+  pull_request:
+    paths:
+      - app/services/automatic_sponsored_import_v1.py
+      - tests/unit/test_automatic_sponsored_import_v1.py
+      - .github/workflows/temporary-auto-import-format.yml
+permissions:
+  contents: read
+jobs:
+  scoped-format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install black==26.1.0
+      - name: Format in disposable CI checkout and expose exact text for review
+        run: |
+          black app/services/automatic_sponsored_import_v1.py tests/unit/test_automatic_sponsored_import_v1.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for name in (
+              "app/services/automatic_sponsored_import_v1.py",
+              "tests/unit/test_automatic_sponsored_import_v1.py",
+          ):
+              print("FORMATTED_JSON_" + json.dumps(
+                  {"path": name, "content": Path(name).read_text(encoding="utf-8")},
+                  ensure_ascii=True,
+              ), flush=True)
+          PY
