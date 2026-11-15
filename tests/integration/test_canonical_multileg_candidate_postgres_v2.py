@@ -551,9 +551,7 @@ def test_two_independent_browser_generations_issue_then_consume_signed_nonce(db,
     with _browser_request(app, ALICE, "a" * 64):
         with Session(db) as session:
             with session.begin():
-                nonce = ingress.issue_from_verified_sponsor_browser_in_transaction(
-                    session, proposal, clock=lambda: NOW
-                )
+                nonce = ingress.issue_from_verified_sponsor_browser_in_transaction(session, proposal, clock=lambda: NOW)
     at = NOW + timedelta(seconds=40)
     core, signer = _server_core_for_signed_candidate(monkeypatch, proposal, nonce, at=at)
     with _browser_request(app, BOB, "b" * 64):
@@ -585,9 +583,7 @@ def test_unauthenticated_sponsor_cannot_issue_nonce_despite_full_evidence(db, mo
         with pytest.raises(ingress.CanonicalV2BrowserAdmissionUnavailable):
             with Session(db) as session:
                 with session.begin():
-                    ingress.issue_from_verified_sponsor_browser_in_transaction(
-                        session, proposal, clock=lambda: NOW
-                    )
+                    ingress.issue_from_verified_sponsor_browser_in_transaction(session, proposal, clock=lambda: NOW)
     with db.connect() as conn:
         assert conn.execute(text(f"SELECT count(*) FROM {NONCES}")).scalar_one() == 0
 
@@ -599,9 +595,7 @@ def test_wrong_child_browser_never_consumes_issued_nonce(db, monkeypatch):
     with _browser_request(app, ALICE, "a" * 64):
         with Session(db) as session:
             with session.begin():
-                nonce = ingress.issue_from_verified_sponsor_browser_in_transaction(
-                    session, proposal, clock=lambda: NOW
-                )
+                nonce = ingress.issue_from_verified_sponsor_browser_in_transaction(session, proposal, clock=lambda: NOW)
     with _browser_request(app, ALICE, "a" * 64):
         with pytest.raises(ingress.CanonicalV2BrowserAdmissionUnavailable):
             with Session(db) as session:
@@ -631,8 +625,6 @@ def test_proposed_parent_cannot_issue_challenge_as_effective_sponsor(db, monkeyp
         with pytest.raises(ingress.CanonicalV2BrowserAdmissionUnavailable):
             with Session(db) as session:
                 with session.begin():
-                    ingress.issue_from_verified_sponsor_browser_in_transaction(
-                        session, child, clock=lambda: NOW
-                    )
+                    ingress.issue_from_verified_sponsor_browser_in_transaction(session, child, clock=lambda: NOW)
     with db.connect() as conn:
         assert conn.execute(text(f"SELECT count(*) FROM {NONCES}")).scalar_one() == 1
