@@ -8,6 +8,10 @@ on:
       - "app/services/canonical_v2_server_bitcoin_collateral.py"
       - "app/services/canonical_v2_browser_admission.py"
       - "app/services/canonical_v2_tx_browser_authority.py"
+      - "app/services/canonical_v2_issuer_generation_binding.py"
+      - "migrations/2026-11-15_canonical_multileg_issuer_generation_binding_v2.sql"
+      - "tests/unit/test_canonical_v2_issuer_generation_binding.py"
+      - "docs/CANONICAL_V2_ISSUER_GENERATION_BINDING.md"
       - "tests/unit/test_canonical_v2_tx_browser_authority.py"
       - "docs/CANONICAL_V2_TRANSACTION_BROWSER_AUTHORITY.md"
       - "tests/unit/test_canonical_v2_browser_admission.py"
@@ -60,10 +64,10 @@ jobs:
           CANON_V2_DISPOSABLE_PG_ACK: "1"
           CANON_V2_TEST_DATABASE_URL: "postgresql+psycopg2://canonv2test:disposable-ci-only@localhost:5432/canonv2test"
         run: |
-          python -m pytest -q tests/integration/test_canonical_multileg_candidate_postgres_v2.py tests/unit/test_canonical_v2_fresh_signed_funding.py tests/unit/test_canonical_v2_browser_admission.py tests/unit/test_canonical_v2_tx_browser_authority.py
+          python -m pytest -q tests/integration/test_canonical_multileg_candidate_postgres_v2.py tests/unit/test_canonical_v2_fresh_signed_funding.py tests/unit/test_canonical_v2_browser_admission.py tests/unit/test_canonical_v2_tx_browser_authority.py tests/unit/test_canonical_v2_issuer_generation_binding.py
       - name: Black
         run: |
-          black --check --diff app/services/canonical_multileg_candidate_registry_v2.py app/services/canonical_multi_outpoint_admission_proposal_v2.py app/services/canonical_v2_browser_admission.py tests/integration/test_canonical_multileg_candidate_postgres_v2.py tests/unit/test_canonical_v2_fresh_signed_funding.py tests/unit/test_canonical_v2_browser_admission.py app/services/canonical_v2_tx_browser_authority.py tests/unit/test_canonical_v2_tx_browser_authority.py
+          black --check --diff app/services/canonical_multileg_candidate_registry_v2.py app/services/canonical_multi_outpoint_admission_proposal_v2.py app/services/canonical_v2_browser_admission.py tests/integration/test_canonical_multileg_candidate_postgres_v2.py tests/unit/test_canonical_v2_fresh_signed_funding.py tests/unit/test_canonical_v2_browser_admission.py app/services/canonical_v2_tx_browser_authority.py tests/unit/test_canonical_v2_tx_browser_authority.py app/services/canonical_v2_issuer_generation_binding.py tests/unit/test_canonical_v2_issuer_generation_binding.py
       - name: Flake8
         run: |
-          flake8 app/services/canonical_multileg_candidate_registry_v2.py app/services/canonical_multi_outpoint_admission_proposal_v2.py app/services/canonical_v2_browser_admission.py tests/integration/test_canonical_multileg_candidate_postgres_v2.py tests/unit/test_canonical_v2_fresh_signed_funding.py tests/unit/test_canonical_v2_browser_admission.py app/services/canonical_v2_tx_browser_authority.py tests/unit/test_canonical_v2_tx_browser_authority.py
+          flake8 app/services/canonical_multileg_candidate_registry_v2.py app/services/canonical_multi_outpoint_admission_proposal_v2.py app/services/canonical_v2_browser_admission.py tests/integration/test_canonical_multileg_candidate_postgres_v2.py tests/unit/test_canonical_v2_fresh_signed_funding.py tests/unit/test_canonical_v2_browser_admission.py app/services/canonical_v2_tx_browser_authority.py tests/unit/test_canonical_v2_tx_browser_authority.py app/services/canonical_v2_issuer_generation_binding.py tests/unit/test_canonical_v2_issuer_generation_binding.py
