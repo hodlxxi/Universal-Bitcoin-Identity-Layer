@@ -780,18 +780,20 @@ def test_sponsor_generation_is_immutably_bound_to_one_use_nonce(db, monkeypatch)
     with _browser_request(app, ALICE, "a" * 64):
         with Session(db) as session:
             with session.begin():
-                nonce = ingress.issue_from_verified_sponsor_browser_in_transaction(
-                    session, proposal, clock=lambda: NOW
-                )
+                nonce = ingress.issue_from_verified_sponsor_browser_in_transaction(session, proposal, clock=lambda: NOW)
     with db.connect() as connection:
-        bound = connection.execute(
-            text(
-                "SELECT sponsor_generation_id, sponsor_subject, client_id "
-                "FROM public.canonical_multileg_consent_browser_bindings_v2 "
-                "WHERE challenge_sha256=:nonce"
-            ),
-            {"nonce": nonce.challenge_sha256},
-        ).mappings().one()
+        bound = (
+            connection.execute(
+                text(
+                    "SELECT sponsor_generation_id, sponsor_subject, client_id "
+                    "FROM public.canonical_multileg_consent_browser_bindings_v2 "
+                    "WHERE challenge_sha256=:nonce"
+                ),
+                {"nonce": nonce.challenge_sha256},
+            )
+            .mappings()
+            .one()
+        )
         assert bound["sponsor_generation_id"] == "a" * 64
         assert bound["sponsor_subject"] == ALICE[2:]
         assert bound["client_id"] == "canon-ubid-test"
@@ -808,8 +810,7 @@ def test_sponsor_generation_is_immutably_bound_to_one_use_nonce(db, monkeypatch)
         with db.begin() as connection:
             connection.execute(
                 text(
-                    "DELETE FROM public.canonical_multileg_consent_browser_bindings_v2 "
-                    "WHERE challenge_sha256=:nonce"
+                    "DELETE FROM public.canonical_multileg_consent_browser_bindings_v2 " "WHERE challenge_sha256=:nonce"
                 ),
                 {"nonce": nonce.challenge_sha256},
             )
@@ -823,9 +824,7 @@ def test_later_child_completion_rejects_revoked_issuer_generation(db, monkeypatc
     with _browser_request(app, ALICE, "a" * 64):
         with Session(db) as session:
             with session.begin():
-                nonce = ingress.issue_from_verified_sponsor_browser_in_transaction(
-                    session, proposal, clock=lambda: NOW
-                )
+                nonce = ingress.issue_from_verified_sponsor_browser_in_transaction(session, proposal, clock=lambda: NOW)
     at = NOW + timedelta(seconds=40)
     if reason == "sponsor_logout":
         update_sql = "UPDATE oauth_browser_generations SET is_active=FALSE WHERE generation_id=:g"
