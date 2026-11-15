@@ -6,6 +6,9 @@ on:
       - "app/services/canonical_multileg_candidate_registry_v2.py"
       - "app/services/canonical_multi_outpoint_admission_proposal_v2.py"
       - "app/services/canonical_v2_server_bitcoin_collateral.py"
+      - "app/services/canonical_v2_browser_admission.py"
+      - "tests/unit/test_canonical_v2_browser_admission.py"
+      - "docs/CANONICAL_V2_BROWSER_BOUND_CONSENT.md"
       - "tests/unit/test_canonical_v2_fresh_signed_funding.py"
       - "docs/CANONICAL_V2_FRESH_SIGNED_ADMISSION.md"
       - "migrations/2026-11-13_canonical_multileg_admission_candidates_v2.sql"
@@ -54,10 +57,10 @@ jobs:
           CANON_V2_DISPOSABLE_PG_ACK: "1"
           CANON_V2_TEST_DATABASE_URL: "postgresql+psycopg2://canonv2test:disposable-ci-only@localhost:5432/canonv2test"
         run: |
-          python -m pytest -q tests/integration/test_canonical_multileg_candidate_postgres_v2.py tests/unit/test_canonical_v2_fresh_signed_funding.py
+          python -m pytest -q tests/integration/test_canonical_multileg_candidate_postgres_v2.py tests/unit/test_canonical_v2_fresh_signed_funding.py tests/unit/test_canonical_v2_browser_admission.py
       - name: Black
         run: |
-          black --check --diff app/services/canonical_multileg_candidate_registry_v2.py app/services/canonical_multi_outpoint_admission_proposal_v2.py tests/integration/test_canonical_multileg_candidate_postgres_v2.py tests/unit/test_canonical_v2_fresh_signed_funding.py
+          black --check --diff app/services/canonical_multileg_candidate_registry_v2.py app/services/canonical_multi_outpoint_admission_proposal_v2.py app/services/canonical_v2_browser_admission.py tests/integration/test_canonical_multileg_candidate_postgres_v2.py tests/unit/test_canonical_v2_fresh_signed_funding.py tests/unit/test_canonical_v2_browser_admission.py
       - name: Flake8
         run: |
           flake8 app/services/canonical_multileg_candidate_registry_v2.py app/services/canonical_multi_outpoint_admission_proposal_v2.py tests/integration/test_canonical_multileg_candidate_postgres_v2.py tests/unit/test_canonical_v2_fresh_signed_funding.py
