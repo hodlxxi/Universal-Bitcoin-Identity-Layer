@@ -9,9 +9,11 @@ UTXO and effective-admission coordinator must consume the candidate.
 
 from __future__ import annotations
 
+import hashlib
 import re
+import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -133,6 +135,85 @@ def _sponsor_depth(db: Session, sponsor_xonly: str) -> int:
     return rows[0]
 
 
+def prepare_authenticated_sponsored_import(
+    session_factory, *, sponsor_session_pubkey: str, raw_script_hex: str, now: datetime
+) -> str | None:
+    """Commit sponsor provenance BEFORE Core; an intent never asserts success.
+
+    Only the authenticated route supplies the session key. Recovery must use
+    this durable record, never a wallet label or a caller-supplied sponsor.
+    Exact retries reuse a live intent under the Current-Full subject lock.
+    """
+    db = None
+    try:
+        if type(now) is not datetime or now.tzinfo is None or now.utcoffset() is None or now.microsecond:
+            raise ValueError
+        now = now.astimezone(timezone.utc)
+        sponsor = canonical_xonly_pubkey(sponsor_session_pubkey)
+        if not isinstance(sponsor, str) or _SUBJECT.fullmatch(sponsor) is None:
+            raise ValueError
+        parsed = _script_for_subject(raw_script_hex, sponsor)
+        if parsed is None:
+            return None
+        leg, compressed = parsed
+        db = session_factory()
+        if not isinstance(db, Session) or db.get_bind().dialect.name != "postgresql":
+            raise ValueError
+        with db.begin():
+            proof = SqlAlchemyTransactionBoundCurrentFullVerifier(db).verify_with_evidence_in_transaction(
+                sponsor, now=now
+            )
+            if proof.verified_entitlement.subject != sponsor:
+                raise ValueError
+            depth = _sponsor_depth(db, sponsor)
+            if depth == 0 and compressed != GENESIS_COMPRESSED_KEY:
+                raise ValueError
+            params = {"sponsor": sponsor, "sha": leg.script_sha256, "now": now, "depth": depth}
+            existing = db.execute(
+                text(
+                    "SELECT intent_id FROM public.canonical_auto_import_intents_v1 "
+                    "WHERE sponsor_xonly_pubkey=:sponsor AND script_sha256=:sha "
+                    "AND sponsor_depth=:depth AND authorized_at<=:now AND recover_until>:now "
+                    "ORDER BY authorized_at DESC, intent_id LIMIT 1"
+                ),
+                params,
+            ).scalar_one_or_none()
+            if existing is not None:
+                return str(existing)
+            count = db.execute(
+                text(
+                    "SELECT count(*) FROM public.canonical_auto_import_intents_v1 "
+                    "WHERE sponsor_xonly_pubkey=:sponsor AND recover_until>:now"
+                ),
+                params,
+            ).scalar_one()
+            if count >= 2048:
+                raise ValueError
+            intent = str(uuid.uuid4())
+            db.execute(
+                text(
+                    "INSERT INTO public.canonical_auto_import_intents_v1 "
+                    "(intent_id,sponsor_xonly_pubkey,script_sha256,script_hex,sponsor_depth,"
+                    "sponsor_evidence_id,sponsor_evidence_sha256,authorized_at,recover_until) "
+                    "VALUES (:id,:sponsor,:sha,:script,:depth,:eid,:evidence,:now,:until)"
+                ),
+                {
+                    **params,
+                    "id": intent,
+                    "script": leg.raw_script_hex,
+                    "eid": proof.evidence_id,
+                    "evidence": proof.source_evidence_sha256,
+                    "until": now + timedelta(days=7),
+                },
+            )
+        return intent
+    except Exception:
+        raise AutomaticSponsoredImportUnavailable() from None
+    finally:
+        if db is not None:
+            db.close()
+
+
 def record_successful_sponsored_import(
     session_factory,
     *,
@@ -176,6 +257,26 @@ def record_successful_sponsored_import(
             depth = _sponsor_depth(db, sponsor_xonly)
             leg, sponsor_compressed = parsed
             if depth == 0 and sponsor_compressed != GENESIS_COMPRESSED_KEY:
+                raise ValueError
+
+            # A Core import or an imported wallet label cannot invent a sponsor.
+            # The intent was committed by the authenticated route before RPC.
+            provenance = db.execute(
+                text(
+                    "SELECT intent_id FROM public.canonical_auto_import_intents_v1 "
+                    "WHERE sponsor_xonly_pubkey=:sponsor AND script_sha256=:sha "
+                    "AND script_hex=:script AND sponsor_depth=:depth "
+                    "AND authorized_at<=:now AND recover_until>:now LIMIT 1"
+                ),
+                {
+                    "sponsor": sponsor_xonly,
+                    "sha": leg.script_sha256,
+                    "script": leg.raw_script_hex,
+                    "depth": depth,
+                    "now": now,
+                },
+            ).scalar_one_or_none()
+            if provenance is None:
                 raise ValueError
 
             # The subject lock acquired by verify_in_transaction serializes
@@ -243,3 +344,83 @@ def record_successful_sponsored_import(
     finally:
         if db is not None:
             db.close()
+
+
+def recover_authenticated_sponsored_imports(
+    session_factory, *, trusted_wallet_rpc, now: datetime, maximum: int = 100
+) -> tuple[AutomaticSponsoredImportResult, ...]:
+    """Recover post-Core journal failures from durable authenticated intents.
+
+    The server-owned watch-only wallet must contain BOTH exact descriptors.
+    A wallet label, balance, script discovered without an intent, or an expired
+    intent cannot supply sponsorship. Each write rechecks current Full and depth.
+    This bounded recovery stage grants no authority; funding remains independent.
+    """
+    try:
+        if (
+            type(now) is not datetime
+            or now.tzinfo is None
+            or now.utcoffset() is None
+            or now.microsecond
+            or type(maximum) is not int
+            or not 1 <= maximum <= 256
+        ):
+            raise ValueError
+        info = trusted_wallet_rpc.getwalletinfo()
+        if (
+            type(info) is not dict
+            or info.get("private_keys_enabled") is not False
+            or info.get("descriptors") is not True
+        ):
+            raise ValueError
+        imported = trusted_wallet_rpc.listdescriptors(False)
+        if (
+            type(imported) is not dict
+            or type(imported.get("descriptors")) is not list
+            or len(imported["descriptors"]) > 8192
+        ):
+            raise ValueError
+        descriptors = set()
+        for item in imported["descriptors"]:
+            if type(item) is not dict or type(item.get("desc")) is not str or len(item["desc"]) > 4096:
+                raise ValueError
+            descriptors.add(item["desc"])
+        with session_factory() as db:
+            if not isinstance(db, Session) or db.get_bind().dialect.name != "postgresql":
+                raise ValueError
+            rows = (
+                db.execute(
+                    text(
+                        "SELECT DISTINCT i.sponsor_xonly_pubkey,i.script_hex FROM public.canonical_auto_import_intents_v1 i "
+                        "WHERE i.authorized_at<=:now AND i.recover_until>:now AND NOT EXISTS ("
+                        "SELECT 1 FROM public.canonical_auto_import_scripts_v1 s WHERE "
+                        "s.sponsor_xonly_pubkey=i.sponsor_xonly_pubkey AND s.script_sha256=i.script_sha256) "
+                        "ORDER BY i.sponsor_xonly_pubkey,i.script_hex LIMIT :maximum"
+                    ),
+                    {"now": now, "maximum": maximum},
+                )
+                .mappings()
+                .all()
+            )
+        results = []
+        for row in rows:
+            script = row["script_hex"]
+            raw = trusted_wallet_rpc.getdescriptorinfo(f"raw({script})")["descriptor"]
+            if raw not in descriptors:
+                continue
+            segwit = trusted_wallet_rpc.decodescript(script).get("segwit", {})
+            # Exact native P2WSH is derived locally, never from wallet labels.
+            expected = "0020" + hashlib.sha256(bytes.fromhex(script)).hexdigest()
+            if segwit.get("hex") != expected or type(segwit.get("address")) is not str:
+                raise ValueError
+            address_descriptor = trusted_wallet_rpc.getdescriptorinfo(f"addr({segwit['address']})")["descriptor"]
+            if address_descriptor not in descriptors:
+                continue
+            results.append(
+                record_successful_sponsored_import(
+                    session_factory, sponsor_session_pubkey=row["sponsor_xonly_pubkey"], raw_script_hex=script, now=now
+                )
+            )
+        return tuple(results)
+    except Exception:
+        raise AutomaticSponsoredImportUnavailable() from None

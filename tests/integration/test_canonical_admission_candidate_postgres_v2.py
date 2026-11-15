@@ -11,9 +11,10 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
+
+from tests.integration.canon_v2_disposable_pg import disposable_postgres_engine
 
 from app.models import CurrentEntitlementEvidence, User
 from app.services.action_authorization import IdentityClass
@@ -51,17 +52,7 @@ def postgres_engine():
     url = os.getenv("CANON_V2_TEST_DATABASE_URL")
     if not url or os.getenv("CANON_V2_DISPOSABLE_PG_ACK") != "1":
         pytest.skip("Disposable PostgreSQL and explicit acknowledgement required")
-    parsed = make_url(url)
-    if (
-        parsed.drivername != "postgresql+psycopg2"
-        or parsed.host not in ("localhost", "127.0.0.1")
-        or parsed.database != "canonv2test"
-        or parsed.username != "canonv2test"
-        or parsed.port != 5432
-    ):
-        raise RuntimeError("refuse_non_disposable_postgres_target")
-
-    engine = create_engine(url, future=True, pool_pre_ping=True)
+    engine = disposable_postgres_engine(url)
     created = False
     try:
         with engine.begin() as connection:

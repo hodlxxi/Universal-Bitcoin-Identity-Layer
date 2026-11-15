@@ -11,9 +11,10 @@ CREATE TABLE public.canonical_auto_import_scripts_v1 (
     script_sha256 CHAR(64) NOT NULL
         CHECK (script_sha256 ~ '^[0-9a-f]{64}$'),
     script_hex TEXT NOT NULL
-        CHECK (script_hex ~ '^[0-9a-f]{2,2048}$' AND length(script_hex) % 2 = 0),
+        CHECK (script_hex ~ '^[0-9a-f]+$' AND length(script_hex) BETWEEN 2 AND 2048 AND length(script_hex) % 2 = 0),
     imported_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (sponsor_xonly_pubkey, script_sha256)
+    PRIMARY KEY (sponsor_xonly_pubkey, script_sha256),
+    CHECK (script_sha256 = encode(sha256(decode(script_hex, 'hex')), 'hex'))
 );
 CREATE INDEX idx_caisv1_sponsor_created
     ON public.canonical_auto_import_scripts_v1(sponsor_xonly_pubkey, imported_at);

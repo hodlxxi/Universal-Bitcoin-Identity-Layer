@@ -2859,6 +2859,7 @@ def _automatic_sponsored_post_import_if_enabled(script_hex, import_result):
     from app.services.automatic_sponsored_import_v1 import (
         record_successful_sponsored_import,
     )
+
     result = record_successful_sponsored_import(
         get_db_session,
         sponsor_session_pubkey=sponsor_session_pubkey,
@@ -2875,6 +2876,23 @@ def _automatic_sponsored_post_import_if_enabled(script_hex, import_result):
     }
 
 
+def _automatic_sponsored_prepare_import_if_enabled(raw_descriptor):
+    """Persist authenticated sponsor provenance before the first Core mutation."""
+    if os.environ.get("AUTO_SPONSORED_IMPORT_ENABLED") != "true" or not raw_descriptor.startswith("raw("):
+        return None
+    sponsor = session.get("logged_in_pubkey")
+    if type(sponsor) is not str or not sponsor:
+        raise RuntimeError("authenticated Full sponsor unavailable")
+    from app.services.automatic_sponsored_import_v1 import prepare_authenticated_sponsored_import
+
+    return prepare_authenticated_sponsored_import(
+        get_db_session,
+        sponsor_session_pubkey=sponsor,
+        raw_script_hex=extract_script_from_raw_descriptor(raw_descriptor),
+        now=datetime.now(timezone.utc).replace(microsecond=0),
+    )
+
+
 @app.route("/import_descriptor", methods=["POST"])
 def import_descriptor():
     require_full_access()
@@ -2884,6 +2902,7 @@ def import_descriptor():
         return jsonify({"error": "No descriptor provided."}), 400
 
     try:
+        _automatic_sponsored_prepare_import_if_enabled(raw_descriptor)
         rpc = get_rpc_connection()
         import_result = rpc.importdescriptors(
             [{"desc": raw_descriptor, "timestamp": "now", "active": False, "watchonly": True}]
@@ -2914,6 +2933,13 @@ def import_descriptor():
                     }
                 ]
             )
+            if os.environ.get("AUTO_SPONSORED_IMPORT_ENABLED") == "true" and (
+                type(label_import_result) is not list
+                or len(label_import_result) != 1
+                or type(label_import_result[0]) is not dict
+                or label_import_result[0].get("success") is not True
+            ):
+                raise RuntimeError("watch-only address import unconfirmed")
             # Opt-in staging ingestion: importing the second mirror side
             # automatically correlates a pending sponsor/child candidate.
             # Wallet-only scripts do not grant Full and cannot bypass
