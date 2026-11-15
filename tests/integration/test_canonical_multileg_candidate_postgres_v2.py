@@ -678,3 +678,86 @@ def test_proposed_parent_cannot_issue_challenge_as_effective_sponsor(db, monkeyp
                     ingress.issue_from_verified_sponsor_browser_in_transaction(session, child, clock=lambda: NOW)
     with db.connect() as conn:
         assert conn.execute(text(f"SELECT count(*) FROM {NONCES}")).scalar_one() == 1
+
+
+@pytest.mark.parametrize("revocation", ("logout", "expired", "inactive_client", "inactive_user"))
+def test_transaction_browser_reader_rejects_inactive_ownership(db, monkeypatch, revocation):
+    proposal = _new()
+    _seed_full(db, ALICE)
+    app, ingress = _browser_harness(monkeypatch, db)
+    with db.begin() as connection:
+        if revocation == "logout":
+            connection.execute(
+                text("UPDATE oauth_browser_generations SET is_active=FALSE WHERE generation_id=:generation"),
+                {"generation": "a" * 64},
+            )
+        elif revocation == "expired":
+            connection.execute(
+                text("UPDATE oauth_browser_generations SET expires_at=:deadline WHERE generation_id=:generation"),
+                {"deadline": NOW - timedelta(seconds=1), "generation": "a" * 64},
+            )
+        elif revocation == "inactive_client":
+            connection.execute(text("UPDATE oauth_clients SET is_active=FALSE"))
+        else:
+            connection.execute(
+                text("UPDATE users SET is_active=FALSE WHERE pubkey=:subject"),
+                {"subject": ALICE[2:]},
+            )
+    with _browser_request(app, ALICE, "a" * 64):
+        with pytest.raises(ingress.CanonicalV2BrowserAdmissionUnavailable):
+            with Session(db) as session:
+                with session.begin():
+                    ingress.issue_from_verified_sponsor_browser_in_transaction(
+                        session, proposal, clock=lambda: NOW
+                    )
+    with db.connect() as connection:
+        assert connection.execute(text(f"SELECT COUNT(*) FROM {NONCES}")).scalar_one() == 0
+
+
+def test_locked_generation_blocks_revoke_until_admission_transaction_finishes(db, monkeypatch):
+    """A parallel logout cannot change the generation before nonce commit."""
+    import app.services.canonical_v2_tx_browser_authority as authority
+
+    _seed_full(db, ALICE)
+    _browser_harness(monkeypatch, db)
+    with Session(db) as first:
+        with first.begin():
+            locked = authority.locked_browser_subject_in_transaction(
+                first,
+                generation_id="a" * 64,
+                expected_subject=ALICE[2:],
+                client_id="canon-ubid-test",
+                now=NOW,
+            )
+            assert locked.subject == ALICE[2:]
+            assert not locked.grants_full
+            with pytest.raises(DBAPIError):
+                with Session(db) as second:
+                    with second.begin():
+                        second.execute(text("SET LOCAL lock_timeout = '150ms'"))
+                        second.execute(
+                            text("UPDATE oauth_browser_generations SET is_active=FALSE "
+                                 "WHERE generation_id=:generation"),
+                            {"generation": "a" * 64},
+                        )
+            assert first.execute(
+                text("SELECT is_active FROM oauth_browser_generations "
+                     "WHERE generation_id=:generation"),
+                {"generation": "a" * 64},
+            ).scalar_one() is True
+    # Once first commits, explicit revocation is free to proceed.
+    with db.begin() as connection:
+        connection.execute(
+            text("UPDATE oauth_browser_generations SET is_active=FALSE WHERE generation_id=:generation"),
+            {"generation": "a" * 64},
+        )
+    with Session(db) as session:
+        with session.begin():
+            with pytest.raises(authority.CanonicalV2TransactionBrowserUnavailable):
+                authority.locked_browser_subject_in_transaction(
+                    session,
+                    generation_id="a" * 64,
+                    expected_subject=ALICE[2:],
+                    client_id="canon-ubid-test",
+                    now=NOW,
+                )
