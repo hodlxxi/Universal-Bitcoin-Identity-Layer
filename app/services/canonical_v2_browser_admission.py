@@ -23,6 +23,13 @@ from app.services.current_entitlement_evidence_storage import SqlAlchemyTransact
 from app.services.oauth_browser_authentication import browser_reference
 from app.services.oauth_session_lifecycle import configured_lifecycle
 from app.services.canonical_v2_tx_browser_authority import locked_browser_subject_in_transaction
+from app.services.canonical_v2_issuer_generation_binding import (
+    bind_issuer_generation_in_transaction,
+    require_current_issuer_generation_in_transaction,
+)
+from app.services.canonical_multi_outpoint_admission_proposal_v2 import (
+    canonical_multi_outpoint_admission_proposal_v2_sha256,
+)
 
 RUNTIME_ENABLED = False
 
@@ -135,9 +142,20 @@ def issue_from_verified_sponsor_browser_in_transaction(
         if verified.verified_entitlement.subject != policy.sponsor_xonly_pubkey:
             _deny()
         _effective_parent(session, proposal)
-        return SqlAlchemyMultiLegConsentLedgerV2(session, clock=clock).issue(
+        pending = SqlAlchemyMultiLegConsentLedgerV2(session, clock=clock).issue(
             proposal, authenticated_sponsor_pubkey=policy.sponsor_compressed_pubkey
         )
+        # Persist the exact authenticated issuer generation in the SAME
+        # transaction as the freshly issued, one-use role-separated nonce.
+        bind_issuer_generation_in_transaction(
+            session,
+            challenge_sha256=pending.challenge_sha256,
+            sponsor_generation_id=browser_reference(),
+            sponsor_subject=policy.sponsor_xonly_pubkey,
+            client_id=configured_lifecycle(current_app).client_id,
+            issued_at=pending.challenge.issued_at,
+        )
+        return pending
     except CanonicalV2BrowserAdmissionUnavailable:
         raise
     except Exception:
@@ -165,6 +183,16 @@ def reserve_from_verified_child_browser_in_transaction(
         policy = proposal.mirror.script_evidence
         at = _time(clock)
         _verified_browser_subject(session, expected_compressed=policy.child_compressed_pubkey, now=at)
+        # The sponsor may have logged out/replaced their browser generation
+        # after issuing the nonce. A live generation must still be locked.
+        require_current_issuer_generation_in_transaction(
+            session,
+            challenge_sha256=challenge_sha256,
+            sponsor_subject=policy.sponsor_xonly_pubkey,
+            client_id=configured_lifecycle(current_app).client_id,
+            proposal_sha256=canonical_multi_outpoint_admission_proposal_v2_sha256(proposal),
+            now=at,
+        )
         _effective_parent(session, proposal)
         return SqlAlchemyCanonicalMultiLegCandidateRegistryV2(
             session, clock=clock
