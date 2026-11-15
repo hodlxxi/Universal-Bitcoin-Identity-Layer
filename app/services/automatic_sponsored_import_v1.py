@@ -117,13 +117,17 @@ def match_imported_sponsored_pair(
 def _sponsor_depth(db: Session, sponsor_xonly: str) -> int:
     if sponsor_xonly == GENESIS_COMPRESSED_KEY[2:]:
         return 0
-    rows = db.execute(
-        text(
-            "SELECT child_depth FROM public.canonical_multileg_effective_edges_v2 "
-            "WHERE child_xonly_pubkey = :subject FOR SHARE"
-        ),
-        {"subject": sponsor_xonly},
-    ).scalars().all()
+    rows = (
+        db.execute(
+            text(
+                "SELECT child_depth FROM public.canonical_multileg_effective_edges_v2 "
+                "WHERE child_xonly_pubkey = :subject FOR SHARE"
+            ),
+            {"subject": sponsor_xonly},
+        )
+        .scalars()
+        .all()
+    )
     if len(rows) != 1 or type(rows[0]) is not int or not 1 <= rows[0] <= 2287:
         raise AutomaticSponsoredImportUnavailable()
     return rows[0]
@@ -196,7 +200,9 @@ def record_successful_sponsored_import(
                         "WHERE sponsor_xonly_pubkey = :sponsor ORDER BY script_sha256 LIMIT 2049"
                     ),
                     {"sponsor": sponsor_xonly},
-                ).scalars().all()
+                )
+                .scalars()
+                .all()
             )
             if len(scripts) > 2048:
                 raise ValueError
