@@ -56,11 +56,7 @@ def _verified_browser_subject(db: Session, *, expected_compressed: str, now: dat
             _deny()
         cookie_subject = canonical_xonly_pubkey(stored)
         expected = canonical_xonly_pubkey(expected_compressed)
-        if (
-            cookie_subject != expected
-            or expected_compressed[:2] not in ("02", "03")
-            or len(expected_compressed) != 66
-        ):
+        if cookie_subject != expected or expected_compressed[:2] not in ("02", "03") or len(expected_compressed) != 66:
             _deny()
         # Read User, OAuthClient and this exact OAuthBrowserGeneration under
         # FOR UPDATE in the SAME caller-owned PostgreSQL admission transaction.
