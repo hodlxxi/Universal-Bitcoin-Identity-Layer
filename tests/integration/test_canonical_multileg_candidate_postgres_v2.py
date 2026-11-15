@@ -15,7 +15,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import CurrentEntitlementEvidence, User
+from app.models import CurrentEntitlementEvidence, OAuthBrowserGeneration, OAuthClient, User
 from app.services.canonical_multileg_candidate_registry_v2 import (
     CanonicalMultiLegCandidateUnavailableV2,
     SqlAlchemyCanonicalMultiLegCandidateRegistryV2,
@@ -77,6 +77,8 @@ def postgres_engine():
             existing = (
                 "users",
                 "current_entitlement_evidence",
+                "oauth_clients",
+                "oauth_browser_generations",
                 "canonical_multileg_admission_candidates_v2",
                 "canonical_multileg_candidate_outpoints_v2",
                 "canonical_multileg_consent_challenges_v2",
@@ -89,6 +91,8 @@ def postgres_engine():
                     raise RuntimeError("disposable_test_database_must_be_empty")
             User.__table__.create(bind=connection)
             CurrentEntitlementEvidence.__table__.create(bind=connection)
+            OAuthClient.__table__.create(bind=connection)
+            OAuthBrowserGeneration.__table__.create(bind=connection)
             for migration in MIGRATIONS:
                 connection.exec_driver_sql(migration.read_text())
         created = True
@@ -110,6 +114,8 @@ def postgres_engine():
                     connection.execute(text("DROP FUNCTION public.validate_canonical_multileg_candidate_v2()"))
                     connection.execute(text("DROP FUNCTION public.guard_canonical_multileg_candidate_immutable_v2()"))
                     connection.execute(text("DROP FUNCTION public.guard_canonical_multileg_consent_challenge_v2()"))
+                    OAuthBrowserGeneration.__table__.drop(bind=connection)
+                    OAuthClient.__table__.drop(bind=connection)
                     CurrentEntitlementEvidence.__table__.drop(bind=connection)
                     User.__table__.drop(bind=connection)
         finally:
@@ -120,6 +126,7 @@ def postgres_engine():
 def db(postgres_engine):
     with postgres_engine.begin() as conn:
         conn.execute(text(f"TRUNCATE TABLE {OUTPOINTS}, {CANDIDATES}, {NONCES} CASCADE"))
+        conn.execute(text("TRUNCATE TABLE oauth_browser_generations, oauth_clients CASCADE"))
         conn.execute(text("TRUNCATE TABLE current_entitlement_evidence, users CASCADE"))
     return postgres_engine
 
