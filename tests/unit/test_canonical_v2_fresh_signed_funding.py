@@ -78,9 +78,7 @@ def test_forged_or_spent_outpoint_does_not_pass_revalidation(field):
         "unconfirmed": {"confirmations": 0},
         "txid": {"txid": "d" * 64},
     }
-    tampered = replace(
-        observation, observations=(replace(outpoint, **changes[field]), *observation.observations[1:])
-    )
+    tampered = replace(observation, observations=(replace(outpoint, **changes[field]), *observation.observations[1:]))
     with pytest.raises(Exception):
         validate_canonical_multi_outpoint_admission_fresh_sources_v2(
             proposal, sponsor_basis=_genesis(), fresh_observation=tampered, now=at
