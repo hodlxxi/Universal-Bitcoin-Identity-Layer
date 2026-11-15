@@ -771,3 +771,110 @@ def test_locked_generation_blocks_revoke_until_admission_transaction_finishes(db
                     client_id="canon-ubid-test",
                     now=NOW,
                 )
+
+
+def test_sponsor_generation_is_immutably_bound_to_one_use_nonce(db, monkeypatch):
+    proposal = _new()
+    _seed_full(db, ALICE)
+    app, ingress = _browser_harness(monkeypatch, db)
+    with _browser_request(app, ALICE, "a" * 64):
+        with Session(db) as session:
+            with session.begin():
+                nonce = ingress.issue_from_verified_sponsor_browser_in_transaction(
+                    session, proposal, clock=lambda: NOW
+                )
+    with db.connect() as connection:
+        bound = connection.execute(
+            text(
+                "SELECT sponsor_generation_id, sponsor_subject, client_id "
+                "FROM public.canonical_multileg_consent_browser_bindings_v2 "
+                "WHERE challenge_sha256=:nonce"
+            ),
+            {"nonce": nonce.challenge_sha256},
+        ).mappings().one()
+        assert bound["sponsor_generation_id"] == "a" * 64
+        assert bound["sponsor_subject"] == ALICE[2:]
+        assert bound["client_id"] == "canon-ubid-test"
+    with pytest.raises(DBAPIError):
+        with db.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE public.canonical_multileg_consent_browser_bindings_v2 "
+                    "SET sponsor_generation_id=:other WHERE challenge_sha256=:nonce"
+                ),
+                {"other": "b" * 64, "nonce": nonce.challenge_sha256},
+            )
+    with pytest.raises(DBAPIError):
+        with db.begin() as connection:
+            connection.execute(
+                text(
+                    "DELETE FROM public.canonical_multileg_consent_browser_bindings_v2 "
+                    "WHERE challenge_sha256=:nonce"
+                ),
+                {"nonce": nonce.challenge_sha256},
+            )
+
+
+@pytest.mark.parametrize("reason", ("sponsor_logout", "sponsor_expired", "sponsor_client_disabled"))
+def test_later_child_completion_rejects_revoked_issuer_generation(db, monkeypatch, reason):
+    proposal = _new()
+    _seed_full(db, ALICE)
+    app, ingress = _browser_harness(monkeypatch, db)
+    with _browser_request(app, ALICE, "a" * 64):
+        with Session(db) as session:
+            with session.begin():
+                nonce = ingress.issue_from_verified_sponsor_browser_in_transaction(
+                    session, proposal, clock=lambda: NOW
+                )
+    at = NOW + timedelta(seconds=40)
+    if reason == "sponsor_logout":
+        update_sql = "UPDATE oauth_browser_generations SET is_active=FALSE WHERE generation_id=:g"
+        params = {"g": "a" * 64}
+    elif reason == "sponsor_expired":
+        update_sql = "UPDATE oauth_browser_generations SET expires_at=:at WHERE generation_id=:g"
+        params = {"at": NOW + timedelta(seconds=20), "g": "a" * 64}
+    else:
+        update_sql = "UPDATE oauth_clients SET is_active=FALSE WHERE client_id=:client"
+        params = {"client": "canon-ubid-test"}
+    with db.begin() as connection:
+        connection.execute(text(update_sql), params)
+    _server_core_for_signed_candidate(monkeypatch, proposal, nonce, at=at)
+    with _browser_request(app, BOB, "b" * 64):
+        with pytest.raises(ingress.CanonicalV2BrowserAdmissionUnavailable):
+            with Session(db) as session:
+                with session.begin():
+                    ingress.reserve_from_verified_child_browser_in_transaction(
+                        session,
+                        proposal,
+                        sponsor_basis=_genesis(),
+                        challenge_sha256=nonce.challenge_sha256,
+                        sponsor_signature=SPONSOR_SIG,
+                        child_signature=CHILD_SIG,
+                        clock=lambda: at,
+                    )
+    assert _counts(db) == (0, 0)
+    assert _nonce_consumed(db, nonce) is None
+
+
+def test_legacy_unbound_nonce_cannot_be_consumed_via_browser_ingress(db, monkeypatch):
+    proposal = _new()
+    _seed_full(db, ALICE)
+    app, ingress = _browser_harness(monkeypatch, db)
+    nonce = _issue(db, proposal)
+    at = NOW + timedelta(seconds=40)
+    _server_core_for_signed_candidate(monkeypatch, proposal, nonce, at=at)
+    with _browser_request(app, BOB, "b" * 64):
+        with pytest.raises(ingress.CanonicalV2BrowserAdmissionUnavailable):
+            with Session(db) as session:
+                with session.begin():
+                    ingress.reserve_from_verified_child_browser_in_transaction(
+                        session,
+                        proposal,
+                        sponsor_basis=_genesis(),
+                        challenge_sha256=nonce.challenge_sha256,
+                        sponsor_signature=SPONSOR_SIG,
+                        child_signature=CHILD_SIG,
+                        clock=lambda: at,
+                    )
+    assert _counts(db) == (0, 0)
+    assert _nonce_consumed(db, nonce) is None
