@@ -45,9 +45,10 @@ def _verified_browser_subject(*, expected_compressed: str) -> str:
             _deny()
         if request.mimetype != "application/json":
             _deny()
-        if type(browser_session.get("login_method")) is not str or browser_session.get(
-            "login_method"
-        ) not in ("legacy", "nostr"):
+        if type(browser_session.get("login_method")) is not str or browser_session.get("login_method") not in (
+            "legacy",
+            "nostr",
+        ):
             _deny()
         stored = browser_session.get("logged_in_pubkey")
         if type(stored) is not str:
