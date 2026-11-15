@@ -51,6 +51,7 @@ MIGRATIONS = (
     Path("migrations/2026-11-13_canonical_multileg_consent_challenge_v2.sql"),
     Path("migrations/2026-11-13_canonical_multileg_admission_candidates_v2.sql"),
     Path("migrations/2026-11-13_canonical_multileg_candidate_expiry_v2.sql"),
+    Path("migrations/2026-11-15_canonical_multileg_issuer_generation_binding_v2.sql"),
 )
 
 
@@ -79,6 +80,7 @@ def postgres_engine():
                 "current_entitlement_evidence",
                 "oauth_clients",
                 "oauth_browser_generations",
+                "canonical_multileg_consent_browser_bindings_v2",
                 "canonical_multileg_admission_candidates_v2",
                 "canonical_multileg_candidate_outpoints_v2",
                 "canonical_multileg_consent_challenges_v2",
@@ -106,6 +108,7 @@ def postgres_engine():
                     connection.execute(text("DROP TABLE public.canonical_multileg_live_child_claims_v2"))
                     connection.execute(text(f"DROP TABLE {OUTPOINTS}"))
                     connection.execute(text(f"DROP TABLE {CANDIDATES}"))
+                    connection.execute(text("DROP TABLE public.canonical_multileg_consent_browser_bindings_v2"))
                     connection.execute(text(f"DROP TABLE {NONCES}"))
                     connection.execute(text("DROP FUNCTION public.expire_canonical_multileg_candidate_v2(VARCHAR)"))
                     connection.execute(text("DROP FUNCTION public.guard_canonical_multileg_candidate_expiry_v2()"))
@@ -114,6 +117,8 @@ def postgres_engine():
                     connection.execute(text("DROP FUNCTION public.validate_canonical_multileg_candidate_v2()"))
                     connection.execute(text("DROP FUNCTION public.guard_canonical_multileg_candidate_immutable_v2()"))
                     connection.execute(text("DROP FUNCTION public.guard_canonical_multileg_consent_challenge_v2()"))
+                    connection.execute(text("DROP FUNCTION public.validate_canonical_multileg_browser_binding_v2()"))
+                    connection.execute(text("DROP FUNCTION public.guard_canonical_multileg_browser_binding_v2()"))
                     OAuthBrowserGeneration.__table__.drop(bind=connection)
                     OAuthClient.__table__.drop(bind=connection)
                     CurrentEntitlementEvidence.__table__.drop(bind=connection)
