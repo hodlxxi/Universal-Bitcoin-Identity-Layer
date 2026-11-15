@@ -15,9 +15,7 @@ from tests.unit.test_canonical_admission_proposal_v2 import ALICE, NOW
 
 
 def test_browser_subject_never_grants_full():
-    locked = LockedCanonicalV2BrowserSubject(
-        ALICE[2:], "a" * 64, "00000000-0000-4000-8000-000000000001", "ubid"
-    )
+    locked = LockedCanonicalV2BrowserSubject(ALICE[2:], "a" * 64, "00000000-0000-4000-8000-000000000001", "ubid")
     assert locked.subject == ALICE[2:]
     assert locked.grants_full is False
 
@@ -55,14 +53,12 @@ def test_refuses_invalid_identity_and_clock_on_sqlite(changes):
 def test_no_transaction_or_null_session_is_not_trusted():
     with pytest.raises(CanonicalV2TransactionBrowserUnavailable):
         locked_browser_subject_in_transaction(
-            None, generation_id="a" * 64, expected_subject=ALICE[2:],
-            client_id="ubid", now=NOW
+            None, generation_id="a" * 64, expected_subject=ALICE[2:], client_id="ubid", now=NOW
         )
 
 
 def test_non_timezone_clock_cannot_establish_browser_identity():
     with pytest.raises(CanonicalV2TransactionBrowserUnavailable):
         locked_browser_subject_in_transaction(
-            None, generation_id="a" * 64, expected_subject=ALICE[2:],
-            client_id="ubid", now=datetime.now(timezone.utc)
+            None, generation_id="a" * 64, expected_subject=ALICE[2:], client_id="ubid", now=datetime.now(timezone.utc)
         )
