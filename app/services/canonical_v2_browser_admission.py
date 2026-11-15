@@ -22,6 +22,7 @@ from app.services.canonical_multileg_consent_storage_v2 import SqlAlchemyMultiLe
 from app.services.current_entitlement_evidence_storage import SqlAlchemyTransactionBoundCurrentFullVerifier
 from app.services.oauth_browser_authentication import browser_reference
 from app.services.oauth_session_lifecycle import configured_lifecycle
+from app.services.canonical_v2_tx_browser_authority import locked_browser_subject_in_transaction
 
 RUNTIME_ENABLED = False
 
@@ -35,7 +36,7 @@ def _deny() -> None:
     raise CanonicalV2BrowserAdmissionUnavailable()
 
 
-def _verified_browser_subject(*, expected_compressed: str) -> str:
+def _verified_browser_subject(db: Session, *, expected_compressed: str, now: datetime) -> str:
     """Never trust request pubkey/access_level, even a signed Flask cookie alone."""
     try:
         if not has_request_context() or request.method != "POST" or request.query_string:
@@ -55,16 +56,25 @@ def _verified_browser_subject(*, expected_compressed: str) -> str:
             _deny()
         cookie_subject = canonical_xonly_pubkey(stored)
         expected = canonical_xonly_pubkey(expected_compressed)
-        principal = lifecycle.browser_subject(browser_reference())
         if (
-            type(principal) is not str
-            or principal != cookie_subject
-            or principal != expected
+            cookie_subject != expected
             or expected_compressed[:2] not in ("02", "03")
             or len(expected_compressed) != 66
         ):
             _deny()
-        return principal
+        # Read User, OAuthClient and this exact OAuthBrowserGeneration under
+        # FOR UPDATE in the SAME caller-owned PostgreSQL admission transaction.
+        # Logout/replacement must wait until the candidate/nonce commits.
+        locked = locked_browser_subject_in_transaction(
+            db,
+            generation_id=browser_reference(),
+            expected_subject=expected,
+            client_id=lifecycle.client_id,
+            now=now,
+        )
+        if locked.subject != expected:
+            _deny()
+        return locked.subject
     except CanonicalV2BrowserAdmissionUnavailable:
         raise
     except Exception:
@@ -121,8 +131,8 @@ def issue_from_verified_sponsor_browser_in_transaction(
         if type(proposal) is not CanonicalMultiOutpointAdmissionProposalV2 or not session.in_transaction():
             _deny()
         policy = proposal.mirror.script_evidence
-        _verified_browser_subject(expected_compressed=policy.sponsor_compressed_pubkey)
         at = _time(clock)
+        _verified_browser_subject(session, expected_compressed=policy.sponsor_compressed_pubkey, now=at)
         verified = SqlAlchemyTransactionBoundCurrentFullVerifier(session).verify_with_evidence_in_transaction(
             policy.sponsor_xonly_pubkey, now=at
         )
@@ -157,7 +167,8 @@ def reserve_from_verified_child_browser_in_transaction(
         if type(proposal) is not CanonicalMultiOutpointAdmissionProposalV2 or not session.in_transaction():
             _deny()
         policy = proposal.mirror.script_evidence
-        _verified_browser_subject(expected_compressed=policy.child_compressed_pubkey)
+        at = _time(clock)
+        _verified_browser_subject(session, expected_compressed=policy.child_compressed_pubkey, now=at)
         _effective_parent(session, proposal)
         return SqlAlchemyCanonicalMultiLegCandidateRegistryV2(
             session, clock=clock
