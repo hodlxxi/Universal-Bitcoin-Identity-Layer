@@ -550,6 +550,9 @@ def _browser_harness(monkeypatch, engine):
                     is_active=True,
                 )
             )
+            # OAuthBrowserGeneration has no ORM relationship to OAuthClient.
+            # Flush the parent before inserting child FK rows.
+            session.flush()
             for generation_id, compressed, proof in (
                 ("a" * 64, ALICE, "c" * 64),
                 ("b" * 64, BOB, "d" * 64),
