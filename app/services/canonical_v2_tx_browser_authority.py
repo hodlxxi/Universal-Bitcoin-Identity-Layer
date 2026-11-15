@@ -98,9 +98,7 @@ def locked_browser_subject_in_transaction(
 
         # Find ID without trusting generation.subject; lock the exact User
         # first, then the configured OAuthClient, then that user's generation.
-        user = db.execute(
-            select(User).where(User.pubkey == expected_subject).with_for_update()
-        ).scalar_one_or_none()
+        user = db.execute(select(User).where(User.pubkey == expected_subject).with_for_update()).scalar_one_or_none()
         if user is None or user.is_active is not True or user.pubkey != expected_subject:
             _deny()
         client = db.execute(
