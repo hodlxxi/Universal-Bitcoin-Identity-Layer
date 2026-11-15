@@ -29,6 +29,7 @@ from app.services.canonical_multi_outpoint_admission_proposal_v2 import (
     CanonicalMultiOutpointAdmissionProposalV2,
     canonical_multi_outpoint_admission_proposal_v2_bytes,
     canonical_multi_outpoint_admission_proposal_v2_sha256,
+    validate_canonical_multi_outpoint_admission_fresh_sources_v2,
     validate_canonical_multi_outpoint_admission_proposal_v2_sources,
 )
 from app.services.canonical_multileg_consent_storage_v2 import (
@@ -172,6 +173,77 @@ class SqlAlchemyCanonicalMultiLegCandidateRegistryV2:
         child_signature: str,
         bitcoin_message_rpc: object,
     ) -> PendingCanonicalMultiLegCandidateV2:
+        """Preserve the original exact-snapshot proposed-only contract."""
+        return self._reserve_candidate_core_in_transaction(
+            proposal,
+            sponsor_basis=sponsor_basis,
+            current_observation=current_observation,
+            authenticated_sponsor_pubkey=authenticated_sponsor_pubkey,
+            authenticated_child_pubkey=authenticated_child_pubkey,
+            challenge_sha256=challenge_sha256,
+            sponsor_signature=sponsor_signature,
+            child_signature=child_signature,
+            bitcoin_message_rpc=bitcoin_message_rpc,
+            fresh_server_revalidation=False,
+        )
+
+    def reserve_candidate_from_server_in_transaction(
+        self,
+        proposal: CanonicalMultiOutpointAdmissionProposalV2,
+        *,
+        sponsor_basis: object,
+        authenticated_sponsor_pubkey: str,
+        authenticated_child_pubkey: str,
+        challenge_sha256: str,
+        sponsor_signature: str,
+        child_signature: str,
+    ) -> PendingCanonicalMultiLegCandidateV2:
+        """Compose server-owned Core, fresh UTXOs and one-use consent in PostgreSQL.
+
+        Both authenticated_* arguments MUST be sourced from independent
+        verified sessions by a future trusted ingress; caller strings alone
+        are NOT authenticated principals. This method writes only a proposed
+        candidate, never an EFFECTIVE edge or Current Full entitlement.
+        """
+        if type(proposal) is not CanonicalMultiOutpointAdmissionProposalV2:
+            raise CanonicalMultiLegCandidateUnavailableV2("multileg_proposal_required")
+        try:
+            from app.services.canonical_v2_server_bitcoin_collateral import (
+                _new_rpc,
+                observe_server_bitcoin_collateral_v2,
+            )
+
+            scan = observe_server_bitcoin_collateral_v2(proposal.mirror)
+            signature_rpc = _new_rpc()
+        except Exception:
+            raise CanonicalMultiLegCandidateUnavailableV2("server_bitcoin_source_unavailable") from None
+        return self._reserve_candidate_core_in_transaction(
+            proposal,
+            sponsor_basis=sponsor_basis,
+            current_observation=scan.scan.observation,
+            authenticated_sponsor_pubkey=authenticated_sponsor_pubkey,
+            authenticated_child_pubkey=authenticated_child_pubkey,
+            challenge_sha256=challenge_sha256,
+            sponsor_signature=sponsor_signature,
+            child_signature=child_signature,
+            bitcoin_message_rpc=signature_rpc,
+            fresh_server_revalidation=True,
+        )
+
+    def _reserve_candidate_core_in_transaction(
+        self,
+        proposal: CanonicalMultiOutpointAdmissionProposalV2,
+        *,
+        sponsor_basis: object,
+        current_observation: CovenantRelationEvaluation,
+        authenticated_sponsor_pubkey: str,
+        authenticated_child_pubkey: str,
+        challenge_sha256: str,
+        sponsor_signature: str,
+        child_signature: str,
+        bitcoin_message_rpc: object,
+        fresh_server_revalidation: bool,
+    ) -> PendingCanonicalMultiLegCandidateV2:
         """Write a PROPOSED-only candidate; requires external trusted origins.
 
         The original registration/Bitcoin provenance and authenticated
@@ -195,13 +267,22 @@ class SqlAlchemyCanonicalMultiLegCandidateRegistryV2:
                 or authenticated_child_pubkey != policy.child_compressed_pubkey
             ):
                 raise CanonicalMultiLegCandidateUnavailableV2("session_identity_mismatch")
-            validate_canonical_multi_outpoint_admission_proposal_v2_sources(
-                proposal,
-                mirror=mirror,
-                observation=current_observation,
-                sponsor_basis=sponsor_basis,
-                now=now,
-            )
+            if fresh_server_revalidation:
+                snapshot = validate_canonical_multi_outpoint_admission_fresh_sources_v2(
+                    proposal,
+                    sponsor_basis=sponsor_basis,
+                    fresh_observation=current_observation,
+                    now=now,
+                )
+            else:
+                validate_canonical_multi_outpoint_admission_proposal_v2_sources(
+                    proposal,
+                    mirror=mirror,
+                    observation=current_observation,
+                    sponsor_basis=sponsor_basis,
+                    now=now,
+                )
+                snapshot = proposal.snapshot
         except CanonicalMultiLegCandidateUnavailableV2:
             raise
         except Exception:
@@ -257,7 +338,6 @@ class SqlAlchemyCanonicalMultiLegCandidateRegistryV2:
             raise CanonicalMultiLegCandidateUnavailableV2("consent_not_consumable") from None
 
         proposal_hash = canonical_multi_outpoint_admission_proposal_v2_sha256(proposal)
-        snapshot = proposal.snapshot
         params = {
             "proposal_id": proposal.proposal_id,
             "proposal_sha256": proposal_hash,
