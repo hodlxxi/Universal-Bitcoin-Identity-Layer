@@ -45,37 +45,25 @@ def _leg(receiver, sender, early, late):
 
 
 def test_first_import_waits_and_second_import_correlates_existing_onchain_demo():
-    assert match_imported_sponsored_pair(
-        EARLY, (EARLY,), sponsor_xonly_pubkey=ALICE[2:], sponsor_depth=0
-    ) is None
-    matched = match_imported_sponsored_pair(
-        LATE, (EARLY, LATE), sponsor_xonly_pubkey=ALICE[2:], sponsor_depth=0
-    )
+    assert match_imported_sponsored_pair(EARLY, (EARLY,), sponsor_xonly_pubkey=ALICE[2:], sponsor_depth=0) is None
+    matched = match_imported_sponsored_pair(LATE, (EARLY, LATE), sponsor_xonly_pubkey=ALICE[2:], sponsor_depth=0)
     assert matched is not None
     assert matched.child_xonly_pubkey == BOB[2:]
     assert matched.child_depth == 1
     assert matched.grants_full is False
-    assert (matched.early_height, matched.middle_height, matched.late_height) == (
-        1777000, 1777777, 1778554
-    )
+    assert (matched.early_height, matched.middle_height, matched.late_height) == (1777000, 1777777, 1778554)
 
 
 def test_reverse_order_is_same_exact_mirror_not_duplicate_candidate():
-    forward = match_imported_sponsored_pair(
-        LATE, (EARLY, LATE), sponsor_xonly_pubkey=ALICE[2:], sponsor_depth=0
-    )
-    reverse = match_imported_sponsored_pair(
-        EARLY, (EARLY, LATE), sponsor_xonly_pubkey=ALICE[2:], sponsor_depth=0
-    )
+    forward = match_imported_sponsored_pair(LATE, (EARLY, LATE), sponsor_xonly_pubkey=ALICE[2:], sponsor_depth=0)
+    reverse = match_imported_sponsored_pair(EARLY, (EARLY, LATE), sponsor_xonly_pubkey=ALICE[2:], sponsor_depth=0)
     assert forward == reverse
 
 
 def test_bob_can_pair_charlie_at_the_next_cascade_depth():
     earlier = _leg(BOB, CHARLIE, 1776223, 1777000)
     later = _leg(CHARLIE, BOB, 1777000, 1777777)
-    pair = match_imported_sponsored_pair(
-        later, (earlier, later), sponsor_xonly_pubkey=BOB[2:], sponsor_depth=1
-    )
+    pair = match_imported_sponsored_pair(later, (earlier, later), sponsor_xonly_pubkey=BOB[2:], sponsor_depth=1)
     assert pair is not None
     assert pair.sponsor_xonly_pubkey == BOB[2:]
     assert pair.child_xonly_pubkey == CHARLIE[2:]
@@ -83,31 +71,30 @@ def test_bob_can_pair_charlie_at_the_next_cascade_depth():
     assert pair.grants_full is False
 
 
-@pytest.mark.parametrize("sponsor,depth", [
-    (BOB[2:], 0), (ALICE[2:], 1), (CHARLIE[2:], 2),
-])
+@pytest.mark.parametrize(
+    "sponsor,depth",
+    [
+        (BOB[2:], 0),
+        (ALICE[2:], 1),
+        (CHARLIE[2:], 2),
+    ],
+)
 def test_wrong_sponsor_or_window_never_correlates(sponsor, depth):
-    assert match_imported_sponsored_pair(
-        LATE, (EARLY,), sponsor_xonly_pubkey=sponsor, sponsor_depth=depth
-    ) is None
+    assert match_imported_sponsored_pair(LATE, (EARLY,), sponsor_xonly_pubkey=sponsor, sponsor_depth=depth) is None
 
 
 @pytest.mark.parametrize("candidate", ["00", "NOT_HEX", "", "raw(51)"])
 def test_unrelated_script_is_not_an_admission(candidate):
-    assert match_imported_sponsored_pair(
-        candidate, (EARLY, LATE), sponsor_xonly_pubkey=ALICE[2:], sponsor_depth=0
-    ) is None
+    assert (
+        match_imported_sponsored_pair(candidate, (EARLY, LATE), sponsor_xonly_pubkey=ALICE[2:], sponsor_depth=0) is None
+    )
 
 
 def test_invalid_subject_depth_and_history_fail_closed():
     with pytest.raises(ValueError):
-        match_imported_sponsored_pair(
-            LATE, (EARLY,), sponsor_xonly_pubkey=ALICE[2:], sponsor_depth=True
-        )
+        match_imported_sponsored_pair(LATE, (EARLY,), sponsor_xonly_pubkey=ALICE[2:], sponsor_depth=True)
     with pytest.raises(ValueError):
-        match_imported_sponsored_pair(
-            LATE, [EARLY], sponsor_xonly_pubkey=ALICE[2:], sponsor_depth=0
-        )
+        match_imported_sponsored_pair(LATE, [EARLY], sponsor_xonly_pubkey=ALICE[2:], sponsor_depth=0)
 
 
 def test_pending_import_state_never_claims_full():
