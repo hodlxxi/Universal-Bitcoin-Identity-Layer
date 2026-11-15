@@ -628,7 +628,7 @@ def test_two_independent_browser_generations_issue_then_consume_signed_nonce(db,
 def test_unauthenticated_sponsor_cannot_issue_nonce_despite_full_evidence(db, monkeypatch):
     proposal = _new()
     _seed_full(db, ALICE)
-    app, ingress = _browser_harness(monkeypatch)
+    app, ingress = _browser_harness(monkeypatch, db)
     with _browser_request(app, BOB, "b" * 64):
         with pytest.raises(ingress.CanonicalV2BrowserAdmissionUnavailable):
             with Session(db) as session:
@@ -641,7 +641,7 @@ def test_unauthenticated_sponsor_cannot_issue_nonce_despite_full_evidence(db, mo
 def test_wrong_child_browser_never_consumes_issued_nonce(db, monkeypatch):
     proposal = _new()
     _seed_full(db, ALICE)
-    app, ingress = _browser_harness(monkeypatch)
+    app, ingress = _browser_harness(monkeypatch, db)
     with _browser_request(app, ALICE, "a" * 64):
         with Session(db) as session:
             with session.begin():
@@ -670,7 +670,7 @@ def test_proposed_parent_cannot_issue_challenge_as_effective_sponsor(db, monkeyp
     _seed_full(db, BOB)
     first = _issue(db, parent)
     _reserve(db, parent, first)
-    app, ingress = _browser_harness(monkeypatch)
+    app, ingress = _browser_harness(monkeypatch, db)
     with _browser_request(app, BOB, "b" * 64):
         with pytest.raises(ingress.CanonicalV2BrowserAdmissionUnavailable):
             with Session(db) as session:
