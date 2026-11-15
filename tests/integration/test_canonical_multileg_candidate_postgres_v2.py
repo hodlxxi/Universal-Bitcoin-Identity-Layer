@@ -513,19 +513,62 @@ def test_server_core_failure_rolls_back_nonce_and_all_claims(db, monkeypatch, fa
     assert _nonce_consumed(db, nonce) is None
 
 
-def _browser_harness(monkeypatch):
-    """Synthetic verified OAuth generations in disposable PostgreSQL CI only."""
+def _browser_harness(monkeypatch, engine):
+    """Seed actual OAuth browser owner rows in disposable PG16 only."""
     from types import SimpleNamespace
 
     from flask import Flask
+    from sqlalchemy import select
+
     import app.services.canonical_v2_browser_admission as ingress
 
     app = Flask("canon-v2-browser-test")
     app.secret_key = "disposable-pg-ci-not-production"
-    principals = {"a" * 64: ALICE[2:], "b" * 64: BOB[2:]}
+    client_id = "canon-ubid-test"
+
+    with Session(engine) as session:
+        with session.begin():
+            owners = {}
+            for compressed in (ALICE, BOB):
+                subject = compressed[2:]
+                row = session.execute(select(User).where(User.pubkey == subject)).scalar_one_or_none()
+                if row is None:
+                    row = User(pubkey=subject, is_active=True, metadata_json={})
+                    session.add(row)
+                    session.flush()
+                owners[subject] = row.id
+            session.add(
+                OAuthClient(
+                    client_id=client_id,
+                    client_secret="disposable-only",
+                    client_name="Test OAuth client",
+                    redirect_uris=["https://ubid.test/return"],
+                    grant_types=["authorization_code"],
+                    response_types=["code"],
+                    scope="openid",
+                    metadata_json={},
+                    is_active=True,
+                )
+            )
+            for generation_id, compressed, proof in (
+                ("a" * 64, ALICE, "c" * 64),
+                ("b" * 64, BOB, "d" * 64),
+            ):
+                session.add(
+                    OAuthBrowserGeneration(
+                        generation_id=generation_id,
+                        user_id=owners[compressed[2:]],
+                        client_id=client_id,
+                        subject=compressed[2:],
+                        proof_id=proof,
+                        created_at=(NOW - timedelta(seconds=60)).replace(tzinfo=None),
+                        expires_at=(NOW + timedelta(seconds=600)).replace(tzinfo=None),
+                        is_active=True,
+                    )
+                )
     lifecycle = SimpleNamespace(
         browser_origin="https://ubid.test",
-        browser_subject=lambda reference: principals[reference],
+        client_id=client_id,
     )
     monkeypatch.setattr(ingress, "configured_lifecycle", lambda _: lifecycle)
     return app, ingress
@@ -554,7 +597,7 @@ def _browser_request(app, compressed, generation):
 def test_two_independent_browser_generations_issue_then_consume_signed_nonce(db, monkeypatch):
     proposal = _new()
     _seed_full(db, ALICE)
-    app, ingress = _browser_harness(monkeypatch)
+    app, ingress = _browser_harness(monkeypatch, db)
     with _browser_request(app, ALICE, "a" * 64):
         with Session(db) as session:
             with session.begin():
