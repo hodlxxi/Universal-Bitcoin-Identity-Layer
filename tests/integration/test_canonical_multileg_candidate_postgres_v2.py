@@ -710,9 +710,7 @@ def test_transaction_browser_reader_rejects_inactive_ownership(db, monkeypatch, 
         with pytest.raises(ingress.CanonicalV2BrowserAdmissionUnavailable):
             with Session(db) as session:
                 with session.begin():
-                    ingress.issue_from_verified_sponsor_browser_in_transaction(
-                        session, proposal, clock=lambda: NOW
-                    )
+                    ingress.issue_from_verified_sponsor_browser_in_transaction(session, proposal, clock=lambda: NOW)
     with db.connect() as connection:
         assert connection.execute(text(f"SELECT COUNT(*) FROM {NONCES}")).scalar_one() == 0
 
@@ -739,15 +737,19 @@ def test_locked_generation_blocks_revoke_until_admission_transaction_finishes(db
                     with second.begin():
                         second.execute(text("SET LOCAL lock_timeout = '150ms'"))
                         second.execute(
-                            text("UPDATE oauth_browser_generations SET is_active=FALSE "
-                                 "WHERE generation_id=:generation"),
+                            text(
+                                "UPDATE oauth_browser_generations SET is_active=FALSE "
+                                "WHERE generation_id=:generation"
+                            ),
                             {"generation": "a" * 64},
                         )
-            assert first.execute(
-                text("SELECT is_active FROM oauth_browser_generations "
-                     "WHERE generation_id=:generation"),
-                {"generation": "a" * 64},
-            ).scalar_one() is True
+            assert (
+                first.execute(
+                    text("SELECT is_active FROM oauth_browser_generations " "WHERE generation_id=:generation"),
+                    {"generation": "a" * 64},
+                ).scalar_one()
+                is True
+            )
     # Once first commits, explicit revocation is free to proceed.
     with db.begin() as connection:
         connection.execute(
