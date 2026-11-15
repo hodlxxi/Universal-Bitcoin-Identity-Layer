@@ -408,3 +408,58 @@ def verify_multi_outpoint_admission_signatures_v2(
         hashlib.sha256(child_signature.encode("ascii")).hexdigest(),
         at,
     )
+
+
+def validate_canonical_multi_outpoint_admission_fresh_sources_v2(
+    proposal: CanonicalMultiOutpointAdmissionProposalV2,
+    *,
+    sponsor_basis: object,
+    fresh_observation: CovenantRelationEvaluation,
+    now: datetime,
+) -> CanonicalMultiOutpointSnapshotV2:
+    """Bind a NEW Bitcoin scan to the same immutable signed N+M proposal.
+
+    Do not replace `proposal.snapshot` or alter the two role-separated
+    signatures. A later scan necessarily has a different observation digest
+    and timestamp. Allow that ONLY if every signed UTXO identity, native
+    P2WSH script, value, mirror aggregate, parent basis, and canonical key
+    remains unchanged. The scan must be fresh, confirmed and wholly unspent.
+
+    The caller MUST obtain `fresh_observation` from server-owned Bitcoin
+    Core, not a browser-supplied payload. This pure check alone does not
+    authenticate either session or issue Full.
+    """
+    if type(proposal) is not CanonicalMultiOutpointAdmissionProposalV2:
+        _fail("proposal_type")
+    checked = CanonicalMultiOutpointAdmissionProposalV2(
+        *(getattr(proposal, field.name) for field in fields(CanonicalMultiOutpointAdmissionProposalV2))
+    )
+    at = _utc(now)
+    reference = _basis_reference(checked.mirror, sponsor_basis)
+    fresh = validate_canonical_multi_outpoint_snapshot_v2(checked.mirror, fresh_observation, now=at)
+    signed = checked.snapshot
+    # Five minutes is the maximum existing issued-nonce TTL, not permission
+    # to reuse a nonce. The persistent ledger enforces the actual one-use TTL.
+    if (
+        reference != (checked.basis_kind, checked.basis_record_id, checked.basis_record_sha256)
+        or not checked.proposed_at <= at < checked.proposed_at + timedelta(seconds=TTL_SECONDS)
+        or not at - timedelta(seconds=30) <= fresh.observed_at <= at
+        or fresh.observed_at < checked.proposed_at
+        or fresh.observed_block_height < signed.observed_block_height
+        or fresh.bundle_sha256 != checked.mirror_sha256
+        or signed.bundle_sha256 != checked.mirror_sha256
+        or (
+            fresh.earlier_sats,
+            fresh.later_sats,
+            fresh.trust_ceiling_sats,
+            fresh.outpoint_count,
+        )
+        != (
+            signed.earlier_sats,
+            signed.later_sats,
+            signed.trust_ceiling_sats,
+            signed.outpoint_count,
+        )
+    ):
+        _fail("fresh_signed_funding_or_basis_mismatch")
+    return fresh
