@@ -7,7 +7,19 @@ import pytest
 from flask import Flask, session
 
 import app.services.canonical_v2_browser_admission as service
+from tests.unit.test_canonical_admission_proposal_v2 import NOW
 from tests.unit.test_canonical_admission_proposal_v2 import ALICE, BOB
+
+
+@pytest.fixture(autouse=True)
+def _stub_locked_reader_for_cookie_only_unit_tests(monkeypatch):
+    # These unit tests exercise request/cookie boundaries. Disposable PG16
+    # tests independently exercise the real same-transaction row locks.
+    def resolve(db, *, generation_id, expected_subject, client_id, now):
+        lifecycle = service.configured_lifecycle(None)
+        return SimpleNamespace(subject=lifecycle.browser_subject(generation_id))
+
+    monkeypatch.setattr(service, "locked_browser_subject_in_transaction", resolve)
 
 
 @pytest.fixture
@@ -41,12 +53,14 @@ def test_sponsor_and_child_resolve_separate_verified_generations(app, monkeypatc
     monkeypatch.setattr(
         service,
         "configured_lifecycle",
-        lambda _: SimpleNamespace(browser_origin="https://ubid.test", browser_subject=browser_subject),
+        lambda _: SimpleNamespace(
+            browser_origin="https://ubid.test", client_id="canon-ubid-test", browser_subject=browser_subject
+        ),
     )
     with _request(app):
-        assert service._verified_browser_subject(expected_compressed=ALICE) == ALICE[2:]
+        assert service._verified_browser_subject(object(), expected_compressed=ALICE, now=NOW) == ALICE[2:]
     with _request(app, key=BOB, reference="b" * 64):
-        assert service._verified_browser_subject(expected_compressed=BOB) == BOB[2:]
+        assert service._verified_browser_subject(object(), expected_compressed=BOB, now=NOW) == BOB[2:]
     assert seen == ["a" * 64, "b" * 64]
 
 
@@ -70,7 +84,7 @@ def test_cannot_spoof_issuer_via_cookie_claim_or_http_origin(
     )
     with _request(app, key=cookie_key, origin=origin, login=login, reference=reference):
         with pytest.raises(service.CanonicalV2BrowserAdmissionUnavailable):
-            service._verified_browser_subject(expected_compressed=ALICE)
+            service._verified_browser_subject(object(), expected_compressed=ALICE, now=NOW)
 
 
 def test_missing_or_revoked_browser_generation_denied(app, monkeypatch):
@@ -84,7 +98,7 @@ def test_missing_or_revoked_browser_generation_denied(app, monkeypatch):
     )
     with _request(app):
         with pytest.raises(service.CanonicalV2BrowserAdmissionUnavailable):
-            service._verified_browser_subject(expected_compressed=ALICE)
+            service._verified_browser_subject(object(), expected_compressed=ALICE, now=NOW)
 
 
 def test_unconfigured_lifecycle_denied_even_for_full_cookie(app, monkeypatch):
@@ -92,7 +106,7 @@ def test_unconfigured_lifecycle_denied_even_for_full_cookie(app, monkeypatch):
     with _request(app):
         session["access_level"] = "full"
         with pytest.raises(service.CanonicalV2BrowserAdmissionUnavailable):
-            service._verified_browser_subject(expected_compressed=ALICE)
+            service._verified_browser_subject(object(), expected_compressed=ALICE, now=NOW)
 
 
 def test_non_post_and_missing_request_context_rejected(app, monkeypatch):
@@ -102,10 +116,10 @@ def test_non_post_and_missing_request_context_rejected(app, monkeypatch):
         lambda _: SimpleNamespace(browser_origin="https://ubid.test", browser_subject=lambda _: ALICE[2:]),
     )
     with pytest.raises(service.CanonicalV2BrowserAdmissionUnavailable):
-        service._verified_browser_subject(expected_compressed=ALICE)
+        service._verified_browser_subject(object(), expected_compressed=ALICE, now=NOW)
     with app.test_request_context("/canon/v2/issue", method="GET"):
         with pytest.raises(service.CanonicalV2BrowserAdmissionUnavailable):
-            service._verified_browser_subject(expected_compressed=ALICE)
+            service._verified_browser_subject(object(), expected_compressed=ALICE, now=NOW)
 
 
 def test_no_runtime_or_full_promotion():
