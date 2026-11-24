@@ -497,9 +497,7 @@ def create_socketio(app: Flask) -> SocketIO:
 
     # Pin the driver to the deployment worker when explicitly configured.
     # Keep existing deployments unchanged when no mode is selected.
-    socketio = SocketIO(
-        app, cors_allowed_origins=socketio_cors, async_mode=cfg.get("SOCKETIO_ASYNC_MODE") or None
-    )
+    socketio = SocketIO(app, cors_allowed_origins=socketio_cors, async_mode=cfg.get("SOCKETIO_ASYNC_MODE") or None)
 
     @socketio.on_error_default
     def default_error_handler(e):
