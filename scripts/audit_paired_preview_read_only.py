@@ -31,8 +31,11 @@ PROBES = (
 
 
 def run(args, *, timeout=12):
-    result = subprocess.run(args, text=True, capture_output=True, timeout=timeout, check=False)
-    return (result.returncode, result.stdout.strip())
+    try:
+        result = subprocess.run(args, text=True, capture_output=True, timeout=timeout, check=False)
+        return (result.returncode, result.stdout.strip())
+    except (OSError, subprocess.TimeoutExpired):
+        return (1, "")
 
 
 def sha(value):
@@ -45,7 +48,7 @@ def check_source(path, expected):
     status, found = run(["git", "-C", str(path), "rev-parse", "HEAD"])
     if status != 0 or not sha(found) or found != expected:
         return "FAIL"
-    status, dirty = run(["git", "-C", str(path), "status", "--porcelain", "--untracked-files=no"])
+    status, dirty = run(["git", "-C", str(path), "status", "--porcelain", "--untracked-files=all"])
     return "PASS" if status == 0 and dirty == "" else "FAIL"
 
 
@@ -61,7 +64,7 @@ def check_probe(root, name, origin):
     if not cert.is_file():
         return "FAIL"
     cmd = [
-        "curl", "--silent", "--show-error", "--fail", "--location-trusted",
+        "curl", "--silent", "--show-error", "--fail", "--max-redirs", "0",
         "--max-time", "5", "--noproxy", "*",
         "--cacert", str(cert),
         "--unix-socket", "/run/hxxi-paired-browser/" + name + ".sock",
