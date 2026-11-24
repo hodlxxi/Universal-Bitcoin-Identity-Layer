@@ -57,6 +57,17 @@ def check_unit(unit):
     return "PASS" if status == 0 and active == "active" else "FAIL"
 
 
+def check_launch_path(root, unit, config_suffix):
+    # The checkout alone is not the running process. Confirm the service was
+    # launched from this exact candidate wrapper and config, not production.
+    status, command = run(["systemctl", "show", unit, "-p", "ExecStart", "--value"])
+    if status != 0:
+        return "FAIL"
+    wrapper = str(root / "launch.py")
+    config = str(root / config_suffix)
+    return "PASS" if wrapper in command and config in command else "FAIL"
+
+
 def check_probe(root, name, origin):
     if name not in ("ubid", "social"):
         return "FAIL"
@@ -115,6 +126,14 @@ def main(argv=None):
         ("ISOLATED_PG16_IDENTITY", check_database()),
     ]
     results.extend(("UNIT_" + unit.replace(".", "_").replace("-", "_").upper(), check_unit(unit)) for unit in UNITS)
+    results.extend([
+        ("UBID_RUNNING_CHECKOUT", check_launch_path(
+            root, "hxxi-paired-3c2b954-ubid-r6.service", "config-ubid/launch-r6.json"
+        )),
+        ("SOCIAL_RUNNING_CHECKOUT", check_launch_path(
+            root, "hxxi-paired-browser-social-r2.service", "config-social/launch-browser-r2.json"
+        )),
+    ])
     results.extend((name, check_probe(root, socket, url)) for name, socket, url in PROBES)
     for name, result in results:
         print(name + "=" + result)

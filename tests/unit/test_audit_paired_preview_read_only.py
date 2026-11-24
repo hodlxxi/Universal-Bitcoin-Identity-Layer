@@ -55,3 +55,16 @@ def test_probe_never_contacts_external_domain(tmp_path):
 def test_unit_status(status, output, expected):
     with patch.object(audit, "run", return_value=(status, output)):
         assert audit.check_unit("hxxi-paired-browser-social-r2.service") == expected
+
+
+def test_running_service_must_refer_to_same_candidate_wrapper_and_config(tmp_path):
+    unit = "hxxi-paired-browser-social-r2.service"
+    command = (
+        "ExecStart={ path=/usr/bin/python3 ; argv[]=/usr/bin/python3 -I -B "
+        + str(tmp_path / "launch.py")
+        + " " + str(tmp_path / "config-social/launch-browser-r2.json") + " }"
+    )
+    with patch.object(audit, "run", return_value=(0, command)):
+        assert audit.check_launch_path(tmp_path, unit, "config-social/launch-browser-r2.json") == "PASS"
+    with patch.object(audit, "run", return_value=(0, command.replace(str(tmp_path), "/srv/production"))):
+        assert audit.check_launch_path(tmp_path, unit, "config-social/launch-browser-r2.json") == "FAIL"
