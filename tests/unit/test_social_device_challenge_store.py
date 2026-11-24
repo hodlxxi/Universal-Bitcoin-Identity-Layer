@@ -564,6 +564,7 @@ def test_no_io_at_import_no_runtime_dependency_no_admission_api():
             consumers.append(path.relative_to(ROOT).as_posix())
     assert sorted(consumers) == [
         "app/services/social_device_challenge_revision_storage.py",
+        "app/services/social_device_request_owner_v1.py",
         "app/services/social_enrollment_atomic_owner.py",
         "app/services/social_enrollment_receipt_storage.py",
         "app/services/social_enrollment_transition_authority_storage.py",
@@ -578,6 +579,22 @@ def test_no_io_at_import_no_runtime_dependency_no_admission_api():
     methods = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
     assert "record_enrollment_consumed" in methods
     assert not methods & {"consume", "admit", "issue_receipt", "record_consumed_challenge_transition"}
+
+
+def test_message_request_owner_uses_only_issue_and_locked_read_of_challenge_store():
+    # Message receipts are separate from enrollment consumption/admission.
+    # Keep this explicitly approved consumer confined to the two existing ports.
+    owner = ast.parse(ROOT.joinpath("app/services/social_device_request_owner_v1.py").read_text())
+    methods = {
+        node.attr
+        for node in ast.walk(owner)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "store"
+        and isinstance(node.value.value, ast.Name)
+        and node.value.value.id == "self"
+    }
+    assert methods == {"create_issued", "read_for_update"}
 
 
 def test_all_six_fixture_hashes_unchanged():
