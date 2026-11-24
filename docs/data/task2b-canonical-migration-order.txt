@@ -1,0 +1,12 @@
+2026-11-13_canonical_admission_consent_challenge_v2.sql
+2026-11-13_canonical_admission_candidate_registry_v2.sql
+2026-11-13_canonical_multileg_consent_challenge_v2.sql
+2026-11-13_canonical_multileg_admission_candidates_v2.sql
+2026-11-13_canonical_multileg_candidate_expiry_v2.sql
+2026-11-13_canonical_global_outpoint_claims_v2.sql
+2026-11-15_canonical_multileg_issuer_generation_binding_v2.sql
+2026-11-14_canonical_multileg_effective_edge_v2.sql
+2026-11-15_canonical_auto_sponsored_import_v1.sql
+2026-11-15_canonical_auto_sponsored_import_v1_intents.sql
+2026-11-15_canonical_auto_sponsored_import_v2_effective.sql
+2026-11-24_canonical_membership_roles.sql

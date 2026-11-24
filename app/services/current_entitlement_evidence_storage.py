@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select, text
@@ -256,6 +256,13 @@ class SqlAlchemyTransactionBoundCurrentFullVerifier:
                 and rows[1].created_at == rows[0].created_at
             ):
                 raise ValueError
+            if latest.evidence_source == "canonical_auto_sponsored_import":
+                from app.services.automatic_sponsored_authority_v1 import current_automatic_lineage_is_valid
+
+                if not current_automatic_lineage_is_valid(self._session, subject, latest.evidence_id, now=now):
+                    raise ValueError
+                if guard is not None:
+                    guard.check()
             proof = produce_verified_current_full_entitlement(
                 CurrentFullEntitlementProofState(
                     user_id=user.id,
@@ -277,6 +284,21 @@ class SqlAlchemyCurrentEntitlementEvidenceRepository:
 
     def __init__(self, session_factory):
         self._session_factory = session_factory
+
+    @staticmethod
+    def append_in_transaction(session, evidence: CurrentEntitlementEvidenceRecord) -> None:
+        """Append in the caller's guarded transaction. Never commit independently."""
+        try:
+            evidence = CurrentEntitlementEvidenceRecord(**vars(evidence))
+            guard = _CurrentFullTransactionGuard(session)
+            guard.lock_subject(evidence.subject_pubkey)
+            guard.check()
+            values = vars(evidence).copy()
+            values["identity_class"] = evidence.identity_class.value
+            guard.connection.execute(CurrentEntitlementEvidence.__table__.insert().values(**values))
+            guard.check()
+        except Exception:
+            raise CurrentEntitlementEvidenceStorageError() from None
 
     def append(self, evidence: CurrentEntitlementEvidenceRecord) -> None:
         try:
@@ -360,7 +382,24 @@ class SqlAlchemyCurrentEntitlementEvidenceRepository:
                     )
                     .first()
                 )
-                return None if row is None else _record(row)
+                if row is None:
+                    return None
+                record = _record(row)
+                if (
+                    record.evidence_source == "canonical_auto_sponsored_import"
+                    and record.current_full_relation_satisfied
+                ):
+                    from app.services.automatic_sponsored_authority_v1 import current_automatic_lineage_is_valid
+
+                    if not current_automatic_lineage_is_valid(
+                        session, subject_pubkey, record.evidence_id, now=datetime.now(timezone.utc)
+                    ):
+                        record = replace(
+                            record,
+                            identity_class=IdentityClass.LIMITED,
+                            current_full_relation_satisfied=False,
+                        )
+                return record
         except Exception:
             raise CurrentEntitlementEvidenceStorageError() from None
 
@@ -419,7 +458,25 @@ class SqlAlchemyCurrentEntitlementEvidenceRepository:
                     for row, logical_tie_count in rows:
                         if logical_tie_count != 1:
                             raise CurrentEntitlementEvidenceStorageError()
-                        result.append(_record(row))
+                        record = _record(row)
+                        if (
+                            record.evidence_source == "canonical_auto_sponsored_import"
+                            and record.current_full_relation_satisfied
+                        ):
+                            from app.services.automatic_sponsored_authority_v1 import current_automatic_lineage_is_valid
+
+                            if not current_automatic_lineage_is_valid(
+                                session,
+                                record.subject_pubkey,
+                                record.evidence_id,
+                                now=datetime.now(timezone.utc),
+                            ):
+                                record = replace(
+                                    record,
+                                    identity_class=IdentityClass.LIMITED,
+                                    current_full_relation_satisfied=False,
+                                )
+                        result.append(record)
                 except Exception:
                     if transaction.is_active:
                         transaction.rollback()

@@ -126,7 +126,7 @@ from app.security import exempt_liveness_endpoints, init_security, limiter
 from app.socket_handlers import register_socket_handlers
 from app.socket_state import ACTIVE_SOCKETS, CHAT_HISTORY, ONLINE_META, ONLINE_USER_META, ONLINE_USERS
 from app.tokens import issue_rs256_jwt
-from app.utils import get_rpc_connection
+from app.utils import derive_legacy_address_from_pubkey, get_rpc_connection
 
 from .ubid_membership import (
     UbidUser,
@@ -645,6 +645,11 @@ app = Flask(__name__)
 from app.agent_invoice_api import bp as agent_invoice_bp
 
 app.register_blueprint(agent_invoice_bp)
+
+# Effective authority, not an access_level cookie or a wallet ratio, is the
+# browser Full boundary. Anonymous login needs no RPC for this check.
+from app.services.automatic_browser_access import refresh_canonical_browser_access, verified_browser_access
+app.before_request(refresh_canonical_browser_access)
 
 
 # VISIT_LOG_V1: per-request identity log (no query strings, no secrets)
@@ -1640,21 +1645,6 @@ from bitcoinrpc.authproxy import AuthServiceProxy
 # pof_service = integrate_pof_routes(app, socketio, get_rpc_connection)
 
 
-def derive_legacy_address_from_pubkey(pubkey_hex):
-    pubkey_bytes = bytes.fromhex(pubkey_hex)
-    sha_digest = sha256(pubkey_bytes).digest()
-    try:
-        import hashlib
-
-        ripe = hashlib.new("ripemd160", sha_digest).digest()
-    except:
-        ripe = sha256(b"").digest()
-    vbyte = b"\x00" + ripe
-    chksum = sha256(sha256(vbyte).digest()).digest()[:4]
-    address = base58.b58encode(vbyte + chksum).decode()
-    return address
-
-
 # CHALLENGE_STORE_V1
 # In-memory login/PoF challenge store (single worker/eventlet).
 # If you scale workers, move this to Redis.
@@ -1945,9 +1935,6 @@ def verify_signature():
         return verified_handler()
 
     data = request.get_json() or {}
-    logger.warning("API_VERIFY_DATA=%r", data)
-    print("API_VERIFY_DATA =", data, flush=True)
-    print("API_VERIFY_DATA =", data, flush=True)
     pubkey_hex = (data.get("pubkey") or "").strip()
     signature = (data.get("signature") or "").strip()
     challenge = (data.get("challenge") or "").strip()
@@ -1996,19 +1983,9 @@ def verify_signature():
     # For PoF routes compatibility, keep a dedicated key with the raw pubkey
     session["pof_pubkey"] = matched_pubkey
 
-    # Access level logic
-    if not pubkey_hex:
-        # matched a SPECIAL_USER
-        session["access_level"] = "full"
-
-        # Treat special users as admin/paid so they always pass require_paid_user()
-        if user.plan != "admin":
-            user.plan = "admin"
-    else:
-        # Normal user: compute save/check ratio
-        in_bal, out_bal = get_save_and_check_balances_for_pubkey(matched_pubkey)
-        ratio = (out_bal / in_bal) if in_bal > 0 else 0
-        session["access_level"] = "full" if ratio >= 1 else "limited"
+    if not pubkey_hex and user.plan != "admin":
+        user.plan = "admin"
+    session["access_level"] = verified_browser_access(matched_pubkey, persist_subject=True)
 
     session.permanent = True
 
@@ -2841,6 +2818,56 @@ def decode_raw_script():
         return jsonify({"error": "Internal server error"}), 500
 
 
+def _automatic_sponsored_post_import_if_enabled(script_hex, import_result):
+    """Journal confirmed wallet imports for the separate admission worker."""
+    if os.environ.get("AUTO_SPONSORED_IMPORT_ENABLED") != "true":
+        return None
+    # Core's importdescriptors returns a list of exact success results.
+    if (
+        type(import_result) is not list
+        or len(import_result) != 1
+        or type(import_result[0]) is not dict
+        or import_result[0].get("success") is not True
+    ):
+        raise RuntimeError("wallet descriptor import unconfirmed")
+    sponsor_session_pubkey = session.get("logged_in_pubkey")
+    if type(sponsor_session_pubkey) is not str or not sponsor_session_pubkey:
+        raise RuntimeError("authenticated Full sponsor unavailable")
+    from app.services.automatic_sponsored_import_v1 import (
+        record_successful_sponsored_import,
+    )
+
+    result = record_successful_sponsored_import(
+        get_db_session,
+        sponsor_session_pubkey=sponsor_session_pubkey,
+        raw_script_hex=script_hex,
+        now=datetime.now(timezone.utc).replace(microsecond=0),
+    )
+    return {
+        "status": result.status,
+        "candidate_child_xonly": result.candidate_child_xonly,
+        "child_depth": result.child_depth,
+        "grants_full": False,
+    }
+
+
+def _automatic_sponsored_prepare_import_if_enabled(raw_descriptor):
+    """Persist authenticated sponsor provenance before the first Core mutation."""
+    if os.environ.get("AUTO_SPONSORED_IMPORT_ENABLED") != "true" or not raw_descriptor.startswith("raw("):
+        return None
+    sponsor = session.get("logged_in_pubkey")
+    if type(sponsor) is not str or not sponsor:
+        raise RuntimeError("authenticated Full sponsor unavailable")
+    from app.services.automatic_sponsored_import_v1 import prepare_authenticated_sponsored_import
+
+    return prepare_authenticated_sponsored_import(
+        get_db_session,
+        sponsor_session_pubkey=sponsor,
+        raw_script_hex=extract_script_from_raw_descriptor(raw_descriptor),
+        now=datetime.now(timezone.utc).replace(microsecond=0),
+    )
+
+
 @app.route("/import_descriptor", methods=["POST"])
 def import_descriptor():
     require_full_access()
@@ -2850,7 +2877,20 @@ def import_descriptor():
         return jsonify({"error": "No descriptor provided."}), 400
 
     try:
+        _automatic_sponsored_prepare_import_if_enabled(raw_descriptor)
         rpc = get_rpc_connection()
+        if os.environ.get("AUTO_SPONSORED_ADMISSION_ENABLED") == "true":
+            expected_wallet = os.environ.get("AUTO_SPONSORED_IMPORT_WATCH_WALLET")
+            info = rpc.getwalletinfo()
+            if (
+                not expected_wallet
+                or expected_wallet == "hodlandwatch"
+                or type(info) is not dict
+                or info.get("walletname") != expected_wallet
+                or info.get("private_keys_enabled") is not False
+                or info.get("descriptors") is not True
+            ):
+                raise RuntimeError("isolated admission watch-only wallet unavailable")
         import_result = rpc.importdescriptors(
             [{"desc": raw_descriptor, "timestamp": "now", "active": False, "watchonly": True}]
         )
@@ -2880,16 +2920,25 @@ def import_descriptor():
                     }
                 ]
             )
-            return jsonify(
-                {
-                    "success": True,
-                    "import_result": import_result,
-                    "label_import_result": label_import_result,
-                    "address": address,
-                    "script_hex": script_hex,
-                    "address_descriptor": address_descriptor,
-                }
-            )
+            if os.environ.get("AUTO_SPONSORED_IMPORT_ENABLED") == "true" and (
+                type(label_import_result) is not list
+                or len(label_import_result) != 1
+                or type(label_import_result[0]) is not dict
+                or label_import_result[0].get("success") is not True
+            ):
+                raise RuntimeError("watch-only address import unconfirmed")
+            auto_admission = _automatic_sponsored_post_import_if_enabled(script, import_result)
+            payload = {
+                "success": True,
+                "import_result": import_result,
+                "label_import_result": label_import_result,
+                "address": address,
+                "script_hex": script_hex,
+                "address_descriptor": address_descriptor,
+            }
+            if auto_admission is not None:
+                payload["automatic_sponsored_import"] = auto_admission
+            return jsonify(payload)
         return jsonify(
             {
                 "success": True,
@@ -3640,12 +3689,13 @@ def api_verify():
 
         logger.warning("NOSTR_STEP=before_session_set cid=%r", cid)
         session["logged_in_pubkey"] = rec["pubkey"]
-        session["access_level"] = "full"
+        access = verified_browser_access(rec["pubkey"], persist_subject=True)
+        session["access_level"] = access
         session["login_method"] = "nostr"
         logger.warning("NOSTR_STEP=before_pop cid=%r", cid)
         ACTIVE_CHALLENGES.pop(cid, None)
         logger.warning("NOSTR_STEP=before_success_return cid=%r", cid)
-        return jsonify(ok=True, verified=True, method="nostr", pubkey=rec["pubkey"], access_level="full")
+        return jsonify(ok=True, verified=True, method="nostr", pubkey=rec["pubkey"], access_level=access)
     elif method == "lightning":
         return jsonify(error=f"Verification method '{method}' not yet supported"), 501
     else:
@@ -3663,13 +3713,8 @@ def api_verify():
         if not ok:
             return jsonify(error="Invalid signature"), 403
 
-    # --- 🔹 Determine access level ---
-    try:
-        in_total, out_total = get_save_and_check_balances_for_pubkey(pubkey)
-        ratio = (out_total / in_total) if in_total > 0 else 0
-        access = "full" if ratio >= 1 else "limited"
-    except Exception:
-        access = "limited"
+    # --- 🔹 Determine access level from canonical current authority ---
+    access = verified_browser_access(pubkey, persist_subject=True)
 
     access_token = mint_access_token(sub=pubkey, scope="basic")
     refresh_token = None
@@ -3730,15 +3775,9 @@ def special_login():
                 from app.services.oauth_browser_authentication import complete_verified_legacy_browser_login
 
                 complete_verified_legacy_browser_login(pubkey)
-                user = on_successful_login(pubkey)
-                session["access_level"] = "special"
-                payload = {
-                    "verified": True,
-                    "pubkey": pubkey,
-                    "access_level": "special",
-                }
-                resp = jsonify(payload)
-                resp = _finish_login(resp, pubkey, "special")
+                access = verified_browser_access(pubkey, persist_subject=True)
+                resp = jsonify(verified=True, pubkey=pubkey, access_level=access)
+                resp = _finish_login(resp, pubkey, access)
                 return resp
         except Exception:
             continue
@@ -3786,13 +3825,8 @@ def verify_signature_legacy():
     except Exception as e:
         return jsonify(error=f"Signature verification failed: {e}"), 500
 
-    # Access level (same rule you use in /api/verify)
-    try:
-        in_total, out_total = get_save_and_check_balances_for_pubkey(pubkey)
-        ratio = (out_total / in_total) if in_total > 0 else 0
-        access = "full" if ratio >= 1 else "limited"
-    except Exception:
-        access = "limited"
+    # Access level (same canonical rule used by the public authority)
+    access = verified_browser_access(pubkey, persist_subject=True)
 
     # Set session / cookies exactly like API
     payload = {
@@ -5910,7 +5944,6 @@ def cleanup_expired_data():
     global AUTH_CODE_STORE
     AUTH_CODE_STORE = globals().get("AUTH_CODE_STORE", {})
     """Remove expired auth codes and sessions"""
-    import threading
 
     now = int(time.time())
 
@@ -5969,7 +6002,7 @@ def _run_cleanup_once():
     if (_req.path or "").startswith("/api/billing/agent/"):
         return None
 
-    if _cleanup_once.get("done"):
+    if app.testing or _cleanup_once.get("done"):
         return None
     _cleanup_once["done"] = True
     try:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+from decimal import Decimal
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -21,6 +22,11 @@ from app.services.canonical_bitcoin_mempool_observation_v2 import (
     observe_multileg_with_mempool_v2,
 )
 from app.services.canonical_multi_outpoint_mirror_v2 import CanonicalMultiOutpointMirrorV2
+from app.services.canonical_multi_outpoint_mirror_v2 import create_canonical_multi_outpoint_mirror_v2
+from app.services.canonical_sponsored_script_policy_v2 import CanonicalSponsoredScriptEvidenceV2
+from app.services.covenant_relation import CovenantDirection, MAX_BITCOIN_SATS
+from app.services.trusted_covenant_observation import TRUSTED_OUTPOINT_SCHEMA, TrustedCovenantOutpoint
+from app.services.trusted_covenant_registration import p2wsh_script_pubkey_sha256
 
 RUNTIME_ENABLED = False
 _CHAINS = frozenset(("main", "test", "signet", "regtest"))
@@ -152,6 +158,75 @@ def observe_server_bitcoin_collateral_v2(
         ):
             _fail()
         return ServerBitcoinCollateralCheckV2(observed, expected, now)
+    except CanonicalV2ServerBitcoinUnavailable:
+        raise
+    except Exception:
+        raise CanonicalV2ServerBitcoinUnavailable() from None
+
+
+def discover_server_imported_collateral_v1(
+    evidence: CanonicalSponsoredScriptEvidenceV2,
+) -> CanonicalMultiOutpointMirrorV2:
+    """Resolve exact confirmed outputs from Core's UTXO set, never wallet labels.
+
+    This read-only scan uses two locally derived native P2WSH scriptPubKeys.
+    It changes no wallet and imports/spends nothing. The admission owner must
+    subsequently reobserve every selected outpoint inside its transaction with
+    observe_server_bitcoin_collateral_v2, including mempool-spend checks.
+    Once effective, an edge always refreshes its original immutable outpoints;
+    discovering replacement funding cannot silently repair an existing edge.
+    """
+    try:
+        if type(evidence) is not CanonicalSponsoredScriptEvidenceV2:
+            _fail()
+        expected_chain = _expected_chain()
+        rpc = _new_rpc()
+        before = _chain_identity(rpc.getblockchaininfo(), expected_chain)
+        scripts = {
+            "0020" + evidence.earlier_script_sha256: (CovenantDirection.OUTGOING, evidence.earlier_script_sha256),
+            "0020" + evidence.later_script_sha256: (CovenantDirection.INCOMING, evidence.later_script_sha256),
+        }
+        scan = rpc.scantxoutset("start", [{"desc": "raw(" + script + ")"} for script in sorted(scripts)])
+        after = _chain_identity(rpc.getblockchaininfo(), expected_chain)
+        if (
+            type(scan) is not dict
+            or scan.get("success") is not True
+            or type(scan.get("height")) is not int
+            or scan["height"] != before[1]
+            or scan.get("bestblock") != before[3]
+            or before != after
+            or type(scan.get("unspents")) is not list
+            or not 2 <= len(scan["unspents"]) <= 256
+        ):
+            _fail()
+        outpoints = []
+        for coin in scan["unspents"]:
+            if type(coin) is not dict or coin.get("scriptPubKey") not in scripts:
+                _fail()
+            amount = coin.get("amount")
+            if type(amount) not in (Decimal, int):
+                _fail()
+            sats = Decimal(amount) * 100_000_000
+            if not sats.is_finite() or sats != sats.to_integral_value() or not 1 <= sats <= MAX_BITCOIN_SATS:
+                _fail()
+            height = coin.get("height")
+            if type(height) is not int or not 1 <= height <= before[1]:
+                _fail()
+            direction, witness_sha = scripts[coin["scriptPubKey"]]
+            outpoints.append(
+                TrustedCovenantOutpoint(
+                    TRUSTED_OUTPOINT_SCHEMA,
+                    evidence.child_xonly_pubkey,
+                    evidence.sponsor_xonly_pubkey,
+                    direction,
+                    coin.get("txid"),
+                    coin.get("vout"),
+                    int(sats),
+                    p2wsh_script_pubkey_sha256(witness_sha),
+                    None,
+                )
+            )
+        return create_canonical_multi_outpoint_mirror_v2(evidence, tuple(outpoints))
     except CanonicalV2ServerBitcoinUnavailable:
         raise
     except Exception:

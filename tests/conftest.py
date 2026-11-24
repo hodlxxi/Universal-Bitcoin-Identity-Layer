@@ -104,6 +104,21 @@ from unittest.mock import MagicMock
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _block_real_bitcoin_rpc_in_unit_tests(request, monkeypatch):
+    test_path = request.node.path.relative_to(request.config.rootpath)
+    if test_path.parts[:2] != ("tests", "unit") and test_path.parts != ("tests", "test_auth_flows.py"):
+        return
+
+    from bitcoinrpc.authproxy import AuthServiceProxy
+
+    def reject(*_args, **_kwargs):
+        pytest.fail("Unit tests must provide a synthetic Bitcoin RPC fixture")
+
+    monkeypatch.setattr(AuthServiceProxy, "__call__", reject)
+    monkeypatch.setattr(AuthServiceProxy, "batch_", reject)
+
+
 @pytest.fixture
 def mock_rpc(monkeypatch, client):
     """

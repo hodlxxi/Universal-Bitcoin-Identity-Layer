@@ -296,15 +296,15 @@ class TestSessionManagement:
 class TestAccessControl:
     """Test access level assignment and enforcement."""
 
-    def test_special_user_gets_full_access(self, client, mock_rpc):
-        """Special users receive full access only when balance ratio qualifies."""
+    def test_special_user_without_current_evidence_stays_limited(self, client, mock_rpc):
+        """The legacy fallback can verify identity but cannot grant Full."""
         special_pubkey = "02" + "b" * 64
         test_challenge = generate_challenge()
 
         mock_rpc.verifymessage.return_value = True
 
         with patch.dict("os.environ", {"SPECIAL_USERS": special_pubkey}):
-            with patch("app.app.get_save_and_check_balances_for_pubkey", return_value=(1, 1)):
+            with patch("app.app.get_save_and_check_balances_for_pubkey", return_value=(1, 1)) as check_balances:
                 with client.session_transaction() as sess:
                     sess["challenge"] = test_challenge
                     sess["challenge_timestamp"] = time.time()
@@ -321,8 +321,9 @@ class TestAccessControl:
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data["verified"] is True
-        assert data["access_level"] == "full"
+        assert data["access_level"] == "limited"
         assert data["pubkey"] == special_pubkey
+        check_balances.assert_not_called()
 
 
 class TestRateLimiting:

@@ -15,6 +15,7 @@ from app.audit_logger import get_audit_logger
 from app.browser_routes import perform_browser_logout, render_browser_login
 from app.db_storage import create_user, get_user_by_pubkey
 from app.security import limiter
+from app.services.automatic_browser_access import verified_browser_access
 from app.services.canonical_oauth_browser_subject import persist_verified_browser_subject
 from app.services.oauth_browser_authentication import complete_verified_legacy_browser_login
 from app.utils import (
@@ -157,18 +158,9 @@ def verify_signature():
         )
         return jsonify({"verified": False, "error": "Authentication service temporarily unavailable"}), 503
 
-    # Determine access level from covenant/balance state.
-    # A valid signature proves key control only. RPC/descriptors require
-    # the existing covenant balance relation.
-    try:
-        import app.app as legacy_runtime
-
-        in_total, out_total = legacy_runtime.get_save_and_check_balances_for_pubkey(matched_pubkey)
-        ratio = (out_total / in_total) if in_total > 0 else 0
-        access_level = "full" if ratio >= 1 else "limited"
-    except Exception:
-        logger.exception("Balance-based access check failed; defaulting to limited")
-        access_level = "limited"
+    # Signature verification has already succeeded; only canonical current
+    # authority, never balance ratios, determines Full browser privileges.
+    access_level = verified_browser_access(matched_pubkey)
 
     # Set session
     session["logged_in_pubkey"] = matched_pubkey
@@ -176,6 +168,8 @@ def verify_signature():
     session["login_method"] = "legacy"
     session.pop("guest_label", None)
     session.pop("guestLabel", None)
+    session.pop("challenge", None)
+    session.pop("challenge_timestamp", None)
     session.permanent = True
 
     # Audit log successful authentication
