@@ -372,7 +372,6 @@ def create_social_enrollment_v2_app():
     """Separate Gunicorn entrypoint, selected explicitly by the staging operator."""
     from app.config import get_config
     from app.factory import create_social_mobile_app
-    from app.services.social_messaging_private_routes import install_private_messaging
 
     path = os.environ.get("SOCIAL_ENROLLMENT_V2_CONFIG_PATH")
     manifest = read_operator_json(path)
@@ -383,7 +382,8 @@ def create_social_enrollment_v2_app():
     try:
         app = create_social_mobile_app(cfg)
         install_enrollment_application_runtime(app, runtime)
-        install_private_messaging(app, cfg)
+        # The base mobile factory already installs the configured private messaging
+        # runtimes and blueprints. Reinstalling them would deny enabled startup.
         from app.services.social_message_delivery_runtime_v1 import install_message_delivery
 
         install_message_delivery(app, runtime, os.environ.get("SOCIAL_MESSAGE_DELIVERY_CONFIG_PATH"))

@@ -223,3 +223,41 @@ def test_operator_json_rejects_duplicate_fields_and_symlinks(tmp_path, monkeypat
     link.symlink_to(path)
     with pytest.raises(OSError):
         runtime.read_operator_json(str(link))
+
+
+def test_native_entrypoint_preserves_base_private_recipient_runtime(monkeypatch):
+    from app import config, factory
+    from app.blueprints.internal_social_messaging_recipient import internal_social_messaging_recipient_bp
+    from app.services import social_message_delivery_runtime_v1 as delivery
+    from app.services import social_messaging_private_routes as private_routes
+
+    app = Flask(__name__)
+    app.register_blueprint(internal_social_messaging_recipient_bp)
+    cfg = {"SOCIAL_MESSAGING_RECIPIENT_INTERNAL_ENABLED": True}
+    owner = SimpleNamespace(close=lambda: pytest.fail("unexpected runtime close"))
+    calls = []
+
+    def reject_reinstall(*args, **kwargs):
+        pytest.fail("base factory already installed private recipient runtime")
+
+    monkeypatch.setenv("SOCIAL_ENROLLMENT_V2_CONFIG_PATH", "/native.json")
+    monkeypatch.setenv("SOCIAL_MESSAGE_DELIVERY_CONFIG_PATH", "/delivery.json")
+    monkeypatch.setattr(runtime, "read_operator_json", lambda path: {"enabled": True})
+    monkeypatch.setattr(config, "get_config", lambda: cfg)
+    monkeypatch.setattr(runtime, "build_enrollment_application_runtime", lambda settings, manifest: owner)
+    monkeypatch.setattr(factory, "create_social_mobile_app", lambda settings: app)
+    monkeypatch.setattr(private_routes, "install_private_messaging", reject_reinstall)
+    monkeypatch.setattr(
+        runtime,
+        "install_enrollment_application_runtime",
+        lambda target, instance: calls.append(("native", target, instance)),
+    )
+    monkeypatch.setattr(
+        delivery,
+        "install_message_delivery",
+        lambda target, instance, path: calls.append(("delivery", target, instance, path)),
+    )
+
+    assert runtime.create_social_enrollment_v2_app() is app
+    assert calls == [("native", app, owner), ("delivery", app, owner, "/delivery.json")]
+    assert app.blueprints[internal_social_messaging_recipient_bp.name] is internal_social_messaging_recipient_bp
