@@ -1,4 +1,7 @@
 import inspect
+import re
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 from unittest.mock import Mock
 
 import pytest
@@ -9,9 +12,11 @@ from app.db_storage import get_user_by_pubkey
 from app.models import CurrentEntitlementEvidence, User
 from app.services.action_authorization import IdentityClass
 from app.services.current_entitlement import resolve_runtime_current_entitlement
+from app.services.current_entitlement_evidence import CONTRACT_VERSION, CurrentEntitlementEvidenceRecord
+from app.services.current_entitlement_evidence_storage import SqlAlchemyCurrentEntitlementEvidenceRepository
 
-FULL_COMPRESSED = "02311091DD9860E8E20EE13473C1155F5F69635E394704EAA74009452246CFA9B3"
-LIMITED_COMPRESSED = "023049F7FFC71D744BD9BED6F42DC6A28974E3A1B9D30671F800E5D46389103C7E"
+PARITY_COMPRESSED = "02311091DD9860E8E20EE13473C1155F5F69635E394704EAA74009452246CFA9B3"
+NONPARITY_COMPRESSED = "023049F7FFC71D744BD9BED6F42DC6A28974E3A1B9D30671F800E5D46389103C7E"
 FAILED_COMPRESSED = "0234C1FD04D301BE89B31C0442D3E6AC24883928B45A9340781867D4232EC2DBDF"
 PERSISTENCE_FAILURE_COMPRESSED = "021880C9AD32FBB07E1FB52A688D9D6FE6DB0DF90ECD4C9483203F636EE00926DC"
 OPERATOR_COMPRESSED = "023d34633c5c1b72050fede84dcc396b5ea969fa40daa2eabf24cc339959f9e923"
@@ -85,31 +90,31 @@ def test_verified_login_persists_canonical_active_user_idempotently_without_full
 
     rpc = _install_verified_signature(monkeypatch)
     balances = {
-        FULL_COMPRESSED: (1, 1),
-        FULL_COMPRESSED.lower(): (1, 1),
-        LIMITED_COMPRESSED: (2, 1),
+        PARITY_COMPRESSED: (1, 1),
+        PARITY_COMPRESSED.lower(): (1, 1),
+        NONPARITY_COMPRESSED: (2, 1),
     }
     balance_check = Mock(side_effect=lambda pubkey: balances[pubkey])
     monkeypatch.setattr(legacy_runtime, "get_save_and_check_balances_for_pubkey", balance_check)
     _forbid_dormant_authority_paths(monkeypatch, legacy_runtime)
 
-    full_response = _login(client, FULL_COMPRESSED, "canonical-login-full")
-    limited_response = _login(client, LIMITED_COMPRESSED, "canonical-login-limited")
+    parity_response = _login(client, PARITY_COMPRESSED, "canonical-login-full")
+    nonparity_response = _login(client, NONPARITY_COMPRESSED, "canonical-login-limited")
 
-    assert full_response.status_code == 200
-    assert full_response.get_json() == {
-        "verified": True,
-        "access_level": "full",
-        "pubkey": FULL_COMPRESSED,
-    }
-    assert limited_response.status_code == 200
-    assert limited_response.get_json() == {
+    assert parity_response.status_code == 200
+    assert parity_response.get_json() == {
         "verified": True,
         "access_level": "limited",
-        "pubkey": LIMITED_COMPRESSED,
+        "pubkey": PARITY_COMPRESSED,
+    }
+    assert nonparity_response.status_code == 200
+    assert nonparity_response.get_json() == {
+        "verified": True,
+        "access_level": "limited",
+        "pubkey": NONPARITY_COMPRESSED,
     }
 
-    for compressed in (FULL_COMPRESSED, LIMITED_COMPRESSED):
+    for compressed in (PARITY_COMPRESSED, NONPARITY_COMPRESSED):
         subject = _canonical(compressed)
         user = get_user_by_pubkey(subject)
         assert user is not None
@@ -133,33 +138,33 @@ def test_verified_login_persists_canonical_active_user_idempotently_without_full
         assert assertion_body["current_full_relation_satisfied"] is False
         assert assertion_body["evidence_source"] == "active_persisted_user"
 
-    full_subject = _canonical(FULL_COMPRESSED)
-    original_user_id = get_user_by_pubkey(full_subject)["id"]
-    repeated_response = _login(client, FULL_COMPRESSED.lower(), "canonical-login-repeat")
+    parity_subject = _canonical(PARITY_COMPRESSED)
+    original_user_id = get_user_by_pubkey(parity_subject)["id"]
+    repeated_response = _login(client, PARITY_COMPRESSED.lower(), "canonical-login-repeat")
     assert repeated_response.status_code == 200
-    assert repeated_response.get_json()["access_level"] == "full"
-    assert get_user_by_pubkey(full_subject)["id"] == original_user_id
+    assert repeated_response.get_json()["access_level"] == "limited"
+    assert get_user_by_pubkey(parity_subject)["id"] == original_user_id
 
     with session_scope() as database_session:
-        assert database_session.query(User).filter(User.pubkey == full_subject).count() == 1
-        assert database_session.query(User).filter(User.pubkey == _canonical(LIMITED_COMPRESSED)).count() == 1
+        assert database_session.query(User).filter(User.pubkey == parity_subject).count() == 1
+        assert database_session.query(User).filter(User.pubkey == _canonical(NONPARITY_COMPRESSED)).count() == 1
         assert (
             database_session.query(CurrentEntitlementEvidence)
-            .filter(CurrentEntitlementEvidence.subject_pubkey.in_([full_subject, _canonical(LIMITED_COMPRESSED)]))
+            .filter(CurrentEntitlementEvidence.subject_pubkey.in_([parity_subject, _canonical(NONPARITY_COMPRESSED)]))
             .count()
             == 0
         )
 
     with client.session_transaction() as browser_session:
-        assert browser_session["logged_in_pubkey"] == FULL_COMPRESSED.lower()
-        assert browser_session["access_level"] == "full"
+        assert browser_session["logged_in_pubkey"] == PARITY_COMPRESSED.lower()
+        assert browser_session["access_level"] == "limited"
         assert browser_session["login_method"] == "legacy"
         assert "user_id" not in browser_session
         assert "plan" not in browser_session
         assert "operator" not in browser_session
 
     assert rpc.verifymessage.call_count == 3
-    assert balance_check.call_count == 3
+    assert balance_check.call_count == 0
 
 
 def test_failed_signature_does_not_persist_or_check_balance(client, monkeypatch):
@@ -231,7 +236,7 @@ def test_operator_subject_gets_the_same_limited_canonical_baseline(client, monke
     response = _login(client, OPERATOR_COMPRESSED, "canonical-operator-login")
 
     assert response.status_code == 200
-    assert response.get_json()["access_level"] == "full"
+    assert response.get_json()["access_level"] == "limited"
     user = get_user_by_pubkey(subject)
     assert user is not None
     assert user["is_active"] is True
@@ -256,6 +261,64 @@ def test_operator_subject_gets_the_same_limited_canonical_baseline(client, monke
         )
 
 
+@pytest.mark.parametrize("state", ["current", "expired", "revoked", "future", "superseded"])
+def test_legacy_login_and_public_authority_agree_on_published_evidence(client, monkeypatch, state):
+    from app.database import get_session
+    from app.db_storage import create_user
+
+    rpc = _install_verified_signature(monkeypatch)
+    subject = _canonical(NONPARITY_COMPRESSED)
+    create_user(subject)
+    repository = SqlAlchemyCurrentEntitlementEvidenceRepository(get_session)
+    now = datetime.now(timezone.utc)
+    observed = now + timedelta(seconds=20) if state == "future" else now - timedelta(seconds=30)
+    valid_until = now - timedelta(seconds=1) if state == "expired" else now + timedelta(seconds=60)
+
+    def publish(identity, timestamp, expiration, *, revoked=None):
+        repository.append(
+            CurrentEntitlementEvidenceRecord(
+                evidence_id=str(uuid4()),
+                contract_version=CONTRACT_VERSION,
+                subject_pubkey=subject,
+                identity_class=identity,
+                current_full_relation_satisfied=identity is IdentityClass.FULL,
+                evidence_source="canonical_test_publication",
+                evidence_version="v1",
+                source_evidence_sha256="a" * 64,
+                observed_at=timestamp,
+                valid_until=expiration,
+                revoked_at=revoked,
+                created_at=max(now, timestamp),
+            )
+        )
+
+    publish(IdentityClass.FULL, observed, valid_until, revoked=now if state == "revoked" else None)
+    if state == "superseded":
+        publish(IdentityClass.LIMITED, now, valid_until)
+
+    expected = "full" if state == "current" else "limited"
+    response = _login(client, NONPARITY_COMPRESSED, "published-evidence-" + state)
+    assert response.status_code == 200
+    assert response.get_json()["access_level"] == expected
+    assertion = client.get(f"/agent/authority/current/{subject}.json").get_json()
+    assert assertion["identity_class"] == expected
+    assert assertion["current_full_relation_satisfied"] is (state == "current")
+    with client.session_transaction() as browser_session:
+        assert browser_session["access_level"] == expected
+        assert "challenge" not in browser_session
+        assert "challenge_timestamp" not in browser_session
+    replay = client.post(
+        "/verify_signature",
+        json={
+            "pubkey": NONPARITY_COMPRESSED,
+            "signature": "verified-signature",
+            "challenge": "published-evidence-" + state,
+        },
+    )
+    assert replay.status_code == 400
+    rpc.verifymessage.assert_called_once()
+
+
 def test_login_persistence_helper_has_no_authorization_policy_dependencies():
     source = inspect.getsource(auth_module._persist_canonical_login_identity).lower()
     assert "canonical_xonly_pubkey" in source
@@ -274,3 +337,45 @@ def test_login_persistence_helper_has_no_authorization_policy_dependencies():
         "on_successful_login",
     ):
         assert forbidden not in source
+
+
+def test_logout_confirmation_preserves_the_canonical_session_until_valid_post(app, client, monkeypatch):
+    from app.services.oauth_browser_authentication import BROWSER_GENERATION_KEY
+    from app.services.oauth_session_lifecycle import EXTENSION, SqlAlchemyOAuthSessionLifecycle
+
+    issuer = "https://identity.example"
+    service = SqlAlchemyOAuthSessionLifecycle(
+        lambda: pytest.fail("logout must not open a real database session"),
+        client_id="social",
+        token_config={"JWT_ISSUER": issuer, "JWKS_DIR": "synthetic"},
+    )
+    reference = "a" * 64
+    invalidate = Mock()
+    monkeypatch.setattr(service, "invalidate_browser", invalidate)
+    app.extensions[EXTENSION] = service
+    with client.session_transaction(base_url=issuer) as cookie:
+        cookie[BROWSER_GENERATION_KEY] = reference
+        cookie["logged_in_pubkey"] = PARITY_COMPRESSED
+        cookie["access_level"] = "full"
+
+    confirmation = client.get("/logout", base_url=issuer)
+    assert confirmation.status_code == 200
+    assert confirmation.headers["Cache-Control"] == "no-store"
+    assert confirmation.headers.getlist("Referrer-Policy") == ["same-origin"]
+    assert "form-action 'self'" in confirmation.headers["Content-Security-Policy"]
+    assert "Set-Cookie" not in confirmation.headers
+    token = re.search(rb'name="csrf_token" value="([0-9a-f]{64})"', confirmation.data)[1].decode()
+    assert client.post("/logout", base_url=issuer, data={"csrf_token": token}).status_code == 403
+    invalidate.assert_not_called()
+    with client.session_transaction(base_url=issuer) as cookie:
+        assert cookie[BROWSER_GENERATION_KEY] == reference
+        assert cookie["access_level"] == "full"
+
+    assert (
+        client.post("/logout", base_url=issuer, headers={"Origin": issuer}, data={"csrf_token": token}).status_code
+        == 302
+    )
+    invalidate.assert_called_once_with(reference)
+    with client.session_transaction(base_url=issuer) as cookie:
+        assert BROWSER_GENERATION_KEY not in cookie
+        assert "logged_in_pubkey" not in cookie

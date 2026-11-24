@@ -8,7 +8,7 @@ import uuid
 from typing import Any, Mapping
 
 import redis
-from flask import Flask
+from flask import Flask, g
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -141,6 +141,13 @@ def _validate_rate_limit_storage(storage_uri: str, cfg: Mapping[str, Any]) -> st
     return storage_uri
 
 
+def apply_logout_confirmation_headers(response):
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+    )
+
+
 def init_security(app: Flask, cfg: Mapping[str, Any]) -> Limiter:
     """Initialise standard security middleware and rate limiting."""
     # Respect reverse proxy headers for TLS detection and client IP extraction.
@@ -170,6 +177,14 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Limiter:
         "connect-src": "'self' wss: ws: https: http:",
         "font-src": "'self' https://fonts.googleapis.com https://fonts.gstatic.com",
     }
+
+    # Flask runs after_request hooks in reverse registration order.
+    @app.after_request
+    def finish_logout_confirmation(response):
+        if getattr(g, "oauth_logout_confirmation", None) is response:
+            apply_logout_confirmation_headers(response)
+        return response
+
     if Talisman is not None:
         hsts_enabled = bool(force_https)
         Talisman(

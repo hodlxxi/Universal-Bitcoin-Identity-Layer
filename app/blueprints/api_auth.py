@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, current_app, jsonify, request, session, url_for
 
+from app.services.automatic_browser_access import verified_browser_access
 from app.services.canonical_oauth_browser_subject import persist_verified_browser_subject
 from app.services.oauth_browser_authentication import complete_verified_browser_login
 from app.services.oauth_session_lifecycle import configured_lifecycle
@@ -127,7 +128,6 @@ def api_verify():
     _finish_login = legacy_auth._finish_login
     derive_legacy_address_from_pubkey = legacy_auth.derive_legacy_address_from_pubkey
     get_rpc_connection = legacy_auth.get_rpc_connection
-    get_save_and_check_balances_for_pubkey = legacy_auth.get_save_and_check_balances_for_pubkey
     logger = legacy_auth.logger
 
     data = request.get_json() or {}
@@ -228,14 +228,6 @@ def api_verify():
         ACTIVE_CHALLENGES.pop(cid, None)
 
         try:
-            in_total, out_total = get_save_and_check_balances_for_pubkey(rec["pubkey"])
-            ratio = (out_total / in_total) if in_total > 0 else 0
-            access = "full" if ratio >= 1 else "limited"
-        except Exception:
-            logger.exception("Nostr balance-based access check failed; defaulting to limited")
-            access = "limited"
-
-        try:
             persist_verified_browser_subject(rec["pubkey"])
             if lifecycle is not None:
                 complete_verified_browser_login(
@@ -248,6 +240,7 @@ def api_verify():
             logger.exception("Canonical Nostr identity persistence failed")
             return jsonify(error="Authentication service temporarily unavailable"), 503
 
+        access = verified_browser_access(rec["pubkey"], persist_subject=lifecycle is None)
         logger.warning("NOSTR_STEP=before_session_set cid=%r access=%r", cid, access)
         session["logged_in_pubkey"] = rec["pubkey"]
         session["access_level"] = access
@@ -288,13 +281,8 @@ def api_verify():
             return jsonify(error="Authentication service temporarily unavailable"), 503
         session["login_method"] = "legacy"
 
-    # --- Determine access level ---
-    try:
-        in_total, out_total = get_save_and_check_balances_for_pubkey(pubkey)
-        ratio = (out_total / in_total) if in_total > 0 else 0
-        access = "full" if ratio >= 1 else "limited"
-    except Exception:
-        access = "limited"
+    # A valid key proof alone is insufficient for Full membership.
+    access = verified_browser_access(pubkey, persist_subject=lifecycle is None)
 
     access_token = mint_access_token(sub=pubkey, scope="basic")
     refresh_token = None

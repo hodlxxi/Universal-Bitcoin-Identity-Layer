@@ -7,9 +7,10 @@ import hmac
 import re
 from datetime import datetime, timedelta, timezone
 
-from flask import Response, current_app, g, jsonify, make_response, render_template_string, request, session
+from flask import Response, current_app, g, jsonify, make_response, redirect, render_template_string, request, session
 
 from app.auth_api_core import canonical_xonly_pubkey
+from app.security import apply_logout_confirmation_headers
 from app.services.canonical_oauth_browser_subject import persist_verified_browser_subject
 from app.services.oauth_session_lifecycle import OAuthSessionUnavailable, configured_lifecycle
 
@@ -99,6 +100,12 @@ def protected_browser_logout() -> Response | tuple[Response, int] | None:
     if lifecycle is None:
         return None
     try:
+        if BROWSER_GENERATION_KEY not in session:
+            if request.method in {"GET", "HEAD"}:
+                response = redirect("/login")
+                response.headers["Cache-Control"] = "no-store"
+                return response
+            return jsonify(error="logout_denied"), 403
         reference = browser_reference()
         if request.method in {"GET", "HEAD"}:
             response = make_response(
@@ -111,10 +118,8 @@ def protected_browser_logout() -> Response | tuple[Response, int] | None:
                 )
             )
             response.headers["Cache-Control"] = "no-store"
-            response.headers["Content-Security-Policy"] = (
-                "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
-            )
-            response.headers["Referrer-Policy"] = "no-referrer"
+            g.oauth_logout_confirmation = response
+            apply_logout_confirmation_headers(response)
             return response
         if request.method != "POST":
             return jsonify(error="method_not_allowed"), 405

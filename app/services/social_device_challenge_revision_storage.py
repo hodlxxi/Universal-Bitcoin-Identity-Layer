@@ -19,6 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.services import social_device_challenge_store as legacy
+from app.services.postgres_catalog_definitions import restored_catalog_definitions
 
 TABLE = "social_device_admission_challenge_revisions"
 RUNTIME_ENABLED = False
@@ -420,7 +421,7 @@ def _constraints(row, parent):
             _deny()
         name = c["conname"]
         kind, definition, keys = expected[name]
-        definitions = {definition}
+        definitions = restored_catalog_definitions(definition)
         if kind == "f":
             definitions.add(definition.replace("REFERENCES social_", "REFERENCES public.social_"))
         if item["definition"] not in definitions or type(oid) is not int or oid <= 0:

@@ -119,6 +119,14 @@ CHALLENGE_WRITER_PRIVILEGES = MappingProxyType(
     }
 )
 
+_CANONICAL_AUTHORITY_READS = {
+    "canonical_genesis_records": "r",
+    "canonical_effective_authority_edges_v1": "v",
+    "canonical_auto_effective_edges_v1": "r",
+    "canonical_auto_entitlement_observations_v1": "r",
+    "canonical_auto_admission_revocations_v1": "r",
+}
+
 # This lexical bridge is needed by the existing CAS validator, which receives
 # the same raw Connection below the owner API. It stores no connection policy
 # on the Engine/Session/pool and is reset before commit on every outcome.
@@ -221,6 +229,9 @@ WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f','S') ORDER BY c.r
 """
 
 
+CANONICAL_OWNER_SQL = "SELECT pg_catalog.to_regrole('hodlxxi_canonical_owner')::oid::bigint"
+
+
 def attest_catalog_role(connection, pin, *, sql):
     pin = freeze_pin(pin)
     if pin is None:
@@ -244,10 +255,17 @@ def attest_catalog_role(connection, pin, *, sql):
     ):
         _deny()
     identity = [row[:10] + (tuple(row[10]),) + row[11:]]
+    tables = connection.execute(sql(TABLES_SQL), values).all()
+    if any(len(item) != 7 for item in tables):
+        _deny()
+    canonical_owner = connection.execute(sql(CANONICAL_OWNER_SQL), {}).scalar_one()
+    if canonical_owner is not None and (type(canonical_owner) is not int or canonical_owner <= 0):
+        _deny()
+    canonical = canonical_owner is not None and any(
+        item[0] == "current_entitlement_evidence" and item[3] == canonical_owner for item in tables
+    )
     seen, oids = set(), set()
-    for item in connection.execute(sql(TABLES_SQL), values).all():
-        if len(item) != 7:
-            _deny()
+    for item in tables:
         name, kind, oid, owner, privileges, columns, grantable = item
         if (
             type(name) is not str
@@ -268,11 +286,18 @@ def attest_catalog_role(connection, pin, *, sql):
         privileges = tuple(privileges)
         if not privileges:
             continue
-        if name in seen or kind != "r" or CHALLENGE_WRITER_PRIVILEGES.get(name) != privileges:
+        if canonical and name in _CANONICAL_AUTHORITY_READS:
+            allowed = (
+                kind == _CANONICAL_AUTHORITY_READS[name] and owner == canonical_owner and privileges == ("SELECT",)
+            )
+        else:
+            allowed = kind == "r" and CHALLENGE_WRITER_PRIVILEGES.get(name) == privileges
+        if name in seen or not allowed:
             _deny()
         seen.add(name)
         identity.append((name, oid, owner, privileges))
-    if seen != set(CHALLENGE_WRITER_PRIVILEGES):
+    expected = CHALLENGE_WRITER_PRIVILEGES.keys() | (_CANONICAL_AUTHORITY_READS.keys() if canonical else set())
+    if seen != expected:
         _deny()
     return tuple(identity)
 

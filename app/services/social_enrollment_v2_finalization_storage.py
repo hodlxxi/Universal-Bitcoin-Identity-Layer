@@ -21,6 +21,7 @@ from app.services import social_messaging_device_ed25519_association_lifecycle a
 from app.services import social_messaging_mobile_pre_enrollment_v2 as v2
 from app.services import social_preaccepted_enrollment_v2_atomic_acceptance_storage as durable
 from app.services.social_device_challenge_revision_storage import _native_catalog_object
+from app.services.postgres_catalog_definitions import restored_catalog_definitions
 from app.services.social_enrollment_v2_finalization_contract import _deny, _sanitized
 
 RUNTIME_ENABLED = False
@@ -2168,7 +2169,7 @@ def _attest_shared_triggers(connection, relations, functions, constraint_pins):
                 declaration += (
                     f" ON public.{name} DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ({predicate}) EXECUTE FUNCTION "
                 )
-                declarations = {declaration}
+                declarations = restored_catalog_definitions(declaration)
                 if name == "social_device_ed25519_association_events":
                     declarations.add(
                         declaration.replace(
@@ -2862,7 +2863,7 @@ def _uses_production_oauth_profile(relation):
 
 
 def _attest_shared_attributes(
-    connection, relation, columns, *, alternatives=(), positions=None, production_oauth=False
+    connection, relation, columns, *, alternatives=(), positions=None, production_oauth=False, column_acls=None
 ):
     if production_oauth and (
         positions is not None
@@ -2909,7 +2910,7 @@ def _attest_shared_attributes(
             attislocal=True,
             attinhcount=0,
             attcollation=100 if typ in (25, 1043) else 0,
-            attacl=None,
+            attacl=column_acls.get(name) if column_acls else None,
             attoptions=None,
             attfdwoptions=None,
             attmissingval=None,
@@ -2944,11 +2945,12 @@ def _attest_shared_attributes(
         _attest_shared_zero_count(
             connection, "SELECT count(*) FROM pg_catalog.pg_attrdef WHERE adrelid=:oid", relation["oid"]
         )
-    _attest_shared_zero_count(
-        connection,
-        "SELECT count(*) FROM pg_catalog.pg_attribute WHERE attrelid=:oid AND attacl IS NOT NULL",
-        relation["oid"],
-    )
+    column_acl_count = connection.execute(
+        text("SELECT count(*) FROM pg_catalog.pg_attribute WHERE attrelid=:oid AND attacl IS NOT NULL"),
+        {"oid": relation["oid"]},
+    ).scalar_one()
+    if type(column_acl_count) is not int or column_acl_count != len(column_acls or ()):
+        _deny()
     return tuple(observed)
 
 
@@ -3040,7 +3042,11 @@ def _attest_index_definitions(rows, relation, columns, specs):
         # and indcheckxmin remain mandatory, never excluded as maintenance.
         i.pop("indisclustered")
         tree = i.pop("indpred")
-        if i != wanted or row["predicate"] != predicate or (tree is None) != (predicate is None):
+        if (
+            i != wanted
+            or row["predicate"] not in restored_catalog_definitions(predicate)
+            or (tree is None) != (predicate is None)
+        ):
             _deny()
         if tree is not None and (type(tree) is not str or not tree):
             _deny()
@@ -3050,7 +3056,7 @@ def _attest_index_definitions(rows, relation, columns, specs):
         definition += relation["relname"] + " USING btree (" + ", ".join(columns[k - 1][0] for k in keys) + ")"
         if predicate is not None:
             definition += " WHERE " + predicate
-        if row["definition"] != definition:
+        if row["definition"] not in restored_catalog_definitions(definition):
             _deny()
         identity = _attest_shared_index_relation(ir, relation, name, len(keys))
         ids[name] = ir["oid"]
@@ -3146,7 +3152,9 @@ def _attest_shared_constraints(connection, relation, columns, relations, indexes
                     definition += " DEFERRABLE INITIALLY DEFERRED"
             else:
                 definition = ("PRIMARY KEY" if kind == "p" else "UNIQUE") + f" ({names})"
-        if row["definition"] not in {definition, definition.replace("REFERENCES ", "REFERENCES public.")}:
+        if row["definition"] not in restored_catalog_definitions(definition) | {
+            definition.replace("REFERENCES ", "REFERENCES public.")
+        }:
             _deny()
         identities.append((oid, backing, target, tree))
     return identities, pins
@@ -3193,7 +3201,7 @@ WHERE c.oid=:oid ORDER BY x.grantor,x.grantee,x.privilege_type
 """
 
 
-def _attest_shared_acl(connection, relation, *, profiles=None):
+def _attest_shared_acl(connection, relation, *, profiles=None, additional_acl=()):
     rows = connection.execute(text(SHARED_ACL_SQL), {"oid": relation["oid"]}).all()
     if not rows or any(len(row) != 5 for row in rows):
         _deny()
@@ -3234,7 +3242,7 @@ def _attest_shared_acl(connection, relation, *, profiles=None):
         owner=relation["relowner"],
         runtime=runtime,
     )
-    accepted = tuple(owner | {(runtime, p) for p in profile} | peer for profile in profiles)
+    accepted = tuple(owner | {(runtime, p) for p in profile} | peer | set(additional_acl) for profile in profiles)
     if actual not in accepted:
         _deny()
     return tuple(sorted(actual))
@@ -5094,6 +5102,11 @@ def _attest_dependency_definitions(connection, relations, functions):
     """
     identities = []
     constraint_pins = {}
+    canonical = relations["current_entitlement_evidence"]["relhastriggers"]
+    canonical_lock_acls = {
+        "users": {"last_login": ["hodlxxi_canonical_owner=w/hodlxxi", "hodlxxi_canonical_publisher=w/hodlxxi"]},
+        "oauth_browser_generations": {"generation_id": ["hodlxxi_canonical_owner=w/hodlxxi"]},
+    }
     for name, columns in DEPENDENCY_COLUMNS.items():
         relation = relations[name]
         production_oauth = name == "oauth_clients" and _uses_production_oauth_profile(relation)
@@ -5102,7 +5115,16 @@ def _attest_dependency_definitions(connection, relations, functions):
         if relation["relnatts"] != len(columns):
             _deny()
         identities.append(
-            (name, _attest_shared_attributes(connection, relation, columns, production_oauth=production_oauth))
+            (
+                name,
+                _attest_shared_attributes(
+                    connection,
+                    relation,
+                    columns,
+                    production_oauth=production_oauth,
+                    column_acls=canonical_lock_acls.get(name) if canonical else None,
+                ),
+            )
         )
         if name not in V2_DEFINITION_PROFILES:
             continue
@@ -5162,7 +5184,7 @@ def _attest_dependency_definitions(connection, relations, functions):
                 relation, n, kind, keys, index=index, parent=parent, parent_keys=parent_keys, operators=operators
             )
             wanted.pop("conbin")
-            definitions = {definition}
+            definitions = restored_catalog_definitions(definition)
             if target:
                 definitions.add(definition.replace("REFERENCES ", "REFERENCES public.", 1))
             if c != wanted or row["definition"] not in definitions or (tree is not None) != (kind == "c"):
@@ -5262,6 +5284,138 @@ SELECT pg_catalog.has_table_privilege(current_user,:oid,'SELECT'),
 """
 
 
+# These links come from the automatic admission and signed Canon V2 migrations.
+# The existing internal-trigger attestor validates both RI trigger halves.
+_CANONICAL_ADMISSION_FKS = {
+    "canonical_auto_effective_edges_v1": (
+        (
+            12,
+            "initial_evidence_id",
+            40,
+            "canonical_auto_effective_edges_v1_initial_evidence_id_fkey",
+            "current_entitlement_evidence",
+            "evidence_id",
+        ),
+    ),
+    "canonical_auto_entitlement_observations_v1": (
+        (
+            1,
+            "evidence_id",
+            40,
+            "canonical_auto_entitlement_observations_v1_evidence_id_fkey",
+            "current_entitlement_evidence",
+            "evidence_id",
+        ),
+    ),
+    "canonical_auto_import_intents_v1": (
+        (
+            6,
+            "sponsor_evidence_id",
+            40,
+            "canonical_auto_import_intents_v1_sponsor_evidence_id_fkey",
+            "current_entitlement_evidence",
+            "evidence_id",
+        ),
+    ),
+    "canonical_multileg_effective_edges_v2": (
+        (
+            7,
+            "entitlement_evidence_id",
+            40,
+            "canonical_multileg_effective_edges_entitlement_evidence_id_fkey",
+            "current_entitlement_evidence",
+            "evidence_id",
+        ),
+    ),
+    "canonical_multileg_consent_browser_bindings_v2": (
+        (
+            2,
+            "sponsor_generation_id",
+            68,
+            "canonical_multileg_consent_browser_b_sponsor_generation_id_fkey",
+            "oauth_browser_generations",
+            "generation_id",
+        ),
+        (
+            4,
+            "client_id",
+            259,
+            "canonical_multileg_consent_browser_bindings_v2_client_id_fkey",
+            "oauth_clients",
+            "client_id",
+        ),
+        (5, "issuer_user_id", 40, "canonical_multileg_consent_browser_bindings_issuer_user_id_fkey", "users", "id"),
+    ),
+}
+
+
+def _attest_canonical_admission_fks(connection, relations):
+    names = sorted(_CANONICAL_ADMISSION_FKS)
+    rows = connection.execute(text(VISIBILITY_SQL), {"names": names}).mappings().all()
+    if [row["relname"] for row in rows] != names:
+        _deny()
+    identities, constraints = [], {}
+    public = relations["users"]["relnamespace"]
+    for row in rows:
+        name = row["relname"]
+        relation = _native_catalog_object(row["relation"], "relation")
+        _attest_shared_physical_types(relation)
+        if (
+            name in relations
+            or relation["relname"] != name
+            or relation["relnamespace"] != public
+            or row["resolves"] is not True
+            or row["owns"] is not False
+            or row["standalone"] is not True
+            or relation["relkind"] != "r"
+            or relation["relpersistence"] != "p"
+            or relation["reltype"] == 0
+            or relation["reloftype"] != 0
+            or relation["relispartition"]
+            or relation["relhassubclass"]
+            or relation["relrowsecurity"]
+            or relation["relforcerowsecurity"]
+            or relation["relhasrules"]
+            or relation["relrewrite"] != "0"
+            or relation["relpartbound"] is not None
+            or any(
+                other["oid"] == relation["oid"] or other["reltype"] == relation["reltype"]
+                for other in relations.values()
+            )
+        ):
+            _deny()
+        bindings = _CANONICAL_ADMISSION_FKS[name]
+        attributes = _attest_shared_attributes(
+            connection,
+            relation,
+            tuple((column, 1043, typmod, True) for _, column, typmod, *_ in bindings),
+            positions=tuple(binding[0] for binding in bindings),
+        )
+        relations[name] = relation
+        identities.append((name, relation["oid"], relation["reltype"], relation["relowner"], attributes))
+        for position, column, _, constraint, parent, parent_key in bindings:
+            definition = f"FOREIGN KEY ({column}) REFERENCES {parent}({parent_key})"
+            profile = (constraint, "f", definition, (position,), (parent, (parent_key,)), "a", "a", False, False)
+            constraint_rows = (
+                connection.execute(
+                    text(
+                        SHARED_CONSTRAINTS_SQL.replace(
+                            "WHERE k.conrelid=:oid", "WHERE k.conrelid=:oid AND k.conname=:name"
+                        )
+                    ),
+                    {"oid": relation["oid"], "name": constraint},
+                )
+                .mappings()
+                .all()
+            )
+            pins, descriptors = _attest_source_constraints(
+                connection, relation, constraint_rows, (profile,), relations, {}
+            )
+            identities.extend(pins)
+            constraints.update(descriptors)
+    return identities, constraints
+
+
 def _attest_authority_definitions(connection, relations, functions):
     """Closed model/migration definitions; external scope is only FK bindings."""
     identities, constraints = [], {}
@@ -5309,8 +5463,64 @@ def _attest_authority_definitions(connection, relations, functions):
             connection, r, tuple(c[1:] for c in profile), positions=tuple(c[0] for c in profile)
         )
         identities.append((name, r["oid"], r["reltype"], r["relowner"], pins))
+    from app.services.canonical_auto_evidence_catalog_v1 import (
+        EVIDENCE_TABLE,
+        REQUIRED_TRIGGER,
+        attest_automatic_evidence_triggers,
+    )
+
+    evidence = relations[EVIDENCE_TABLE]
+    required_oid = None
+    canonical_acls = {}
+    if evidence["relhastriggers"]:
+        evidence_pins, required_oid = attest_automatic_evidence_triggers(
+            lambda sql, values: connection.execute(text(sql), values),
+            evidence["oid"],
+            evidence["relowner"],
+        )
+        identities.extend(evidence_pins)
+        roles = connection.execute(text("""
+            SELECT rolname, oid::bigint FROM pg_catalog.pg_roles
+            WHERE rolname IN ('hodlxxi', 'hodlxxi_canonical_owner', 'hodlxxi_canonical_publisher')
+        """)).all()
+        role_ids = dict(roles)
+        if set(role_ids) != {"hodlxxi", "hodlxxi_canonical_owner", "hodlxxi_canonical_publisher"}:
+            _deny()
+        web = role_ids["hodlxxi"]
+        owner = role_ids["hodlxxi_canonical_owner"]
+        publisher = role_ids["hodlxxi_canonical_publisher"]
+        if evidence["relowner"] != owner:
+            _deny()
+        canonical_acls = {
+            "users": ((owner, "SELECT"), (publisher, "SELECT")),
+            "oauth_browser_generations": ((owner, "SELECT"),),
+            EVIDENCE_TABLE: (
+                (web, "SELECT"),
+                (web, "UPDATE"),
+                (publisher, "SELECT"),
+                (publisher, "INSERT"),
+                (publisher, "UPDATE"),
+            ),
+        }
+
     for name, profiles in AUTHORITY_CONSTRAINTS.items():
         r, columns = relations[name], DEPENDENCY_COLUMNS[name]
+        canonical_evidence = required_oid is not None and name == EVIDENCE_TABLE
+        if canonical_evidence:
+            profiles = (
+                *profiles,
+                (
+                    REQUIRED_TRIGGER,
+                    "t",
+                    "TRIGGER DEFERRABLE INITIALLY DEFERRED",
+                    None,
+                    None,
+                    " ",
+                    " ",
+                    True,
+                    True,
+                ),
+            )
         index_profiles = {n: (kind, keys, pred) for n, kind, keys, pred in AUTHORITY_INDEXES[name]}
         if name == "oauth_clients" and _uses_production_oauth_profile(r):
             columns += _PRODUCTION_OAUTH_EXTRA_COLUMNS
@@ -5322,7 +5532,7 @@ def _attest_authority_definitions(connection, relations, functions):
                 column_count=len(columns),
                 checks=sum(p[1] == "c" for p in profiles),
                 has_toast=name not in AUTHORITY_NO_TOAST,
-                has_triggers=bool(AUTHORITY_TRIGGERS[name]),
+                has_triggers=bool(AUTHORITY_TRIGGERS[name]) or canonical_evidence,
             )
         )
         indexes, pins = _attest_shared_indexes(connection, r, columns, index_profiles)
@@ -5331,7 +5541,14 @@ def _attest_authority_definitions(connection, relations, functions):
         pins, descriptors = _attest_source_constraints(connection, r, rows, profiles, relations, indexes)
         identities.extend(pins)
         constraints.update(descriptors)
-        identities.append(_attest_shared_acl(connection, r, profiles=(AUTHORITY_ACLS[name],)))
+        identities.append(
+            _attest_shared_acl(
+                connection,
+                r,
+                profiles=(AUTHORITY_ACLS[name],),
+                additional_acl=canonical_acls.get(name, ()),
+            )
+        )
         effective = connection.execute(text(AUTHORITY_EFFECTIVE_ACL_SQL), {"oid": r["oid"]}).one()
         order = (
             "SELECT",
@@ -5370,7 +5587,15 @@ def _attest_authority_definitions(connection, relations, functions):
             identities.extend(pins)
             constraints.update(descriptors)
     for name in AUTHORITY_CONSTRAINTS:
-        identities.extend(_attest_authority_triggers(connection, relations[name], functions, constraints))
+        if name == EVIDENCE_TABLE and required_oid is not None:
+            if constraints[(name, REQUIRED_TRIGGER)]["oid"] != required_oid:
+                _deny()
+        else:
+            identities.extend(_attest_authority_triggers(connection, relations[name], functions, constraints))
+    if required_oid is not None:
+        pins, descriptors = _attest_canonical_admission_fks(connection, relations)
+        identities.extend(pins)
+        constraints.update(descriptors)
     return tuple(identities), constraints
 
 
@@ -5489,7 +5714,7 @@ def _attest_source_constraints(connection, relation, rows, profiles, relations, 
         wanted.update(confupdtype=update, confdeltype=delete, condeferrable=deferrable, condeferred=deferred)
         tree = c.pop("conbin")
         wanted.pop("conbin")
-        definitions = {definition}
+        definitions = restored_catalog_definitions(definition)
         if target:
             definitions.add(definition.replace("REFERENCES ", "REFERENCES public.", 1))
         if (

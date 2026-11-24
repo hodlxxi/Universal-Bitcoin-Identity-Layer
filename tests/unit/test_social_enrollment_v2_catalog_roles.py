@@ -48,6 +48,7 @@ class CatalogConnection:
     def __init__(self):
         self.role_rows = [role_row()]
         self.table_rows = table_rows()
+        self.canonical_owner = None
         self.calls = []
 
     def execute(self, statement, values):
@@ -56,6 +57,9 @@ class CatalogConnection:
             return SimpleNamespace(all=lambda: self.role_rows)
         if statement == roles.TABLES_SQL:
             return SimpleNamespace(all=lambda: self.table_rows)
+        if statement == roles.CANONICAL_OWNER_SQL:
+            assert values == {}
+            return SimpleNamespace(scalar_one=lambda: self.canonical_owner)
         raise AssertionError("unexpected SQL")
 
 
@@ -208,6 +212,35 @@ class CatalogRoleContractTests(unittest.TestCase):
         c = CatalogConnection()
         c.table_rows.append(["other_table", "r", 99999, 10, [], False, False])
         self.assertEqual(len(roles.attest_catalog_role(c, pin(), sql=lambda x: x)), 40)
+
+    def test_canonical_peer_reads_require_exact_relations_ownership_and_grants(self):
+        c = CatalogConnection()
+        c.canonical_owner = 20003
+        evidence = next(row for row in c.table_rows if row[0] == "current_entitlement_evidence")
+        evidence[3] = c.canonical_owner
+        canonical_tables = {
+            "canonical_effective_authority_edges_v1": "v",
+            "canonical_genesis_records": "r",
+            "canonical_auto_effective_edges_v1": "r",
+            "canonical_auto_entitlement_observations_v1": "r",
+            "canonical_auto_admission_revocations_v1": "r",
+        }
+        c.table_rows.extend(
+            [name, kind, oid, c.canonical_owner, ["SELECT"], False, False]
+            for oid, (name, kind) in enumerate(canonical_tables.items(), 40000)
+        )
+        self.assertEqual(len(roles.attest_catalog_role(c, pin(), sql=lambda x: x)), 45)
+        view = c.table_rows[-5]
+        for column, value in ((1, "r"), (3, 20004), (4, []), (4, ["SELECT", "UPDATE"]), (6, True)):
+            with self.subTest(column=column, value=value):
+                original = view[column]
+                view[column] = value
+                with self.assertRaises(roles.CatalogRoleDenied):
+                    roles.attest_catalog_role(c, pin(), sql=lambda x: x)
+                view[column] = original
+        evidence[3] = 10
+        with self.assertRaises(roles.CatalogRoleDenied):
+            roles.attest_catalog_role(c, pin(), sql=lambda x: x)
 
     def test_peer_acl_cannot_register_current_role_owner_or_unknown_table(self):
         expected = frozenset((20001, p) for p in ("SELECT", "INSERT", "UPDATE"))

@@ -50,7 +50,14 @@ def derive_legacy_address_from_pubkey(pubkey_hex: str) -> str:
     except:
         # Fallback if RIPEMD160 not available
         ripe = sha256(b"").digest()
-    vbyte = b"\x00" + ripe
+    chain = (
+        os.getenv("CANON_V2_BITCOIN_CHAIN", "main")
+        if os.getenv("AUTO_SPONSORED_ADMISSION_ENABLED") == "true"
+        else "main"
+    )
+    if chain not in ("main", "test", "signet", "regtest"):
+        raise ValueError("unsupported identity verification network")
+    vbyte = (b"\x00" if chain == "main" else b"\x6f") + ripe
     chksum = sha256(sha256(vbyte).digest()).digest()[:4]
     address = base58.b58encode(vbyte + chksum).decode()
     return address

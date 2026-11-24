@@ -36,6 +36,64 @@ def client(app):
     return app.test_client()
 
 
+@pytest.fixture
+def canonical_full_session(monkeypatch):
+    """Seed a verified browser binding backed by current, stored Full evidence."""
+    from uuid import uuid4
+
+    from flask import session
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app import database
+    from app.auth_api_core import canonical_xonly_pubkey
+    from app.db_storage import create_user
+    from app.models import CurrentEntitlementEvidence, User
+    from app.services.action_authorization import IdentityClass
+    from app.services.automatic_browser_access import verified_browser_access
+    from app.services.current_entitlement_evidence import CONTRACT_VERSION, CurrentEntitlementEvidenceRecord
+    from app.services.current_entitlement_evidence_storage import SqlAlchemyCurrentEntitlementEvidenceRepository
+
+    engine = create_engine("sqlite://")
+    try:
+        for table in (User.__table__, CurrentEntitlementEvidence.__table__):
+            table.create(engine)
+        monkeypatch.setattr(database, "_engine", engine)
+        monkeypatch.setattr(database, "_SessionFactory", sessionmaker(bind=engine))
+        repository = SqlAlchemyCurrentEntitlementEvidenceRepository(database.get_session)
+
+        def activate(client, pubkey="02" + "a" * 64):
+            subject = canonical_xonly_pubkey(pubkey)
+            create_user(subject)
+            now = datetime.now(timezone.utc)
+            repository.append(
+                CurrentEntitlementEvidenceRecord(
+                    evidence_id=str(uuid4()),
+                    contract_version=CONTRACT_VERSION,
+                    subject_pubkey=subject,
+                    identity_class=IdentityClass.FULL,
+                    current_full_relation_satisfied=True,
+                    evidence_source="canonical_test_publication",
+                    evidence_version="v1",
+                    source_evidence_sha256="a" * 64,
+                    observed_at=now,
+                    valid_until=now + timedelta(minutes=5),
+                    revoked_at=None,
+                    created_at=now,
+                )
+            )
+            with client.application.test_request_context():
+                level = verified_browser_access(pubkey)
+                assert level == "full"
+                binding = dict(session)
+            with client.session_transaction() as browser:
+                browser.update(binding, logged_in_pubkey=pubkey, login_method="legacy", access_level=level)
+
+        yield activate
+    finally:
+        engine.dispose()
+
+
 # Set test environment before importing app
 os.environ["FLASK_ENV"] = "testing"
 os.environ.setdefault("DISABLE_FORCE_HTTPS", "1")
@@ -102,6 +160,21 @@ import sys
 from unittest.mock import MagicMock
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _block_real_bitcoin_rpc_in_unit_tests(request, monkeypatch):
+    test_path = request.node.path.relative_to(request.config.rootpath)
+    if test_path.parts[:2] != ("tests", "unit") and test_path.parts != ("tests", "test_auth_flows.py"):
+        return
+
+    from bitcoinrpc.authproxy import AuthServiceProxy
+
+    def reject(*_args, **_kwargs):
+        pytest.fail("Unit tests must provide a synthetic Bitcoin RPC fixture")
+
+    monkeypatch.setattr(AuthServiceProxy, "__call__", reject)
+    monkeypatch.setattr(AuthServiceProxy, "batch_", reject)
 
 
 @pytest.fixture

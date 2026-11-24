@@ -13,6 +13,7 @@ from sqlalchemy import BigInteger, Column, String, Text, select, text
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql.elements import quoted_name
 
+from app.services.postgres_catalog_definitions import restored_catalog_definitions
 from app.services.social_session_issuance_v2_contract import V2IssuanceUnavailable
 
 
@@ -1405,7 +1406,7 @@ OWNER_TRIGGERS = {
 }
 
 
-def _attest_triggers(guard, oid, expected):
+def _attest_triggers(guard, oid, expected, *, canonical_evidence_owner=None):
     rows = guard.sql(
         """SELECT t.oid,t.tgfoid,t.tgname,p.proname,t.tgtype,t.tgdeferrable,t.tginitdeferred,
         t.tgenabled,t.tgnargs,t.tgattr::text,t.tgqual,t.tgargs,t.tgoldtable,t.tgnewtable,t.tgparentid,
@@ -1414,6 +1415,13 @@ def _attest_triggers(guard, oid, expected):
         WHERE t.tgrelid=:oid AND NOT t.tgisinternal ORDER BY t.tgname""",
         {"oid": oid},
     ).all()
+    if canonical_evidence_owner is not None and rows:
+        from app.services.canonical_auto_evidence_catalog_v1 import attest_automatic_evidence_triggers
+
+        pins, _ = attest_automatic_evidence_triggers(guard.guard.sql, oid, canonical_evidence_owner)
+        if tuple(tuple(row[:2]) for row in rows) != tuple(pin[:2] for pin in pins):
+            raise V2IssuanceUnavailable()
+        return pins
     if len(rows) != len(expected):
         raise V2IssuanceUnavailable()
     for row in rows:
@@ -1466,7 +1474,10 @@ def _attest_legacy(guard):
         if tuple(row[2:]) != (True, False):
             raise V2IssuanceUnavailable()
         identities.append(tuple(row[:2]))
-        identities.extend(_attest_triggers(guard, row[0], expected))
+        if table == "current_entitlement_evidence":
+            identities.extend(_attest_triggers(guard, row[0], expected, canonical_evidence_owner=row[1]))
+        else:
+            identities.extend(_attest_triggers(guard, row[0], expected))
     return identities
 
 
@@ -1498,7 +1509,7 @@ def _attest_constraints(guard, table, oid, identities):
             raise V2IssuanceUnavailable()
         # Qualification may differ with search_path; exact FK target identity is
         # checked independently. No cast stripping or broad expression matching.
-        definitions = {exp[2]}
+        definitions = restored_catalog_definitions(exp[2])
         if exp[4] is not None:
             definitions.add(exp[2].replace("REFERENCES ", "REFERENCES public.", 1))
             target = guard.sql("SELECT to_regclass(:target)::oid", {"target": "public." + exp[4][0]}).scalar_one()

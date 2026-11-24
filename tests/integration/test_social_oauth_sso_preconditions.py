@@ -48,7 +48,7 @@ def _session(client, pubkey=COMPRESSED, method="legacy", access="limited", persi
 @pytest.mark.parametrize("method", ["legacy", "nostr"])
 def test_persisted_legacy_and_nostr_sessions_bind_canonical_code(client, method):
     registration = _register(client)
-    _session(client, method=method, access="full")
+    _session(client, method=method)
     response = client.get("/oauth/authorize", query_string=_query(registration))
     assert response.status_code == 302
     parsed = urlparse(response.location)
@@ -85,6 +85,7 @@ def test_actually_missing_login_redirects_to_login(client):
         (COMPRESSED, "lightning", "limited", True),
         (COMPRESSED, "unknown", "limited", True),
         (COMPRESSED, "legacy", None, True),
+        (COMPRESSED, "legacy", "unknown", True),
         (COMPRESSED, "legacy", "guest", True),
         ("02" + "c" * 64, "legacy", "limited", False),
     ],

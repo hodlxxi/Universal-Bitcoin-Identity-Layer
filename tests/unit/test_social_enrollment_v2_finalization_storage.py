@@ -5452,6 +5452,10 @@ class PeerRoleCatalogConnection(CompleteCatalogConnection):
         if str(statement) == roles.TABLES_SQL:
             self.queries.append((str(statement), parameters))
             return CatalogResult(deepcopy(self.peer_tables))
+        if str(statement) == roles.CANONICAL_OWNER_SQL:
+            assert parameters == {}
+            self.queries.append((str(statement), parameters))
+            return CatalogResult([None])
         return super().execute(statement, parameters)
 
 

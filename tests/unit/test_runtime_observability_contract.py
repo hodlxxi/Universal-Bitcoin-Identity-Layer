@@ -122,7 +122,7 @@ def test_public_status_missing_optional_env_degrades_without_500(client, monkeyp
     _assert_no_secret_leaks(response)
 
 
-def test_lnd_status_runtime_failure_returns_degraded_shape_not_500(client, monkeypatch):
+def test_lnd_status_runtime_failure_returns_degraded_shape_not_500(client, monkeypatch, canonical_full_session):
     monkeypatch.setenv("LND_RPCSERVER", "127.0.0.1:10009")
     monkeypatch.setenv("LND_TLSCERTPATH", "/tls.cert")
     monkeypatch.setenv("LND_MACAROONPATH", "/readonly.macaroon")
@@ -132,9 +132,7 @@ def test_lnd_status_runtime_failure_returns_degraded_shape_not_500(client, monke
 
     monkeypatch.setattr("app.blueprints.lnd_status.run_lnd_json", _boom)
 
-    with client.session_transaction() as sess:
-        sess["logged_in_pubkey"] = "pubkey-test"
-        sess["access_level"] = "full"
+    canonical_full_session(client)
 
     response = client.get("/api/lnd/status")
     assert response.status_code == 200

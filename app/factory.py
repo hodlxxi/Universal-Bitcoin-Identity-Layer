@@ -445,6 +445,10 @@ def register_request_handlers(app: Flask) -> None:
         if request.path == "/accaunts":
             return redirect("/accounts", code=301)
 
+    from app.services.automatic_browser_access import refresh_canonical_browser_access
+
+    app.before_request(refresh_canonical_browser_access)
+
     @app.before_request
     def mark_oauth_public_paths():
         """Mark OAuth public paths to bypass authentication checks."""

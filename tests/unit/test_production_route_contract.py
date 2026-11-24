@@ -75,11 +75,9 @@ def test_dangerous_or_debug_surfaces_remain_closed(production_app, method, path)
     assert response.status_code == 404
 
 
-def test_unsupported_browser_rpc_is_rejected_for_full_user(production_app):
+def test_unsupported_browser_rpc_is_rejected_for_full_user(production_app, canonical_full_session):
     client = production_app.test_client()
-    with client.session_transaction() as sess:
-        sess["logged_in_pubkey"] = "f" * 64
-        sess["access_level"] = "full"
+    canonical_full_session(client, "f" * 64)
 
     response = client.get("/rpc/stop")
     assert response.status_code == 400
