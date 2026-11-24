@@ -211,3 +211,89 @@ def test_genuine_enrollment_proof_finalizes_before_message_authority(message_pg1
                 config=config,
                 clock=lambda: observed.current_until_ms,
             )
+
+    from app.services import social_registered_device_session_contract_v1 as login
+    from app.services.social_registered_device_session_owner_v1 import (
+        RegisteredDeviceSessionOwnerV1,
+        credential_digest,
+    )
+
+    context = "ab" * 32
+
+    def login_owner(db, at=later):
+        return RegisteredDeviceSessionOwnerV1(db, config=config, clock=lambda: at)
+
+    with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
+        challenge_wire = login_owner(db).issue(
+            subject=parsed.context.subject, device_id=parsed.context.device_id, context_commitment=context
+        )
+    challenge = login.parse_challenge_v1(challenge_wire)
+    proof_wire = login.canonical(
+        dict(
+            challengeId=challenge["challengeId"],
+            schema=login.PROOF_SCHEMA,
+            signature=ed.sign(login.signing_preimage_v1(challenge_wire)).hex(),
+            version=1,
+        )
+    )
+    result = subprocess.run(
+        [str(node), str(social / "scripts/verify-registered-device-session-release-v1.mjs")],
+        input=json.dumps(
+            dict(
+                serviceSigningKeyPem=request["serviceSigningKeyPem"],
+                kid=sc._keys[0].kid,
+                request=dict(
+                    challengeWire=challenge_wire,
+                    proofWire=proof_wire,
+                    issuer=challenge["issuer"],
+                    audience=challenge["audience"],
+                    clientId=challenge["clientId"],
+                    contextCommitment=context,
+                    now=later,
+                ),
+            )
+        ),
+        text=True,
+        capture_output=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, "real Social registered-device proof verification failed"
+    args = dict(
+        challenge_wire=challenge_wire,
+        proof_wire=proof_wire,
+        statement_wire=result.stdout,
+        context_commitment=context,
+    )
+    with pytest.raises(login.RegisteredDeviceSessionContractError):
+        with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
+            login_owner(db).consume(**dict(args, context_commitment="cd" * 32))
+    with pytest.raises(login.RegisteredDeviceSessionContractError):
+        with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
+            login_owner(db, challenge["expiresAt"]).consume(**args)
+    with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
+        issued = login_owner(db).consume(**args)
+    assert issued.expires_at > later
+    with Session(owner) as db, db.begin():
+        stored = db.execute(
+            text("SELECT credential_digest FROM public.social_registered_device_sessions_v1 WHERE session_id=:id"),
+            {"id": issued.session_id},
+        ).scalar_one()
+        assert stored == credential_digest(issued.credential)
+        assert stored != issued.credential
+    with pytest.raises(login.RegisteredDeviceSessionContractError):
+        with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
+            login_owner(db).consume(**args)
+    auth = dict(session_id=issued.session_id, credential=issued.credential, context_commitment=context)
+    with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
+        device, deadline = login_owner(db).read(**auth)
+        assert device.association_id == association.association_id
+        assert deadline == issued.expires_at
+    for invalid in (dict(auth, credential="00" * 32), dict(auth, context_commitment="cd" * 32)):
+        with pytest.raises(login.RegisteredDeviceSessionContractError):
+            with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
+                login_owner(db).read(**invalid)
+    with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
+        login_owner(db).revoke(**auth)
+    with pytest.raises(login.RegisteredDeviceSessionContractError):
+        with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
+            login_owner(db).read(**auth)

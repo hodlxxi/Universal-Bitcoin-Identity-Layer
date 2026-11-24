@@ -30,6 +30,7 @@ MIGRATIONS = (
     "2026-10-12_social_enrollment_v2_finalization_v1.sql",
     "2026-10-14_social_enrollment_v2_freshness_profile_guard_v1.sql",
     "2026-11-15_social_device_request_receipts_v1.sql",
+    "2026-11-24_social_registered_device_sessions_v1.sql",
 )
 
 
@@ -132,6 +133,13 @@ def message_pg16():
                 f"GRANT UPDATE ON social_messaging_recipient_handle_owners,social_messaging_recipient_routing_snapshots,social_messaging_recipient_routing_decisions TO {ROLES[1]}"
             )
             db.exec_driver_sql(f"GRANT DELETE ON confidential_service_assertion_replay_markers TO {ROLES[1]}")
+            for table in (
+                "social_registered_device_challenges_v1",
+                "social_registered_device_sessions_v1",
+                "social_registered_device_revocations_v1",
+            ):
+                db.exec_driver_sql(f"REVOKE ALL ON public.{table} FROM {ROLES[1]}")
+                db.exec_driver_sql(f"GRANT INSERT,SELECT ON public.{table} TO {ROLES[2]}")
             db.exec_driver_sql(f"REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {ROLES[3]}")
             from app.services.social_enrollment_v2_catalog_roles import challenge_writer_privileges_for_relations
 
