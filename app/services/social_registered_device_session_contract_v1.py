@@ -110,7 +110,10 @@ def parse_challenge_v1(source):
             or not _origin(value["audience"])
             or not _matches(_IDENTIFIER, value["clientId"])
             or not _matches(_COMMITMENT, value["x25519PublicKeyCommitment"])
-            or not all(_integer(value[field]) for field in ("issuedAt", "expiresAt", "associationVersion", "authorityEpoch", "bindingVersion"))
+            or not all(
+                _integer(value[field])
+                for field in ("issuedAt", "expiresAt", "associationVersion", "authorityEpoch", "bindingVersion")
+            )
             or not 1 <= value["bindingVersion"] <= 1024
             or not 1 <= value["associationVersion"] <= value["authorityEpoch"]
             or not 0 < value["expiresAt"] - value["issuedAt"] <= MAX_LIFETIME_MS

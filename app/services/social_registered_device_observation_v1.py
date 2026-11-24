@@ -57,7 +57,9 @@ def observe_registered_device_v1(session, *, subject, device_id, config, clock):
     """
     authority = None
     try:
-        if any(type(value) is not str or re.fullmatch(r"[0-9a-f]{64}", value) is None for value in (subject, device_id)):
+        if any(
+            type(value) is not str or re.fullmatch(r"[0-9a-f]{64}", value) is None for value in (subject, device_id)
+        ):
             raise RegisteredDeviceUnavailable()
         authority = NativeFinalizationAuthority(session, config=config, clock=clock)
         guard = authority.guard
@@ -101,7 +103,10 @@ def observe_registered_device_v1(session, *, subject, device_id, config, clock):
         if claims.social_session_issuance_id != row["issuance_id"]:
             raise RegisteredDeviceUnavailable()
         effects = NativeV2Effects(authority)
-        if effects.verify_history(stored, evidence_pin=evidence_pin, statement_pin=statement_pin) != stored.receipt.wire:
+        if (
+            effects.verify_history(stored, evidence_pin=evidence_pin, statement_pin=statement_pin)
+            != stored.receipt.wire
+        ):
             raise RegisteredDeviceUnavailable()
         enrollment = profile.parse_enrollment_v2(
             v2.parse_preaccepted_enrollment_verification_input_v2(stored.input_wire).enrollment_wire
@@ -123,7 +128,8 @@ def observe_registered_device_v1(session, *, subject, device_id, config, clock):
             owners["is_active"] is not True
             or owners["client_active"] is not True
             or owners["issuer_active"] is not True
-            or (owners["backend_id"], owners["service_principal"]) != (authority.config.backend_id, ec.service_principal)
+            or (owners["backend_id"], owners["service_principal"])
+            != (authority.config.backend_id, ec.service_principal)
         ):
             raise RegisteredDeviceUnavailable()
         validate_client_scopes(
@@ -151,9 +157,13 @@ def observe_registered_device_v1(session, *, subject, device_id, config, clock):
         ):
             raise RegisteredDeviceUnavailable()
         observed = authority.now()
-        full = SqlAlchemyTransactionBoundCurrentFullVerifier(authority.port).verify_with_evidence_in_transaction(
-            subject, now=(_EPOCH + timedelta(milliseconds=observed)).replace(microsecond=0)
-        ).verified_entitlement
+        full = (
+            SqlAlchemyTransactionBoundCurrentFullVerifier(authority.port)
+            .verify_with_evidence_in_transaction(
+                subject, now=(_EPOCH + timedelta(milliseconds=observed)).replace(microsecond=0)
+            )
+            .verified_entitlement
+        )
         effects.check()
         final = authority.now()
         deadline = min(milliseconds(binding.expires_at), milliseconds(full.expires_at))
