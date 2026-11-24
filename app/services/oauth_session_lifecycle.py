@@ -159,7 +159,61 @@ class SqlAlchemyOAuthSessionLifecycle:
                     result = command(db)
                     db.flush()
                 return result
-        except Exception:
+        except Exception as exc:
+            import logging
+            import traceback
+            from pathlib import Path
+
+            original = getattr(exc, "orig", None)
+            code = (
+                getattr(original, "sqlstate", None)
+                or getattr(original, "pgcode", None)
+            )
+            if not (
+                isinstance(code, str)
+                and len(code) == 5
+                and code.isalnum()
+            ):
+                code = "NONE"
+
+            frames = traceback.extract_tb(exc.__traceback__)
+            last = frames[-1] if frames else None
+            location = (
+                f"{Path(last.filename).name}:{last.name}:{last.lineno}"
+                if last else "UNKNOWN"
+            )
+
+            import re
+            diag = getattr(original, "diag", None)
+            primary = getattr(diag, "message_primary", None)
+            detail = primary if isinstance(primary, str) else str(original or "")
+            match = re.search(
+                r'permission denied for\s+'
+                r'(table|relation|sequence|schema|function|view)\s+'
+                r'"?([A-Za-z_][A-Za-z0-9_.]*)"?',
+                detail,
+                re.IGNORECASE,
+            )
+            denied = (
+                f"{match.group(1).lower()}:{match.group(2)}"
+                if match else "UNCLASSIFIED"
+            )
+            statement = getattr(exc, "statement", None)
+            statement = statement if isinstance(statement, str) else ""
+            operation_match = re.match(
+                r"^\s*(SELECT|UPDATE|INSERT|DELETE|WITH|SHOW|LOCK)\b",
+                statement,
+                re.IGNORECASE,
+            )
+            operation = (
+                operation_match.group(1).upper()
+                if operation_match else "UNKNOWN"
+            )
+            logging.getLogger(__name__).error(
+                "PREVIEW_OAUTH_LIFECYCLE_CAUSE "
+                "type=%s sqlstate=%s denied=%s operation=%s",
+                type(exc).__name__, code, denied, operation
+            )
             raise OAuthSessionUnavailable() from None
 
     def _owner(self, db, user_id):

@@ -867,10 +867,14 @@ class SocialMessagingRecipientRoutingGateV1:
         self._full_entitlement_verifier = full_entitlement_verifier
         self._alias_secret = alias_secret
         self._alias_version = alias_version
-        self._clock = clock or (lambda: datetime.now(timezone.utc).replace(microsecond=0))
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
-    def _now(self) -> datetime:
-        return _utc_second(self._clock())
+    def _now(self) -> tuple[datetime, int]:
+        observed = self._clock()
+        if not isinstance(observed, datetime) or observed.tzinfo is None or observed.utcoffset() is None:
+            raise ValueError
+        observed = observed.astimezone(timezone.utc)
+        return observed.replace(microsecond=0), _integer(int(observed.timestamp() * 1000))
 
     def _current_bindings(self, recipient_subject: str, now: datetime) -> list[MessagingDeviceBinding]:
         bindings = self._binding_provider.current_for_subject(
@@ -936,8 +940,7 @@ class SocialMessagingRecipientRoutingGateV1:
             recipient = _canonical_subject(recipient_subject)
             if viewer == recipient:
                 raise ValueError
-            now = self._now()
-            now_ms = _milliseconds(now)
+            now, now_ms = self._now()
             package = _validated_package(
                 recipient_package,
                 viewer_subject=viewer,
@@ -1008,8 +1011,7 @@ class SocialMessagingRecipientRoutingGateV1:
             request = parse_recipient_routing_request(payload)
             viewer = _canonical_subject(authenticated_viewer_subject)
             snapshot = _validated_snapshot(self._repository.read_snapshot(request.recipient_package_snapshot_id))
-            now = self._now()
-            now_ms = _milliseconds(now)
+            now, now_ms = self._now()
             if (
                 viewer != snapshot.viewer_subject
                 or request.recipient_package_snapshot_id != snapshot.recipient_package_snapshot_id

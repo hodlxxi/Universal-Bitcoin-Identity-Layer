@@ -157,7 +157,8 @@ def native_target():
 @pytest.fixture
 def native_graph(native_target, monkeypatch, request):
     ddl, runtime = native_target
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    options = request.param if isinstance(getattr(request,"param",None),dict) else {}
+    key = options.get("oauth_signing_key") or rsa.generate_private_key(public_exponent=65537, key_size=2048)
     monkeypatch.setattr(tokens, "get_signing_key", lambda _directory: ("synthetic-oauth", key))
     monkeypatch.setattr(
         oauth_bearer_validation, "get_key_by_kid", lambda _directory, kid: key if kid == "synthetic-oauth" else None
@@ -165,7 +166,7 @@ def native_graph(native_target, monkeypatch, request):
     issuer = "https://synthetic-ubid.example"
     client = "synthetic-" + secrets.token_hex(8)
     user_id = str(uuid.uuid4())
-    signer = PrivateKey()
+    signer = options.get("identity_signer") or PrivateKey()
     subject = signer.public_key_xonly.format().hex()
     token_id = secrets.token_hex(16)
     browser_id = secrets.token_hex(32)
@@ -290,7 +291,7 @@ def native_graph(native_target, monkeypatch, request):
     content = json.loads(json.loads(vector["authorizationWire"])["content"])
     claim = content["authorization"]
     request, device, operation = [secrets.token_hex(32) for _ in range(3)]
-    public = x25519.X25519PrivateKey.generate().public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+    public = options.get("x25519_public_key") or x25519.X25519PrivateKey.generate().public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
     end = start + timedelta(seconds=300)
 
     def stamp(date):
@@ -320,6 +321,7 @@ def native_graph(native_target, monkeypatch, request):
     semantic = canonical(content)
     secret, verifier, delivery = [secrets.token_hex(32) for _ in range(3)]
     pre = json.loads(vector["preEnrollmentWire"])
+    pre["ed25519PublicKey"] = options.get("ed25519_public_key",pre["ed25519PublicKey"])
     pre.update(
         subject=subject,
         requestId=request,

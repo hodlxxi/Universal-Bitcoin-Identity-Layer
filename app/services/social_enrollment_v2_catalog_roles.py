@@ -119,6 +119,28 @@ CHALLENGE_WRITER_PRIVILEGES = MappingProxyType(
     }
 )
 
+MESSAGE_DELIVERY_WRITER_PRIVILEGES = MappingProxyType(
+    {
+        "social_device_request_receipts_v1": ("INSERT", "SELECT"),
+        "social_messaging_recipient_handle_owners": ("INSERT", "SELECT", "UPDATE"),
+        "social_messaging_recipient_routing_snapshots": ("INSERT", "SELECT", "UPDATE"),
+        "social_messaging_recipient_routing_snapshot_routes": ("INSERT", "SELECT"),
+        "social_messaging_recipient_routing_decisions": ("INSERT", "SELECT", "UPDATE"),
+        "social_messaging_recipient_routing_decision_routes": ("INSERT", "SELECT"),
+    }
+)
+
+
+def challenge_writer_privileges_for_relations(names):
+    names = frozenset(names)
+    selected = dict(CHALLENGE_WRITER_PRIVILEGES)
+    if "social_device_request_receipts_v1" in names:
+        if not MESSAGE_DELIVERY_WRITER_PRIVILEGES.keys() <= names:
+            _deny()
+        selected.update(MESSAGE_DELIVERY_WRITER_PRIVILEGES)
+    return MappingProxyType(selected)
+
+
 _CANONICAL_AUTHORITY_READS = {
     "canonical_genesis_records": "r",
     "canonical_effective_authority_edges_v1": "v",
@@ -258,6 +280,7 @@ def attest_catalog_role(connection, pin, *, sql):
     tables = connection.execute(sql(TABLES_SQL), values).all()
     if any(len(item) != 7 for item in tables):
         _deny()
+    selected_privileges = challenge_writer_privileges_for_relations(item[0] for item in tables)
     canonical_owner = connection.execute(sql(CANONICAL_OWNER_SQL), {}).scalar_one()
     if canonical_owner is not None and (type(canonical_owner) is not int or canonical_owner <= 0):
         _deny()
@@ -291,12 +314,12 @@ def attest_catalog_role(connection, pin, *, sql):
                 kind == _CANONICAL_AUTHORITY_READS[name] and owner == canonical_owner and privileges == ("SELECT",)
             )
         else:
-            allowed = kind == "r" and CHALLENGE_WRITER_PRIVILEGES.get(name) == privileges
+            allowed = kind == "r" and selected_privileges.get(name) == privileges
         if name in seen or not allowed:
             _deny()
         seen.add(name)
         identity.append((name, oid, owner, privileges))
-    expected = CHALLENGE_WRITER_PRIVILEGES.keys() | (_CANONICAL_AUTHORITY_READS.keys() if canonical else set())
+    expected = selected_privileges.keys() | (_CANONICAL_AUTHORITY_READS.keys() if canonical else set())
     if seen != expected:
         _deny()
     return tuple(identity)

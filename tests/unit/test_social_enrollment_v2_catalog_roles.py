@@ -242,6 +242,27 @@ class CatalogRoleContractTests(unittest.TestCase):
         with self.assertRaises(roles.CatalogRoleDenied):
             roles.attest_catalog_role(c, pin(), sql=lambda x: x)
 
+    def test_message_delivery_profile_is_additive_and_exact(self):
+        c = CatalogConnection()
+        c.table_rows.extend(
+            [name, "r", oid, 10, list(privileges), False, False]
+            for oid, (name, privileges) in enumerate(
+                roles.MESSAGE_DELIVERY_WRITER_PRIVILEGES.items(), 50000
+            )
+        )
+        self.assertEqual(
+            len(roles.attest_catalog_role(c, pin(), sql=lambda x: x)), 46
+        )
+        c.table_rows[-1][4].append("DELETE")
+        with self.assertRaises(roles.CatalogRoleDenied):
+            roles.attest_catalog_role(c, pin(), sql=lambda x: x)
+
+    def test_partial_message_delivery_schema_denied(self):
+        with self.assertRaises(roles.CatalogRoleDenied):
+            roles.challenge_writer_privileges_for_relations(
+                ["social_device_request_receipts_v1"]
+            )
+
     def test_peer_acl_cannot_register_current_role_owner_or_unknown_table(self):
         expected = frozenset((20001, p) for p in ("SELECT", "INSERT", "UPDATE"))
         self.assertEqual(
