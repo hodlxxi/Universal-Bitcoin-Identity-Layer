@@ -75,11 +75,25 @@ def check_probe(root, name, origin):
     if not cert.is_file():
         return "FAIL"
     cmd = [
-        "curl", "--silent", "--show-error", "--fail", "--max-redirs", "0",
-        "--max-time", "5", "--noproxy", "*",
-        "--cacert", str(cert),
-        "--unix-socket", "/run/hxxi-paired-browser/" + name + ".sock",
-        "--output", "/dev/null", "--write-out", "%{http_code}", origin,
+        "curl",
+        "--silent",
+        "--show-error",
+        "--fail",
+        "--max-redirs",
+        "0",
+        "--max-time",
+        "5",
+        "--noproxy",
+        "*",
+        "--cacert",
+        str(cert),
+        "--unix-socket",
+        "/run/hxxi-paired-browser/" + name + ".sock",
+        "--output",
+        "/dev/null",
+        "--write-out",
+        "%{http_code}",
+        origin,
     ]
     # Only the status code is surfaced, never a body, URL parameters, or token.
     status, output = run(cmd)
@@ -98,14 +112,36 @@ def check_database():
         "'/var/lib/postgresql/16/hxxi-paired-827e753/data'; "
         "ROLLBACK;"
     )
-    code, output = run([
-        "nsenter", "-t", pid, "-n", "--", "runuser", "-u", "postgres", "--",
-        "/usr/lib/postgresql/16/bin/psql", "-X", "-w", "-A", "-t",
-        "-v", "ON_ERROR_STOP=1",
-        "-h", "/var/lib/postgresql/16/hxxi-paired-827e753",
-        "-p", "55492", "-U", "postgres", "-d", "hodlxxi_browser_preview",
-        "-c", sql,
-    ])
+    code, output = run(
+        [
+            "nsenter",
+            "-t",
+            pid,
+            "-n",
+            "--",
+            "runuser",
+            "-u",
+            "postgres",
+            "--",
+            "/usr/lib/postgresql/16/bin/psql",
+            "-X",
+            "-w",
+            "-A",
+            "-t",
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-h",
+            "/var/lib/postgresql/16/hxxi-paired-827e753",
+            "-p",
+            "55492",
+            "-U",
+            "postgres",
+            "-d",
+            "hodlxxi_browser_preview",
+            "-c",
+            sql,
+        ]
+    )
     return "PASS" if code == 0 and output.splitlines().count("t") == 1 else "FAIL"
 
 
@@ -126,14 +162,20 @@ def main(argv=None):
         ("ISOLATED_PG16_IDENTITY", check_database()),
     ]
     results.extend(("UNIT_" + unit.replace(".", "_").replace("-", "_").upper(), check_unit(unit)) for unit in UNITS)
-    results.extend([
-        ("UBID_RUNNING_CHECKOUT", check_launch_path(
-            root, "hxxi-paired-3c2b954-ubid-r6.service", "config-ubid/launch-r6.json"
-        )),
-        ("SOCIAL_RUNNING_CHECKOUT", check_launch_path(
-            root, "hxxi-paired-browser-social-r2.service", "config-social/launch-browser-r2.json"
-        )),
-    ])
+    results.extend(
+        [
+            (
+                "UBID_RUNNING_CHECKOUT",
+                check_launch_path(root, "hxxi-paired-3c2b954-ubid-r6.service", "config-ubid/launch-r6.json"),
+            ),
+            (
+                "SOCIAL_RUNNING_CHECKOUT",
+                check_launch_path(
+                    root, "hxxi-paired-browser-social-r2.service", "config-social/launch-browser-r2.json"
+                ),
+            ),
+        ]
+    )
     results.extend((name, check_probe(root, socket, url)) for name, socket, url in PROBES)
     for name, result in results:
         print(name + "=" + result)

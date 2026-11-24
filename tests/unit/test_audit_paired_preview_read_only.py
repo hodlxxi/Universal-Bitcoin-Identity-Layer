@@ -40,9 +40,9 @@ def test_probe_never_contacts_external_domain(tmp_path):
         return 0, "200"
 
     with patch.object(audit, "run", side_effect=runner):
-        assert audit.check_probe(
-            root, "social", "https://social-preview.hodlxxi.test:9544/auth/messages/config"
-        ) == "PASS"
+        assert (
+            audit.check_probe(root, "social", "https://social-preview.hodlxxi.test:9544/auth/messages/config") == "PASS"
+        )
     assert "--unix-socket" in seen[0]
     assert "--cacert" in seen[0]
     assert "--output" in seen[0]
@@ -62,7 +62,9 @@ def test_running_service_must_refer_to_same_candidate_wrapper_and_config(tmp_pat
     command = (
         "ExecStart={ path=/usr/bin/python3 ; argv[]=/usr/bin/python3 -I -B "
         + str(tmp_path / "launch.py")
-        + " " + str(tmp_path / "config-social/launch-browser-r2.json") + " }"
+        + " "
+        + str(tmp_path / "config-social/launch-browser-r2.json")
+        + " }"
     )
     with patch.object(audit, "run", return_value=(0, command)):
         assert audit.check_launch_path(tmp_path, unit, "config-social/launch-browser-r2.json") == "PASS"
