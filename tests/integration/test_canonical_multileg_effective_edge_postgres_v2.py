@@ -18,17 +18,21 @@ from app.services.current_entitlement_evidence import CONTRACT_VERSION
 from app.services.canonical_multi_outpoint_admission_proposal_v2 import (
     canonical_multi_outpoint_admission_proposal_v2_sha256,
 )
-from tests.integration.test_canonical_admission_candidate_postgres_v2 import _seed_full
 from tests.integration.test_canonical_global_outpoint_claims_postgres_v2 import (
     shared_pg as global_shared_pg,
 )
+from tests.integration.test_canonical_multileg_candidate_expiration_postgres_v2 import (
+    _full_at,
+    _issue_at,
+    _propose,
+    _reserve_at,
+)
 from tests.integration.test_canonical_multileg_candidate_postgres_v2 import (
-    _issue,
-    _reserve,
     postgres_engine as multileg_postgres_engine,  # noqa: F401 - Pytest fixture imported for dependency resolution
 )
 from tests.unit.test_canonical_admission_proposal_v2 import ALICE, BOB, CHARLIE
-from tests.unit.test_canonical_multi_outpoint_admission_proposal_v2 import _new
+from tests.unit.test_canonical_multi_outpoint_admission_proposal_v2 import ROOT_ID
+from tests.unit.test_canonical_multi_outpoint_mirror_v2 import _bundle
 
 EFFECTIVE = "public.canonical_multileg_effective_edges_v2"
 LIVE = "public.canonical_multileg_live_outpoint_claims_v2"
@@ -77,10 +81,12 @@ def db(effective_engine):
 
 
 def _candidate(engine):
-    proposal = _new()
-    _seed_full(engine, ALICE)
-    challenge = _issue(engine, proposal)
-    _reserve(engine, proposal, challenge)
+    # Effective promotion checks candidate age against PostgreSQL's wall clock.
+    at = _stamp()
+    proposal, observation = _propose(_bundle(), at, ROOT_ID)
+    _full_at(engine, ALICE, at, "00000000-0000-4000-8000-0000000000a1")
+    challenge = _issue_at(engine, proposal, ALICE, at)
+    _reserve_at(engine, proposal, observation, challenge, at, ALICE, BOB)
     return proposal
 
 
