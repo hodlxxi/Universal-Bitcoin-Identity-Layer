@@ -61,6 +61,38 @@ def message_pg16():
             db.exec_driver_sql("ALTER TABLE oauth_tokens DROP CONSTRAINT uq_oauth_token_generation_owner")
             db.exec_driver_sql("ALTER TABLE sessions DROP CONSTRAINT uq_session_generation_owner")
             for name in MIGRATIONS:
+                if name == "2026-10-09_social_device_challenge_revision_v1.sql":
+                    # Report only schema metadata from the marked disposable target.
+                    # Keep the migration's exact fail-closed checks untouched.
+                    for label, query in (
+                        (
+                            "attributes",
+                            "SELECT attnum,attname,atttypid,atttypmod,attnotnull,attcollation,attstorage,"
+                            "attisdropped,atthasdef,attgenerated,attidentity,atthasmissing,attmissingval,"
+                            "attislocal,attinhcount,attoptions,attfdwoptions FROM pg_catalog.pg_attribute "
+                            "WHERE attrelid='public.social_device_admission_challenges'::regclass "
+                            "AND attnum>0 ORDER BY attnum",
+                        ),
+                        (
+                            "constraints",
+                            "SELECT conname,pg_catalog.pg_get_constraintdef(oid,false),"
+                            "pg_catalog.to_jsonb(pg_constraint) FROM pg_catalog.pg_constraint "
+                            "WHERE conrelid='public.social_device_admission_challenges'::regclass ORDER BY conname",
+                        ),
+                        (
+                            "indexes",
+                            "SELECT pg_catalog.to_jsonb(i),pg_catalog.pg_get_indexdef(i.indexrelid) "
+                            "FROM pg_catalog.pg_index i "
+                            "WHERE i.indrelid='public.social_device_admission_challenges'::regclass",
+                        ),
+                        (
+                            "triggers",
+                            "SELECT tgname,tgtype,tgisinternal,tgdeferrable,tginitdeferred "
+                            "FROM pg_catalog.pg_trigger "
+                            "WHERE tgrelid='public.social_device_admission_challenges'::regclass ORDER BY tgname",
+                        ),
+                    ):
+                        print("DISPOSABLE_REVISION_CATALOG", label, db.exec_driver_sql(query).all(), flush=True)
                 db.exec_driver_sql((Path('migrations')/name).read_text(),execution_options={'no_parameters':True})
         with admin.begin() as db:
             for role in ROLES[1:]:
