@@ -21,7 +21,7 @@ from app.services import social_messaging_device_ed25519_association_lifecycle a
 from app.services import social_messaging_mobile_pre_enrollment_v2 as v2
 from app.services import social_preaccepted_enrollment_v2_atomic_acceptance_storage as durable
 from app.services.social_device_challenge_revision_storage import _native_catalog_object
-from app.services.postgres_catalog_definitions import restored_catalog_definitions
+from app.services.postgres_catalog_definitions import restored_catalog_definitions, valid_catalog_attribute_options
 from app.services.social_enrollment_v2_finalization_contract import _deny, _sanitized
 
 RUNTIME_ENABLED = False
@@ -2911,7 +2911,7 @@ def _attest_shared_attributes(
             attinhcount=0,
             attcollation=100 if typ in (25, 1043) else 0,
             attacl=column_acls.get(name) if column_acls else None,
-            attoptions=None,
+            attoptions=a["attoptions"],
             attfdwoptions=None,
             attmissingval=None,
         )
@@ -2927,6 +2927,7 @@ def _attest_shared_attributes(
         wanted["attnotnull"] = a["attnotnull"]
         if (
             not matching
+            or not valid_catalog_attribute_options(a["attoptions"])
             or a != wanted
             or any(type(a[k]) is not int for k in ("attstattarget", "attlen", "attndims", "attcacheoff"))
         ):

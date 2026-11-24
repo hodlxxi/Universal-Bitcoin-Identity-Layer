@@ -124,7 +124,113 @@ END $legacy$
           OR a.attcollation IS DISTINCT FROM e.coll::pg_catalog.oid OR a.attstorage::text IS DISTINCT FROM e.storage
           OR a.attisdropped OR a.atthasdef OR a.attgenerated<>'' OR a.attidentity<>''
           OR a.atthasmissing OR a.attmissingval IS NOT NULL OR NOT a.attislocal OR a.attinhcount<>0
-          OR a.attoptions IS NOT NULL OR a.attfdwoptions IS NOT NULL
+          -- PG security updates add a server-owned uint32 column version.
+          -- No user-defined or additional attribute options are permitted.
+          OR CASE WHEN a.attoptions IS NULL THEN false
+                  WHEN pg_catalog.array_ndims(a.attoptions)=1
+                    AND pg_catalog.array_lower(a.attoptions,1)=1
+                    AND pg_catalog.cardinality(a.attoptions)=1
+                    AND a.attoptions[1] ~ '^pg_attver=(0|[1-9][0-9]{0,9})
+    ) OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_constraint k WHERE k.conrelid=parent_oid) <> 8
+      OR EXISTS (
+        SELECT 1 FROM (VALUES
+          ('trg_social_enrollment_challenge_atomic','t','TRIGGER DEFERRABLE INITIALLY DEFERRED',NULL::pg_catalog.int2[]),
+          ('social_device_admission_challenges_pkey','p','PRIMARY KEY (challenge_id)',ARRAY[1]::pg_catalog.int2[]),
+          ('ck_social_challenge_id','c','CHECK (((challenge_id)::text ~ ''^[0-9a-f]{64}$''::text))',ARRAY[1]::pg_catalog.int2[]),
+          ('ck_social_challenge_state','c','CHECK (((state)::text = ANY ((ARRAY[''issued''::character varying, ''consumed''::character varying, ''expired''::character varying, ''invalidated''::character varying, ''cancelled''::character varying])::text[])))',ARRAY[5]::pg_catalog.int2[]),
+          ('ck_social_challenge_context_wire','c','CHECK ((((octet_length(context_wire) >= 1) AND (octet_length(context_wire) <= 4096)) AND (context_wire !~ ''[^ -~]''::text)))',ARRAY[2]::pg_catalog.int2[]),
+          ('ck_social_challenge_wire','c','CHECK ((((octet_length(challenge_wire) >= 1) AND (octet_length(challenge_wire) <= 4096)) AND (challenge_wire !~ ''[^ -~]''::text)))',ARRAY[3]::pg_catalog.int2[]),
+          ('ck_social_challenge_routing_wire','c','CHECK (((routing_request_wire IS NULL) OR (((octet_length(routing_request_wire) >= 1) AND (octet_length(routing_request_wire) <= 2048)) AND (routing_request_wire !~ ''[^ -~]''::text))))',ARRAY[4]::pg_catalog.int2[]),
+          ('ck_social_challenge_wire_id','c','CHECK ((((((context_wire)::json ->> ''challengeId''::text) = (challenge_id)::text) AND (COALESCE(((challenge_wire)::json ->> ''challengeId''::text), ((challenge_wire)::json ->> ''enrollmentChallengeId''::text)) = (challenge_id)::text)) IS TRUE))',ARRAY[2,1,3]::pg_catalog.int2[])
+        ) e(name,kind,definition,keys)
+        LEFT JOIN pg_catalog.pg_constraint k ON k.conrelid=parent_oid AND k.conname=e.name
+        WHERE k.oid IS NULL OR k.connamespace<>parent_namespace OR k.contype::text<>e.kind
+          OR pg_catalog.pg_get_constraintdef(k.oid,false)<>e.definition
+          OR k.conkey IS DISTINCT FROM e.keys OR k.contypid<>0
+          OR k.conindid<>(CASE WHEN e.kind='p' THEN parent_index ELSE 0 END)
+          OR k.conparentid<>0 OR k.confrelid<>0 OR k.confupdtype<>' '
+          OR k.confdeltype<>' ' OR k.confmatchtype<>' '
+          OR NOT k.convalidated OR k.condeferrable<>(e.kind='t') OR k.condeferred<>(e.kind='t')
+          OR NOT k.conislocal OR k.coninhcount<>0 OR k.connoinherit<>(e.kind IN ('p','t'))
+          OR k.confkey IS NOT NULL OR k.conpfeqop IS NOT NULL OR k.conppeqop IS NOT NULL
+          OR k.conffeqop IS NOT NULL OR k.conexclop IS NOT NULL
+          OR (pg_catalog.to_jsonb(k)->>'confdelsetcols') IS NOT NULL
+          OR (e.kind='t' AND (
+              (SELECT pg_catalog.count(*) FROM pg_catalog.pg_trigger t WHERE t.tgconstraint=k.oid)<>1
+              OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger t
+                  WHERE t.tgconstraint=k.oid AND t.tgrelid=parent_oid
+                    AND t.tgname='trg_social_enrollment_challenge_atomic'
+                    AND t.tgtype=17 AND NOT t.tgisinternal
+                    AND t.tgdeferrable AND t.tginitdeferred)))
+          OR (e.kind IN ('p','t') AND k.conbin IS NOT NULL) OR (e.kind='c' AND k.conbin IS NULL)
+    ) OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_index i WHERE i.indrelid=parent_oid) <> 1
+      OR NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_index i JOIN pg_catalog.pg_class c ON c.oid=i.indexrelid
+        WHERE i.indexrelid=parent_index AND i.indrelid=parent_oid
+          AND c.relnamespace=parent_namespace AND c.relowner=parent_owner
+          AND c.relname='social_device_admission_challenges_pkey' AND c.relkind='i' AND c.relam=403
+          AND i.indnatts=1 AND i.indnkeyatts=1 AND i.indisunique AND i.indisprimary
+          AND NOT i.indisexclusion AND i.indimmediate AND NOT i.indisclustered
+          AND i.indisvalid AND NOT i.indcheckxmin AND i.indisready AND i.indislive
+          AND NOT i.indisreplident AND i.indkey='1'::pg_catalog.int2vector
+          AND i.indcollation='100'::pg_catalog.oidvector AND i.indclass='3126'::pg_catalog.oidvector
+          AND i.indoption='0'::pg_catalog.int2vector AND i.indexprs IS NULL AND i.indpred IS NULL
+          AND COALESCE((pg_catalog.to_jsonb(i)->>'indnullsnotdistinct')::boolean,false)=false
+    ) THEN
+        RAISE EXCEPTION 'social device challenge revision unavailable';
+    END IF;
+END $installation$;
+
+CREATE TABLE public.social_device_admission_challenge_revisions (
+    challenge_id varchar(64) PRIMARY KEY,
+    revision integer NOT NULL,
+    CONSTRAINT ck_social_challenge_revision_id CHECK (challenge_id ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT ck_social_challenge_revision_generation CHECK (revision = 1),
+    CONSTRAINT fk_social_challenge_revision_parent FOREIGN KEY (challenge_id)
+        REFERENCES public.social_device_admission_challenges (challenge_id)
+        ON UPDATE RESTRICT ON DELETE RESTRICT
+);
+REVOKE ALL ON TABLE public.social_device_admission_challenge_revisions FROM PUBLIC;
+
+CREATE FUNCTION public.issue_social_device_challenge_revision_v1()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog AS $producer$
+BEGIN
+    IF TG_OP <> 'INSERT' OR TG_LEVEL <> 'ROW' OR
+       TG_TABLE_SCHEMA <> 'public' OR TG_TABLE_NAME <> 'social_device_admission_challenges' OR
+       TG_RELID <> 'public.social_device_admission_challenges'::pg_catalog.regclass OR
+       NEW.state <> 'issued' THEN
+        RAISE EXCEPTION 'social device challenge revision unavailable';
+    END IF;
+    INSERT INTO public.social_device_admission_challenge_revisions (challenge_id, revision)
+        VALUES (NEW.challenge_id, 1);
+    RETURN NEW;
+END
+$producer$;
+REVOKE ALL ON FUNCTION public.issue_social_device_challenge_revision_v1() FROM PUBLIC;
+CREATE FUNCTION public.deny_social_device_challenge_revision_mutation_v1()
+RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog AS $immutable$
+BEGIN
+    RAISE EXCEPTION 'social device challenge revision unavailable';
+END
+$immutable$;
+REVOKE ALL ON FUNCTION public.deny_social_device_challenge_revision_mutation_v1() FROM PUBLIC;
+
+CREATE TRIGGER trg_social_challenge_revision_issue
+AFTER INSERT ON public.social_device_admission_challenges
+FOR EACH ROW EXECUTE FUNCTION public.issue_social_device_challenge_revision_v1();
+CREATE TRIGGER trg_social_challenge_revision_immutable
+BEFORE UPDATE OR DELETE ON public.social_device_admission_challenge_revisions
+FOR EACH ROW EXECUTE FUNCTION public.deny_social_device_challenge_revision_mutation_v1();
+CREATE TRIGGER trg_social_challenge_revision_no_truncate
+BEFORE TRUNCATE ON public.social_device_admission_challenge_revisions
+FOR EACH STATEMENT EXECUTE FUNCTION public.deny_social_device_challenge_revision_mutation_v1();
+-- Runtime cannot manually/late/duplicate INSERT: never grant INSERT to it.
+-- Producer failure aborts the parent INSERT in the same transaction.
+
+                  THEN pg_catalog.substring(a.attoptions[1],11)::numeric > 4294967295
+                  ELSE true END
+          OR a.attfdwoptions IS NOT NULL
     ) OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_constraint k WHERE k.conrelid=parent_oid) <> 8
       OR EXISTS (
         SELECT 1 FROM (VALUES
