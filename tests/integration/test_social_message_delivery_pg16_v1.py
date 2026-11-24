@@ -11,7 +11,9 @@ from tests.integration.test_social_session_issuance_v2_postgresql import native_
 
 
 def test_genuine_enrollment_proof_finalizes_before_message_authority(message_pg16, monkeypatch):
-    import json, subprocess, time
+    import json
+    import subprocess
+    import time
     from pathlib import Path
     from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
     from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, PrivateFormat, NoEncryption
