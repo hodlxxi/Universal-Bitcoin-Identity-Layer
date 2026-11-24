@@ -445,7 +445,30 @@ def test_genuine_enrollment_proof_finalizes_before_message_authority(message_pg1
                 bearer=None,
             )
     with Session(finalizer) as db, db.begin():
-        assert attest_registered_device_catalog_v1(db.connection())
+        connection = db.connection()
+        expected = attest_registered_device_catalog_v1(connection)
+
+        class ReverseConstraintOrder:
+            def execute(self, statement, *args, **kwargs):
+                result = connection.execute(statement, *args, **kwargs)
+                if "pg_get_constraintdef(oid,false),convalidated" in str(statement):
+                    return SimpleNamespace(all=lambda: list(reversed(result.all())))
+                return result
+
+        # A server locale can reorder equivalent catalog rows. Byte-exact
+        # definitions and flags must still be checked as the same multiset.
+        assert attest_registered_device_catalog_v1(ReverseConstraintOrder()) == expected
+    with Session(owner) as db, db.begin():
+        db.execute(
+            text(
+                "ALTER TABLE public.social_registered_device_sessions_v1 DROP CONSTRAINT social_registered_device_sessions_v1_challenge_id_key"
+            )
+        )
+    with pytest.raises(login.RegisteredDeviceSessionContractError):
+        with Session(finalizer) as db, db.begin():
+            attest_registered_device_catalog_v1(db.connection())
+    with Session(owner) as db, db.begin():
+        db.execute(text("ALTER TABLE public.social_registered_device_sessions_v1 ADD UNIQUE(challenge_id)"))
     with Session(owner) as db, db.begin():
         db.execute(text("DROP TRIGGER registered_session_immutable_v1 ON public.social_registered_device_sessions_v1"))
     with pytest.raises(login.RegisteredDeviceSessionContractError):

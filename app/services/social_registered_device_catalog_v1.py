@@ -107,7 +107,10 @@ def attest_registered_device_catalog_v1(connection):
             ),
             dict(oid=oid),
         ).all()
-        if tuple(tuple(c) for c in constraints) != tuple((c, True, False, False) for c in _CHECKS[suffix]):
+        # Database locale may collate punctuation differently from C. Close
+        # the exact multiset, including duplicates and all validation flags,
+        # using a stable Python order rather than the server's collation.
+        if sorted(tuple(c) for c in constraints) != sorted((c, True, False, False) for c in _CHECKS[suffix]):
             _deny()
         invalid = connection.execute(
             text(
