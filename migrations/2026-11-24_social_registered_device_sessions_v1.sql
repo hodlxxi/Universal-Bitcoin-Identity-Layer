@@ -26,7 +26,7 @@ RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,public AS $$
 BEGIN
     RAISE EXCEPTION 'registered device history is immutable';
 END;
-$;
+$$;
 CREATE TRIGGER registered_challenge_immutable_v1 BEFORE UPDATE OR DELETE ON public.social_registered_device_challenges_v1
     FOR EACH ROW EXECUTE FUNCTION public.deny_social_registered_device_history_mutation_v1();
 CREATE TRIGGER registered_challenge_no_truncate_v1 BEFORE TRUNCATE ON public.social_registered_device_challenges_v1

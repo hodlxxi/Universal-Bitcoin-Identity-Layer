@@ -182,11 +182,15 @@ class RegisteredDeviceSessionOwnerV1:
         contract.parse_proof_v1(proof_wire, challenge_wire=challenge_wire)
         observed = self._observe(challenge["subject"], challenge["deviceId"])
         self._lock_device(observed.subject, observed.device_id)
-        row = self._sql(
-            "SELECT challenge_wire,subject,device_id,issued_at,expires_at "
-            "FROM public.social_registered_device_challenges_v1 WHERE challenge_id=:id",
-            {"id": challenge["challengeId"]},
-        ).mappings().one_or_none()
+        row = (
+            self._sql(
+                "SELECT challenge_wire,subject,device_id,issued_at,expires_at "
+                "FROM public.social_registered_device_challenges_v1 WHERE challenge_id=:id",
+                {"id": challenge["challengeId"]},
+            )
+            .mappings()
+            .one_or_none()
+        )
         now = self._now()
         if (
             row is None
@@ -196,11 +200,16 @@ class RegisteredDeviceSessionOwnerV1:
             or not challenge["issuedAt"] <= now < min(challenge["expiresAt"], observed.current_until_ms)
         ):
             contract._deny()
-        verify_statement(statement_wire, challenge_wire=challenge_wire, proof_wire=proof_wire, config=self.config, now=now)
-        if self._sql(
-            "SELECT 1 FROM public.social_registered_device_sessions_v1 WHERE challenge_id=:id",
-            {"id": challenge["challengeId"]},
-        ).first() is not None:
+        verify_statement(
+            statement_wire, challenge_wire=challenge_wire, proof_wire=proof_wire, config=self.config, now=now
+        )
+        if (
+            self._sql(
+                "SELECT 1 FROM public.social_registered_device_sessions_v1 WHERE challenge_id=:id",
+                {"id": challenge["challengeId"]},
+            ).first()
+            is not None
+        ):
             contract._deny()
         credential, session_id = secrets.token_hex(32), secrets.token_hex(32)
         expires = min(now + SESSION_LIFETIME_MS, observed.current_until_ms)
@@ -208,8 +217,13 @@ class RegisteredDeviceSessionOwnerV1:
             "INSERT INTO public.social_registered_device_sessions_v1 "
             "(session_id,challenge_id,credential_digest,issued_at,expires_at) "
             "VALUES(:session,:challenge,:digest,:issued,:expires)",
-            dict(session=session_id, challenge=challenge["challengeId"], digest=credential_digest(credential),
-                 issued=now, expires=expires),
+            dict(
+                session=session_id,
+                challenge=challenge["challengeId"],
+                digest=credential_digest(credential),
+                issued=now,
+                expires=expires,
+            ),
         )
         self._check()
         if not now <= self._now() < min(expires, challenge["expiresAt"]):
@@ -233,7 +247,10 @@ class RegisteredDeviceSessionOwnerV1:
             contract._deny()
         challenge = contract.parse_challenge_v1(row["challenge_wire"])
         if (challenge["issuer"], challenge["audience"], challenge["clientId"], challenge["contextCommitment"]) != (
-            pins["issuer"], pins["audience"], pins["client_id"], pins["context_commitment"]
+            pins["issuer"],
+            pins["audience"],
+            pins["client_id"],
+            pins["context_commitment"],
         ):
             contract._deny()
         observed = self._observe(challenge["subject"], challenge["deviceId"])
