@@ -101,58 +101,42 @@ def test_guest_and_limited_covenant_wallet_routes_not_200(app_client, level):
     assert client.post("/set_labels_from_zpub", json={"zpub": "zpub", "label": "label"}).status_code != 200
 
 
-def seed_canonical_full(client, monkeypatch):
-    from app.services import automatic_browser_access as access
-    from app.services.action_authorization import IdentityClass
-    from app.services.current_entitlement import EntitlementDecision
-
-    subject = "11" * 32
-    monkeypatch.setattr(
-        access,
-        "resolve_runtime_current_entitlement",
-        lambda key: EntitlementDecision(key, IdentityClass.FULL, key == subject, "fixture"),
-    )
-    with client.session_transaction() as session:
-        session["logged_in_pubkey"] = "02" + subject
-        session["canonical_verified_login_subject_v1"] = subject
-
-
-def test_full_user_reaches_rpc_allowlist(app_client, monkeypatch):
+def test_full_user_reaches_rpc_allowlist(app_client, monkeypatch, canonical_full_session):
     _app, client = app_client
     import app.utils as utils
 
     monkeypatch.setattr(utils, "get_rpc_connection", lambda: FakeRPC())
-    seed_canonical_full(client, monkeypatch)
+    canonical_full_session(client, "02" + "11" * 32)
 
     response = client.get("/rpc/getwalletinfo")
     assert response.status_code == 200
     assert response.get_json() == {"walletname": "test"}
 
 
-def test_full_user_export_descriptors_reaches_handler(app_client, monkeypatch):
+def test_full_user_export_descriptors_reaches_handler(app_client, monkeypatch, canonical_full_session):
     _app, client = app_client
     import app.app as legacy_app
 
     monkeypatch.setattr(legacy_app, "get_rpc_connection", lambda: FakeRPC())
-    seed_canonical_full(client, monkeypatch)
+    canonical_full_session(client, "02" + "11" * 32)
 
     response = client.get("/export_descriptors")
     assert response.status_code == 200
     assert response.get_json() == {"descriptors": ["raw(51)", "wpkh(xpub/0/*)"]}
 
 
-def test_arbitrary_browser_rpc_command_rejected(app_client, monkeypatch):
+def test_arbitrary_browser_rpc_command_rejected(app_client, monkeypatch, canonical_full_session):
     _app, client = app_client
     import app.utils as utils
 
     monkeypatch.setattr(utils, "get_rpc_connection", lambda: FakeRPC())
-    seed_canonical_full(client, monkeypatch)
+    canonical_full_session(client, "02" + "11" * 32)
 
     response = client.get("/rpc/stop")
     assert response.status_code == 400
 
 
-def test_full_user_import_descriptor_reaches_guarded_handler(app_client, monkeypatch):
+def test_full_user_import_descriptor_reaches_guarded_handler(app_client, monkeypatch, canonical_full_session):
     _app, client = app_client
     import app.app as legacy_app
 
@@ -162,14 +146,14 @@ def test_full_user_import_descriptor_reaches_guarded_handler(app_client, monkeyp
         return jsonify({"handler": "import_descriptor"})
 
     monkeypatch.setattr(legacy_app, "import_descriptor", fake_import_descriptor)
-    seed_canonical_full(client, monkeypatch)
+    canonical_full_session(client, "02" + "11" * 32)
 
     response = client.post("/import_descriptor", json={"descriptor": "raw(51)"})
     assert response.status_code == 200
     assert response.get_json() == {"handler": "import_descriptor"}
 
 
-def test_full_user_set_labels_from_zpub_reaches_guarded_handler(app_client, monkeypatch):
+def test_full_user_set_labels_from_zpub_reaches_guarded_handler(app_client, monkeypatch, canonical_full_session):
     _app, client = app_client
     import app.app as legacy_app
 
@@ -179,7 +163,7 @@ def test_full_user_set_labels_from_zpub_reaches_guarded_handler(app_client, monk
         return jsonify({"handler": "set_labels_from_zpub"})
 
     monkeypatch.setattr(legacy_app, "set_labels_from_zpub", fake_set_labels_from_zpub)
-    seed_canonical_full(client, monkeypatch)
+    canonical_full_session(client, "02" + "11" * 32)
 
     response = client.post("/set_labels_from_zpub", json={"zpub": "zpub", "label": "label"})
     assert response.status_code == 200

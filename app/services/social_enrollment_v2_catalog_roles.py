@@ -229,6 +229,9 @@ WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f','S') ORDER BY c.r
 """
 
 
+CANONICAL_OWNER_SQL = "SELECT pg_catalog.to_regrole('hodlxxi_canonical_owner')::oid::bigint"
+
+
 def attest_catalog_role(connection, pin, *, sql):
     pin = freeze_pin(pin)
     if pin is None:
@@ -253,14 +256,16 @@ def attest_catalog_role(connection, pin, *, sql):
         _deny()
     identity = [row[:10] + (tuple(row[10]),) + row[11:]]
     tables = connection.execute(sql(TABLES_SQL), values).all()
-    canonical_owner = connection.execute(sql("SELECT to_regrole('hodlxxi_canonical_owner')::oid::bigint")).scalar_one()
+    if any(len(item) != 7 for item in tables):
+        _deny()
+    canonical_owner = connection.execute(sql(CANONICAL_OWNER_SQL), {}).scalar_one()
+    if canonical_owner is not None and (type(canonical_owner) is not int or canonical_owner <= 0):
+        _deny()
     canonical = canonical_owner is not None and any(
         item[0] == "current_entitlement_evidence" and item[3] == canonical_owner for item in tables
     )
     seen, oids = set(), set()
     for item in tables:
-        if len(item) != 7:
-            _deny()
         name, kind, oid, owner, privileges, columns, grantable = item
         if (
             type(name) is not str

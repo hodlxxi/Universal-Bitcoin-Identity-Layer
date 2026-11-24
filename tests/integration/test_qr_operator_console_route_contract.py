@@ -33,8 +33,8 @@ def _set_session(client, pubkey: str, access_level: str) -> None:
         sess["access_level"] = access_level
 
 
-def test_full_session_can_access_operator_console(client):
-    _set_session(client, FULL_PUBKEY, "full")
+def test_full_session_can_access_operator_console(client, canonical_full_session):
+    canonical_full_session(client, FULL_PUBKEY)
 
     res = client.get("/operator/qr")
 
@@ -51,8 +51,8 @@ def test_full_session_can_access_operator_console(client):
     assert "/agent/verify/&lt;job_id&gt;" in body
 
 
-def test_manual_target_links_only_render_for_active_pointers(client):
-    _set_session(client, FULL_PUBKEY, "full")
+def test_manual_target_links_only_render_for_active_pointers(client, canonical_full_session):
+    canonical_full_session(client, FULL_PUBKEY)
 
     res = client.get("/operator/qr")
 
@@ -71,8 +71,8 @@ def test_manual_target_links_only_render_for_active_pointers(client):
     assert "/agent/discovery" in expired_row
 
 
-def test_full_session_can_access_operator_print_sheet(client):
-    _set_session(client, FULL_PUBKEY, "full")
+def test_full_session_can_access_operator_print_sheet(client, canonical_full_session):
+    canonical_full_session(client, FULL_PUBKEY)
 
     res = client.get("/operator/qr/print")
 
@@ -103,8 +103,8 @@ def test_anonymous_session_receives_safe_denied_from_operator_print_sheet(client
     assert client.get("/operator/qr/print").status_code in {401, 302}
 
 
-def test_operator_print_sheet_does_not_expose_secret_material(client):
-    _set_session(client, FULL_PUBKEY, "full")
+def test_operator_print_sheet_does_not_expose_secret_material(client, canonical_full_session):
+    canonical_full_session(client, FULL_PUBKEY)
 
     res = client.get("/operator/qr/print")
     serialized = res.get_data(as_text=True).lower()
@@ -124,8 +124,8 @@ def test_anonymous_session_receives_safe_denied_from_operator_console(client):
     assert client.get("/operator/qr").status_code in {401, 302}
 
 
-def test_full_session_can_access_operator_pointer_api(client):
-    _set_session(client, FULL_PUBKEY, "full")
+def test_full_session_can_access_operator_pointer_api(client, canonical_full_session):
+    canonical_full_session(client, FULL_PUBKEY)
 
     res = client.get("/api/operator/qr/pointers")
 
@@ -155,8 +155,8 @@ def test_anonymous_session_receives_safe_denied_from_operator_pointer_api(client
     assert client.get("/api/operator/qr/pointers").status_code in {401, 403, 302}
 
 
-def test_operator_pointer_api_does_not_expose_secret_material_or_full_pubkey(client):
-    _set_session(client, FULL_PUBKEY, "full")
+def test_operator_pointer_api_does_not_expose_secret_material_or_full_pubkey(client, canonical_full_session):
+    canonical_full_session(client, FULL_PUBKEY)
 
     res = client.get("/api/operator/qr/pointers")
     serialized = res.get_data(as_text=True).lower()
@@ -185,8 +185,8 @@ def test_existing_public_qr_pointer_behavior_remains_unchanged(client):
     assert "/agent/verify/demo-job-001" in verify.get_data(as_text=True)
 
 
-def test_operator_surfaces_do_not_mutate_jobs_receipts_payments_or_delegations(client):
-    _set_session(client, FULL_PUBKEY, "full")
+def test_operator_surfaces_do_not_mutate_jobs_receipts_payments_or_delegations(client, canonical_full_session):
+    canonical_full_session(client, FULL_PUBKEY)
 
     with client.session_transaction() as sess:
         before = dict(sess)

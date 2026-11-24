@@ -26,7 +26,8 @@ def test_verified_login_uses_canonical_subject_independent_of_writer_flags(app, 
     with app.test_request_context():
         key = prefix + SUBJECT
         session["logged_in_pubkey"] = key
-        assert access.verified_browser_access(key) == "full"
+        session["access_level"] = access.verified_browser_access(key)
+        assert session["access_level"] == "full"
         access.refresh_canonical_browser_access()
         assert session["access_level"] == "full"
         current = IdentityClass.LIMITED

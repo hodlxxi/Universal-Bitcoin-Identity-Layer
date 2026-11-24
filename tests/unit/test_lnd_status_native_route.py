@@ -1,5 +1,7 @@
 import os
 
+import pytest
+
 from app.blueprints.lnd_status import build_lnd_getinfo_command, resolve_lnd_env
 
 
@@ -85,10 +87,11 @@ def test_lnd_status_requires_login(client):
     assert data["error"] == "Not logged in"
 
 
-def test_lnd_status_requires_full_access(client):
+@pytest.mark.parametrize("cached_role", ["limited", "full"])
+def test_lnd_status_requires_full_access(client, cached_role):
     with client.session_transaction() as sess:
-        sess["logged_in_pubkey"] = "pubkey-test"
-        sess["access_level"] = "limited"
+        sess["logged_in_pubkey"] = "02" + "a" * 64
+        sess["access_level"] = cached_role
 
     resp = client.get("/api/lnd/status")
     assert resp.status_code == 403
@@ -97,7 +100,7 @@ def test_lnd_status_requires_full_access(client):
     assert data["error"] == "Full access required"
 
 
-def test_lnd_status_full_user_reaches_missing_env_check(client, monkeypatch):
+def test_lnd_status_full_user_reaches_missing_env_check(client, monkeypatch, canonical_full_session):
     for key in (
         "LND_RPCSERVER",
         "LND_TLSCERTPATH",
@@ -107,9 +110,7 @@ def test_lnd_status_full_user_reaches_missing_env_check(client, monkeypatch):
     ):
         monkeypatch.delenv(key, raising=False)
 
-    with client.session_transaction() as sess:
-        sess["logged_in_pubkey"] = "pubkey-test"
-        sess["access_level"] = "full"
+    canonical_full_session(client)
 
     resp = client.get("/api/lnd/status")
     assert resp.status_code == 503
@@ -120,7 +121,7 @@ def test_lnd_status_full_user_reaches_missing_env_check(client, monkeypatch):
     assert "LND_RPCSERVER" in data["missing"]
 
 
-def test_lnd_status_full_user_returns_legacy_shape(client, monkeypatch):
+def test_lnd_status_full_user_returns_legacy_shape(client, monkeypatch, canonical_full_session):
     monkeypatch.setenv("LND_RPCSERVER", "127.0.0.1:10009")
     monkeypatch.setenv("LND_TLSCERTPATH", "/tls.cert")
     monkeypatch.setenv("LND_MACAROONPATH", "/readonly.macaroon")
@@ -163,9 +164,7 @@ def test_lnd_status_full_user_returns_legacy_shape(client, monkeypatch):
         fake_run_lnd_json,
     )
 
-    with client.session_transaction() as sess:
-        sess["logged_in_pubkey"] = "pubkey-test"
-        sess["access_level"] = "full"
+    canonical_full_session(client)
 
     resp = client.get("/api/lnd/status")
     assert resp.status_code == 200

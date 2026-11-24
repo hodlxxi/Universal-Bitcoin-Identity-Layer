@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import os
 import re
-from decimal import Decimal
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from urllib.parse import quote
 
 from bitcoinrpc.authproxy import AuthServiceProxy
@@ -21,10 +21,12 @@ from app.services.canonical_bitcoin_mempool_observation_v2 import (
     MempoolCheckedMultiLegObservationV2,
     observe_multileg_with_mempool_v2,
 )
-from app.services.canonical_multi_outpoint_mirror_v2 import CanonicalMultiOutpointMirrorV2
-from app.services.canonical_multi_outpoint_mirror_v2 import create_canonical_multi_outpoint_mirror_v2
+from app.services.canonical_multi_outpoint_mirror_v2 import (
+    CanonicalMultiOutpointMirrorV2,
+    create_canonical_multi_outpoint_mirror_v2,
+)
 from app.services.canonical_sponsored_script_policy_v2 import CanonicalSponsoredScriptEvidenceV2
-from app.services.covenant_relation import CovenantDirection, MAX_BITCOIN_SATS
+from app.services.covenant_relation import MAX_BITCOIN_SATS, CovenantDirection
 from app.services.trusted_covenant_observation import TRUSTED_OUTPOINT_SCHEMA, TrustedCovenantOutpoint
 from app.services.trusted_covenant_registration import p2wsh_script_pubkey_sha256
 

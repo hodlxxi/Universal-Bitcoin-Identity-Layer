@@ -177,6 +177,7 @@ def init_security(app: Flask, cfg: Mapping[str, Any]) -> Limiter:
         "connect-src": "'self' wss: ws: https: http:",
         "font-src": "'self' https://fonts.googleapis.com https://fonts.gstatic.com",
     }
+
     # Flask runs after_request hooks in reverse registration order.
     @app.after_request
     def finish_logout_confirmation(response):

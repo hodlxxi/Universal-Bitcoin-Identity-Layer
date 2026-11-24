@@ -8,16 +8,18 @@ The caller owns the single PostgreSQL commit. Signed admission stays separate.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import re
 import uuid
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.models import CanonicalGenesisRecordRow
+from app.services import canonical_v2_server_bitcoin_collateral as bitcoin
 from app.services.action_authorization import IdentityClass
 from app.services.automatic_sponsored_authority_v1 import SOURCE, VERSION
 from app.services.canonical_genesis_record import (
@@ -33,7 +35,6 @@ from app.services.canonical_multi_outpoint_mirror_v2 import (
     create_canonical_multi_outpoint_mirror_v2,
 )
 from app.services.canonical_sponsored_script_policy_v2 import validate_canonical_sponsored_scripts_v2
-from app.services import canonical_v2_server_bitcoin_collateral as bitcoin
 from app.services.covenant_relation import CovenantDirection
 from app.services.current_entitlement_evidence import CONTRACT_VERSION, CurrentEntitlementEvidenceRecord
 from app.services.current_entitlement_evidence_storage import (
@@ -44,7 +45,7 @@ from app.services.current_entitlement_evidence_storage import (
 from app.services.trusted_covenant_observation import TRUSTED_OUTPOINT_SCHEMA, TrustedCovenantOutpoint
 
 TTL = timedelta(seconds=120)
-_SUBJECT = __import__("re").compile(r"[0-9a-f]{64}\Z")
+_SUBJECT = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class AutomaticAdmissionUnavailable(RuntimeError):

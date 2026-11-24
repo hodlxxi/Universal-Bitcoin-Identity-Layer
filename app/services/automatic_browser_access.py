@@ -53,12 +53,14 @@ def refresh_canonical_browser_access():
     from app.services.oauth_browser_authentication import browser_reference
     from app.services.oauth_session_lifecycle import configured_lifecycle
 
-    pubkey = session.get("logged_in_pubkey")
-    if not pubkey and session.get("access_level") != "full":
+    # Leave inadmissible session roles intact for consumers that explicitly
+    # deny them. Refresh applies only to an established member session.
+    previous_level = session.get("access_level")
+    if previous_level not in ("limited", "full"):
         return
     level = "limited"
     try:
-        subject = canonical_xonly_pubkey(pubkey)
+        subject = canonical_xonly_pubkey(session.get("logged_in_pubkey"))
         lifecycle = configured_lifecycle(current_app)
         verified = (
             lifecycle.browser_subject(browser_reference()) if lifecycle is not None else session.get(_VERIFIED_SUBJECT)
@@ -69,7 +71,5 @@ def refresh_canonical_browser_access():
         pass
     except Exception:
         current_app.logger.warning("Browser generation unavailable for canonical entitlement")
-    if level == "limited" and session.get("access_level") == "guest":
-        return
-    if session.get("access_level") != level:
+    if previous_level != level:
         session["access_level"] = level

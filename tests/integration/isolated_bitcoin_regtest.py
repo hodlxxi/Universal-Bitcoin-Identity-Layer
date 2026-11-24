@@ -1,16 +1,17 @@
 """Explicitly opted-in disposable Core; never connect to an existing wallet/node."""
 
-from dataclasses import dataclass, field
+import hmac
 import os
-from pathlib import Path
 import secrets
 import subprocess
 import tempfile
 import time
+from dataclasses import dataclass, field
+from pathlib import Path
 from urllib.parse import quote
 
-from bitcoinrpc.authproxy import AuthServiceProxy
 import pytest
+from bitcoinrpc.authproxy import AuthServiceProxy
 
 
 @dataclass
@@ -39,11 +40,17 @@ def regtest():
     with tempfile.TemporaryDirectory(prefix="hodlxxi-588-regtest-") as directory:
         root = Path(directory)
         user, password = "isolated-regtest", secrets.token_hex(32)
+        salt = secrets.token_hex(16)
+        password_hmac = hmac.new(
+            salt.encode("utf-8"),
+            password.encode("utf-8"),
+            digestmod="sha256",
+        ).hexdigest()
         config = root / "bitcoin.conf"
         config.write_text(
             "regtest=1\nserver=1\nlisten=0\ndnsseed=0\ndiscover=0\n"
             "fallbackfee=0.00001000\nprinttoconsole=0\ndbcache=32\nmaxmempool=20\npar=1\nrpcthreads=2\n"
-            f"rpcuser={user}\nrpcpassword={password}\n[regtest]\nconnect=0\nrpcbind=127.0.0.1\n"
+            f"rpcauth={user}:{salt}${password_hmac}\n[regtest]\nconnect=0\nrpcbind=127.0.0.1\n"
             f"rpcallowip=127.0.0.1\nrpcport={port}\n"
         )
         config.chmod(0o600)

@@ -1,11 +1,14 @@
 """Task2B test-only helper from verified Task2 sources."""
+
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from app.models import User, CurrentEntitlementEvidence
 from app.services.action_authorization import IdentityClass
 from app.services.current_entitlement_evidence import CONTRACT_VERSION
 from tests.unit.test_automatic_sponsored_import_v1 import ALICE
+
 NOW = datetime(2026, 11, 13, 19, 10, 0, tzinfo=timezone.utc)
+
 
 def _seed_full(engine, key, *, full=True):
     xonly = key[2:]
