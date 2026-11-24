@@ -288,11 +288,7 @@ class SqlAlchemyEd25519AssociationStore:
         )
         if not self._read_only:
             statement = statement.with_for_update()
-        chain = (
-            connection.execute(statement)
-            .mappings()
-            .one_or_none()
-        )
+        chain = connection.execute(statement).mappings().one_or_none()
         event_rows = (
             connection.execute(
                 select(SocialDeviceEd25519AssociationEvent.__table__)

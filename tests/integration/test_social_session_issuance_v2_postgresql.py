@@ -157,7 +157,7 @@ def native_target():
 @pytest.fixture
 def native_graph(native_target, monkeypatch, request):
     ddl, runtime = native_target
-    options = request.param if isinstance(getattr(request,"param",None),dict) else {}
+    options = request.param if isinstance(getattr(request, "param", None), dict) else {}
     key = options.get("oauth_signing_key") or rsa.generate_private_key(public_exponent=65537, key_size=2048)
     monkeypatch.setattr(tokens, "get_signing_key", lambda _directory: ("synthetic-oauth", key))
     monkeypatch.setattr(
@@ -291,7 +291,10 @@ def native_graph(native_target, monkeypatch, request):
     content = json.loads(json.loads(vector["authorizationWire"])["content"])
     claim = content["authorization"]
     request, device, operation = [secrets.token_hex(32) for _ in range(3)]
-    public = options.get("x25519_public_key") or x25519.X25519PrivateKey.generate().public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+    public = (
+        options.get("x25519_public_key")
+        or x25519.X25519PrivateKey.generate().public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+    )
     end = start + timedelta(seconds=300)
 
     def stamp(date):
@@ -321,7 +324,7 @@ def native_graph(native_target, monkeypatch, request):
     semantic = canonical(content)
     secret, verifier, delivery = [secrets.token_hex(32) for _ in range(3)]
     pre = json.loads(vector["preEnrollmentWire"])
-    pre["ed25519PublicKey"] = options.get("ed25519_public_key",pre["ed25519PublicKey"])
+    pre["ed25519PublicKey"] = options.get("ed25519_public_key", pre["ed25519PublicKey"])
     pre.update(
         subject=subject,
         requestId=request,

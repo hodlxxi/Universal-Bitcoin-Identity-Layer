@@ -66,7 +66,9 @@ class NativeDeviceRequestAuthority:
         ):
             raise DeviceRequestDenied()
         # A consumed Enrollment V2 association is exact to this X25519 binding.
-        history = SqlAlchemyEd25519AssociationStore(self.reader.port, read_only=True).lock_history(facts.subject, facts.device_id)
+        history = SqlAlchemyEd25519AssociationStore(self.reader.port, read_only=True).lock_history(
+            facts.subject, facts.device_id
+        )
         enrollment = profile.parse_enrollment_v2(history.history[-1].enrollment_wire)
         if (
             enrollment.subject,

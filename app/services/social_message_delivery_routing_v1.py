@@ -43,13 +43,22 @@ class NativeV2BindingVerifier:
         ):
             raise ValueError("binding authority unavailable")
         from app.services.social_device_ed25519_association_storage import SqlAlchemyEd25519AssociationStore
-        from app.services.social_messaging_device_proof_profile import parse_enrollment_v2, x25519_public_key_commitment_v1
+        from app.services.social_messaging_device_proof_profile import (
+            parse_enrollment_v2,
+            x25519_public_key_commitment_v1,
+        )
 
-        history = SqlAlchemyEd25519AssociationStore(self.session, read_only=True).lock_history(binding.subject,binding.device_id)
+        history = SqlAlchemyEd25519AssociationStore(self.session, read_only=True).lock_history(
+            binding.subject, binding.device_id
+        )
         if history.current is None:
             raise ValueError("binding authority unavailable")
         enrolled = parse_enrollment_v2(history.history[-1].enrollment_wire)
-        if (enrolled.x25519_binding_id,enrolled.x25519_binding_version,enrolled.x25519_public_key_commitment) != (binding.binding_id,binding.binding_version,x25519_public_key_commitment_v1(binding.public_key)):
+        if (enrolled.x25519_binding_id, enrolled.x25519_binding_version, enrolled.x25519_public_key_commitment) != (
+            binding.binding_id,
+            binding.binding_version,
+            x25519_public_key_commitment_v1(binding.public_key),
+        ):
             raise ValueError("binding authority unavailable")
         # Native V2 stores epoch milliseconds. Routing evidence uses UTC seconds.
         observed = datetime.fromtimestamp(accepted.accepted_at // 1000, timezone.utc)
@@ -140,29 +149,44 @@ class MessageDeliveryRoutingV1:
     def _recheck_decision(self, decision):
         now = datetime.now(timezone.utc).replace(microsecond=0)
         full = SqlAlchemyTransactionBoundCurrentFullVerifier(self.session)
-        for subject in sorted((decision.viewer_subject,decision.recipient_subject)):
-            full.verify_in_transaction(subject,now=now)
-        bindings = SqlAlchemyTransactionBoundSocialMessagingDeviceStorage(self.session).current_for_subject(decision.recipient_subject,now=now,maximum=16)
-        if sorted((b.device_id,b.binding_id,b.binding_version) for b in bindings) != sorted((r.device_id,r.binding_id,r.binding_version) for r in decision.routes):
+        for subject in sorted((decision.viewer_subject, decision.recipient_subject)):
+            full.verify_in_transaction(subject, now=now)
+        bindings = SqlAlchemyTransactionBoundSocialMessagingDeviceStorage(self.session).current_for_subject(
+            decision.recipient_subject, now=now, maximum=16
+        )
+        if sorted((b.device_id, b.binding_id, b.binding_version) for b in bindings) != sorted(
+            (r.device_id, r.binding_id, r.binding_version) for r in decision.routes
+        ):
             raise ValueError("recipient unavailable")
         for binding in bindings:
-            NativeV2BindingVerifier(self.session).verify(binding,now=now)
+            NativeV2BindingVerifier(self.session).verify(binding, now=now)
 
     def resolve(self, wire, *, authenticated_viewer_subject):
         from app.services.social_messaging_recipient_routing import parse_recipient_routing_request
+
         request = parse_recipient_routing_request(wire)
         # A committed exact decision can recover a mailbox write after a crash,
         # even after its package expires. It never substitutes for fresh sender
         # proof, current Full or current independently authorized recipient keys.
-        old = self.repository._load_decision(request.message_id,lock=False)
+        old = self.repository._load_decision(request.message_id, lock=False)
         if old is not None:
-            if (old.viewer_subject,old.envelope_digest,old.recipient_package_snapshot_id,tuple(r.device_handle for r in old.routes)) != (authenticated_viewer_subject,request.envelope_digest,request.recipient_package_snapshot_id,request.recipient_device_handles):
+            if (
+                old.viewer_subject,
+                old.envelope_digest,
+                old.recipient_package_snapshot_id,
+                tuple(r.device_handle for r in old.routes),
+            ) != (
+                authenticated_viewer_subject,
+                request.envelope_digest,
+                request.recipient_package_snapshot_id,
+                request.recipient_device_handles,
+            ):
                 raise ValueError("conflicting message id")
             self._recheck_decision(old)
             return old
-        decision = self.gate.resolve(wire,authenticated_viewer_subject=authenticated_viewer_subject)
+        decision = self.gate.resolve(wire, authenticated_viewer_subject=authenticated_viewer_subject)
         self._recheck_decision(decision)
-        if int(datetime.now(timezone.utc).timestamp()*1000) >= decision.expires_at:
+        if int(datetime.now(timezone.utc).timestamp() * 1000) >= decision.expires_at:
             raise ValueError("recipient package expired")
         return decision
 
