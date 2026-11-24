@@ -88,6 +88,10 @@ class NativeDeviceRequestAuthority:
             raise DeviceRequestDenied()
         return facts, association, self.reader._deadline_ms
 
+    @staticmethod
+    def binding(facts):
+        return _binding(facts)
+
 
 class DeviceRequestOwnerV1:
     """One caller-owned PG transaction. Results are provisional until COMMIT."""
@@ -116,7 +120,7 @@ class DeviceRequestOwnerV1:
             association_version=association.association_version,
             predecessor_association_id=None,
             authority_epoch=association.authority_epoch,
-            session_binding=_binding(facts),
+            session_binding=self.authority.binding(facts),
             approver_session_binding=None,
             full_proof_id=facts.full_proof_id,
             approver_full_proof_id=None,
@@ -159,7 +163,7 @@ class DeviceRequestOwnerV1:
                 bindingId=facts.binding_id,
                 bindingVersion=facts.binding_version,
                 deviceId=facts.device_id,
-                sessionBinding=_binding(facts),
+                sessionBinding=self.authority.binding(facts),
                 subject=facts.subject,
                 bodyDigest="hodlxxi-social-device-request-body-v1-sha256:"
                 + hashlib.sha256(b"HODLXXI_SOCIAL_DEVICE_REQUEST_BODY_V1\0" + body_wire.encode("ascii")).hexdigest(),

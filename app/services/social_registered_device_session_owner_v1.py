@@ -6,9 +6,9 @@ tables. No generic OAuth token, historical bearer or role assertion is revived.
 All returned credentials are provisional until the caller commits.
 """
 
-from dataclasses import dataclass
 import hashlib
 import secrets
+from dataclasses import dataclass
 
 from sqlalchemy import text
 
@@ -19,6 +19,7 @@ from app.services.social_registered_device_session_statement_v1 import verify_st
 
 RUNTIME_ENABLED = False
 SESSION_LIFETIME_MS = 300_000
+MAX_RETAINED_CHALLENGES = 131_072
 
 
 @dataclass(frozen=True, repr=False)
@@ -68,6 +69,9 @@ class RegisteredDeviceSessionOwnerV1:
         self.connection_tx = self.connection.get_transaction()
         self.used = False
         self._check()
+        from app.services.social_registered_device_catalog_v1 import attest_registered_device_catalog_v1
+
+        self.catalog_identity = attest_registered_device_catalog_v1(self.connection)
 
     def _check(self):
         if (
@@ -140,6 +144,18 @@ class RegisteredDeviceSessionOwnerV1:
         ).first()
         expires = min(now + contract.MAX_LIFETIME_MS, observed.current_until_ms)
         if recent is not None or expires <= now:
+            contract._deny()
+        # Append-only history has a fixed fail-closed budget. An operator must
+        # select a separately reviewed retention policy before long-term use.
+        self._sql(
+            "SELECT pg_advisory_xact_lock(hashtextextended(:key,0))",
+            {"key": "registered-device-session-v1:history-budget"},
+        )
+        count = self._sql(
+            "SELECT count(*) FROM (SELECT 1 FROM public.social_registered_device_challenges_v1 LIMIT :maximum) budget",
+            dict(maximum=MAX_RETAINED_CHALLENGES),
+        ).scalar_one()
+        if count >= MAX_RETAINED_CHALLENGES:
             contract._deny()
         value = dict(
             associationId=observed.association_id,
@@ -274,9 +290,31 @@ class RegisteredDeviceSessionOwnerV1:
 
     def revoke(self, *, session_id, credential, context_commitment):
         self._start()
-        self._current(session_id, credential, context_commitment)
+        pins = self._pins(context_commitment)
+        if not contract._matches(contract._HEX64, session_id):
+            contract._deny()
+        # Termination is permitted even after Full loss or expiry. Authenticate
+        # the exact scoped credential/context without granting current access.
+        row = self._sql(
+            "SELECT c.challenge_wire FROM public.social_registered_device_sessions_v1 s "
+            "JOIN public.social_registered_device_challenges_v1 c ON c.challenge_id=s.challenge_id "
+            "WHERE s.session_id=:id AND s.credential_digest=:digest",
+            dict(id=session_id, digest=credential_digest(credential)),
+        ).scalar_one_or_none()
+        if row is None:
+            contract._deny()
+        challenge = contract.parse_challenge_v1(row)
+        if (challenge["issuer"], challenge["audience"], challenge["clientId"], challenge["contextCommitment"]) != (
+            pins["issuer"],
+            pins["audience"],
+            pins["client_id"],
+            pins["context_commitment"],
+        ):
+            contract._deny()
+        self._lock_device(challenge["subject"], challenge["deviceId"])
         self._sql(
-            "INSERT INTO public.social_registered_device_revocations_v1(session_id,revoked_at) VALUES(:id,:now)",
+            "INSERT INTO public.social_registered_device_revocations_v1(session_id,revoked_at) "
+            "VALUES(:id,:now) ON CONFLICT (session_id) DO NOTHING",
             dict(id=session_id, now=self._now()),
         )
         self._check()

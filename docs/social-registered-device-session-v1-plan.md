@@ -1,56 +1,84 @@
-# Registered-device messaging session V1 (work in progress)
+# Registered-device messaging sessions V1
 
-Status: source-only. No new runtime route or session issuance is enabled. Not a
-release gate pass. Native Enrollment V2 on paired staging committed an accepted
-reservation, active epoch-1 association, native effect/receipt and consumption.
-The original issuance expired at its original pairing deadline. This is expected
-for enrollment; it is not a sustainable messaging-session contract.
+Status: opt-in source in UBID #597 and Social #73. Production and VPS migrations
+have not been changed. This is not the live acceptance gate for issue #588.
 
-## Separate authority lifetimes
+## Implemented contract
 
-1. Native enrollment is an immutable historical provenance record. Its approval,
-   challenge and original OAuth lineage are authenticated at the decision time,
-   never extended or revived.
-2. A registered device observation rechecks the exact committed native history,
-   current active user/client/issuer, binding, association and current Full.
-   Subject/device inputs select rows only; this observation is not authentication.
-   Initial native associations only in this first slice. Unknown, revoked,
-   rotated, expired, Limited or inconsistent evidence must fail closed.
-3. A future dedicated registered-device session owner issues a fresh single-use,
-   purpose-separated challenge bound to the active association and browser
-   context. Social's existing strict Ed25519 verifier authenticates exact
-   challenge bytes; UBID authenticates a purpose-specific verification statement
-   and consumes the challenge under lock before issuing a new scoped credential.
-   The credential must not be a general-purpose OAuth token or a revival of
-   Native V2 issuance. Its digest, generation, device and deadline must be
-   durable. Revocation, replay, Full loss, binding retirement, association
-   rotation, logout and expiry are rechecked at every protected operation.
-4. A separate session-binding domain must bind message proofs to the new
-   credential generation. Directory/recipient routing and mailbox access must
-   use the same current authority; no fallback to a subject-only assertion.
-   Desktop enrollment and the paired device's key-only re-login both need a
-   user-facing flow. A mobile device must not require a Nostr extension.
+Native Enrollment V2 remains immutable provenance. Its original approval,
+challenge, OAuth lineage and short-lived issuance are never extended or revived.
+A registered device instead proves possession of its retained non-extractable
+Ed25519 key over a fresh, single-use, purpose-separated challenge. UBID rechecks
+original committed native history, active user/client/issuer, exact active
+X25519 binding, epoch-1 Ed25519 association and canonical Current Full.
 
-## Acceptance before enabling
+The transaction owner stores only the credential digest. Issuance, current read,
+message authorization and revocation run on the native finalizer's directly
+connected SQL role. Results leave the private boundary after commit and a final
+deadline check. Protected operations recheck current authority; expiry, revocation,
+Full loss, retired binding, rotation and mismatched browser context deny access.
+Revocation is idempotent and can still terminate the exact credential after Full
+loss or expiry. A revoked session is never treated as a valid login.
 
-- Genuine browser native enrollment; expired original issuance, unchanged
-  receipt and key; fresh possession proof establishes a new scoped session.
-- Wrong device/key, stale or replayed challenge, another browser context, lost
-  response, concurrent consume, rotated/revoked binding/association, Limited
-  and expired/revoked Full deny. No unbounded challenge storage.
-- Logout revokes current session; no credential leakage or plaintext persistence.
-- Real Alice and independently admitted Bob send/decrypt both directions;
-  reload and inbox read succeed, wrong/limited recipients deny.
-- PG16 lock ordering, role/ACL/catalog attestation, exact cross-language vectors,
-  both hosted suites and isolated paired browser acceptance must pass.
-- Do not change production or close issue #588 on source-only progress.
+Message proofs use `HODLXXI_REGISTERED_DEVICE_MESSAGE_SESSION_BINDING_V1`, bound
+to the new session generation and context, independent of enrollment's OAuth
+binding. Directory, recipient packages, exact request proof, ciphertext mailbox
+and inbox share the registered authority path. No registered credential is
+accepted as a general-purpose OAuth token.
 
-First slice: `observe_registered_device_v1` is not installed and returns only a
-provisional locked observation, not permission. It reuses existing historical
-signature/effect verification and current Full verification without reading the
-old bearer as live authority. The PG16 paired test covers the expired issuance
-case and denial of unknown device/expired current authority. The existing
-finalizer catalog profile is used for the historical observation; the final
-session-owner role, proof statement, durable challenge/session state, lock
-ordering under concurrent mutation, transport integration and UI remain to be
-implemented and verified.
+Social keeps the scoped credential server-side behind an opaque HttpOnly cookie.
+The browser sends only public selectors and exact proof bytes. Existing device
+keys remain in their approved stores. Reload reads a live session before trying
+another challenge; use renews the short session before expiry. Explicit logout
+revokes the scoped credential, preserves the existing mobile CSRF/logout contract,
+and sets a separate HttpOnly denial preference. An explicit sign-in clears that
+preference only after a successful possession proof. Concurrent proof completion
+after logout cannot install a cookie. No Nostr provider is needed for this path.
+
+## Opt-in deployment prerequisites
+
+1. Existing native Enrollment V2 and message-delivery migrations/configuration.
+2. Apply, using the existing migration owner, in this order:
+   - `2026-11-24_social_registered_device_sessions_v1.sql`
+   - `2026-11-24_social_registered_device_message_challenges_v1.sql`
+3. The native finalizer requires SELECT and INSERT on the three new registered
+   history tables, the existing message-delivery routing-table profile, and
+   EXECUTE on `create_registered_device_message_challenge_v1(text,text,text,text,text)`.
+   It must **not** gain INSERT on `social_device_admission_challenges`.
+   The narrow definer function only stores message requests for an existing scoped
+   session; it cannot create enrollment challenges. Public execution is revoked.
+4. Both message-delivery manifests must explicitly set `registeredDeviceSessions`
+   to boolean `true`. Omission keeps the path disabled. No manifest reader applies
+   migrations or grants. The ordinary app/server defaults remain unchanged.
+5. Registered login statements use the explicitly configured native Enrollment
+   V2 statement key/trust set with a new signature domain. Message verification
+   statements continue to use the separately configured message statement trust.
+6. Catalog attestation closes the three new tables' columns, constraints, guards,
+   runtime privileges and exact source of the definer writer. A missing guard,
+   broader privilege, owner membership or substituted function denies access.
+
+The history has a global hard budget of 131,072 challenges and one issue per device
+per 60 seconds. Exhaustion denies issuance. A separately reviewed archive/retention
+policy is still required before long-term production operation; no native history
+is pruned by this feature. Initial epoch-1 associations only; later rotation must
+use a separately verified lifecycle contract and is currently denied.
+
+## Validation and remaining acceptance
+
+The disposable PG16 paired test uses genuine signatures, immutable native
+finalization, original-issuance expiry, new session issuance, digest-only storage,
+replay/context/expiry denial, the new message binding, strict Social Ed25519
+message verification, native inbox authorization, exact lost-response retry,
+idempotent logout and catalog tamper denial. Its participants and retained route
+are synthetic test fixtures, not evidence of real Alice/Bob browser acceptance.
+
+Social tests cover retained-key resume, reload, renewal, identity mismatch, current
+Full loss, wrong origin/context, replay, logout races, capability generations,
+existing entry-action compatibility and normal HTTP framing.
+
+Still required: hosted checks on both exact heads, coordinated isolated preview
+activation, real automatically admitted Bob and Bob-to-Charlie, browser-local
+Alice/Bob encryption -> durable ciphertext -> receiving-browser decryption, reload,
+wrong/Limited denial, and trusted HTTPS phone smoke. Keep both PRs draft and #588
+open until that complete vertical acceptance succeeds. Production promotion still
+requires the founder's separate approval after staging acceptance.

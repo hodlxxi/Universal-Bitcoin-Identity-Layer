@@ -1,7 +1,7 @@
 """Native authority and private message delivery on disposable PG16 only."""
 
-from types import SimpleNamespace
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from sqlalchemy.orm import Session
 
@@ -15,16 +15,16 @@ def test_genuine_enrollment_proof_finalizes_before_message_authority(message_pg1
     import subprocess
     import time
     from pathlib import Path
+
     from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
-    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, PrivateFormat, NoEncryption
+    from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
+
     from app.services import social_messaging_device_proof_profile as profile
     from app.services import social_messaging_mobile_pre_enrollment_v2 as v2
-    from app.services.social_enrollment_v2_finalization import V2FinalizationOwner
     from app.services.social_device_request_owner_v1 import NativeDeviceRequestAuthority
-    from tests.integration.test_social_enrollment_v2_reservation_postgresql import (
-        reservation_native,
-        owner as reserve_owner,
-    )
+    from app.services.social_enrollment_v2_finalization import V2FinalizationOwner
+    from tests.integration.test_social_enrollment_v2_reservation_postgresql import owner as reserve_owner
+    from tests.integration.test_social_enrollment_v2_reservation_postgresql import reservation_native
     from tests.unit.test_social_enrollment_v2_finalization import signed_statement
 
     owner, issuer, finalizer, reader = message_pg16
@@ -56,6 +56,7 @@ def test_genuine_enrollment_proof_finalizes_before_message_authority(message_pg1
     ).decode()
     fixture = fixture[:2] + (wire,) + fixture[3:]
     from sqlalchemy import text
+
     from app.services.social_enrollment_v2_catalog_roles import ChallengeWriterCatalogPin, catalog_role_scope
 
     with owner.connect() as db:
@@ -67,7 +68,9 @@ def test_genuine_enrollment_proof_finalizes_before_message_authority(message_pg1
     now = int(time.time() * 1000)
     config, _ = signed_statement(wire, fixture[4], now, key=service_key, expires_at=reservation.expires_at)
     from dataclasses import replace
+
     from sqlalchemy import text
+
     from app.services.social_enrollment_v2_catalog_roles import ChallengeWriterCatalogPin
 
     with owner.connect() as db:
@@ -174,6 +177,7 @@ def test_genuine_enrollment_proof_finalizes_before_message_authority(message_pg1
     # The new observation deliberately does not authenticate an expired
     # original bearer. Its current Full and binding must still be valid.
     import pytest
+
     from app.services.social_registered_device_observation_v1 import (
         RegisteredDeviceUnavailable,
         observe_registered_device_v1,
@@ -213,20 +217,28 @@ def test_genuine_enrollment_proof_finalizes_before_message_authority(message_pg1
             )
 
     from app.services import social_registered_device_session_contract_v1 as login
-    from app.services.social_registered_device_session_owner_v1 import (
-        RegisteredDeviceSessionOwnerV1,
-        credential_digest,
-    )
+    from app.services.social_registered_device_session_owner_v1 import RegisteredDeviceSessionOwnerV1, credential_digest
 
     context = "ab" * 32
 
     def login_owner(db, at=later):
         return RegisteredDeviceSessionOwnerV1(db, config=config, clock=lambda: at)
 
-    with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
-        challenge_wire = login_owner(db).issue(
-            subject=parsed.context.subject, device_id=parsed.context.device_id, context_commitment=context
-        )
+    from app.services.social_registered_device_runtime_v1 import RegisteredDeviceRuntimeV1
+
+    runtime = RegisteredDeviceRuntimeV1(
+        factory=lambda: Session(finalizer),
+        config=config,
+        privacy=SimpleNamespace(alias_secret=b"p" * 32, alias_version=1),
+        recipient=None,
+        statement_config=None,
+        clock=lambda: later,
+    )
+    challenge_wire = runtime.execute(
+        "registered-challenge",
+        dict(subject=parsed.context.subject, deviceId=parsed.context.device_id, contextCommitment=context),
+        bearer=None,
+    )["challengeWire"]
     challenge = login.parse_challenge_v1(challenge_wire)
     proof_wire = login.canonical(
         dict(
@@ -270,8 +282,19 @@ def test_genuine_enrollment_proof_finalizes_before_message_authority(message_pg1
     with pytest.raises(login.RegisteredDeviceSessionContractError):
         with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
             login_owner(db, challenge["expiresAt"]).consume(**args)
-    with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
-        issued = login_owner(db).consume(**args)
+    issued_wire = runtime.execute(
+        "registered-consume",
+        dict(
+            challengeWire=challenge_wire,
+            proofWire=proof_wire,
+            statementWire=result.stdout,
+            contextCommitment=context,
+        ),
+        bearer=None,
+    )
+    issued = SimpleNamespace(
+        session_id=issued_wire["sessionId"], credential=issued_wire["credential"], expires_at=issued_wire["expiresAt"]
+    )
     assert issued.expires_at > later
     with Session(owner) as db, db.begin():
         stored = db.execute(
@@ -284,6 +307,115 @@ def test_genuine_enrollment_proof_finalizes_before_message_authority(message_pg1
         with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
             login_owner(db).consume(**args)
     auth = dict(session_id=issued.session_id, credential=issued.credential, context_commitment=context)
+    scoped = dict(registeredSession=dict(sessionId=issued.session_id, contextCommitment=context))
+    current = runtime.execute("registered-current", scoped, bearer=issued.credential)
+    assert current["authority"] == dict(subject=parsed.context.subject, status="full", valid=True)
+    device = runtime.execute("registered-self", scoped, bearer=issued.credential)
+    assert device["deviceId"] == parsed.context.device_id
+    assert device["publicKey"] == association.ed25519_public_key
+    # Message proofs receive a new generation binding, independent of the
+    # expired enrollment's OAuth/preimage. This challenge is real PG storage.
+    body_wire = login.canonical(
+        dict(deviceHandle="d_AAAAAAAAAAAAAAAAAAAAAA", schema=profile.RECIPIENT_SELF_SCHEMA, version=1)
+    )
+    message_challenge = runtime.execute(
+        "registered-message-challenge",
+        dict(scoped, operation="recipient-self-read", bodyWire=body_wire, routingWire=None, recipientAlias=None),
+        bearer=issued.credential,
+    )
+    ctx = json.loads(message_challenge["contextWire"])
+    assert ctx["subject"] == parsed.context.subject
+    assert ctx["sessionBinding"] != json.loads(parsed.context.wire)["sessionBinding"]
+    assert (
+        ctx["sessionBinding"] == json.loads(json.loads(message_challenge["challengeWire"])["request"])["sessionBinding"]
+    )
+    from app.services.social_device_verification_statement import SocialDeviceVerificationStatementConfig
+    from app.services.social_messaging_recipient_routing import (
+        SNAPSHOT_SCHEMA,
+        SOURCE,
+        RecipientRoutingSnapshot,
+        RecipientRoutingSnapshotRoute,
+    )
+    from app.services.social_messaging_recipient_routing_storage import SqlAlchemyRecipientRoutingRepository
+
+    # Synthetic retained route owned by this exact registered receiving device.
+    # It is not an assertion that a second real browser has completed enrollment.
+    with Session(finalizer) as db, db.begin():
+        SqlAlchemyRecipientRoutingRepository(db).retain_snapshot(
+            RecipientRoutingSnapshot(
+                schema=SNAPSHOT_SCHEMA,
+                version=1,
+                source=SOURCE,
+                viewer_subject="c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+                recipient_subject=parsed.context.subject,
+                alias_version=1,
+                recipient_package_snapshot_id="sha256:" + "22" * 32,
+                issued_at=later,
+                expires_at=later + 60000,
+                complete=True,
+                routes=(
+                    RecipientRoutingSnapshotRoute(
+                        device_handle="d_AAAAAAAAAAAAAAAAAAAAAA",
+                        device_id=parsed.context.device_id,
+                        binding_id=parsed.context.binding_id,
+                        binding_version=parsed.context.binding_version,
+                        authorization_proof_id="hodlxxi-mobile-binding-authorization-v1-sha256:" + "33" * 32,
+                        authorization_valid_from=later - 1000,
+                        authorization_expires_at=later + 60000,
+                    ),
+                ),
+            )
+        )
+    runtime.statement_config = SocialDeviceVerificationStatementConfig(
+        enabled=True,
+        issuer=challenge["audience"],
+        audience=challenge["issuer"] + "/internal/v1/social/device-admission/consume",
+        client_id=sc.client_id,
+        service_principal=sc.service_principal,
+        trusted_jwks=sc.trusted_jwks,
+    )
+    msg_proof = profile.canonical_device_proof_v1_bytes(
+        challenge_id=ctx["challengeId"],
+        public_key=association.ed25519_public_key,
+        signature=ed.sign(
+            profile.canonical_device_proof_signing_preimage_v1(
+                message_challenge["challengeWire"], association.ed25519_public_key
+            )
+        ).hex(),
+    ).decode("ascii")
+    message_statement = subprocess.run(
+        [str(node), str(social / "scripts/verify-registered-message-release-v1.mjs")],
+        input=json.dumps(
+            dict(
+                serviceSigningKeyPem=request["serviceSigningKeyPem"],
+                kid=sc._keys[0].kid,
+                issuerOrigin=challenge["issuer"],
+                socialOrigin=challenge["audience"],
+                clientId=sc.client_id,
+                servicePrincipal=sc.service_principal,
+                stored=message_challenge,
+                proofWire=msg_proof,
+                now=later,
+            )
+        ),
+        text=True,
+        capture_output=True,
+        timeout=20,
+    )
+    assert message_statement.returncode == 0, "real Social strict registered-device message proof failed"
+    request_value = dict(
+        scoped, proofWire=msg_proof, statement=message_statement.stdout, bodyWire=body_wire, recipientAlias=None
+    )
+    allowed = runtime.execute("registered-message-consume", request_value, bearer=issued.credential)
+    assert allowed == dict(allowed=True, deviceHandle="d_AAAAAAAAAAAAAAAAAAAAAA")
+    # An exact lost-response retry recovers the same immutable authorization.
+    assert runtime.execute("registered-message-consume", request_value, bearer=issued.credential) == allowed
+    with pytest.raises(login.RegisteredDeviceSessionContractError):
+        runtime.execute(
+            "registered-message-consume",
+            dict(request_value, registeredSession=dict(sessionId=issued.session_id, contextCommitment="cd" * 32)),
+            bearer=issued.credential,
+        )
     with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
         device, deadline = login_owner(db).read(**auth)
         assert device.association_id == association.association_id
@@ -294,6 +426,28 @@ def test_genuine_enrollment_proof_finalizes_before_message_authority(message_pg1
                 login_owner(db).read(**invalid)
     with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
         login_owner(db).revoke(**auth)
+    # Termination is idempotent and remains possible after session expiry.
+    runtime.clock = lambda: issued.expires_at + 1
+    assert runtime.execute("registered-revoke", scoped, bearer=issued.credential)["status"] == "revoked"
     with pytest.raises(login.RegisteredDeviceSessionContractError):
         with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
             login_owner(db).read(**auth)
+    from app.services import social_registered_device_session_owner_v1 as session_owner
+    from app.services.social_registered_device_catalog_v1 import attest_registered_device_catalog_v1
+
+    with monkeypatch.context() as patch:
+        patch.setattr(session_owner, "MAX_RETAINED_CHALLENGES", 1)
+        runtime.clock = lambda: later + 60001
+        with pytest.raises(login.RegisteredDeviceSessionContractError):
+            runtime.execute(
+                "registered-challenge",
+                dict(subject=parsed.context.subject, deviceId=parsed.context.device_id, contextCommitment=context),
+                bearer=None,
+            )
+    with Session(finalizer) as db, db.begin():
+        assert attest_registered_device_catalog_v1(db.connection())
+    with Session(owner) as db, db.begin():
+        db.execute(text("DROP TRIGGER registered_session_immutable_v1 ON public.social_registered_device_sessions_v1"))
+    with pytest.raises(login.RegisteredDeviceSessionContractError):
+        with Session(finalizer) as db, db.begin():
+            attest_registered_device_catalog_v1(db.connection())

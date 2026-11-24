@@ -570,6 +570,7 @@ def test_no_io_at_import_no_runtime_dependency_no_admission_api():
         "app/services/social_enrollment_transition_authority_storage.py",
         "app/services/social_enrollment_v2_challenge.py",
         "app/services/social_enrollment_v2_finalization_storage.py",
+        "app/services/social_registered_device_message_store_v1.py",
     ]
     assert storage.FINAL_ADMISSION == "denied"
     assert storage.CHALLENGE_CONSUMPTION == "transaction_bound_enrollment_only"

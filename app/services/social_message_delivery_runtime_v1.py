@@ -7,22 +7,16 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from app.services.bearer_credentials import parse_bearer_authorization_header
+from app.services.confidential_service_assertion_replay_storage import PostgresConfidentialServiceAssertionReplayStore
 from app.services.confidential_service_credentials import (
     GRANT_TYPE,
     issue_service_access_token,
     verify_service_access_token,
 )
-from app.services.confidential_service_assertion_replay_storage import (
-    PostgresConfidentialServiceAssertionReplayStore,
-)
 from app.services.privacy_full_directory_internal_delivery import configured_internal_delivery_runtime
-from app.services.social_enrollment_v2_runtime import read_operator_json
+from app.services.social_device_request_owner_v1 import DeviceRequestOwnerV1, NativeDeviceRequestAuthority, canonical
 from app.services.social_device_verification_statement import SocialDeviceVerificationStatementConfig
-from app.services.social_device_request_owner_v1 import (
-    DeviceRequestOwnerV1,
-    NativeDeviceRequestAuthority,
-    canonical,
-)
+from app.services.social_enrollment_v2_runtime import read_operator_json
 from app.services.social_message_delivery_routing_v1 import MessageDeliveryRoutingV1
 from app.services.social_messaging_recipient_runtime_configuration import (
     configured_messaging_recipient_internal_runtime,
@@ -34,12 +28,17 @@ bp = Blueprint(EXTENSION, __name__)
 
 
 class MessageDeliveryRuntime:
-    def __init__(self, *, factory, enrollment, privacy, recipient, service_config, statement_config):
+    def __init__(self, *, factory, enrollment, privacy, recipient, service_config, statement_config, registered=None):
         self.factory, self.enrollment, self.privacy, self.recipient = factory, enrollment, privacy, recipient
         self.service_config, self.statement_config = service_config, statement_config
         self.replay = PostgresConfidentialServiceAssertionReplayStore(factory)
+        self.registered = registered
 
     def execute(self, command, value, *, bearer):
+        if command.startswith("registered-"):
+            if self.registered is None:
+                raise ValueError()
+            return self.registered.execute(command, value, bearer=bearer)
         cfg = self.enrollment.challenge.config
         with self.factory() as db, db.begin():
             authority = NativeDeviceRequestAuthority(
@@ -171,7 +170,12 @@ def command(command):
             return _reply({"access_token": token, "token_type": "Bearer"})
         service = parse_bearer_authorization_header(request.headers.get("Authorization", ""))
         verify_service_access_token(service, config=runtime.service_config)
-        bearer = parse_bearer_authorization_header(request.headers.get("X-HODLXXI-Viewer-Authorization", ""))
+        if command in ("registered-challenge", "registered-consume"):
+            if request.headers.get("X-HODLXXI-Viewer-Authorization") is not None:
+                raise ValueError()
+            bearer = None
+        else:
+            bearer = parse_bearer_authorization_header(request.headers.get("X-HODLXXI-Viewer-Authorization", ""))
         result = runtime.execute(command, value, bearer=bearer)
         # COMMIT completed before the result can leave the private boundary.
         return _reply(result)
@@ -183,8 +187,11 @@ def install_message_delivery(app, enrollment_runtime, path=None):
     if path is None:
         return False
     manifest = read_operator_json(path)
+    registered_enabled = manifest.get("registeredDeviceSessions", False)
     if (
-        set(manifest) != {"schema", "enabled", "databaseCredentialsPath", "roleName", "roleOid", "statementTrust"}
+        set(manifest) - {"registeredDeviceSessions"}
+        != {"schema", "enabled", "databaseCredentialsPath", "roleName", "roleOid", "statementTrust"}
+        or type(registered_enabled) is not bool
         or manifest["schema"] != "ubid.social_message_delivery.runtime.v1"
         or manifest["enabled"] is not True
     ):
@@ -235,6 +242,18 @@ def install_message_delivery(app, enrollment_runtime, path=None):
             or trust.audience != cfg.issuer + "/internal/v1/social/device-admission/consume"
         ):
             raise ValueError()
+        registered = None
+        if registered_enabled:
+            from app.services.social_registered_device_runtime_v1 import RegisteredDeviceRuntimeV1
+
+            composition = enrollment_runtime.enrollment.operations.composition
+            registered = RegisteredDeviceRuntimeV1(
+                factory=composition._factory,
+                config=composition._config,
+                privacy=privacy,
+                recipient=recipient,
+                statement_config=trust,
+            )
         app.extensions[EXTENSION] = MessageDeliveryRuntime(
             factory=sessionmaker(engine),
             enrollment=enrollment_runtime.enrollment,
@@ -242,6 +261,7 @@ def install_message_delivery(app, enrollment_runtime, path=None):
             recipient=recipient,
             service_config=cfg,
             statement_config=trust,
+            registered=registered,
         )
         app.register_blueprint(bp)
         return True

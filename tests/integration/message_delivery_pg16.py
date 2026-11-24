@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
-from app.models import User, OAuthClient, OAuthToken, OAuthCode, Session, CurrentEntitlementEvidence
+from app.models import CurrentEntitlementEvidence, OAuthClient, OAuthCode, OAuthToken, Session, User
 from tests.integration.canon_v2_disposable_pg import disposable_postgres_engine
 
 ROLES = ("h588_message_owner", "h588_message_issuer", "h588_message_finalizer", "h588_message_reader")
@@ -31,6 +31,7 @@ MIGRATIONS = (
     "2026-10-14_social_enrollment_v2_freshness_profile_guard_v1.sql",
     "2026-11-15_social_device_request_receipts_v1.sql",
     "2026-11-24_social_registered_device_sessions_v1.sql",
+    "2026-11-24_social_registered_device_message_challenges_v1.sql",
 )
 
 
@@ -140,6 +141,15 @@ def message_pg16():
             ):
                 db.exec_driver_sql(f"REVOKE ALL ON public.{table} FROM {ROLES[1]}")
                 db.exec_driver_sql(f"GRANT INSERT,SELECT ON public.{table} TO {ROLES[2]}")
+            # Registered sessions use the finalizer's native-history checks and
+            # routing in the same transaction. They cannot cross SQL roles.
+            from app.services.social_enrollment_v2_catalog_roles import MESSAGE_DELIVERY_WRITER_PRIVILEGES
+
+            for table, privileges in MESSAGE_DELIVERY_WRITER_PRIVILEGES.items():
+                db.exec_driver_sql(f'GRANT {",".join(privileges)} ON public.{table} TO {ROLES[2]}')
+            db.exec_driver_sql(
+                f"GRANT EXECUTE ON FUNCTION public.create_registered_device_message_challenge_v1(text,text,text,text,text) TO {ROLES[2]}"
+            )
             db.exec_driver_sql(f"REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {ROLES[3]}")
             from app.services.social_enrollment_v2_catalog_roles import challenge_writer_privileges_for_relations
 
