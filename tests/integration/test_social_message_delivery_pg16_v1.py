@@ -170,3 +170,44 @@ def test_genuine_enrollment_proof_finalizes_before_message_authority(message_pg1
         current, association, _ = authority.read(fixture[3], delivered["viewerAccessToken"])
         assert current.subject == parsed.context.subject
         assert association.ed25519_public_key == parsed.context.ed25519_public_key
+
+    # The new observation deliberately does not authenticate an expired
+    # original bearer. Its current Full and binding must still be valid.
+    import pytest
+    from app.services.social_registered_device_observation_v1 import (
+        RegisteredDeviceUnavailable,
+        observe_registered_device_v1,
+    )
+
+    later = delivered["receipt"]["expiresAt"] + 1
+    with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
+        observed = observe_registered_device_v1(
+            db,
+            subject=parsed.context.subject,
+            device_id=parsed.context.device_id,
+            config=config,
+            clock=lambda: later,
+        )
+        assert observed.subject == parsed.context.subject
+        assert observed.device_id == parsed.context.device_id
+        assert observed.association_id == association.association_id
+        assert observed.ed25519_public_key == association.ed25519_public_key
+        assert observed.current_until_ms > later
+    with pytest.raises(RegisteredDeviceUnavailable):
+        with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
+            observe_registered_device_v1(
+                db,
+                subject=parsed.context.subject,
+                device_id="0" * 64,
+                config=config,
+                clock=lambda: later,
+            )
+    with pytest.raises(RegisteredDeviceUnavailable):
+        with Session(finalizer) as db, db.begin(), catalog_role_scope(db, pin):
+            observe_registered_device_v1(
+                db,
+                subject=parsed.context.subject,
+                device_id=parsed.context.device_id,
+                config=config,
+                clock=lambda: observed.current_until_ms,
+            )
