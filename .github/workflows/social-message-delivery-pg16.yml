@@ -42,7 +42,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           repository: hodlxxi/hodlxxi-social
-          ref: b1258e93a73870f8805ed75ba9fb1bd7b0a61392
+          ref: f260b553a17f2733996ffda52e9efa8fe3e9abd2
           path: social
           persist-credentials: false
       - uses: actions/setup-python@v6
