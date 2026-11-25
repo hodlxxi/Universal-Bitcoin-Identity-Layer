@@ -1,6 +1,6 @@
 import time
 
-from flask import redirect, render_template, render_template_string, session, url_for
+from flask import redirect, render_template, render_template_string, request, session, url_for
 
 _BROWSER_ROUTE_HANDLERS = {}
 
@@ -31,6 +31,20 @@ def call_browser_route_handler(name, *, default_handler=None):
 
 def render_browser_playground(*, render_template_func=render_template):
     return render_template_func("playground.html")
+
+
+def _login_continuation(target: str) -> str:
+    """Accept a root-relative browser destination without decoding it again."""
+    # Browsers can reinterpret backslashes and strip raw control characters.
+    if (
+        not target.startswith("/")
+        or target.startswith("//")
+        or target != target.strip()
+        or "\\" in target
+        or any(ord(character) < 32 or ord(character) == 127 for character in target)
+    ):
+        return "/home"
+    return target
 
 
 def render_browser_login(*, generate_challenge, render_template_string_func=render_template_string):
@@ -697,11 +711,8 @@ def render_browser_login(*, generate_challenge, render_template_string_func=rend
 
 
   <script>
-    // Helper to respect ?next= parameter for post-login redirects
     function getRedirectUrl() {
-      const params = new URLSearchParams(window.location.search);
-      const next = params.get("next");
-      return next || "/home";
+      return {{ login_continuation|tojson }};
     }
 
     function showTab(which) {
@@ -1361,6 +1372,7 @@ if (qrBox && typeof QRCode !== "undefined") renderQR(qrBox, lnurl);
     return render_template_string(
         html,
         challenge=challenge_str,
+        login_continuation=_login_continuation(request.args.get("next", "")),
     )
 
 

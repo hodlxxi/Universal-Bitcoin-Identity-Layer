@@ -1,6 +1,12 @@
-from flask import url_for
 import inspect
+import json
+import re
+import subprocess
 import sys
+from urllib.parse import urlencode
+
+import pytest
+from flask import url_for
 
 
 def _endpoints_for_path(app, path, method="GET"):
@@ -59,6 +65,54 @@ def test_login_sets_signature_challenge_session_and_renders_legacy_ui(client):
     with client.session_transaction() as sess:
         assert sess.get("challenge")
         assert sess.get("challenge_timestamp")
+
+
+@pytest.mark.parametrize(
+    ("target", "approved"),
+    [
+        (None, "/home"),
+        ("", "/home"),
+        ("/home#explorer", "/home#explorer"),
+        ("/app", "/app"),
+        ("https://client.invalid", "/home"),
+        ("//client.invalid", "/home"),
+        ("data:text/plain,example", "/home"),
+        ("//[invalid", "/home"),
+        (" /app", "/home"),
+        ("/\x00app", "/home"),
+        ("/\r\napp", "/home"),
+        (r"/local\path", "/home"),
+        ('/app?note="</script><span>&"', '/app?note="</script><span>&"'),
+    ],
+)
+def test_login_continuation_uses_approved_destination(client, target, approved):
+    query = urlencode({"next": target}) if target is not None else ""
+    response = client.get("/login", query_string=query)
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    if target and "</script>" in target:
+        assert target not in html
+    script = re.search(r"<script>([^<]*?function getRedirectUrl\(\).*?)</script>", html, re.DOTALL)
+    assert script is not None
+    getter = re.search(r"function getRedirectUrl\(\) \{.*?^    \}", script[1], re.DOTALL | re.MULTILINE)
+    assert getter is not None
+
+    # Execute the rendered getter used by the login handlers, with no DOM or network.
+    result = subprocess.run(
+        [
+            "node",
+            "-e",
+            'const {source, search} = JSON.parse(require("node:fs").readFileSync(0, "utf8"));'
+            "global.window = {location: {search}};"
+            'process.stdout.write(JSON.stringify(eval(source + "\\ngetRedirectUrl()")));',
+        ],
+        input=json.dumps({"source": getter[0], "search": f"?{query}"}),
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=True,
+    )
+    assert json.loads(result.stdout) == approved
 
 
 def test_browser_route_runtime_compatibility(client):

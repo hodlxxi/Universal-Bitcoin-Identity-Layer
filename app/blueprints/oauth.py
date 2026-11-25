@@ -433,11 +433,14 @@ def authorize():
         )
 
         # Redirect back to client with authorization code
-        redirect_url = f"{redirect_uri}?code={auth_code}"
-        if state:
-            redirect_url += f"&state={state}"
+        callback = urlsplit(redirect_uri)
+        response_params = {"code": auth_code}
+        if state is not None:
+            response_params["state"] = state
+        response_query = urlencode(response_params)
+        query = f"{callback.query}&{response_query}" if callback.query else response_query
 
-        return redirect(redirect_url)
+        return redirect(callback._replace(query=query).geturl())
 
     except OAuthSessionUnavailable:
         return jsonify({"error": "server_error", "error_description": "Authentication unavailable"}), 503
