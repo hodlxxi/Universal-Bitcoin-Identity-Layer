@@ -15,9 +15,11 @@ import base64
 import hashlib
 import json
 import os
+import re
 import secrets
 import time
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 import jwt
 import pytest
@@ -82,6 +84,101 @@ def registered_client(client):
         },
     )
     return json.loads(response.data)
+
+
+def test_query_callback_round_trip_from_anonymous_login(client):
+    callback_base = "https://app.example.com/callback"
+    original_query = "flow=login&tag=one&tag=&encoded=%2f"
+    callback = f"{callback_base}?{original_query}"
+    state = "a+b&step=2%?=#tail café"
+    registration = client.post(
+        "/oauth/register",
+        json={"client_name": "Query callback app", "redirect_uris": [callback], "scope": "openid"},
+    )
+    assert registration.status_code == 201
+    credentials = registration.get_json()
+    assert credentials["redirect_uris"] == [callback]
+
+    verifier, challenge = _pkce_pair()
+    authorization = {
+        "client_id": credentials["client_id"],
+        "redirect_uri": callback,
+        "scope": "openid",
+        "state": state,
+        "response_type": "code",
+        "code_challenge_method": "S256",
+        "code_challenge": challenge,
+    }
+    wrong_redirect = f"{callback_base}?flow=other"
+    denied = client.get("/oauth/authorize", query_string={**authorization, "redirect_uri": wrong_redirect})
+    assert denied.status_code == 400
+
+    anonymous = client.get("/oauth/authorize", query_string=authorization)
+    assert anonymous.status_code == 302
+    assert urlsplit(anonymous.location).path == "/login"
+    login = client.get(anonymous.location)
+    assert login.status_code == 200
+    continuation = re.search(r'function getRedirectUrl\(\) \{\s*return (".*?");', login.get_data(as_text=True))
+    assert continuation is not None
+    target = json.loads(continuation[1])
+    target_url = urlsplit(target)
+    assert target_url.path == "/oauth/authorize"
+    assert parse_qs(target_url.query) == {key: [value] for key, value in authorization.items()}
+
+    # Synthetic Limited login. The same client follows the rendered continuation.
+    _admit_browser_session(client, method="guest", access="guest")
+    assert client.get(target).status_code == 403
+    _admit_browser_session(client)
+    authorized = client.get(target)
+    assert authorized.status_code == 302
+    location = urlsplit(authorized.location)
+    assert (location.scheme, location.netloc, location.path) == ("https", "app.example.com", "/callback")
+    assert not location.fragment
+    assert location.query.startswith(original_query + "&")
+    params = parse_qs(location.query, keep_blank_values=True)
+    codes = params.pop("code")
+    assert len(codes) == 1 and codes[0]
+    assert params == {"flow": ["login"], "tag": ["one", ""], "encoded": ["/"], "state": [state]}
+
+    exchange = {
+        "grant_type": "authorization_code",
+        "client_id": credentials["client_id"],
+        "client_secret": credentials["client_secret"],
+        "code": codes[0],
+        "redirect_uri": callback,
+        "code_verifier": verifier,
+    }
+    for rejected in ({"redirect_uri": wrong_redirect}, {"code_verifier": _pkce_pair()[0]}):
+        response = client.post("/oauth/token", data={**exchange, **rejected})
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "invalid_grant"
+    response = client.post("/oauth/token", data=exchange)
+    assert response.status_code == 200
+    assert response.get_json()["scope"] == "openid"
+    replay = client.post("/oauth/token", data=exchange)
+    assert replay.status_code == 400
+    assert replay.get_json()["error"] == "invalid_grant"
+
+
+@pytest.mark.parametrize("state", [None, "", "a+b&step=2%?=#tail café"])
+def test_callback_encodes_state_without_an_existing_query(client, registered_client, state):
+    _admit_browser_session(client)
+    query = {
+        "response_type": "code",
+        "client_id": registered_client["client_id"],
+        "redirect_uri": registered_client["redirect_uris"][0],
+        "scope": "openid",
+    }
+    if state is not None:
+        query["state"] = state
+    _, response = _authorize_with_pkce(client, query)
+    assert response.status_code == 302
+    target = urlsplit(response.location)
+    assert not target.fragment
+    params = parse_qs(target.query, keep_blank_values=True)
+    codes = params.pop("code")
+    assert len(codes) == 1 and codes[0]
+    assert params == ({} if state is None else {"state": [state]})
 
 
 class TestOAuthDeveloperSurface:
