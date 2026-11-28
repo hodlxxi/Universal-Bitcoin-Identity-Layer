@@ -107,6 +107,8 @@ oauth_bp = Blueprint("oauth", __name__)
 
 OAUTH_RATE_LIMIT = "30 per minute"
 TOKEN_CONTRACT = "hodlxxi.oauth.access-token.v1"
+_MAX_NONCE_BYTES = 256
+_NONCE_CONTROLS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 _PKCE_VERIFIER = re.compile(r"^[A-Za-z0-9._~-]{43,128}$")
 _PKCE_CHALLENGE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 
@@ -312,6 +314,7 @@ def authorize():
         - redirect_uri: Redirect URI
         - scope: Requested scopes
         - state: CSRF protection token
+        - nonce: Optional case-sensitive value for the ordinary OIDC ID token
         - code_challenge: PKCE challenge (S256)
         - code_challenge_method: "S256"
 
@@ -379,6 +382,21 @@ def authorize():
         except ScopePolicyError:
             return jsonify({"error": "invalid_scope", "error_description": "Requested scope is not allowed"}), 400
 
+        lifecycle = configured_lifecycle(current_app)
+        use_lifecycle = lifecycle is not None and lifecycle.client_id == client_id
+        nonce = None
+        if "openid" in requested_scopes and not use_lifecycle:
+            nonce_values = request.args.getlist("nonce")
+            if nonce_values:
+                nonce = nonce_values[0]
+                if (
+                    len(nonce_values) != 1
+                    or not nonce
+                    or len(nonce.encode("utf-8")) > _MAX_NONCE_BYTES
+                    or _NONCE_CONTROLS.search(nonce)
+                ):
+                    return jsonify({"error": "invalid_request", "error_description": "Invalid nonce"}), 400
+
         # Check if user is authenticated
         if "logged_in_pubkey" not in session:
             # Redirect to login with return URL
@@ -411,11 +429,11 @@ def authorize():
             "user_pubkey": user_pubkey,
             "code_challenge": code_challenge,
             "code_challenge_method": code_challenge_method,
+            "nonce": nonce,
             "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
         }
 
-        lifecycle = configured_lifecycle(current_app)
-        if lifecycle is not None and lifecycle.client_id == client_id:
+        if use_lifecycle:
             from app.services.oauth_browser_authentication import browser_reference
 
             auth_code = lifecycle.authorize(
@@ -445,8 +463,16 @@ def authorize():
     except OAuthSessionUnavailable:
         return jsonify({"error": "server_error", "error_description": "Authentication unavailable"}), 503
     except Exception as e:
-        logger.error(f"Authorization failed: {e}", exc_info=True)
+        logger.error("Authorization failed (%s)", type(e).__name__)
         return jsonify({"error": "server_error", "error_description": "Internal server error"}), 500
+
+
+@oauth_bp.after_request
+def _protect_token_response(response):
+    if request.endpoint == "oauth.token":
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+    return response
 
 
 @oauth_bp.route("/token", methods=["POST"])
@@ -511,10 +537,7 @@ def token():
                 result = lifecycle.exchange(code=code, redirect_uri=redirect_uri, code_verifier=code_verifier)
             except OAuthSessionUnavailable:
                 return jsonify({"error": "invalid_grant", "error_description": "Authentication unavailable"}), 400
-            response = jsonify(result)
-            response.headers["Cache-Control"] = "no-store"
-            response.headers["Pragma"] = "no-cache"
-            return response
+            return jsonify(result)
 
         # Retrieve and validate authorization code
         code_data = get_oauth_code(code)
@@ -559,7 +582,8 @@ def token():
             return jsonify({"error": "invalid_grant", "error_description": "Missing user for authorization code"}), 400
         try:
             user_pubkey = canonical_xonly_pubkey(user["pubkey"])
-            scope = serialize_scopes(parse_scopes(code_data["scope"]))
+            granted_scopes = parse_scopes(code_data["scope"])
+            scope = serialize_scopes(granted_scopes)
         except (ValueError, TypeError, ScopePolicyError):
             return jsonify({"error": "invalid_grant", "error_description": "Invalid authorization code"}), 400
 
@@ -586,6 +610,7 @@ def token():
 
         unverified = jwt.decode(access_token, options={"verify_signature": False})
         header = jwt.get_unverified_header(access_token)
+        access_expires = unverified["exp"]
         digest = hashlib.sha256(access_token.encode("ascii")).hexdigest()
         issuer = str(unverified["iss"])
         store_canonical_jwt_record(
@@ -594,7 +619,7 @@ def token():
             client_id=client_id,
             user_id=code_data["user_id"],
             scope=scope,
-            expires_at=datetime.fromtimestamp(unverified["exp"], timezone.utc).replace(tzinfo=None),
+            expires_at=datetime.fromtimestamp(access_expires, timezone.utc).replace(tzinfo=None),
             metadata={
                 "token_contract": TOKEN_CONTRACT,
                 "token_use": "access",
@@ -607,7 +632,11 @@ def token():
         )
 
         # Issue ID token (OpenID Connect)
-        id_token = issue_jwt_compat(subject=user_pubkey, audience=client_id, scope=scope, cfg=cfg, id_token=True)
+        nonce = code_data.get("nonce")
+        id_claims = {"nonce": nonce} if "openid" in granted_scopes and nonce is not None else None
+        id_token = issue_jwt_compat(
+            subject=user_pubkey, audience=client_id, scope=scope, cfg=cfg, id_token=True, claims=id_claims
+        )
 
         audit_logger.log_event(
             "oauth.token_issued", client_id=client_id, user_pubkey=user_pubkey, scope=scope, ip=request.remote_addr
@@ -618,13 +647,13 @@ def token():
                 "access_token": access_token,
                 "id_token": id_token,
                 "token_type": "Bearer",
-                "expires_in": cfg.get("JWT_EXPIRATION_HOURS", 24) * 3600,
+                "expires_in": max(0, access_expires - max(unverified["iat"], int(time.time()))),
                 "scope": scope,
             }
         )
 
     except Exception as e:
-        logger.error(f"Token issuance failed: {e}", exc_info=True)
+        logger.error("Token issuance failed (%s)", type(e).__name__)
         return jsonify({"error": "server_error", "error_description": "Token issuance failed"}), 500
 
 

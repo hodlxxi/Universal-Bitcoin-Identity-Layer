@@ -83,6 +83,7 @@ def generation_factory(mobile_factory):
         connection.rollback()
     with engine.begin() as connection:
         connection.exec_driver_sql(MIGRATION.read_text())
+        connection.exec_driver_sql((ROOT / "migrations/2026-11-28_oauth_code_nonce.sql").read_text())
     return engine, factory
 
 

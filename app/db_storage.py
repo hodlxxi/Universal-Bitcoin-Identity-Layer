@@ -155,7 +155,7 @@ def get_oauth_client(client_id: str) -> Optional[Dict]:
     Returns:
         Client data dictionary or None
     """
-    with session_scope() as session:
+    with session_scope(log_error_details=False) as session:
         client = session.query(OAuthClient).filter_by(client_id=client_id, is_active=True).first()
 
         if not client:
@@ -188,7 +188,7 @@ def store_oauth_code(code: str, code_data: Dict, ttl=None, **kwargs) -> None:
         code: Authorization code
         code_data: Code data (client_id, user_id, redirect_uri, scope, expires_at)
     """
-    with session_scope() as session:
+    with session_scope(log_error_details=False) as session:
         user_id = code_data.get("user_id")
         user_pubkey = code_data.get("user_pubkey")
 
@@ -225,6 +225,7 @@ def store_oauth_code(code: str, code_data: Dict, ttl=None, **kwargs) -> None:
             scope=code_data.get("scope"),
             code_challenge=code_data.get("code_challenge"),
             code_challenge_method=code_data.get("code_challenge_method"),
+            nonce=code_data.get("nonce"),
             expires_at=datetime.fromisoformat(
                 code_data.get("expires_at")
                 or (
@@ -246,7 +247,7 @@ def get_oauth_code(code: str) -> Optional[Dict]:
     Returns:
         Code data dictionary or None
     """
-    with session_scope() as session:
+    with session_scope(log_error_details=False) as session:
         oauth_code = session.query(OAuthCode).filter_by(code=code, is_used=False).first()
 
         if not oauth_code:
@@ -264,6 +265,7 @@ def get_oauth_code(code: str) -> Optional[Dict]:
             "scope": oauth_code.scope,
             "code_challenge": oauth_code.code_challenge,
             "code_challenge_method": oauth_code.code_challenge_method,
+            "nonce": oauth_code.nonce,
             "created_at": oauth_code.created_at.isoformat(),
             "expires_at": oauth_code.expires_at.isoformat(),
         }
@@ -284,7 +286,7 @@ def delete_oauth_code(code: str) -> None:
 
 def consume_oauth_code(code: str) -> bool:
     """Atomically mark one valid, unexpired authorization code used."""
-    with session_scope() as session:
+    with session_scope(log_error_details=False) as session:
         result = session.execute(
             update(OAuthCode)
             .where(
@@ -299,7 +301,7 @@ def consume_oauth_code(code: str) -> bool:
 
 def update_oauth_client_secret(client_id: str, expected: str, replacement: str) -> bool:
     """Compare-and-replace a legacy client secret after successful verification."""
-    with session_scope() as session:
+    with session_scope(log_error_details=False) as session:
         result = session.execute(
             update(OAuthClient)
             .where(OAuthClient.client_id == client_id, OAuthClient.client_secret == expected)
@@ -409,7 +411,7 @@ def store_canonical_jwt_record(
     *, jti: str, digest: str, client_id: str, user_id: str, scope: str, expires_at: datetime, metadata: Dict
 ) -> None:
     """Persist a JWT issuance record; the encoded JWT is never stored."""
-    with session_scope() as session:
+    with session_scope(log_error_details=False) as session:
         session.add(
             OAuthToken(
                 id=jti,
