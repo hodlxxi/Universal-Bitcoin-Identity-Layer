@@ -153,6 +153,7 @@ class OAuthCode(Base):
     scope = Column(Text)
     code_challenge = Column(String(255))  # PKCE
     code_challenge_method = Column(String(10))  # PKCE: 'plain' or 'S256'
+    nonce = Column(String(256), nullable=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     is_used = Column(Boolean, default=False)

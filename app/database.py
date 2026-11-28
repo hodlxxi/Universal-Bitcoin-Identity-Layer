@@ -165,7 +165,7 @@ def get_session() -> Session:
 
 
 @contextmanager
-def session_scope() -> Generator[Session, None, None]:
+def session_scope(*, log_error_details: bool = True) -> Generator[Session, None, None]:
     """
     Provide a transactional scope for database operations.
 
@@ -184,7 +184,8 @@ def session_scope() -> Generator[Session, None, None]:
         session.commit()
     except Exception as e:
         session.rollback()
-        logger.error(f"Database transaction failed: {e}")
+        # SQL exceptions can include bound values from sensitive OAuth records.
+        logger.error("Database transaction failed: %s", e if log_error_details else type(e).__name__)
         raise
     finally:
         session.close()

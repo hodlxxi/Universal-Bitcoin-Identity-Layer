@@ -18,6 +18,8 @@ import os
 import re
 import secrets
 import time
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
@@ -26,7 +28,9 @@ import pytest
 
 from app.factory import create_app
 from app.auth_api_core import canonical_xonly_pubkey
-from app.db_storage import create_user
+from app.database import session_scope
+from app.db_storage import create_user, get_canonical_jwt_record_by_jti, get_oauth_code
+from app.models import OAuthCode
 
 
 def _pkce_pair():
@@ -179,6 +183,201 @@ def test_callback_encodes_state_without_an_existing_query(client, registered_cli
     codes = params.pop("code")
     assert len(codes) == 1 and codes[0]
     assert params == ({} if state is None else {"state": [state]})
+
+
+def _token_request(credentials, code, verifier):
+    return {
+        "grant_type": "authorization_code",
+        "client_id": credentials["client_id"],
+        "client_secret": credentials["client_secret"],
+        "redirect_uri": credentials["redirect_uris"][0],
+        "code": code,
+        "code_verifier": verifier,
+    }
+
+
+def _check_token_cache_headers(response):
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+
+def test_oidc_nonce_is_bound_to_persisted_code(client, registered_client):
+    credentials = registered_client
+    other = client.post(
+        "/oauth/register", json={"client_name": "Other app", "redirect_uris": credentials["redirect_uris"]}
+    ).get_json()
+    nonce_a = "  Case+Sensitive&=?%# café  "
+    nonce_b = "B" * 256
+    attempts = []
+    for nonce in (nonce_a, nonce_b):
+        verifier, challenge = _pkce_pair()
+        query = {
+            "response_type": "code",
+            "client_id": credentials["client_id"],
+            "redirect_uri": credentials["redirect_uris"][0],
+            "scope": "openid",
+            "state": "test-state",
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+            "nonce": nonce,
+        }
+        with client.session_transaction() as browser:
+            browser.clear()
+        anonymous = client.get("/oauth/authorize", query_string=query)
+        assert urlsplit(anonymous.location).path == "/login"
+        login = client.get(anonymous.location)
+        continuation = re.search(r'function getRedirectUrl\(\) \{\s*return (".*?");', login.get_data(as_text=True))
+        assert continuation is not None
+        target = json.loads(continuation[1])
+        assert parse_qs(urlsplit(target).query) == {name: [value] for name, value in query.items()}
+
+        _admit_browser_session(client)
+        callback = client.get(target)
+        assert callback.status_code == 302
+        code = parse_qs(urlsplit(callback.location).query)["code"][0]
+        assert get_oauth_code(code).get("nonce") == nonce
+        attempts.append((_token_request(credentials, code, verifier), nonce))
+
+    data, _ = attempts[0]
+    rejected_forms = (
+        {**data, "client_id": other["client_id"], "client_secret": other["client_secret"]},
+        {**data, "redirect_uri": data["redirect_uri"] + "?other=1"},
+        {**data, "code_verifier": _pkce_pair()[0]},
+    )
+    for form in rejected_forms:
+        denied = client.post("/oauth/token", data=form)
+        assert denied.status_code == 400
+        assert denied.get_json()["error"] == "invalid_grant"
+        _check_token_cache_headers(denied)
+
+    issuer = client.get("/.well-known/openid-configuration").get_json()["issuer"]
+    keys = client.get("/oauth/jwks.json").get_json()["keys"]
+
+    def verify_id_token(encoded, expected_nonce):
+        kid = jwt.get_unverified_header(encoded)["kid"]
+        jwk = next(key for key in keys if key["kid"] == kid)
+        claims = jwt.decode(
+            encoded,
+            jwt.PyJWK(jwk).key,
+            algorithms=["RS256"],
+            issuer=issuer,
+            audience=credentials["client_id"],
+            options={"require": ["iss", "aud", "sub", "iat", "exp", "nonce"], "strict_aud": True},
+        )
+        assert claims["sub"] == "a" * 64
+        assert claims["nonce"] == expected_nonce, "nonce mismatch"
+
+    with client.session_transaction() as browser:
+        browser.clear()
+    for form, nonce in reversed(attempts):
+        response = client.post("/oauth/token", data={**form, "nonce": "substitute"})
+        assert response.status_code == 200
+        _check_token_cache_headers(response)
+        tokens = response.get_json()
+        verify_id_token(tokens["id_token"], nonce)
+        with pytest.raises(AssertionError, match="nonce mismatch"):
+            verify_id_token(tokens["id_token"], nonce.swapcase())
+        assert "nonce" not in jwt.decode(tokens["access_token"], options={"verify_signature": False})
+        replay = client.post("/oauth/token", data=form)
+        assert replay.status_code == 400
+        assert replay.get_json()["error"] == "invalid_grant"
+        _check_token_cache_headers(replay)
+
+
+@pytest.mark.parametrize("nonces", [("",), ("\x00",), ("has\ncontrol",), ("é" * 129,), ("one", "two")])
+def test_oidc_rejects_invalid_authorization_nonce(client, registered_client, nonces):
+    _, challenge = _pkce_pair()
+    query = [
+        ("response_type", "code"),
+        ("client_id", registered_client["client_id"]),
+        ("redirect_uri", registered_client["redirect_uris"][0]),
+        ("scope", "openid"),
+        ("code_challenge", challenge),
+        ("code_challenge_method", "S256"),
+        *[("nonce", nonce) for nonce in nonces],
+    ]
+    response = client.get("/oauth/authorize", query_string=query)
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "invalid_request", "error_description": "Invalid nonce"}
+
+
+def test_oauth_code_database_error_omits_code_and_nonce(client, registered_client, monkeypatch, caplog):
+    _admit_browser_session(client)
+    code = "synthetic-duplicate-code"
+    nonce = "synthetic-private-nonce"
+    monkeypatch.setattr("app.blueprints.oauth.secrets", SimpleNamespace(token_urlsafe=lambda _: code))
+    query = {
+        "response_type": "code",
+        "client_id": registered_client["client_id"],
+        "redirect_uri": registered_client["redirect_uris"][0],
+        "scope": "openid",
+        "nonce": nonce,
+    }
+    assert _authorize_with_pkce(client, query)[1].status_code == 302
+    assert _authorize_with_pkce(client, query)[1].status_code == 500
+    assert "IntegrityError" in caplog.text
+    assert code not in caplog.text
+    assert nonce not in caplog.text
+
+
+def test_oidc_token_reports_remaining_signed_lifetime(client, registered_client, monkeypatch):
+    now = int(time.time()) - 20
+    cfg = client.application.config["APP_CONFIG"]
+    monkeypatch.setitem(cfg, "TOKEN_TTL", 120)
+    monkeypatch.setitem(cfg, "JWT_EXPIRATION_HOURS", 24)
+    monkeypatch.setattr("app.tokens.time", SimpleNamespace(time=lambda: now))
+    monkeypatch.setattr("app.blueprints.oauth.time", SimpleNamespace(time=lambda: now + 11))
+    _admit_browser_session(client)
+    query = {
+        "response_type": "code",
+        "client_id": registered_client["client_id"],
+        "redirect_uri": registered_client["redirect_uris"][0],
+        "scope": "openid",
+    }
+    verifier, expired = _authorize_with_pkce(client, query)
+    expired_code = parse_qs(urlsplit(expired.location).query)["code"][0]
+    with session_scope() as db:
+        db.get(OAuthCode, expired_code).expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+            seconds=1
+        )
+    denied = client.post("/oauth/token", data=_token_request(registered_client, expired_code, verifier))
+    assert denied.status_code == 400
+    assert denied.get_json()["error"] == "invalid_grant"
+
+    verifier, authorized = _authorize_with_pkce(client, query)
+    code = parse_qs(urlsplit(authorized.location).query)["code"][0]
+    response = client.post("/oauth/token", data=_token_request(registered_client, code, verifier))
+    assert response.status_code == 200
+    tokens = response.get_json()
+    assert tokens["expires_in"] == 109
+    _check_token_cache_headers(response)
+    _check_token_cache_headers(denied)
+    access = jwt.decode(tokens["access_token"], options={"verify_signature": False})
+    assert (access["iat"], access["exp"]) == (now, now + 120)
+    assert "nonce" not in jwt.decode(tokens["id_token"], options={"verify_signature": False})
+    record = get_canonical_jwt_record_by_jti(access["jti"])
+    assert record["digest"] == hashlib.sha256(tokens["access_token"].encode("ascii")).hexdigest()
+    introspected = client.post(
+        "/oauth/introspect",
+        data={
+            "client_id": registered_client["client_id"],
+            "client_secret": registered_client["client_secret"],
+            "token": tokens["access_token"],
+        },
+    )
+    assert introspected.get_json()["active"] is True
+    assert introspected.get_json()["exp"] == access["exp"]
+
+
+@pytest.mark.parametrize(
+    ("form", "error"),
+    [({}, "unsupported_grant_type"), ({"grant_type": "authorization_code"}, "invalid_request")],
+)
+def test_oauth_token_errors_prohibit_caching(client, form, error):
+    response = client.post("/oauth/token", data=form)
+    assert response.status_code == 400
+    assert response.get_json()["error"] == error
+    _check_token_cache_headers(response)
 
 
 class TestOAuthDeveloperSurface:
