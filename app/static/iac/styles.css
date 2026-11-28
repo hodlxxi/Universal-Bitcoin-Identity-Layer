@@ -1,0 +1,20 @@
+body {
+  font: 1rem system-ui, sans-serif;
+  line-height: 1.5;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  max-width: 42rem;
+}
+button, input {
+  font: inherit;
+  margin: .25rem 0;
+  padding: .35rem .55rem;
+}
+input { width: min(26rem, 80%); }
+output {
+  display: block;
+  font: bold 2rem monospace;
+  letter-spacing: .2em;
+}
+video { width: min(18rem, 48%); }
+video:not([src]):not([poster]) { background: #222; }
