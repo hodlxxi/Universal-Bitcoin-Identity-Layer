@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Invite &amp; Call preview</title>
+  <script src="/iac/assets/client.js"></script>
+  <link rel="stylesheet" href="/iac/assets/styles.css">
+</head>
+<body>
+  <main>
+    <h1>Invite &amp; Call</h1>
+    <p>SYNTHETIC TEST MEMBERSHIP</p>
+    <p id="status" role="status" aria-live="polite">Starting preview…</p>
+    <button id="login" hidden>Use Existing Key</button>
+    <button id="issue" hidden>Create one-time invite</button>
+    <button id="claim" hidden>Claim invite</button>
+    <div id="invite-link" hidden>
+      <label for="link">One-time invite link</label>
+      <input id="link" readonly>
+      <button id="copy">Copy link</button>
+    </div>
+    <section id="consent" hidden>
+      <p>Compare this code with the intended person over a trusted channel.</p>
+      <output id="comparison"></output>
+      <button id="accept">Accept</button>
+      <button id="decline">Decline</button>
+    </section>
+    <button id="cancel" hidden>Cancel invitation</button>
+    <section id="media" hidden>
+      <button id="audio">Enable audio</button>
+      <button id="video">Enable audio and camera</button>
+      <button id="mute" hidden>Mute microphone</button>
+      <button id="camera" hidden>Turn camera off</button>
+      <button id="hangup">Hang up</button>
+      <video id="local" playsinline muted autoplay aria-label="Local video"></video>
+      <video id="remote" playsinline autoplay aria-label="Remote video"></video>
+    </section>
+    <button id="logout" hidden>Log out</button>
+  </main>
+</body>
+</html>
