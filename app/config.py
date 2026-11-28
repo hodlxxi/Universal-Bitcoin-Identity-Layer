@@ -55,6 +55,7 @@ class AppConfig(TypedDict):
     TURN_PASS: str
     CORS_ORIGINS: str
     SOCKETIO_CORS: str
+    SOCKETIO_ASYNC_MODE: str
     RATE_LIMIT_ENABLED: bool
     RATE_LIMIT_DEFAULT: str
     RATELIMIT_DEFAULT: str
@@ -202,6 +203,7 @@ def get_config() -> AppConfig:
         # CORS Configuration
         "CORS_ORIGINS": os.getenv("CORS_ORIGINS", "*"),
         "SOCKETIO_CORS": os.getenv("SOCKETIO_CORS", "*"),
+        "SOCKETIO_ASYNC_MODE": os.getenv("SOCKETIO_ASYNC_MODE", ""),
         # Rate Limiting
         "RATE_LIMIT_ENABLED": _get_env_bool("RATE_LIMIT_ENABLED", True),
         "RATE_LIMIT_DEFAULT": os.getenv("RATE_LIMIT_DEFAULT", "100/hour"),

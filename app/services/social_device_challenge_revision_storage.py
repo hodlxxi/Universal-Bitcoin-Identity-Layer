@@ -19,7 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.services import social_device_challenge_store as legacy
-from app.services.postgres_catalog_definitions import restored_catalog_definitions
+from app.services.postgres_catalog_definitions import restored_catalog_definitions, valid_catalog_attribute_options
 
 TABLE = "social_device_admission_challenge_revisions"
 RUNTIME_ENABLED = False
@@ -791,6 +791,8 @@ class SqlAlchemyTransactionBoundIssuedChallengeRevisionReader:
                     or a["atthasmissing"]
                     or a["attmissingval"] is not None
                     or a["attcollation"] != (0 if typ == 23 else 100)
+                    or not valid_catalog_attribute_options(a["attoptions"])
+                    or a["attfdwoptions"] is not None
                 ):
                     _deny()
             identities.append((row["oid"], row["owner"], row["row_type"], row["toast_oid"]))
@@ -804,7 +806,7 @@ class SqlAlchemyTransactionBoundIssuedChallengeRevisionReader:
                         a["attnotnull"],
                         a["attcollation"],
                         a["attstorage"],
-                        a["attoptions"],
+                        None if a["attoptions"] is None else tuple(a["attoptions"]),
                         a["attfdwoptions"],
                     )
                     for a in attrs

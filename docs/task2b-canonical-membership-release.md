@@ -36,7 +36,7 @@ Admission history stays available for audit.
 | DBA | Provisions roles, installs and audits DDL, and authorizes emergency maintenance | Run migrations in a separate DBA session |
 | `hodlxxi_canonical_owner` | Owns the protected canonical tables, view and routines. Off-request authority to record a supported canonical revocation | NOLOGIN. No web or publisher membership. DBA may assume it for controlled maintenance |
 | `hodlxxi` | Reads authority and registration, appends authenticated intents, and journals confirmed scripts and pairs | Existing web login, including ordinary user and OAuth DML. No canonical evidence, effective-edge, observation, claim, or revocation insert |
-| `hodlxxi_canonical_publisher` | Reads authority, recovers the import journal, appends evidence, effective edges, outpoints and observations, and rewrites only the refresh cursor | NOLOGIN. Grant inheritance to the dedicated refresh login and provision that identity independently of web |
+| `hodlxxi_canonical_publisher` | Reads authority and trusted registrations/outpoints, recovers the import journal, appends evidence, effective edges, outpoints and observations, and rewrites only the refresh cursor | NOLOGIN. Grant inheritance to the dedicated refresh login and provision that identity independently of web |
 | Existing Social finalizer and challenge writer | Existing SELECT and row-lock privileges on evidence, plus SELECT on the five lineage relations | Preserve their pinned ACL profiles and evidence-trigger/function attestation |
 | PUBLIC | No direct access to protected canonical relations or routines | Existing unrelated service grants follow their own profiles |
 
@@ -82,7 +82,7 @@ is part of the application security boundary.
    original 11 dependency-ordered migration files and the ownership migration.
    For a previously migrated environment, first verify the exact migration
    ledger and object definitions, then rehearse applying only the missing
-   privilege migration. Capture the pre-change schema, ACLs, role memberships
+   privilege migration and the subsequent publisher registration-read migration. Capture the pre-change schema, ACLs, role memberships
    and lock budget so the operator can identify drift and abort cleanly.
 4. Deploy the reviewed code through the approved release procedure. Test
    anonymous Login, authenticated Legacy and Nostr Login, logout confirmation

@@ -31,3 +31,17 @@ def restored_catalog_definitions(definition: str | None) -> set[str | None]:
     # Only the left operand of AND is flattened by the parser.
     restored = _RANGE_AS_LEFT_CONJUNCT.sub(lambda match: match[0][1:].replace(")) AND ", ") AND ", 1), restored)
     return {definition, restored}
+
+
+def valid_catalog_attribute_options(options: object) -> bool:
+    """Allow only the server-reserved column version introduced by PG security updates.
+
+    Keep the original value in catalog fingerprints: this is not a normalization
+    of user-controlled column options or a waiver of subsequent catalog checks.
+    """
+    if options is None:
+        return True
+    if type(options) is not list or len(options) != 1 or type(options[0]) is not str:
+        return False
+    match = re.fullmatch(r"pg_attver=(0|[1-9][0-9]{0,9})", options[0])
+    return match is not None and int(match[1]) <= 4294967295

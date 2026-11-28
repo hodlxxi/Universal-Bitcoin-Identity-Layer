@@ -32,6 +32,7 @@ from tests.integration.test_automatic_sponsored_admission_postgres_v1 import (
 
 PLAN = Path("docs/data/task2b-canonical-migration-order.txt")
 ACL_MIGRATION = "2026-11-24_canonical_membership_roles.sql"
+REGISTRATION_READ_MIGRATION = "2026-11-24_canonical_publisher_registration_read.sql"
 OWNER = "hodlxxi_canonical_owner"
 PUBLISHER = "hodlxxi_canonical_publisher"
 PUBLISHER_LOGIN = "task2b_publisher_login"
@@ -112,8 +113,8 @@ def roles():
             text("SELECT md5(row_to_json(e)::text) FROM public.current_entitlement_evidence e")
         ).scalar_one()
         order = tuple(PLAN.read_text().splitlines())
-        assert order == (*MIGRATIONS, ACL_MIGRATION)
-        for name in order[:-1]:
+        assert order == (*MIGRATIONS, ACL_MIGRATION, REGISTRATION_READ_MIGRATION)
+        for name in order[:-2]:
             _apply(db, name)
         with pytest.raises(DBAPIError, match="canonical runtime retains DDL privileges"):
             with db.begin_nested():
@@ -128,6 +129,7 @@ def roles():
         """)).scalar_one() == RUNTIME
         print("ROLE_STAGE_ROLLBACK=PASS", flush=True)
         _apply(db, ACL_MIGRATION)
+        _apply(db, REGISTRATION_READ_MIGRATION)
         after = db.execute(
             text("SELECT md5(row_to_json(e)::text) FROM public.current_entitlement_evidence e")
         ).scalar_one()
@@ -286,3 +288,18 @@ def test_existing_social_finalization_catalog_accepts_protected_ownership(roles)
                     "'public.canonical_auto_entitlement_observations_v1','SELECT')"
                 )
             ).scalar_one()
+
+
+@pytest.mark.parametrize("table", ["trusted_covenant_registrations", "trusted_covenant_registered_outpoints"])
+def test_publisher_can_read_registration_without_mutation(roles, table):
+    _, engines = roles
+    with engines[PUBLISHER_LOGIN].connect() as db:
+        db.exec_driver_sql(f"SELECT * FROM public.{table} LIMIT 1").all()
+        assert not db.execute(
+            text("SELECT has_any_column_privilege(current_user, :table, 'INSERT,UPDATE,REFERENCES')"),
+            {"table": "public." + table},
+        ).scalar_one()
+        assert not db.execute(
+            text("SELECT has_table_privilege(current_user, :table, 'DELETE,TRUNCATE,TRIGGER')"),
+            {"table": "public." + table},
+        ).scalar_one()

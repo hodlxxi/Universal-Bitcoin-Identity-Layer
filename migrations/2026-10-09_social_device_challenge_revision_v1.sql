@@ -124,7 +124,16 @@ END $legacy$
           OR a.attcollation IS DISTINCT FROM e.coll::pg_catalog.oid OR a.attstorage::text IS DISTINCT FROM e.storage
           OR a.attisdropped OR a.atthasdef OR a.attgenerated<>'' OR a.attidentity<>''
           OR a.atthasmissing OR a.attmissingval IS NOT NULL OR NOT a.attislocal OR a.attinhcount<>0
-          OR a.attoptions IS NOT NULL OR a.attfdwoptions IS NOT NULL
+          -- PG security updates add a server-owned uint32 column version.
+          -- No user-defined or additional attribute options are permitted.
+          OR (CASE WHEN a.attoptions IS NULL THEN false
+                   WHEN pg_catalog.array_ndims(a.attoptions)=1
+                     AND pg_catalog.array_lower(a.attoptions,1)=1
+                     AND pg_catalog.cardinality(a.attoptions)=1
+                     AND a.attoptions[1] ~ '^pg_attver=(0|[1-9][0-9]{0,9})$'
+                   THEN pg_catalog.substring(a.attoptions[1],11)::numeric > 4294967295
+                   ELSE true END)
+          OR a.attfdwoptions IS NOT NULL
     ) OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_constraint k WHERE k.conrelid=parent_oid) <> 8
       OR EXISTS (
         SELECT 1 FROM (VALUES

@@ -1,0 +1,86 @@
+name: Social Message Delivery PostgreSQL
+
+on:
+  pull_request:
+    paths:
+      - "app/services/social_*"
+      - "app/services/oauth_session_lifecycle.py"
+      - "app/services/recipient_device_resolver.py"
+      - "migrations/**"
+      - "tests/integration/message_delivery_pg16.py"
+      - "tests/integration/test_social_message_delivery_pg16_v1.py"
+      - "tests/integration/test_social_session_issuance_v2_postgresql.py"
+      - ".github/workflows/social-message-delivery-pg16.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  message-device-authority-pg16:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: canonv2test
+          POSTGRES_DB: canonv2test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 55489:5432
+        options: >-
+          --health-cmd "pg_isready -U canonv2test -d canonv2test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: ubid
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          repository: hodlxxi/hodlxxi-social
+          ref: f260b553a17f2733996ffda52e9efa8fe3e9abd2
+          path: social
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install paired dependencies
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          python -m pip install -r ubid/requirements.txt pytest PyJWT
+          npm --prefix social ci
+          mkdir -p .toolchains/node20/bin
+          ln -s "$(command -v node)" .toolchains/node20/bin/node
+      - name: Verify native device authority on disposable PG16
+        working-directory: ubid
+        env:
+          APP_VERSION: "1.0.0-beta"
+          TESTING: "1"
+          FLASK_ENV: "testing"
+          DATABASE_URL: "sqlite:///:memory:"
+          CANON_V2_DISPOSABLE_PG_ACK: "1"
+          CANON_V2_DISPOSABLE_PG_PORT: "55489"
+          CANON_V2_TEST_DATABASE_URL: "postgresql+psycopg2://canonv2test@127.0.0.1:55489/canonv2test"
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine
+          engine = create_engine(os.environ["CANON_V2_TEST_DATABASE_URL"])
+          with engine.begin() as db:
+              db.exec_driver_sql("COMMENT ON DATABASE canonv2test IS 'hodlxxi-canon-v2-disposable-pg16-v1'")
+          engine.dispose()
+          PY
+          python -m pytest -q tests/integration/test_social_message_delivery_pg16_v1.py --junitxml=message-pg16.xml
+          python - <<'PY'
+          from xml.etree import ElementTree as ET
+          cases = ET.parse("message-pg16.xml").findall(".//testcase")
+          assert cases, "No native message authority tests ran"
+          assert all(case.find(tag) is None for case in cases for tag in ("skipped", "failure", "error")), "Native message authority tests did not all execute successfully"
+          PY

@@ -73,3 +73,16 @@ def test_chat_broadcast_uses_context_broadcast_and_fans_out_to_each_active_sid(a
         ACTIVE_SOCKETS.clear()
         ACTIVE_SOCKETS.update(original_sockets)
         CHAT_HISTORY[:] = original_history
+
+
+def test_explicit_threading_driver_matches_threaded_gunicorn(monkeypatch):
+    from flask import Flask
+
+    from app.config import get_config
+    from app.factory import create_socketio
+
+    monkeypatch.setenv("SOCKETIO_ASYNC_MODE", "threading")
+    app = Flask(__name__)
+    app.config["APP_CONFIG"] = get_config()
+    socketio = create_socketio(app)
+    assert socketio.server.eio.async_mode == "threading"

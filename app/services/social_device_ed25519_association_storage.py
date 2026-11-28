@@ -210,7 +210,10 @@ class SqlAlchemyEd25519AssociationStore:
     after acquiring the lock. Results are provisional until caller commit.
     """
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, read_only: bool = False) -> None:
+        if type(read_only) is not bool:
+            _deny()
+        self._read_only = read_only
         self._session = session
         self._transaction = session.get_transaction()
         self._nested_transaction = session.get_nested_transaction()
@@ -279,18 +282,13 @@ class SqlAlchemyEd25519AssociationStore:
             text("SELECT pg_advisory_xact_lock(hashtextextended(:pair, 0))"),
             {"pair": subject + ":" + device_id},
         )
-        chain = (
-            connection.execute(
-                select(SocialDeviceEd25519AssociationChain.__table__)
-                .where(
-                    SocialDeviceEd25519AssociationChain.subject == subject,
-                    SocialDeviceEd25519AssociationChain.device_id == device_id,
-                )
-                .with_for_update()
-            )
-            .mappings()
-            .one_or_none()
+        statement = select(SocialDeviceEd25519AssociationChain.__table__).where(
+            SocialDeviceEd25519AssociationChain.subject == subject,
+            SocialDeviceEd25519AssociationChain.device_id == device_id,
         )
+        if not self._read_only:
+            statement = statement.with_for_update()
+        chain = connection.execute(statement).mappings().one_or_none()
         event_rows = (
             connection.execute(
                 select(SocialDeviceEd25519AssociationEvent.__table__)
@@ -430,6 +428,8 @@ class SqlAlchemyEd25519AssociationStore:
             _deny()
 
     def _append(self, subject: str, device_id: str, chain, updated) -> CurrentEd25519AssociationV1 | None:
+        if self._read_only:
+            _deny()
         connection = self._check_transaction()
         event = updated.events[-1]
         enrollment = parse_enrollment_v2(event.enrollment_wire) if event.enrollment_wire is not None else None
@@ -462,6 +462,8 @@ class SqlAlchemyEd25519AssociationStore:
         return self.lock_current_association(subject, device_id)
 
     def _create(self, operation: str, input_wire: object, statement: object, now: object, predecessor, epoch):
+        if self._read_only:
+            _deny()
         try:
             value = admission.parse_verification_input_v1(input_wire)
             subject, device_id = self._identity(value.context.subject, value.context.device_id)
@@ -506,6 +508,8 @@ class SqlAlchemyEd25519AssociationStore:
     def _terminal(
         self, kind: str, subject: object, device_id: object, expected_association_id: str, expected_epoch: int
     ):
+        if self._read_only:
+            _deny()
         try:
             subject, device_id = self._identity(subject, device_id)
             _, chain, prior, _ = self._locked(subject, device_id)

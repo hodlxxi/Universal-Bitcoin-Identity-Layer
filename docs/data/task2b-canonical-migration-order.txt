@@ -10,3 +10,4 @@
 2026-11-15_canonical_auto_sponsored_import_v1_intents.sql
 2026-11-15_canonical_auto_sponsored_import_v2_effective.sql
 2026-11-24_canonical_membership_roles.sql
+2026-11-24_canonical_publisher_registration_read.sql

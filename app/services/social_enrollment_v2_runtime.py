@@ -104,13 +104,18 @@ def build_enrollment_application_runtime(app_config, manifest=None):
             PostgresConfidentialServiceAssertionReplayStore,
         )
         from app.services.oauth_session_lifecycle import SqlAlchemyOAuthSessionLifecycle
-        from app.services.social_enrollment_v2_authenticated_composition import AuthenticatedEnrollmentV2Composition
+        from app.services.social_enrollment_v2_authenticated_composition import (
+            AuthenticatedEnrollmentV2Composition,
+        )
         from app.services.social_enrollment_v2_catalog_roles import ChallengeWriterCatalogPin
         from app.services.social_enrollment_v2_challenge import (
             EnrollmentChallengeConfig,
             EnrollmentV2ChallengeComposition,
         )
-        from app.services.social_enrollment_v2_finalization_contract import FinalizationConfig, StatementTrustPin
+        from app.services.social_enrollment_v2_finalization_contract import (
+            FinalizationConfig,
+            StatementTrustPin,
+        )
         from app.services.social_enrollment_v2_ingress import EnrollmentV2Ingress
         from app.services.social_enrollment_v2_reservation_contract import ReservationConfig
         from app.services.social_enrollment_v2_reservation_signer import DedicatedRS256EvidenceSigner
@@ -322,7 +327,11 @@ def build_enrollment_application_runtime(app_config, manifest=None):
         dedicated = tuple(record._key.public_key.public_numbers() for record in records)
         public_other = [
             RSAAlgorithm.from_jwk(dict(jwk)).public_numbers()
-            for jwk in (*_public_keys(token_config["JWKS_DIR"]), *configs[0].client_jwks, *configs[0].service_jwks)
+            for jwk in (
+                *_public_keys(token_config["JWKS_DIR"]),
+                *configs[0].client_jwks,
+                *configs[0].service_jwks,
+            )
         ]
         public_other.extend(item.public_key.public_numbers() for item in sc._keys)
         if any(numbers in dedicated for numbers in public_other):
@@ -363,7 +372,6 @@ def create_social_enrollment_v2_app():
     """Separate Gunicorn entrypoint, selected explicitly by the staging operator."""
     from app.config import get_config
     from app.factory import create_social_mobile_app
-    from app.services.social_messaging_private_routes import install_private_messaging
 
     path = os.environ.get("SOCIAL_ENROLLMENT_V2_CONFIG_PATH")
     manifest = read_operator_json(path)
@@ -374,7 +382,11 @@ def create_social_enrollment_v2_app():
     try:
         app = create_social_mobile_app(cfg)
         install_enrollment_application_runtime(app, runtime)
-        install_private_messaging(app, cfg)
+        # The base mobile factory already installs the configured private messaging
+        # runtimes and blueprints. Reinstalling them would deny enabled startup.
+        from app.services.social_message_delivery_runtime_v1 import install_message_delivery
+
+        install_message_delivery(app, runtime, os.environ.get("SOCIAL_MESSAGE_DELIVERY_CONFIG_PATH"))
         return app
     except Exception:
         runtime.close()
