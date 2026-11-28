@@ -30,7 +30,7 @@ CSP = (
 class PreviewSettings:
     origin: str
     turn_url: str | None = None
-    turn_secret: bytes | None = None
+    turn_secret: str | None = None
 
     def validate(self):
         parsed = urlsplit(self.origin)
@@ -44,7 +44,12 @@ class PreviewSettings:
             raise ValueError("dedicated HTTPS preview origin required")
         if self.turn_url is None and self.turn_secret is None:
             return
-        if not isinstance(self.turn_url, str) or type(self.turn_secret) is not bytes or len(self.turn_secret) < 32:
+        if (
+            not isinstance(self.turn_url, str)
+            or type(self.turn_secret) is not str
+            or len(self.turn_secret) < 32
+            or not self.turn_secret.isascii()
+        ):
             raise ValueError("isolated TURN configuration required")
         address = re.fullmatch(r"turn:(127(?:\.[0-9]{1,3}){3}):([1-9][0-9]{3,4})\?transport=udp", self.turn_url)
         if address is None or not ipaddress.ip_address(address[1]).is_loopback or not 1024 <= int(address[2]) <= 65535:

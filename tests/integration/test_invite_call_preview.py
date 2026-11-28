@@ -92,7 +92,7 @@ class Scene:
         subjects = [key.public_key_xonly.format().hex() for key in (self.host, self.guest, self.third)]
         self.host_key, self.guest_key, self.third_key = subjects
         self.accounts = SyntheticAccounts(subjects, {self.host_key: evidence(self.host_key, self.clock.now)})
-        self.settings = PreviewSettings(ORIGIN, RELAY, secrets.token_bytes(32)) if relay else PreviewSettings(ORIGIN)
+        self.settings = PreviewSettings(ORIGIN, RELAY, secrets.token_hex(32)) if relay else PreviewSettings(ORIGIN)
         self.app = self.make_app()
 
     def make_app(self):
@@ -143,7 +143,16 @@ def test_only_preview_routes_https_headers_and_cookie_rotation(caplog):
     assert store.preauth == store.invites == {}
     worker = {"wsgi.multiprocess": True}
     assert peer.client.get("/iac/bootstrap", base_url=ORIGIN, environ_overrides=worker).status_code == 403
-    for path in ("/login", "/oauth/token", "/socket.io/", "/api/verify", "/turn_credentials", "/app", "/wallet"):
+    for path in (
+        "/login",
+        "/oauth/token",
+        "/socket.io/",
+        "/api/verify",
+        "/turn_credentials",
+        "/app",
+        "/wallet",
+        "/health",
+    ):
         assert peer.client.get(path, base_url=ORIGIN).status_code == 404
     for url in ("http://iac-preview.test:18443", "https://other.test:18443"):
         assert peer.client.get("/iac/bootstrap", base_url=url).status_code == 403
@@ -584,7 +593,7 @@ def test_verified_isolated_https_and_authorized_turn_probe(tmp_path):
     )
     turn_secret = secrets.token_hex(32)
     scene = Scene()
-    scene.settings = PreviewSettings(ORIGIN, RELAY, turn_secret.encode("ascii"))
+    scene.settings = PreviewSettings(ORIGIN, RELAY, turn_secret)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(certificate, key)

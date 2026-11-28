@@ -56,7 +56,7 @@ def test_preview_requires_dedicated_https_hostname(origin):
 )
 def test_preview_has_no_external_or_direct_relay_fallback(relay):
     with pytest.raises(ValueError):
-        PreviewSettings(ORIGIN, relay, b"k" * 32).validate()
+        PreviewSettings(ORIGIN, relay, "k" * 32).validate()
 
 
 def test_factory_defaults_off_and_refuses_production(monkeypatch):

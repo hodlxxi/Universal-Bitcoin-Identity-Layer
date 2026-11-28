@@ -1,6 +1,5 @@
 """Single-process authority for the isolated, synthetic Invite & Call preview."""
 
-import base64
 import hashlib
 import hmac
 import json
@@ -14,6 +13,7 @@ from datetime import datetime, timezone
 from coincurve import PublicKeyXOnly
 
 from app.auth_api_core import verify_nostr_login_event
+from app.blueprints.admin import _derive_coturn_rest_credential
 from app.services.action_authorization import IdentityClass
 from app.services.current_entitlement import (
     EntitlementDecision,
@@ -485,7 +485,8 @@ class InviteCallStore:
         if credential is None or now >= credential["expires_at"]:
             expiry = int(now) + 300
             username = f"{expiry}:{_opaque()}"
-            password = base64.b64encode(hmac.digest(self.turn_secret, username.encode(), "sha1")).decode()
+            # Reuse only the protocol calculation, without registering the admin blueprint.
+            password = _derive_coturn_rest_credential(self.turn_secret, username)
             credential = {"urls": [self.turn_url], "username": username, "credential": password, "expires_at": expiry}
             room.credentials[side] = credential
         return dict(credential)
